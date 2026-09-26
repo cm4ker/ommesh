@@ -605,6 +605,37 @@ test("a connect is ready once the radio has answered, and reads its queue before
   assert.ok(Object.keys(session.getState().contacts).length > 0);
 });
 
+test("the last radio's stored chats show before it is reached, and stay while it connects", async () => {
+  const storage = new MemoryStorage();
+  const first = new MeshSession({ storage, now: () => 1_700_000_000_000 });
+  const radio = new ScriptedRadio();
+  radio.queue.push(dmFrame(BOB, "from last time"));
+  await first.connect(radio);
+  const { self, device } = first.getState();
+  await first.disconnect();
+  await first.flush();
+
+  // The next launch: nothing is stored for a radio never connected, and the last one's chats show at once.
+  const next = new MeshSession({ storage, now: () => 1_700_000_000_000 });
+  assert.equal(await next.resume({ ...self!, key: "ff".repeat(32) }, device), false);
+  assert.equal(next.getState().self, null);
+  assert.equal(await next.resume(self!, device), true);
+  assert.equal(next.getState().status, "idle");
+  assert.deepEqual(next.getState().messages.map((m) => m.text), ["from last time"]);
+  assert.ok(Object.keys(next.getState().contacts).length > 0);
+  // Shown once: a second resume leaves them be.
+  assert.equal(await next.resume(self!, device), false);
+
+  const seen: string[][] = [];
+  const stop = next.subscribe(() => {
+    if (next.getState().status === "connecting") seen.push(next.getState().messages.map((m) => m.text));
+  });
+  await next.connect(new ScriptedRadio());
+  stop();
+  assert.ok(seen.length > 0 && seen.every((texts) => texts.includes("from last time")));
+  assert.equal(next.getState().status, "ready");
+});
+
 test("a stored history that cannot be read is not written over", async () => {
   class UnreadableStorage extends MemoryStorage {
     unreadable = false;

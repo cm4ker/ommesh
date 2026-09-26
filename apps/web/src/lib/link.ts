@@ -8,7 +8,7 @@
 import { useSyncExternalStore } from "react";
 import { session } from "./session.js";
 import type { Transport } from "@meshnet/meshcore";
-import { autoConnectWanted, connectorById, lastLink, needsPairing, rememberLink, type Connector, type FoundDevice } from "../transports/index.js";
+import { autoConnectWanted, connectorById, lastLink, needsPairing, rememberLink, type Connector, type FoundDevice, type RememberedLink } from "../transports/index.js";
 import { t } from "../i18n/index.js";
 import { errorText } from "../i18n/errors.js";
 import { onRelayUp } from "./relay.js";
@@ -107,7 +107,7 @@ export function connectWith(connector: Connector, device: FoundDevice | null): P
   return reach(connector, device, false);
 }
 
-/** `dropped`: this gets back a link that dropped, from the offline bar, rather than being one asked for anew. */
+/** `dropped`: this gets back a link that dropped, or the last one behind its stored chats at launch, rather than one asked for anew. */
 async function reach(connector: Connector, device: FoundDevice | null, dropped: boolean): Promise<void> {
   cancelRetry();
   const gen = ++generation;
@@ -128,6 +128,7 @@ async function reach(connector: Connector, device: FoundDevice | null, dropped: 
           connectorId: connector.id,
           device: device ?? { id: "", name: transport.label, detail: null, rssi: null },
           radioName: session.getState().self?.name,
+          radio: shownBy(),
         });
         set({ phase: "connected", error: null, retrying: false, attempt: 0, dropped: false });
       });
@@ -138,10 +139,22 @@ async function reach(connector: Connector, device: FoundDevice | null, dropped: 
       if (gen !== generation || usable) return;
       if (attempt < tries && !needsPairing(error)) continue;
       const message = errorText(error);
+      if (dropped && tries > 1 && !needsPairing(error)) {
+        // A link got back behind its chats is tried for as long as it takes, as after a drop.
+        set({ error: message, attempt: 0 });
+        scheduleRetry();
+        return;
+      }
       set({ phase: "failed", error: message, attempt: 0, unpaired: needsPairing(error), pair: canPair(connector, device, error) });
       throw error;
     }
   }
+}
+
+/** Who the radio said it is, for the next launch to show its chats by; the PIN stays out of the storage. */
+function shownBy(): RememberedLink["radio"] {
+  const { self, device } = session.getState();
+  return self ? { self, device: device ? { ...device, blePin: 0 } : null } : undefined;
 }
 
 function canPair(connector: Connector, device: FoundDevice | null, error: unknown): boolean {
@@ -281,7 +294,12 @@ if (typeof document !== "undefined") {
   });
 }
 
-/** At launch: the last link, if it can be reached without a chooser. */
+/**
+ * At launch: the last link, if it can be reached without a chooser. The
+ * radio's stored chats come first, and its link is reached for behind them as
+ * after a drop, rather than from the connect screen. Resolves once the chats
+ * are shown, or there are none to show; the link goes on.
+ */
 export async function autoConnect(): Promise<void> {
   if (!autoConnectWanted()) return;
   const last = lastLink();
@@ -291,6 +309,9 @@ export async function autoConnect(): Promise<void> {
   const remembered = await connector.remembered();
   const device =
     remembered.find((d) => d.id === last.device.id) ?? (connector.mode === "scan" && last.device.id ? last.device : null);
-  if (!device) return;
-  await connectWith(connector, device).catch(() => undefined);
+  if (!device || state.phase !== "idle") return;
+  const shown = last.radio ? await session.resume(last.radio.self, last.radio.device).catch(() => false) : false;
+  // A radio picked meanwhile is left to it.
+  if (state.phase !== "idle") return;
+  void reach(connector, device, shown).catch(() => undefined);
 }

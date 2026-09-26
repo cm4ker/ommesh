@@ -1056,43 +1056,7 @@ export class MeshSession {
       this.set({ connectStep: "history" });
       const persisted = this.held?.key === key ? this.held.history : await this.readHistory(key);
       this.held = null;
-      const now = this.now();
-      // Contacts saved before route ages were kept have none: a route of theirs
-      // is dated as a route learned while nobody was listening.
-      const contacts: Record<string, ContactRecord> = {};
-      for (const [k, c] of Object.entries(persisted?.contacts ?? {})) {
-        // A node the radio never kept goes once it has been quiet for a while.
-        if (c.unsaved && (c.lastHeardAt ?? 0) < now - UNSAVED_KEEP_MS) continue;
-        contacts[k] = c.pathSince !== undefined ? c : { ...c, pathSince: c.outPathLen === 0xff ? null : guessPathSince(c.lastMod, now) };
-      }
-      const removed: Record<string, RemovedContact> = {};
-      for (const [k, r] of Object.entries(persisted?.removed ?? {})) if (r.at > now - REMOVED_KEEP_MS) removed[k] = r;
-      this.set({
-        device,
-        self,
-        contacts,
-        contactsCursor: persisted?.contactsCursor ?? 0,
-        removed,
-        autoAdd: null,
-        contactsFull: false,
-        removing: null,
-        channels: persisted?.channels ?? [],
-        // History saved before the hop count was masked holds the raw path_len
-        // byte (the low six bits are the hops either way), and history saved
-        // before echoes were kept has none.
-        messages: (persisted?.messages ?? []).map((m) => ({
-          ...m,
-          hops: m.hops === null ? null : m.hops & 63,
-          echoes: m.echoes ?? [],
-          route: m.route ?? null,
-          retryPlan: m.retryPlan ?? null,
-        })),
-        unread: persisted?.unread ?? {},
-        logins: persisted?.logins ?? {},
-        statusHistory: persisted?.statusHistory ?? {},
-        batteryHistory: persisted?.batteryHistory ?? {},
-        routing: persisted?.routing ?? EMPTY.routing,
-      });
+      this.set({ device, self, ...this.restored(persisted), autoAdd: null, contactsFull: false, removing: null });
       this.log("link", `connected to ${self.name} (${device.firmwareVersion})`);
 
       await this.syncClock();
@@ -1129,6 +1093,56 @@ export class MeshSession {
       await client.close().catch(() => undefined);
       throw error;
     }
+  }
+
+  /**
+   * Shows the stored chats of `self`, the radio last connected, before it is
+   * reached: the app opens on them rather than on the connect screen, and a
+   * connect that follows goes on from them as it does after a drop. False
+   * when nothing is stored for it, or a radio is already shown.
+   */
+  async resume(self: NonNullable<SessionState["self"]>, device: DeviceInfo | null): Promise<boolean> {
+    if (this.client || this.state.self) return false;
+    const persisted = await this.readHistory(self.key);
+    if (!persisted || this.client || this.state.self) return false;
+    this.set({ self, device, ...this.restored(persisted) });
+    return true;
+  }
+
+  /** A stored history as the state holds it, brought up to date with what older saves lack. */
+  private restored(persisted: PersistedState | null): Partial<SessionState> {
+    const now = this.now();
+    // Contacts saved before route ages were kept have none: a route of theirs
+    // is dated as a route learned while nobody was listening.
+    const contacts: Record<string, ContactRecord> = {};
+    for (const [k, c] of Object.entries(persisted?.contacts ?? {})) {
+      // A node the radio never kept goes once it has been quiet for a while.
+      if (c.unsaved && (c.lastHeardAt ?? 0) < now - UNSAVED_KEEP_MS) continue;
+      contacts[k] = c.pathSince !== undefined ? c : { ...c, pathSince: c.outPathLen === 0xff ? null : guessPathSince(c.lastMod, now) };
+    }
+    const removed: Record<string, RemovedContact> = {};
+    for (const [k, r] of Object.entries(persisted?.removed ?? {})) if (r.at > now - REMOVED_KEEP_MS) removed[k] = r;
+    return {
+      contacts,
+      contactsCursor: persisted?.contactsCursor ?? 0,
+      removed,
+      channels: persisted?.channels ?? [],
+      // History saved before the hop count was masked holds the raw path_len
+      // byte (the low six bits are the hops either way), and history saved
+      // before echoes were kept has none.
+      messages: (persisted?.messages ?? []).map((m) => ({
+        ...m,
+        hops: m.hops === null ? null : m.hops & 63,
+        echoes: m.echoes ?? [],
+        route: m.route ?? null,
+        retryPlan: m.retryPlan ?? null,
+      })),
+      unread: persisted?.unread ?? {},
+      logins: persisted?.logins ?? {},
+      statusHistory: persisted?.statusHistory ?? {},
+      batteryHistory: persisted?.batteryHistory ?? {},
+      routing: persisted?.routing ?? EMPTY.routing,
+    };
   }
 
   /** The stored history of a radio, or null; one that cannot be read is logged, and kept from being written over. */

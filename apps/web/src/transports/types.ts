@@ -1,4 +1,4 @@
-import type { Transport, TransportKind } from "@meshnet/meshcore";
+import type { DeviceInfo, SessionState, Transport, TransportKind } from "@meshnet/meshcore";
 
 /** A radio the connect screen can offer. */
 export interface FoundDevice {
@@ -62,4 +62,6 @@ export interface RememberedLink {
   device: FoundDevice;
   /** The node's own name, as the radio gave it: a port or an address says nothing of which radio it was. */
   radioName?: string | undefined;
+  /** The radio as it last said who it is (its PIN left out): the next launch shows its stored chats by it, before it is reached. */
+  radio?: { self: NonNullable<SessionState["self"]>; device: DeviceInfo | null } | undefined;
 }

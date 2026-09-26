@@ -57,6 +57,11 @@ if (nativePlatform() === "ios") {
   watchKeyboard();
 }
 
+// The last radio's chats, read from the storage before the first paint when
+// they come in time: the app opens on them, not on the connect screen, and the
+// link is reached for behind them. A storage slow to answer holds it no longer.
+await Promise.race([autoConnect().catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 400))]);
+
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
 
@@ -65,7 +70,3 @@ createRoot(root).render(
     <App />
   </StrictMode>,
 );
-
-// The last radio, if it can be reached without a chooser. Not awaited: the
-// connect screen shows the attempt.
-void autoConnect();

@@ -7,7 +7,7 @@
 import { BaseTransport, BLE } from "@meshnet/meshcore";
 import { NeedsPairingError, type Connector, type FoundDevice } from "./types.js";
 import { nativePlatform } from "../lib/platform.js";
-import { openRelay, type RelayLink } from "../lib/relay.js";
+import { openRelay, relayComesUp, relayHolds, type RelayLink } from "../lib/relay.js";
 import { readSetting, writeSetting } from "../lib/storage.js";
 import { t } from "../i18n/index.js";
 
@@ -32,29 +32,32 @@ class CapacitorBleTransport extends BaseTransport {
    * The page's frames go through the phone's native link, which goes on
    * reading the radio while the page sleeps and takes turns with a computer
    * the radio is shared with (see lib/relay.ts). The plugin's link stays, for
-   * the pairing and to hear of a drop.
+   * the pairing and to hear of a drop; a link taken over as the phone held it
+   * has none (`client` null).
    */
   private relay: RelayLink | null = null;
 
   constructor(
-    private readonly client: BleModule["BleClient"],
+    private readonly client: BleModule["BleClient"] | null,
     private readonly deviceId: string,
     readonly label: string,
   ) {
     super();
   }
 
-  async useRelay(name: string): Promise<void> {
+  async useRelay(name: string, held = false): Promise<void> {
     this.relay = await openRelay(
       this.deviceId,
       name,
       (frame) => this.emitFrame(frame),
-      () => this.emitClose(new Error("the phone's link to the radio was closed")),
+      (reason) => this.emitClose(new Error(reason)),
+      held,
     );
   }
 
   async send(frame: Uint8Array): Promise<void> {
     if (this.relay) return this.relay.send(frame);
+    if (!this.client) throw new Error("the phone's link to the radio was closed");
     const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
     // With response: the characteristic demands an encrypted link, and an
     // acknowledged write is what makes the phone start the PIN pairing on an
@@ -78,13 +81,13 @@ class CapacitorBleTransport extends BaseTransport {
       await this.relay.close();
     } else {
       try {
-        await this.client.stopNotifications(this.deviceId, BLE.service, BLE.tx);
+        await this.client?.stopNotifications(this.deviceId, BLE.service, BLE.tx);
       } catch {
         // Already gone.
       }
     }
     try {
-      await this.client.disconnect(this.deviceId);
+      await this.client?.disconnect(this.deviceId);
     } catch {
       // Already gone.
     }
@@ -112,6 +115,13 @@ async function pairFirst(client: BleModule["BleClient"], device: FoundDevice): P
     await client.disconnect(device.id).catch(() => undefined);
     throw new NeedsPairingError(t("connect.error.phonePairing", { name: device.name }));
   }
+}
+
+/** The phone's link to the radio, taken over as it is, with no plugin link beside it. */
+async function takeOver(device: FoundDevice): Promise<CapacitorBleTransport> {
+  const held = new CapacitorBleTransport(null, device.id, device.name);
+  await held.useRelay(device.name, true);
+  return held;
 }
 
 /** Radios connected to before, by the id the phone gave them, so they can be reached without a scan. */
@@ -178,13 +188,36 @@ export const capacitorBleConnector: Connector = {
 
   async connect(device) {
     if (!device) throw new Error(t("connect.error.pickRadio"));
-    const client = await ble();
-    // iOS connects only to a peripheral the plugin has met since launch. A
-    // remembered radio, or the one "Reconnect at launch" reaches for, is met
-    // by asking the system for it by id.
-    await client.getDevices([device.id]).catch(() => []);
+    // A page made anew while the phone kept its link (Android lets a page go
+    // for memory; the link and its service stay) takes the link over as it is:
+    // no BLE plugin, whose first call waits for the app to be on screen, and no
+    // second connect, discovery and subscription.
+    if (await relayHolds(device.id).catch(() => false)) return takeOver(device);
+    // A phone's link that is to this radio and waits for it comes back by
+    // itself, and may beat the plugin, which in the background waits for the
+    // app to be on screen before its first call: whichever is first is used.
+    const relay = relayComesUp(device.id);
     let transport: CapacitorBleTransport | null = null;
-    await client.connect(device.id, () => transport?.onDropped());
+    const reaching = (async () => {
+      const client = await ble();
+      // iOS connects only to a peripheral the plugin has met since launch. A
+      // remembered radio, or the one "Reconnect at launch" reaches for, is met
+      // by asking the system for it by id.
+      await client.getDevices([device.id]).catch(() => []);
+      await client.connect(device.id, () => transport?.onDropped());
+      return client;
+    })();
+    let client: BleModule["BleClient"] | null;
+    try {
+      client = await Promise.race([reaching, relay.up.then(() => null)]);
+    } finally {
+      relay.cancel();
+    }
+    if (!client) {
+      // The plugin's link, should it come after all, is not wanted.
+      void reaching.then((late) => late.disconnect(device.id), () => undefined);
+      return takeOver(device);
+    }
     await pairFirst(client, device);
     transport = new CapacitorBleTransport(client, device.id, device.name);
     try {

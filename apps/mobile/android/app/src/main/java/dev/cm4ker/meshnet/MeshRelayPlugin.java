@@ -16,8 +16,9 @@ import com.getcapacitor.annotation.PermissionCallback;
  * The page's side of its link to the radio ({@link MeshRelay}), the plugin the iOS app carries
  * too, used by the web client's {@code lib/relay.ts}: {@code start({ deviceId, name, share })}
  * with the radio the page is connected to, {@code share({ on })}, {@code stop()},
- * {@code state()}, and a {@code state} event {@code { linked, on, computer }} ({@code on}: shared)
- * whenever one of them changes. While {@code attach()}ed, the page talks to the radio through
+ * {@code state()}, and a {@code state} event {@code { linked, radio, up, on, computer }} whenever one
+ * of them changes ({@code radio}: the linked radio's address; {@code up}: its TX notifies, so frames
+ * go through at once; {@code on}: shared). While {@code attach()}ed, the page talks to the radio through
  * here: {@code send({ data })} (base64), answered once the frame has gone to the radio, and
  * {@code frame} events {@code { data }}. {@code configure({ json, sound })} hands the radio core
  * the page's notice settings and names, {@code announced({ tag })} what the page announced itself,
@@ -43,8 +44,8 @@ public class MeshRelayPlugin extends Plugin {
     public void load() {
         listener = new MeshRelay.Listener() {
             @Override
-            public void changed(boolean linked, boolean sharing, boolean computer) {
-                notifyListeners("state", state(linked, sharing, computer));
+            public void changed() {
+                notifyListeners("state", state());
             }
 
             @Override
@@ -67,16 +68,15 @@ public class MeshRelayPlugin extends Plugin {
         relay().clearListener(listener);
     }
 
-    private static JSObject state(boolean linked, boolean sharing, boolean computer) {
-        JSObject state = new JSObject();
-        state.put("linked", linked);
-        state.put("on", sharing);
-        state.put("computer", computer);
-        return state;
-    }
-
     private JSObject state() {
-        return state(relay().isOn(), relay().isSharing(), relay().hasComputer());
+        MeshRelay relay = relay();
+        JSObject state = new JSObject();
+        state.put("linked", relay.isOn());
+        state.put("radio", relay.radioAddress());
+        state.put("up", relay.isUp());
+        state.put("on", relay.isSharing());
+        state.put("computer", relay.hasComputer());
+        return state;
     }
 
     /** Sharing asks for the permission to advertise first, where Android has one. */

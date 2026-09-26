@@ -86,8 +86,8 @@ final class MeshRelay {
     private static final String SOUND_KEY = "sound";
 
     interface Listener {
-        /** Every change: whether a radio is linked, whether it is shared, and whether a computer is connected. */
-        void changed(boolean linked, boolean sharing, boolean computer);
+        /** Every change: whether a radio is linked and up, whether it is shared, and whether a computer is connected. */
+        void changed();
 
         void pageFrame(byte[] frame);
     }
@@ -202,6 +202,16 @@ final class MeshRelay {
         return isOn() && sharing;
     }
 
+    /** The radio linked for the page, by its Bluetooth address; null when none is. */
+    String radioAddress() {
+        return radioAddress;
+    }
+
+    /** The linked radio's TX notifies here: a page's frames go to it at once. */
+    boolean isUp() {
+        return radio != null && radioSubscribed;
+    }
+
     boolean hasComputer() {
         return computer != null;
     }
@@ -211,7 +221,7 @@ final class MeshRelay {
     }
 
     private void changed() {
-        if (listener != null) listener.changed(isOn(), isSharing(), hasComputer());
+        if (listener != null) listener.changed();
         if (isOn()) MeshRelayService.update(context, state());
     }
 

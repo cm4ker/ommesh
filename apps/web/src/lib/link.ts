@@ -11,6 +11,7 @@ import type { Transport } from "@meshnet/meshcore";
 import { autoConnectWanted, connectorById, lastLink, needsPairing, rememberLink, type Connector, type FoundDevice } from "../transports/index.js";
 import { t } from "../i18n/index.js";
 import { errorText } from "../i18n/errors.js";
+import { onRelayUp } from "./relay.js";
 
 export interface LinkState {
   phase: "idle" | "connecting" | "connected" | "failed";
@@ -272,6 +273,11 @@ export function reconnectNow(): void {
 if (typeof document !== "undefined") {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && retryTimer) reconnectNow();
+  });
+  // So it does when the phone's own link to the radio comes back by itself: the
+  // try finds it up and takes it over, rather than waiting out its pause.
+  onRelayUp((radio) => {
+    if (retryTimer && wantedLink?.device?.id.toUpperCase() === radio.toUpperCase()) reconnectNow();
   });
 }
 

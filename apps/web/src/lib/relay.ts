@@ -37,6 +37,10 @@ interface RelayState {
   computer: boolean;
   /** Linked to a radio for the page. */
   linked: boolean;
+  /** Android: the linked radio, by the id the BLE plugin gives it. */
+  radio?: string | null;
+  /** Android: the linked radio answers, so the page's frames go to it at once. */
+  up?: boolean;
 }
 
 interface MeshRelayPlugin {
@@ -79,9 +83,36 @@ export function setRelayWanted(on: boolean): void {
   writeSetting(WANTED_KEY, on);
 }
 
+const upListeners = new Set<(radio: string) => void>();
+
 function set(next: RelayState): void {
+  const cameUp = next.up === true && state.up !== true ? next.radio : null;
   state = next;
   for (const listener of listeners) listener();
+  if (cameUp) for (const listener of upListeners) listener(cameUp);
+}
+
+/**
+ * Android: `listener` hears the radio's id whenever the phone's link to it
+ * comes up, which it does by itself once the radio is in range again or
+ * Bluetooth is back on.
+ */
+export function onRelayUp(listener: (radio: string) => void): () => void {
+  if (!relayAvailable()) return () => undefined;
+  upListeners.add(listener);
+  void listen().catch(() => undefined);
+  return () => upListeners.delete(listener);
+}
+
+/** Resolves once the phone's link to `deviceId` comes up; not at all while `cancel` has not been called and it does not. */
+export function relayComesUp(deviceId: string): { up: Promise<void>; cancel: () => void } {
+  let cancel = (): void => undefined;
+  const up = new Promise<void>((resolve) => {
+    cancel = onRelayUp((radio) => {
+      if (radio.toUpperCase() === deviceId.toUpperCase()) resolve();
+    });
+  });
+  return { up, cancel };
 }
 
 export function useRelay(): RelayState {
@@ -127,8 +158,10 @@ export interface RelayLink {
 
 interface Route {
   onFrame: (frame: Uint8Array) => void;
-  /** Sharing was turned off: the link through it is gone. */
-  onStopped: () => void;
+  /** The link was let go, or its radio went while the page had no link of its own to hear it by. */
+  onStopped: (reason: string) => void;
+  /** Taken over as it was, with no BLE plugin link beside it: the radio's going is heard only here. */
+  held: boolean;
 }
 
 let route: Route | null = null;
@@ -141,7 +174,8 @@ function listen(): Promise<unknown> {
       api.addListener("state", (next) => {
         set(next);
         // The link is gone, and the page's way to the radio with it.
-        if (!next.linked) route?.onStopped();
+        if (!next.linked) route?.onStopped("the phone's link to the radio was closed");
+        else if (next.up === false && route?.held) route.onStopped("Bluetooth device disconnected");
       }),
     ),
   ]);
@@ -149,14 +183,28 @@ function listen(): Promise<unknown> {
 }
 
 /**
- * Links to the radio the page has just connected to, shared if wanted, and
- * talks to it through the relay. Closed, the link goes too unless the radio
- * is shared: the app is then free to stop in the background.
+ * Whether the phone's link is to `deviceId` and up: a page made anew, after
+ * Android let the last one go for memory, takes it over as it is (`held`),
+ * without the BLE plugin, whose first call waits for the app to be on screen.
  */
-export async function openRelay(deviceId: string, name: string, onFrame: Route["onFrame"], onStopped: Route["onStopped"]): Promise<RelayLink> {
+export async function relayHolds(deviceId: string): Promise<boolean> {
+  if (!relayAvailable()) return false;
+  const now = await withRelay((api) => api.state());
+  set(now);
+  return now.linked && now.up === true && now.radio?.toUpperCase() === deviceId.toUpperCase();
+}
+
+/**
+ * Links to the radio the page has just connected to, shared if wanted, and
+ * talks to it through the relay; `held`, takes over the link the phone already
+ * has to it, as `relayHolds` found it. Closed, the link goes too unless the
+ * radio is shared: the app is then free to stop in the background.
+ */
+export async function openRelay(deviceId: string, name: string, onFrame: Route["onFrame"], onStopped: Route["onStopped"], held = false): Promise<RelayLink> {
   await listen();
-  set(await withRelay((api) => api.start({ deviceId, name: name.replace(/^MeshCore-/, ""), share: relayWanted() })));
-  const mine: Route = { onFrame, onStopped };
+  // Not started again: that asks Android to start the link's service, which it may refuse a page in the background.
+  if (!held) set(await withRelay((api) => api.start({ deviceId, name: name.replace(/^MeshCore-/, ""), share: relayWanted() })));
+  const mine: Route = { onFrame, onStopped, held };
   route = mine;
   await withRelay((api) => api.attach());
   return {

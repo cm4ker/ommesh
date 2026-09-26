@@ -26,6 +26,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.ParcelUuid;
+import android.os.SystemClock;
 import android.util.Base64;
 import android.util.Log;
 import androidx.core.app.NotificationManagerCompat;
@@ -157,6 +158,22 @@ final class MeshRelay {
     private static final long SUBSCRIBE_MS = 6000;
     /** Whether the radio's TX notifies here, so the core has been told the radio is up. */
     private boolean radioSubscribed = false;
+    /**
+     * When the link was last asked for its shortest interval; 0 while it runs at its easiest. At the
+     * interval an ESP32 radio asks for once paired (45 ms, and leave to skip four events), one command
+     * and its answer take about 270 ms; at the shortest, about 60 ms, and the forty channel slots a
+     * page reads at connect take 2.6 s instead of 7.7. That costs the radio's battery, so the link
+     * runs so only while frames go to the radio, and eases off once they stop, as far as the radio
+     * itself asked.
+     */
+    private long briskAt = 0;
+    private static final long BRISK_MS = 15_000;
+    /** Asked again after this while frames go: the radio's own ask, once the link is encrypted, can come after ours. */
+    private static final long REASK_MS = 2_000;
+    private final Runnable ease = () -> {
+        briskAt = 0;
+        if (radio != null) radio.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_LOW_POWER);
+    };
     /** Discoveries that came back without the UART service; tried again a few times, a second apart. */
     private int discoveries = 0;
     private final Runnable rediscover = () -> {
@@ -376,6 +393,8 @@ final class MeshRelay {
     // The page
 
     void attachPage() {
+        // A page that comes asks the radio who it is and what it missed at once.
+        quicken();
         run(core.attach(Client.PAGE));
     }
 
@@ -405,6 +424,8 @@ final class MeshRelay {
 
     /** The app left the screen, or came back to it: the core announces what the page misses meanwhile. */
     void setBackground(boolean background) {
+        // The app on screen asks the radio for something soon; the link takes a second or two to quicken.
+        if (!background && radioSubscribed) quicken();
         run(core.setBackground(background));
     }
 
@@ -729,8 +750,19 @@ final class MeshRelay {
             Log.w(TAG, "a frame for the radio with no radio");
             return;
         }
+        quicken();
         radioWrites.add(frame);
         if (!radioWriting) writeNext();
+    }
+
+    /** The link at its shortest interval while frames go, and for {@link #BRISK_MS} after the last. */
+    private void quicken() {
+        main.removeCallbacks(ease);
+        if (radio == null) return;
+        main.postDelayed(ease, BRISK_MS);
+        long now = SystemClock.elapsedRealtime();
+        if (now - briskAt < REASK_MS) return;
+        if (radio.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)) briskAt = now;
     }
 
     @SuppressWarnings("deprecation") // setValue and the one-argument write are what Android before 13 has.
@@ -797,6 +829,8 @@ final class MeshRelay {
         main.removeCallbacks(mtuTimeout);
         main.removeCallbacks(rediscover);
         main.removeCallbacks(subscribeTimeout);
+        main.removeCallbacks(ease);
+        briskAt = 0;
         mtuAsked = false;
         discoveries = 0;
         radioSubscribed = false;

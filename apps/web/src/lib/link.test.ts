@@ -124,3 +124,35 @@ test("a dropped link is tried again for as long as the radio stays away, and com
   assert.equal(tries.filter((t) => t === "away").length, 10);
   await disconnect();
 });
+
+test("a link is connected once the radio has answered, and one lost while its contacts are still read is got back like a drop", async () => {
+  let transport: Transport | null = null;
+  const connector: Connector = {
+    ...demoConnector,
+    id: "catching-up",
+    connect: async (device) => (transport = await demoConnector.connect(device)),
+  };
+  const phases: string[] = [];
+  let settled = false;
+  const stop = session.subscribe(() => {
+    if (session.getState().status !== "ready" || phases.length > 0) return;
+    phases.push("ready");
+    // Lost while the rest is still read.
+    queueMicrotask(() => {
+      phases.push(getLink().phase, settled ? "caught up" : "catching up");
+      void transport?.close();
+    });
+  });
+  try {
+    // Resolves rather than fails: the link was usable before it went.
+    await connectWith(connector, radio("MeshCore-demo")).then(() => (settled = true));
+    assert.deepEqual(phases, ["ready", "connected", "catching up"]);
+    assert.equal(getLink().phase, "connecting");
+    assert.equal(getLink().retrying, true);
+    // Its chats stay on screen while it is got back.
+    assert.equal(getLink().dropped, true);
+  } finally {
+    stop();
+    await disconnect();
+  }
+});

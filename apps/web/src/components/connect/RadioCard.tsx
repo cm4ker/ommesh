@@ -65,7 +65,7 @@ export function RadioCard({ connector, device, radioName, last }: CardRadio) {
   const link = useLink();
   const step = useSelector((s) => (s.status === "connecting" ? s.connectStep : null));
   // Once the radio has said who it is, the card says it too.
-  const answered = useSelector((s) => (s.status === "connecting" && s.connectStep === "contacts" ? (s.self?.name ?? null) : null));
+  const answered = useSelector((s) => (s.status === "connecting" && s.connectStep === "history" ? (s.self?.name ?? null) : null));
   const [auto, setAuto] = useState(autoConnectWanted);
   const [details, setDetails] = useState(false);
 
@@ -88,8 +88,8 @@ export function RadioCard({ connector, device, radioName, last }: CardRadio) {
   else line = cardLine(device, connector, radioName);
 
   const icon = phase === "failed" ? <AlertIcon size={20} /> : phase === "done" ? <CheckIcon size={20} /> : <DeviceIcon device={device} connector={connector} size={20} />;
-  const reached = phase === "done" ? 3 : step === "contacts" ? 2 : step === "hello" ? 1 : 0;
-  const steps = [firstStep(connector, device), t("connect.step.hello"), t("connect.step.contacts")];
+  const reached = phase === "done" ? 3 : step === "history" ? 2 : step === "hello" ? 1 : 0;
+  const steps = [firstStep(connector, device), t("connect.step.hello"), t("connect.step.history")];
 
   return (
     <section className={["connect-card", phase === "failed" ? "bad" : "", phase === "done" ? "good" : ""].join(" ")} aria-live="polite">

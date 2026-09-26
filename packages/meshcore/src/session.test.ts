@@ -570,7 +570,7 @@ test("while it connects again, the radio and its history stay in the state", asy
   assert.ok(seen.every((s) => s.self && s.texts.includes("still here")));
 });
 
-test("a connect says how far it has got: the hello, then the contacts, then nothing once ready", async () => {
+test("a connect says how far it has got: the hello, then the history, then nothing once ready", async () => {
   const session = new MeshSession({ now: () => 1_700_000_000_000 });
   const steps: (string | null)[] = [];
   session.subscribe(() => {
@@ -578,13 +578,31 @@ test("a connect says how far it has got: the hello, then the contacts, then noth
     if (steps.at(-1) !== step) steps.push(step);
   });
   await session.connect(new ScriptedRadio());
-  assert.deepEqual(steps, ["hello", "contacts", null]);
+  assert.deepEqual(steps, ["hello", "history", null]);
   assert.equal(session.getState().status, "ready");
   // The radio known from the first time is there from the start of the next connect, and the step still begins at the hello.
   await session.disconnect();
   steps.length = 0;
   await session.connect(new ScriptedRadio());
-  assert.deepEqual(steps, ["hello", "contacts", null]);
+  assert.deepEqual(steps, ["hello", "history", null]);
+});
+
+test("a connect is ready once the radio has answered, and reads its queue before its contacts and channels", async () => {
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  const radio = new ScriptedRadio();
+  let atReady: number[] = [];
+  await session.connect(radio, () => {
+    atReady = radio.sent.map((f) => f[0]!);
+    assert.equal(session.getState().status, "ready");
+  });
+  assert.deepEqual(atReady, [Cmd.DeviceQuery, Cmd.AppStart, Cmd.GetDeviceTime]);
+  const after = radio.sent.slice(atReady.length).map((f) => f[0]!);
+  assert.equal(after[0], Cmd.SyncNextMessage);
+  assert.ok(after.indexOf(Cmd.GetContacts) > after.lastIndexOf(Cmd.SyncNextMessage));
+  assert.ok(after.indexOf(Cmd.GetChannel) > after.indexOf(Cmd.GetContacts));
+  // Resolved only once all of it has been read.
+  assert.equal(session.getState().channels[0]?.name, "Public");
+  assert.ok(Object.keys(session.getState().contacts).length > 0);
 });
 
 test("a stored history that cannot be read is not written over", async () => {

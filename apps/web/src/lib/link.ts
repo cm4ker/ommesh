@@ -115,21 +115,26 @@ async function reach(connector: Connector, device: FoundDevice | null, dropped: 
   const tries = device && connector.mode !== "picker" ? CONNECT_TRIES : 1;
   for (let attempt = 1; ; attempt++) {
     set({ phase: "connecting", error: null, retrying: false, attempt: tries > 1 ? attempt : 0, target: { connectorId: connector.id, device }, dropped });
+    let usable = false;
     try {
       const transport = await open(connector, device, gen);
       if (!transport) return;
-      await session.connect(transport);
-      if (gen !== generation) return;
-      rememberLink({
-        connectorId: connector.id,
-        device: device ?? { id: "", name: transport.label, detail: null, rssi: null },
-        radioName: session.getState().self?.name,
+      // Connected once the link is usable; the radio's contacts and channels are read after.
+      await session.connect(transport, () => {
+        if (gen !== generation) return;
+        usable = true;
+        rememberLink({
+          connectorId: connector.id,
+          device: device ?? { id: "", name: transport.label, detail: null, rssi: null },
+          radioName: session.getState().self?.name,
+        });
+        set({ phase: "connected", error: null, retrying: false, attempt: 0, dropped: false });
       });
-      set({ phase: "connected", error: null, retrying: false, attempt: 0, dropped: false });
       return;
     } catch (error) {
-      // Given up for another radio or a disconnect: its failure is no news.
-      if (gen !== generation) return;
+      // Given up for another radio or a disconnect: its failure is no news. One
+      // after the link was usable closed it, and is retried as a drop.
+      if (gen !== generation || usable) return;
       if (attempt < tries && !needsPairing(error)) continue;
       const message = errorText(error);
       set({ phase: "failed", error: message, attempt: 0, unpaired: needsPairing(error), pair: canPair(connector, device, error) });
@@ -227,14 +232,17 @@ async function retry(gen: number): Promise<void> {
   const link = wantedLink;
   if (!link || gen !== generation) return;
   set({ waiting: false });
+  let usable = false;
   try {
     const transport = await open(link.connector, link.device, gen);
     if (!transport) return;
-    await session.connect(transport);
-    if (gen !== generation) return;
-    set({ phase: "connected", retrying: false, attempt: 0, error: null, dropped: false });
+    await session.connect(transport, () => {
+      if (gen !== generation) return;
+      usable = true;
+      set({ phase: "connected", retrying: false, attempt: 0, error: null, dropped: false });
+    });
   } catch (error) {
-    if (gen !== generation) return;
+    if (gen !== generation || usable) return;
     const message = errorText(error);
     if (needsPairing(error)) {
       // A radio that wants a bond will not stop wanting it: ask for the PIN, or say why, instead of

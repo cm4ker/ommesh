@@ -344,10 +344,10 @@ export interface SessionState {
   syncing: boolean;
   /**
    * How far a connect has got, for a screen to show while it waits: `hello`
-   * until the radio has said who it is, `contacts` while its contacts and
-   * channels are read; null otherwise.
+   * until the radio has said who it is, `history` while its stored chats are
+   * read back; null otherwise.
    */
-  connectStep: "hello" | "contacts" | null;
+  connectStep: "hello" | "history" | null;
 }
 
 /** What survives a disconnect, per radio. */
@@ -991,7 +991,12 @@ export class MeshSession {
     return this.client;
   }
 
-  async connect(transport: Transport): Promise<void> {
+  /**
+   * Connects, and resolves once the radio's queue, contacts and channels have
+   * been read. `onReady` is called earlier, once the link is usable and the
+   * status is `ready`; a failure after it closes the link like a drop.
+   */
+  async connect(transport: Transport, onReady?: () => void): Promise<void> {
     if (this.client) await this.disconnect();
     // What changed since the link dropped (a message queued meanwhile) is
     // saved before the history is read back from the storage.
@@ -1048,6 +1053,7 @@ export class MeshSession {
       const { publicKey: _omit, ...rest } = selfInfo;
       const self = { ...rest, key, prefix: key.slice(0, PUB_KEY_PREFIX_SIZE * 2) };
 
+      this.set({ connectStep: "history" });
       const persisted = this.held?.key === key ? this.held.history : await this.readHistory(key);
       this.held = null;
       const now = this.now();
@@ -1086,23 +1092,32 @@ export class MeshSession {
         statusHistory: persisted?.statusHistory ?? {},
         batteryHistory: persisted?.batteryHistory ?? {},
         routing: persisted?.routing ?? EMPTY.routing,
-        connectStep: "contacts",
       });
       this.log("link", `connected to ${self.name} (${device.firmwareVersion})`);
 
       await this.syncClock();
-      await this.refreshContacts();
-      await this.refreshChannels();
-      await this.readAutoAdd(client);
+      // Ready once the radio has answered and its history is back: the link is
+      // usable from here. What follows only catches up, and over BLE it is slow,
+      // paced by the firmware at a frame per 60 ms or more: a hundred contacts
+      // take 7–10 s and forty channel slots another 8. The chats are on screen
+      // meanwhile, with the stored contacts and channels.
       this.set({ status: "ready", connectStep: null });
+      onReady?.();
       this.routeTimer = setInterval(() => void this.sweepRoutes(), ROUTE_SWEEP_MS);
       // Node keeps a process alive for an interval; a browser has no such notion.
       (this.routeTimer as { unref?: () => void }).unref?.();
       this.retryTimer = setInterval(() => void this.sweepRetries(), RETRY_SWEEP_MS);
       (this.retryTimer as { unref?: () => void }).unref?.();
       this.resumeRetryPlans();
+      // What arrived while the app was away comes first, then what waited to go
+      // out, then whatever the radio may have changed. A channel message names
+      // its channel by index, so it needs no fresh channel list; a message from a
+      // contact the radio added meanwhile is tied to it once contacts are read.
       await this.syncMessages();
       void this.flushQueue();
+      await this.refreshContacts();
+      await this.refreshChannels();
+      await this.readAutoAdd(client);
       void this.refreshBattery();
       void this.sweepRoutes();
     } catch (error) {

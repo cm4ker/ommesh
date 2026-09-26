@@ -39,7 +39,7 @@
   "step.tcp": "Reaching {address}",
   "step.demo": "Starting the demo",
   "step.hello": "Waiting for the radio to answer",
-  "step.contacts": "Reading contacts and channels",
+  "step.history": "Opening the saved chats",
   "step.done": "Opening the chats",
   "step.count": "{step} / 3",
   "hint.ble": "Is the radio on and close by? It must not be connected to another phone or computer.",

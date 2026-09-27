@@ -25,7 +25,7 @@ The public updater key is in `apps/desktop/src-tauri/tauri.conf.json`. The priva
 
 `scripts/release.mjs prepare` generates the ignored `tauri.release.json` and exports `MESHNET_VERSION` in GitHub Actions. Signed updater artifacts are enabled only for publishing pushes. PRs, manual workflow runs and ordinary local builds do not need the private key and are not published.
 
-The workflow builds both Windows architectures and their `.exe.sig` sidecars, then validates the complete manifest. Publication uploads a draft release first and makes it public only when all files exist. Dev manifests refer to those versioned files, never to replaceable installer assets. Only the current `master` commit can promote the Dev feed. Publication jobs are serialized, and publishing runs are not cancelled mid-upload.
+The workflow builds every Windows architecture and its `.exe.sig` sidecar, then validates the complete manifest. Each architecture also gets an unsigned `…-offline-setup.exe` bundled from the same binary with `tauri.offline.json` (WebView2's offline installer inside); the manifest never points to it, so the updater keeps downloading the small installer. Publication uploads a draft release first and makes it public only when all files exist. Dev manifests refer to those versioned files, never to replaceable installer assets. Only the current `master` commit can promote the Dev feed. Publication jobs are serialized, and publishing runs are not cancelled mid-upload.
 
 For a stable release, update the root version, commit it, and push its matching `vX.Y.Z` tag. The workflow publishes it as GitHub's latest stable release. Keep stable tags increasing. No extra update server is required.
 

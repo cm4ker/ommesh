@@ -88,7 +88,7 @@ Download the [rolling development build](https://github.com/cm4ker/ommesh/releas
 
 | Platform | Bluetooth LE | USB serial | Wi-Fi / TCP | Build availability |
 | :--- | :---: | :---: | :---: | :--- |
-| Windows | ✓ | ✓ | ✓ | CI installers for x64, 32-bit x86 and ARM64 |
+| Windows | ✓ | ✓ | ✓ | CI installers for x64, 32-bit x86 and ARM64, each also as an offline installer with WebView2 inside |
 | macOS / Linux | ✓ | ✓ | ✓ | Build the Tauri shell from source |
 | Android | ✓ | — | ✓ | CI debug APK |
 | iOS | ✓ | — | ✓ | Build with Xcode on a Mac; see [mobile guide](apps/mobile/README.md) |
@@ -102,7 +102,7 @@ Download the [rolling development build](https://github.com/cm4ker/ommesh/releas
 
 **No radio yet?** Run the web client below, open [localhost:5180/?demo](http://localhost:5180/?demo), select **Demo** and connect to **MeshCore-demo**.
 
-The `dev` page links to the latest successful Dev release with Windows installers, a debug Android APK and the web bundle. Each build is kept separately; `vX.Y.Z` tags matching the root `package.json` version create stable releases. Pull request builds are available as workflow artifacts. iOS builds and TestFlight uploads are handled separately.
+The `dev` page links to the latest successful Dev release with Windows installers, a debug Android APK and the web bundle. A machine with neither WebView2 nor the internet (Windows 10 LTSC, a fresh image) takes the `…-offline-setup.exe` installer, which carries WebView2's own offline installer and is about 190 MB larger; Windows 11 already has WebView2, so the ordinary installer needs no internet there. Each build is kept separately; `vX.Y.Z` tags matching the root `package.json` version create stable releases. Pull request builds are available as workflow artifacts. iOS builds and TestFlight uploads are handled separately.
 
 On Windows, open **App updates** on the connection screen, **Update** in the sidebar, or **Radio → About**. Checks run at startup and every six hours; downloading and installation are requested by you. Older versions without the updater need one manual installation. See [channels, signing and release setup](docs/desktop-updates.md).
 

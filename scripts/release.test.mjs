@@ -22,6 +22,10 @@ test("feed selects the exact architecture and immutable release files", () => {
   assert.match(manifest.platforms["windows-aarch64"].url, /\/v0.2.0\/Ommesh_0.2.0_arm64-setup.exe$/);
   assert.equal(manifest.platforms["windows-x86_64"].signature, "signed-package");
 });
+test("the unsigned offline installers with WebView2 inside stay out of the feed", () => {
+  const offline = ["x64", "arm64", "x86"].map((arch) => `Ommesh_0.2.0_${arch}-offline-setup.exe`);
+  assert.deepEqual(makeManifest({ ...options, files: [...offline, ...files] }), makeManifest(options));
+});
 test("never publish a partial or mismatched update", () => {
   assert.throws(() => makeManifest({ ...options, files: files.slice(0, 2) }), /arm64/);
   assert.throws(() => makeManifest({ ...options, files: files.slice(0, 4) }), /x86/);

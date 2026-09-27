@@ -44,6 +44,9 @@
 - Settings › Readings holds this radio's battery, noise, air time, uptime, board, position and sensors, read over the link as the page opens and every half minute while open. The Battery and Sensors rows are gone from Settings.
 - Numbers are written the reader's way, 3,38 in Russian, and a position says how far and which way, with a link to the map.
 
+### Desktop
+- Each Windows installer also comes as an offline one, `…-offline-setup.exe`, for a machine with neither WebView2 nor the internet, such as Windows 10 LTSC or a fresh image. It carries WebView2's own installer, about 190 MB, and runs it only where WebView2 is missing. Updates keep downloading the small installer, and Windows 11 already has WebView2, so there the ordinary one needs no internet either.
+
 ### Fixes
 - After Disconnect, connecting to another radio stays on the connect screen. It used to bring back the old radio's chats with "Reconnecting".
 - On Windows, a Bluetooth connect that was given up can no longer close the next connection when it finishes late.

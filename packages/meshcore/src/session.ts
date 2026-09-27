@@ -1285,6 +1285,17 @@ export class MeshSession {
     if (total < this.savedCount()) {
       await this.reconcileContacts(client, since === undefined ? fresh : undefined);
     }
+    // A route set by hand that the radio replaced while this app was away (another app, a way
+    // an answer came in) is written back.
+    for (const c of fresh) {
+      const key = toHex(c.publicKey);
+      const manual = this.manualRoute(key);
+      const record = this.state.contacts[key];
+      if (manual && record && routeKey(record.outPathLen, record.outPath) !== routeKey(manual.outPathLen, manual.outPath)) {
+        await this.writeContact({ ...record, ...manual }).catch((e: Error) => this.log("error", e.message));
+        this.log("path", `${record.name || key.slice(0, 12)}: route set by hand put back over ${pathHashes(record.outPathLen, record.outPath).join(" ") || "none"}`);
+      }
+    }
   }
 
   /**

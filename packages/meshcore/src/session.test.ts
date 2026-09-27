@@ -1370,6 +1370,19 @@ test("a route set by hand is put back when the radio learns another from an answ
   assert.ok(session.routeSetByHand(HILL_KEY));
 });
 
+test("a route set by hand that the radio replaced meanwhile is written back when contacts are read", async () => {
+  const { radio, session } = await nodeSession();
+  await session.setRoute(HILL_KEY, ["3f", "a1"]);
+  // Another app, or an answer that came another way, left the radio with its own route.
+  radio.contacts = [contactFrame(HILL, "Hill", 20, 2, [0xdc, 0x89])];
+  const before = radio.sent.filter((f) => f[0] === Cmd.AddUpdateContact).length;
+  await session.refreshContacts(true);
+  const writes = radio.sent.filter((f) => f[0] === Cmd.AddUpdateContact);
+  assert.equal(writes.length, before + 1);
+  assert.deepEqual([...writes.at(-1)!.subarray(35, 38)], [2, 0x3f, 0xa1]);
+  assert.ok(session.routeSetByHand(HILL_KEY));
+});
+
 test("a sign-in by flood goes with no route and puts ours back the moment it has gone", async () => {
   const { radio, session } = await nodeSession();
   await session.setRoute(HILL_KEY, ["3f", "a1"]);

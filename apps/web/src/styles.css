@@ -2728,6 +2728,46 @@ html.notices-window #root {
   /* Room at the foot for the composer's cost tag, which hangs above it while typing. */
   padding: var(--space-3) 0 calc(var(--space-3) + 16px);
 }
+/*
+ * Where the page follows the keyboard (iOS), the chat rises for it instead of
+ * the app shrinking (lib/keyboard.ts, ChatView): all under the head moves up by
+ * a transform, which the phone animates itself, off the page's thread, and the
+ * head stays over what slides under it. Shrinking laid the chat out again on
+ * every frame, a step behind the keyboard. The list gains the same room at its
+ * top, so its first messages can still be scrolled into sight. The composer
+ * keeps the home bar's room under it, behind the keyboard, so the chat rises by
+ * the keyboard less that room, and less the composer's own spacing there.
+ *
+ * `--chat-keyboard` is set on each box directly in the chat and is not
+ * inherited, so a new height restyles those few and not every message. (Set on
+ * the chat for them to take with `inherit`, WebKit never passes a change on.)
+ */
+@property --chat-keyboard {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+.screen.chat {
+  --chat-room: max(0px, calc(var(--home-bar) - var(--space-2)));
+}
+:root.keyboard-follows .screen.chat > :not(.screen-head) {
+  transform: translateY(min(0px, calc(var(--chat-room) - var(--chat-keyboard))));
+  transition: transform 0.25s cubic-bezier(0.38, 0.7, 0.125, 1);
+}
+:root.keyboard-follows .screen.chat > .screen-head {
+  position: relative;
+  z-index: 1;
+  background-color: var(--bg);
+}
+:root.keyboard-follows .screen.chat > .chat-scroll {
+  padding-top: calc(var(--space-3) + max(0px, calc(var(--chat-keyboard) - var(--chat-room))));
+}
+/* The message being answered rises by less, and the list's inside glides to it (ChatView). */
+:root.keyboard-follows .screen.chat .chat-inner {
+  transition:
+    transform 0.25s ease,
+    translate 0.25s cubic-bezier(0.38, 0.7, 0.125, 1);
+}
 .chat-inner {
   display: flex;
   flex-direction: column;

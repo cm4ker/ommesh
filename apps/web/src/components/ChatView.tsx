@@ -7,6 +7,7 @@ import { nameOfHash, relaysOf } from "../lib/echoes.js";
 import { getOpenAtUnread, takeUnread } from "../lib/firstUnread.js";
 import { agoPhrase, dayLabel, emojiOnly, timeOfDay } from "../lib/format.js";
 import { useJumboEmoji } from "../lib/jumboEmoji.js";
+import { moveForKeyboard } from "../lib/keyboard.js";
 import { onJump, takeJump, type Jump } from "../lib/jump.js";
 import { findMessages, searchTerm } from "../lib/messageSearch.js";
 import { openChannel, openMessage, openProfile } from "../lib/nav.js";
@@ -177,13 +178,66 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
       height = el.clientHeight;
       if (stuck.current) el.scrollTop = el.scrollHeight;
       else el.scrollTop += shrunk;
-      const row = answering.current ? el.querySelector(`[data-id="${CSS.escape(answering.current)}"]`) : null;
-      const hidden = row ? el.getBoundingClientRect().top - row.getBoundingClientRect().top : 0;
-      if (hidden > 0) el.scrollTop -= hidden;
+      keepAnswered();
       measure();
     });
-    keep.observe(el);
+    // The border box: the room the list gains at its top as the chat rises is not the list shrinking.
+    keep.observe(el, { box: "border-box" });
     return () => keep.disconnect();
+  }, [measure]);
+  // The message being answered, scrolled down if it would end up under the head. As the chat
+  // rises for the keyboard, the list's inside is moved back up by as much and glides down with
+  // the rise, so the message rises by less rather than the list jumping down first.
+  const keepAnswered = (glide = false) => {
+    const el = scroller.current;
+    const row = el && answering.current ? el.querySelector(`[data-id="${CSS.escape(answering.current)}"]`) : null;
+    const hidden = el && row ? el.getBoundingClientRect().top + rise.current - row.getBoundingClientRect().top : 0;
+    if (!el || hidden <= 0) return;
+    const was = el.scrollTop;
+    el.scrollTop -= hidden;
+    const body = inner.current;
+    if (!glide || !body) return;
+    body.style.transition = "none";
+    body.style.translate = `0 ${el.scrollTop - was}px`;
+    getComputedStyle(body).translate;
+    body.style.transition = "";
+    body.style.translate = "";
+  };
+
+  // Where the page follows the keyboard (iOS), the chat rises for it instead of shrinking
+  // (lib/keyboard.ts, styles.css): the list gains the rise as room at its top, scrolled so that
+  // nothing on screen moves, and a transform then carries all under the head up with the
+  // keyboard. The top of the list, under the head, is out of sight by as much as it rose.
+  const screen = useRef<HTMLDivElement>(null);
+  const rise = useRef(0);
+  useEffect(() => {
+    const box = screen.current;
+    if (!box) return;
+    // Each box directly in the chat takes the height itself (styles.css), one that comes in while
+    // the chat is risen (the search's bar, say) too.
+    let keyboard = "0px";
+    const give = (node: Node) => node instanceof HTMLElement && node.style.setProperty("--chat-keyboard", keyboard);
+    const added = new MutationObserver((changes) => changes.forEach((change) => change.addedNodes.forEach(give)));
+    added.observe(box, { childList: true });
+    const stop = moveForKeyboard(box, (height) => {
+      const el = scroller.current;
+      if (!el) return;
+      // Read before the room changes: room taken away clamps the scroll at once.
+      const top = el.scrollTop;
+      const before = parseFloat(getComputedStyle(el).paddingTop);
+      keyboard = `${height}px`;
+      for (const child of box.children) give(child);
+      const grown = parseFloat(getComputedStyle(el).paddingTop) - before;
+      if (!grown) return;
+      rise.current += grown;
+      el.scrollTop = top + grown;
+      keepAnswered(true);
+      measure();
+    });
+    return () => {
+      stop();
+      added.disconnect();
+    };
   }, [measure]);
   const toLatest = () => {
     const el = scroller.current;
@@ -199,7 +253,8 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
       if (!el || !row) return;
       const box = el.getBoundingClientRect();
       const at = row.getBoundingClientRect();
-      el.scrollTop += at.top - box.top - (box.height - at.height) / 2;
+      // Risen for the keyboard, the list's top is under the head: the middle is of what is in sight.
+      el.scrollTop += at.top - box.top - rise.current - (box.height - rise.current - at.height) / 2;
       stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
       measure();
     },
@@ -300,7 +355,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   const me = state.self?.name ?? null;
 
   return (
-    <div className={["screen chat", finding ? "finding" : ""].join(" ")}>
+    <div ref={screen} className={["screen chat", finding ? "finding" : ""].join(" ")}>
       {finding ? (
         <header className="screen-head chat-find-head">
           <SearchField

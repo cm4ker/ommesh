@@ -17,11 +17,25 @@ import { isCapacitor, nativePlatform } from "./platform.js";
  * "will show" follows at once. So the page makes room only while one of its own
  * fields has the focus, and gives it back on anything that says the keyboard is
  * gone: its "did hide", the field losing the focus, the app going away.
+ *
+ * A screen that has said it moves for the keyboard itself (`moveForKeyboard`)
+ * gets the height instead, while the field is in it, and the app keeps its size.
  */
 export function followKeyboard(): void {
   const root = document.documentElement;
   root.classList.add("keyboard-follows");
-  const set = (height: number) => root.style.setProperty("--keyboard", `${Math.max(0, Math.round(height))}px`);
+  let shrunk = 0;
+  const set = (height: number) => {
+    const field = document.activeElement;
+    const mover = height > 0 && field ? ([...movers.keys()].find((el) => el.contains(field)) ?? null) : null;
+    if (moved && moved !== mover) movers.get(moved)?.(0);
+    moved = mover;
+    if (mover) movers.get(mover)!(Math.round(height));
+    const shrink = mover ? 0 : Math.max(0, Math.round(height));
+    // Set only when it changes: a new value restyles the whole page.
+    if (shrink !== shrunk) root.style.setProperty("--keyboard", `${shrink}px`);
+    shrunk = shrink;
+  };
   const shown = (event: Event) => set(typing() ? ((event as Event & { keyboardHeight?: number }).keyboardHeight ?? 0) : 0);
   // The plugin's window events carry the height on the event itself.
   window.addEventListener("keyboardWillShow", shown);
@@ -42,6 +56,24 @@ export function followKeyboard(): void {
     const field = document.activeElement;
     if (typing() && field instanceof HTMLElement) field.scrollIntoView({ block: "nearest" });
   });
+}
+
+const movers = new Map<HTMLElement, (height: number) => void>();
+let moved: HTMLElement | null = null;
+
+/**
+ * Lets a screen make room for the keyboard itself, where the page follows it
+ * (iOS): while a field in `el` has the focus, `move` hears the keyboard's
+ * height, and 0 when it goes, and the app is not shrunk. The chat rises by a
+ * transform, which the phone animates off the page's thread; shrinking the app
+ * lays it out again on every frame. Returns the way to stop.
+ */
+export function moveForKeyboard(el: HTMLElement, move: (height: number) => void): () => void {
+  movers.set(el, move);
+  return () => {
+    movers.delete(el);
+    if (moved === el) moved = null;
+  };
 }
 
 /**

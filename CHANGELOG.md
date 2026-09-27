@@ -43,6 +43,7 @@
 - A sensor's power reads as its voltage times its current when the channel carries both, so 3.38 V at 119 mA shows 402 mW rather than 0 mW. The firmware sends power in whole watts. A sensor's History does the same with its means, and with its lows and highs for the range.
 - On an iPhone the chat rises smoothly with the keyboard again, however long the chat. The keyboard's height was animated on the whole page, so every frame restyled every message: in a chat of 2,000 messages each frame took about 57 ms, and the rise stuttered. In a chat, all under its header now rises by a transform that the phone animates itself, in step with the keyboard, while the header stays and the list slides under it. A message being answered still ends up in sight, gliding there with the rise. Elsewhere only the app's frame and the layers over it follow the keyboard.
 - A chat draws its latest 60 messages when it opens, and a hundred more each time you scroll near the top, with what is on screen kept where it was. A search result or a match further up is drawn in with the ten messages above it. A chat of 2,000 messages opens in a seventh of the time it took.
+- Swiping back from the left edge follows the finger smoothly. Each move restyled the whole screen underneath and painted it again with its dimming; now both screens and the dimming move as the phone's own layers, and the dimming fades out as the screen settles rather than vanishing at once.
 
 ## 0.3.0 — 2026-09-26
 

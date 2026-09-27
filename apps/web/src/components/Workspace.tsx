@@ -193,6 +193,7 @@ function Phone() {
             </div>
           );
         })}
+        <div className="layer-dim" aria-hidden="true" />
       </main>
       {tabs ? (
         <nav className="tabbar" aria-label={t("connect.tabs.label")}>
@@ -234,36 +235,53 @@ function useEdgeSwipe(ref: React.RefObject<HTMLElement | null>, enabled: boolean
     if (!el || !enabled) return;
     let start: { x: number; y: number } | null = null;
     let active = false;
+    let lifted = false;
     let leaving = false;
+    let width = 1;
+    let settling = 0;
     const top = () => el.querySelector<HTMLElement>(":scope > .layer[data-layer=top]");
     // Under the first screen in Mesh lies the map, kept mounted and hidden.
     const under = () => el.querySelector<HTMLElement>(":scope > .layer[data-layer=under]") ?? el.querySelector<HTMLElement>(":scope > .mesh-phone[hidden]");
+    const dim = () => el.querySelector<HTMLElement>(":scope > .layer-dim");
+    // Each screen by its own transform and the dim by its opacity: a move restyles those three
+    // boxes and paints nothing. A value the screen below inherited restyled all of it on every move.
     const place = (t: HTMLElement, u: HTMLElement | null, dx: number) => {
+      const p = Math.min(1, dx / width);
       t.style.transform = `translateX(${dx}px)`;
-      u?.style.setProperty("--p", String(Math.min(1, dx / el.clientWidth)));
+      if (u) u.style.transform = `translateX(${-30 * (1 - p)}%)`;
+      const d = dim();
+      if (d) d.style.opacity = String(0.3 * (1 - p));
     };
     const lift = (t: HTMLElement, u: HTMLElement | null) => {
       // Their own layers while they move: a whole screen repainted on every touch move drops frames.
+      // A screen still settling back from the last swipe is taken up again, not let go under the finger.
+      clearTimeout(settling);
+      width = el.clientWidth || 1;
+      for (const box of [t, u, dim()]) {
+        if (box) box.style.transition = "none";
+      }
       t.classList.add("moving");
-      t.style.transition = "none";
-      if (u) {
-        u.classList.add("peek");
-        u.style.transition = "none";
+      u?.classList.add("peek");
+      dim()?.classList.add("on");
+    };
+    const settle = (t: HTMLElement, u: HTMLElement | null) => {
+      t.classList.remove("moving");
+      u?.classList.remove("peek");
+      dim()?.classList.remove("on");
+      for (const box of [t, u, dim()]) {
+        if (box) box.style.transform = box.style.opacity = box.style.transition = "";
       }
     };
     const finish = (t: HTMLElement, u: HTMLElement | null, go: boolean) => {
-      t.style.transition = `transform ${SLIDE_MS}ms ease-out`;
-      if (u) u.style.transition = `transform ${SLIDE_MS}ms ease-out`;
-      place(t, u, go ? el.clientWidth : 0);
+      for (const box of [t, u]) {
+        if (box) box.style.transition = `transform ${SLIDE_MS}ms ease-out`;
+      }
+      const d = dim();
+      if (d) d.style.transition = `opacity ${SLIDE_MS}ms ease-out`;
+      place(t, u, go ? width : 0);
       leaving = go;
-      setTimeout(() => {
-        t.classList.remove("moving");
-        t.style.transform = t.style.transition = "";
-        if (u) {
-          u.classList.remove("peek");
-          u.style.transition = "";
-          u.style.removeProperty("--p");
-        }
+      settling = window.setTimeout(() => {
+        settle(t, u);
         leaving = false;
         // In the same task as the clean-up, so no frame shows the old screen back in place.
         if (go) back();
@@ -290,28 +308,39 @@ function useEdgeSwipe(ref: React.RefObject<HTMLElement | null>, enabled: boolean
       const dx = t.clientX - start.x;
       const dy = t.clientY - start.y;
       if (!active) {
+        // Lifted at the first move from the edge, before the swipe is sure: the screens get their
+        // own layers, and the one below is painted, while the finger covers the first pixels.
+        if (!lifted) {
+          lift(layer, under());
+          place(layer, under(), 0);
+          lifted = true;
+        }
         if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
         if (dx < 0 || Math.abs(dy) > Math.abs(dx)) {
           start = null;
+          lifted = false;
+          settle(layer, under());
           return;
         }
         active = true;
-        lift(layer, under());
       }
       e.preventDefault();
       place(layer, under(), Math.max(0, dx));
     };
     const up = (e: TouchEvent) => {
+      const layer = top();
       if (!active || !start) {
+        if (lifted && layer) settle(layer, under());
         start = null;
+        lifted = false;
         return;
       }
       const t = e.changedTouches[0];
       const dx = t ? t.clientX - start.x : 0;
       start = null;
       active = false;
-      const layer = top();
-      if (layer) finish(layer, under(), dx > el.clientWidth / 3);
+      lifted = false;
+      if (layer) finish(layer, under(), dx > width / 3);
     };
     el.addEventListener("touchstart", down, { passive: true });
     el.addEventListener("touchmove", move, { passive: false });

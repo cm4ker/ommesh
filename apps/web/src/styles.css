@@ -1168,29 +1168,38 @@ textarea.input {
   will-change: transform;
   box-shadow: -8px 0 24px rgb(0 0 0 / 0.25);
 }
-/* Under the one leaving: a third to the left and dimmed, coming into place as the finger moves. */
+/*
+ * Under the one leaving: a third to the left and dimmed, coming into place as
+ * the finger moves. The swipe moves it by its own transform and fades the dim,
+ * a layer of its own between the two, by opacity (Workspace): both are the
+ * phone's to draw, with nothing painted again. A dim painted inside this screen
+ * repainted the whole of it on every move.
+ */
 .layer.peek,
 .mesh-phone.peek[hidden] {
-  --p: 0;
   display: block;
   position: absolute;
   inset: 0;
   z-index: 0;
   visibility: visible;
   will-change: transform;
-  transform: translateX(calc(-30% * (1 - var(--p))));
+  transform: translateX(-30%);
 }
 .layer.peek {
   display: flex;
 }
-.layer.peek::after,
-.mesh-phone.peek[hidden]::after {
-  content: "";
+.layer-dim {
   position: absolute;
   inset: 0;
-  z-index: 2000;
-  background: rgb(0 0 0 / calc(0.3 * (1 - var(--p))));
+  z-index: 0;
+  background: #000;
+  opacity: 0;
+  visibility: hidden;
   pointer-events: none;
+  will-change: opacity;
+}
+.layer-dim.on {
+  visibility: visible;
 }
 @media (prefers-reduced-motion: no-preference) {
   .layer.enter {

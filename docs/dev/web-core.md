@@ -137,6 +137,8 @@ Radio ──BLE/USB/TCP──► Transport (BaseTransport)
 | --- | --- |
 | `session.ts` | Синглтон `session`, `useSession`, `useSelector` |
 | `storage.ts` | `IndexedDbStorage`, `readSetting`/`writeSetting` |
+| `sqlite.ts` | `SqliteFile`: читатель таблиц SQLite-файла без зависимостей (только rowid-таблицы: interior/leaf, overflow, varint, записи). Без запросов, индексов и WAL |
+| `officialImport.ts` | `readOfficialHistory`: экспорт БД официального приложения MeshCore → `MessageRecord`/`ContactRecord` для текущего радио. Берутся сообщения за `MESSAGE_KEEP_MS` (30 дней по времени приёма в официальном приложении). Каналы сопоставляются по секрету со слотами радио, CLI-трафик (`txt_type 1`), пароли и прочитанность пропускаются, эхо берётся только у своих сообщений в каналах. Сливает `session.importHistory` (дедуп по чату, направлению, штампу, отправителю и тексту; контакты, которых нет на радио, уходят в `removed`). UI — `components/OfficialImport.tsx` на странице «Сообщения и маршруты» |
 | `link.ts` | Автомат подключения: `useLink`, `connectWith`, `reach`, `pairLink`, `disconnect`, `cancelConnect`, `pauseForUpdate`, `reconnectNow`, `autoConnect` |
 | `conversations.ts` | Чистая логика списка чатов: `summarize`, `messagesIn`, `titleOf`, `totalUnread`. Id чатов: `ch:<index>`, `c:<key>`, либо id по префиксу. |
 | `channels.ts` | `freeChannelIndex`, `randomSecret`, `parseSecret`, `hashtagSecret` (первые 16 байт SHA-256 от `#name`, как в MeshCore) |

@@ -11,6 +11,7 @@
 import { useSyncExternalStore } from "react";
 import { MeshSession, type SessionState } from "@meshnet/meshcore";
 import { IndexedDbStorage } from "./storage.js";
+import { unsavedKeepMs } from "./tidy.js";
 import { pushTrace } from "./trace.js";
 
 export const storage = new IndexedDbStorage();
@@ -19,6 +20,8 @@ export const session = new MeshSession({
   appName: "Ommesh",
   storage,
   trace: pushTrace,
+  // Nodes the radio did not keep go by the tidy-up rule's days; with the rule off they stay.
+  unsavedKeepMs,
 });
 
 /** Parts of the state that change with the traffic on the air and that `useSession` leaves out. */

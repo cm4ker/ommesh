@@ -1932,3 +1932,64 @@ test("the radio's own receiver is read without going on the air", async () => {
   assert.equal(stats.rxAirSecs, 3400);
   await session.disconnect();
 });
+
+test("history from another app comes in once, beside what is here", async () => {
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  const radio = new ScriptedRadio();
+  radio.queue.push(dmFrame(BOB, "from last time"));
+  await session.connect(radio);
+  const here = session.getState().messages[0]!;
+  const bob = session.getState().contacts[here.conversation.slice(2)]!;
+  const older = { ...here, id: "official:dm:1", text: "long ago", timestamp: here.timestamp - 3600, receivedAt: here.receivedAt - 3_600_000 };
+  const gone = { ...bob, key: "ee".repeat(32), prefix: "ee".repeat(6), name: "Gone" };
+  const heard = { ...bob, key: "dd".repeat(32), prefix: "dd".repeat(6), name: "Heard", lastHeardAt: 1_699_999_000_000 };
+  const history = { messages: [older, { ...here, id: "official:dm:2" }], contacts: [bob, gone], heard: [heard] };
+
+  const unread = session.getState().unread;
+  const summary = session.importHistory(history);
+  assert.deepEqual(summary, { messages: 1, already: 1, removedContacts: 1, heard: 1 });
+  const state = session.getState();
+  // Filed by when they arrived: the old one goes first. Old messages are not unread.
+  assert.deepEqual(state.messages.map((m) => m.text), ["long ago", "from last time"]);
+  assert.deepEqual(state.unread, unread);
+  // The radio's own contact stays as it is; one it lost is kept as removed; a heard node is not saved.
+  assert.equal(state.contacts[bob.key], bob);
+  assert.equal(state.removed[gone.key]?.contact.name, "Gone");
+  assert.equal(state.removed[gone.key]?.by, "radio");
+  assert.equal(state.contacts[heard.key]?.unsaved, true);
+
+  // The same file again adds nothing.
+  assert.deepEqual(session.importHistory(history), { messages: 0, already: 2, removedContacts: 0, heard: 0 });
+
+  // What is here already is never written over: not a contact on the radio, a removed one, or a node heard.
+  const renamed = (c: typeof bob) => ({ ...c, name: `${c.name} from the file`, lat: 1, lon: 2, flags: 0xff });
+  session.importHistory({ messages: [], contacts: [renamed(bob), renamed(gone), renamed(heard)], heard: [renamed(bob), renamed(gone), renamed(heard)] });
+  const after = session.getState();
+  assert.equal(after.contacts[bob.key], bob);
+  assert.equal(after.removed[gone.key]?.contact.name, "Gone");
+  assert.equal(after.contacts[heard.key]?.name, "Heard");
+  assert.equal(after.contacts[gone.key], undefined);
+  assert.equal(after.removed[heard.key], undefined);
+  await session.disconnect();
+});
+
+test("a node the radio did not keep stays as long as the app keeps them, and for good when it keeps them all", async () => {
+  const now = 1_700_000_000_000;
+  const storage = new MemoryStorage();
+  const first = new MeshSession({ storage, now: () => now });
+  await first.connect(new ScriptedRadio());
+  const bob = Object.values(first.getState().contacts)[0]!;
+  const quiet = { ...bob, key: "dd".repeat(32), prefix: "dd".repeat(6), name: "Quiet", lastHeardAt: now - 30 * 24 * 3600 * 1000 };
+  first.importHistory({ messages: [], contacts: [], heard: [quiet] });
+  const { self, device } = first.getState();
+  await first.disconnect();
+  await first.flush();
+
+  const week = new MeshSession({ storage, now: () => now, unsavedKeepMs: (key) => (key === self!.key ? 7 * 24 * 3600 * 1000 : null) });
+  assert.equal(await week.resume(self!, device), true);
+  assert.equal(week.getState().contacts[quiet.key], undefined);
+
+  const always = new MeshSession({ storage, now: () => now, unsavedKeepMs: () => null });
+  assert.equal(await always.resume(self!, device), true);
+  assert.equal(always.getState().contacts[quiet.key]?.name, "Quiet");
+});

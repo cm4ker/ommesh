@@ -368,6 +368,24 @@ export interface PersistedState {
   routing?: RoutingSettings;
 }
 
+/** History brought in from another app, as `importHistory` takes it. */
+export interface ImportedHistory {
+  messages: MessageRecord[];
+  /** The contacts the other app held; the radio's own list decides which of them are still contacts. */
+  contacts: ContactRecord[];
+  /** Nodes the other app heard but did not add. */
+  heard: ContactRecord[];
+}
+
+export interface ImportSummary {
+  messages: number;
+  /** Messages that were here already. */
+  already: number;
+  /** Contacts the radio no longer holds, kept as removed. */
+  removedContacts: number;
+  heard: number;
+}
+
 export interface SessionStorage {
   /** Null when nothing is stored for the radio. A history that is there but cannot be read rejects: it is not the same as none. */
   load(radioKey: string): Promise<PersistedState | null>;
@@ -384,6 +402,12 @@ export interface SessionOptions {
   trace?: ConstructorParameters<typeof MeshCoreClient>[1] extends infer O ? (O extends { trace?: infer T } ? T : never) : never;
   /** How long to wait for a trace to come back, from the time worked out for it; for tests. */
   traceWaitMs?: (estimateMs: number) => number;
+  /**
+   * How long a node the radio did not keep stays in the list after it was
+   * last heard, for this radio; null keeps it. Asked each time a radio's
+   * history is read back. Absent keeps every one.
+   */
+  unsavedKeepMs?: (radioKey: string) => number | null;
 }
 
 /** One trace that came back. */
@@ -646,9 +670,6 @@ function historyOf(state: SessionState): PersistedState {
 /** How long a removed contact is kept to be put back. */
 const REMOVED_KEEP_MS = 90 * 24 * 3600 * 1000;
 
-/** How long a node the radio did not keep stays in the list after it was last heard. */
-const UNSAVED_KEEP_MS = 7 * 24 * 3600 * 1000;
-
 /** A contact as the radio holds it, without what only this app knows. */
 function saved(record: ContactRecord): ContactRecord {
   const { unsaved: _omit, ...rest } = record;
@@ -871,6 +892,7 @@ export class MeshSession {
   private controlListeners = new Set<(frame: Extract<PushFrame, { kind: "controlData" }>) => void>();
   private heardListeners = new Set<(packet: HeardPacket) => void>();
   private readonly traceWait: (estimateMs: number) => number;
+  private readonly unsavedKeep: (radioKey: string) => number | null;
 
   constructor(options: SessionOptions = {}) {
     this.appName = options.appName ?? "Meshnet";
@@ -879,6 +901,7 @@ export class MeshSession {
     this.replyWait = options.replyWaitMs ?? replyWaitMs;
     this.traceWait = options.traceWaitMs ?? ((budget) => Math.min(30_000, Math.max(2_500, budget)));
     this.trace = options.trace;
+    this.unsavedKeep = options.unsavedKeepMs ?? (() => null);
   }
 
   // ---- the store ----
@@ -1056,7 +1079,7 @@ export class MeshSession {
       this.set({ connectStep: "history" });
       const persisted = this.held?.key === key ? this.held.history : await this.readHistory(key);
       this.held = null;
-      this.set({ device, self, ...this.restored(persisted), autoAdd: null, contactsFull: false, removing: null });
+      this.set({ device, self, ...this.restored(persisted, key), autoAdd: null, contactsFull: false, removing: null });
       this.log("link", `connected to ${self.name} (${device.firmwareVersion})`);
 
       await this.syncClock();
@@ -1105,19 +1128,20 @@ export class MeshSession {
     if (this.client || this.state.self) return false;
     const persisted = await this.readHistory(self.key);
     if (!persisted || this.client || this.state.self) return false;
-    this.set({ self, device, ...this.restored(persisted) });
+    this.set({ self, device, ...this.restored(persisted, self.key) });
     return true;
   }
 
   /** A stored history as the state holds it, brought up to date with what older saves lack. */
-  private restored(persisted: PersistedState | null): Partial<SessionState> {
+  private restored(persisted: PersistedState | null, radioKey: string): Partial<SessionState> {
     const now = this.now();
+    const keep = this.unsavedKeep(radioKey);
     // Contacts saved before route ages were kept have none: a route of theirs
     // is dated as a route learned while nobody was listening.
     const contacts: Record<string, ContactRecord> = {};
     for (const [k, c] of Object.entries(persisted?.contacts ?? {})) {
-      // A node the radio never kept goes once it has been quiet for a while.
-      if (c.unsaved && (c.lastHeardAt ?? 0) < now - UNSAVED_KEEP_MS) continue;
+      // A node the radio never kept goes once it has been quiet for as long as the app keeps them, if it does not keep them all.
+      if (c.unsaved && keep !== null && (c.lastHeardAt ?? 0) < now - keep) continue;
       contacts[k] = c.pathSince !== undefined ? c : { ...c, pathSince: c.outPathLen === 0xff ? null : guessPathSince(c.lastMod, now) };
     }
     const removed: Record<string, RemovedContact> = {};
@@ -1718,6 +1742,52 @@ export class MeshSession {
     const unread = { ...this.state.unread };
     delete unread[conversation];
     this.set({ messages: this.state.messages.filter((m) => m.conversation !== conversation), unread });
+  }
+
+  /**
+   * History another app kept for this radio, brought in beside what is here.
+   * A message already here (the same text, stamp and sender in the same chat)
+   * is not added again, so bringing the same file in twice adds nothing. A
+   * contact the radio holds stays as the radio has it; one it no longer holds
+   * is kept as removed, to be put back. Old messages are not unread.
+   */
+  importHistory(history: ImportedHistory): ImportSummary {
+    if (!this.state.self) throw new Error("no radio");
+    const same = (m: MessageRecord) =>
+      [m.conversation, m.direction, m.timestamp, m.direction === "in" && m.conversation.startsWith("ch:") ? m.sender : m.senderPrefix, m.text].join("\n");
+    const ids = new Set(this.state.messages.map((m) => m.id));
+    const seen = new Set(this.state.messages.map(same));
+    const added: MessageRecord[] = [];
+    for (const m of history.messages) {
+      const key = same(m);
+      if (ids.has(m.id) || seen.has(key)) continue;
+      ids.add(m.id);
+      seen.add(key);
+      added.push(m);
+    }
+
+    const contacts = { ...this.state.contacts };
+    const removed = { ...this.state.removed };
+    const at = this.now();
+    let gone = 0;
+    for (const contact of history.contacts) {
+      if (contacts[contact.key] || removed[contact.key]) continue;
+      removed[contact.key] = { contact, at, by: "radio" };
+      gone++;
+    }
+    let heard = 0;
+    for (const node of history.heard) {
+      if (contacts[node.key] || removed[node.key]) continue;
+      contacts[node.key] = { ...node, unsaved: true };
+      heard++;
+    }
+
+    // Filed by when they arrived, as the radio's own come in.
+    const messages = added.length ? [...this.state.messages, ...added].sort((a, b) => a.receivedAt - b.receivedAt) : this.state.messages;
+    this.set({ messages, contacts, removed });
+    this.rebindOrphans();
+    this.log("import", `brought in ${added.length} messages, ${gone} contacts no longer on the radio and ${heard} nodes heard`);
+    return { messages: added.length, already: history.messages.length - added.length, removedContacts: gone, heard };
   }
 
   /** Drains the radio's queue. Re-entrant calls collapse into one more pass. */

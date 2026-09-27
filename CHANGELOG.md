@@ -9,6 +9,7 @@
 
 ### Settings
 - The Radio tab is called Settings, with a gear. The paths to its pages and the command palette say Settings too.
+- Settings › Messages and routes › Bring in from the MeshCore app takes the database the official app exports and adds its history to the radio connected: channel and direct messages of the last 30 days with their times, signal and delivery, room posts with their authors, the echoes of your own channel messages, contacts, and the nodes it heard. A channel goes to the slot on the radio that holds its secret; one no slot holds is left out and named. Contacts the radio no longer holds go to Removed. A message already here is not added twice, so the same file brought in again adds nothing. A file of another radio is refused.
 
 ### Chats
 - A message of one to three emoji and nothing else is drawn large, without a bubble, with its time on a small patch under it.
@@ -27,6 +28,7 @@
 - On Android, a dropped link comes back as soon as the phone finds the radio again, rather than when the next try is due.
 
 ### Mesh and the map
+- Nodes the radio heard but did not keep ("not on your radio") no longer leave the list after a week of silence. They follow the tidy-up rule in Settings › Contacts: while it is off, as it is by default, they stay; set to a number of days, they go after as long unheard.
 - On a phone the map's crosshair is "Where am I": it asks for the phone's location the first time, and draws the phone as a ring with a circle for how sure the fix is. When this radio is more than 50 m away, a "Put the radio here" button with the distance hangs under the ring; Undo puts it back. Refused, the crosshair goes to the radio as before and says where to allow it.
 - Settings › Name and position has "Follow the phone", kept for each radio. While it is on and the app is open, the radio gets the phone's position when the phone has moved more than 50 m, at most once in 5 minutes and only from a fix good to 100 m, since each one is written to the radio's flash. The coordinates are then read-only. A radio with its own GPS turned on is not followed. "Use this device's position" now works on Android too, which asks for location only when one of these is pressed.
 - On a phone, a node tapped in the list or on the map opens its profile at once, as on a desktop. The card in between, with only a Profile button for a repeater, is gone. Back returns to the map with the node ringed and its route drawn, and "On map" lowers the list so the map has the room.

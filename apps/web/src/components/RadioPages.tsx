@@ -31,6 +31,7 @@ import { ContactsPage, RemovedPage } from "./ContactsPages.js";
 import { LogView } from "./LogView.js";
 import { AirView } from "./AirView.js";
 import { OwnReadings } from "./NodeReadings.js";
+import { OfficialImportGroup } from "./OfficialImport.js";
 import { ScreenHead, type Chrome } from "./ScreenHead.js";
 import { UpdateButton } from "./Updates.js";
 import { useDesktopUpdateInfo } from "../lib/updates.js";
@@ -679,6 +680,7 @@ function MessagesPage() {
           onChange={(v) => session.setDefaultRouteReset(parseLimit(v) ?? null)}
         />
       </Group>
+      <OfficialImportGroup />
     </>
   );
 }

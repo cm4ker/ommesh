@@ -100,6 +100,12 @@ export function tidyDays(radioKey: string): number {
   return typeof days === "number" && days > 0 ? days : 0;
 }
 
+/** How long a node the radio did not keep stays in the list: the rule's days, or for good while the rule is off. */
+export function unsavedKeepMs(radioKey: string): number | null {
+  const days = tidyDays(radioKey);
+  return days ? days * DAY_MS : null;
+}
+
 export function setTidyDays(radioKey: string, days: number): void {
   writeSetting(settingKey(radioKey), days > 0 ? days : null);
   for (const listener of listeners) listener();

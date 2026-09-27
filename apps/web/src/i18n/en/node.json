@@ -61,6 +61,7 @@
   "queue.onAir": "{job} (on the air)",
   "queue.drop": "Click to drop the {count} waiting",
   "queue.job.signIn": "sign in",
+  "queue.job.renewWayBack": "renewing the way back",
   "queue.job.status": "status",
   "queue.job.telemetry": "telemetry",
   "queue.job.pathDiscovery": "path discovery",
@@ -93,8 +94,7 @@
   "access.removeBody": "They lose their role on {name}, and sign in again only with a password.",
   "access.removed": "Removed.",
 
-  "console.intro": "Commands go to {name} over the air and wait their turn; replies land here, never in the chat. The node answers admins only.",
-  "console.introUnnamed": "Commands go to the node over the air and wait their turn; replies land here, never in the chat. The node answers admins only.",
+  "console.intro": "The node answers admins only.",
   "console.command": "Console command",
   "console.placeholder": "Command, e.g. get tx",
   "console.disconnected": "Disconnected",
@@ -117,6 +117,9 @@
   "console.wayBack": "The commands may have arrived and the answers been lost: the node answers along its own way to you.",
   "console.relearn": "Renew the way back",
   "console.relearned": "{name} knows the way to you again",
+  "console.renewing": "the node did not answer — renewing the way back…",
+  "console.afterRenew": "answered once the way back was renewed",
+  "console.unreachable": "the node answers neither along the route nor to the whole mesh",
 
   "history.lastHour": "Last hour",
   "history.day": "24 hours",

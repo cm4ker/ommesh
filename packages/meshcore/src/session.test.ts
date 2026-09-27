@@ -1227,7 +1227,7 @@ function cliFrame(from: Uint8Array, text: string): Uint8Array {
     .toBytes();
 }
 
-async function nodeSession(options: { replyWaitMs?: (estimate: number, extra: number) => number } = {}) {
+async function nodeSession(options: NonNullable<ConstructorParameters<typeof MeshSession>[0]> = {}) {
   const radio = new ScriptedRadio();
   radio.contacts = [contactFrame(HILL, "Hill", 10, 2), contactFrame(ROOM, "Lounge", 11, 3), contactFrame(BOB, "Bob", 12)];
   const session = new MeshSession({ now: () => 1_700_000_000_000, ...options });
@@ -1396,6 +1396,66 @@ test("a sign-in by flood goes with no route and puts ours back the moment it has
   radio.push(new ByteWriter().u8(Push.LoginSuccess).u8(1).bytes(HILL.subarray(0, 6)).u32(1_700_000_000).u8(3).u8(2).toBytes());
   assert.equal((await login).ok, true);
   assert.ok(session.routeSetByHand(HILL_KEY));
+});
+
+/** Waits until the scripted radio has been sent a frame of this kind, up to about a second. */
+async function sentOne(radio: ScriptedRadio, code: number, count = 1): Promise<void> {
+  for (let i = 0; i < 200 && radio.sent.filter((f) => f[0] === code).length < count; i++) await tick(5);
+}
+
+test("a request no try got an answer to renews the node's way back with its kept password, and goes once more", async () => {
+  const { radio, session } = await nodeSession({ replyWaitMs: () => 20, passwordFor: async () => "secret" });
+  await session.setRoute(HILL_KEY, ["3f", "a1"]);
+  const status = session.requestStatus(HILL_KEY);
+  await sentOne(radio, Cmd.SendLogin);
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.SendStatusReq).length, 5);
+  assert.equal(session.getState().remote.active?.label, "sign in by flood");
+  radio.push(new ByteWriter().u8(Push.LoginSuccess).u8(1).bytes(HILL.subarray(0, 6)).u32(1_700_000_000).u8(3).u8(2).toBytes());
+  await sentOne(radio, Cmd.SendStatusReq, 6);
+  const tail = new ByteWriter().u32(90).u32(7).toBytes();
+  radio.push(new ByteWriter().u8(Push.StatusResponse).u8(0).bytes(HILL.subarray(0, 6)).bytes(statusBody(tail)).toBytes());
+  assert.ok((await status).stats);
+  // The route set by hand is still the one held.
+  assert.ok(session.routeSetByHand(HILL_KEY));
+});
+
+test("a node's way back is renewed by itself at most once in ten minutes, and never without a kept password", async () => {
+  let clock = 1_700_000_000_000;
+  const { radio, session } = await nodeSession({ replyWaitMs: () => 20, passwordFor: async () => "secret", now: () => clock });
+  await session.setRoute(HILL_KEY, ["3f", "a1"]);
+  const first = session.requestStatus(HILL_KEY);
+  await sentOne(radio, Cmd.SendLogin);
+  // The sign-in by flood hears nothing either.
+  await assert.rejects(first, /no reply/);
+  clock += 5 * 60_000;
+  await assert.rejects(session.requestStatus(HILL_KEY), /no reply/);
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.SendLogin).length, 2);
+  clock += 6 * 60_000;
+  const third = session.requestStatus(HILL_KEY);
+  await sentOne(radio, Cmd.SendLogin, 3);
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.SendLogin).length, 3);
+  await assert.rejects(third, /no reply/);
+
+  const bare = await nodeSession({ replyWaitMs: () => 20 });
+  await assert.rejects(bare.session.requestStatus(HILL_KEY), /no reply/);
+  assert.ok(!bare.radio.sent.some((f) => f[0] === Cmd.SendLogin));
+});
+
+test("a console read that no try got an answer to goes again once the way back is renewed", async () => {
+  const { radio, session } = await nodeSession({ replyWaitMs: () => 20, passwordFor: async () => "secret" });
+  await session.setRoute(HILL_KEY, ["3f"]);
+  const reply = session.runCli(HILL_KEY, "get tx");
+  await sentOne(radio, Cmd.SendLogin);
+  assert.equal(session.getState().consoles[HILL_KEY]?.[0]?.wayBack, "renewing");
+  radio.push(new ByteWriter().u8(Push.LoginSuccess).u8(1).bytes(HILL.subarray(0, 6)).u32(1_700_000_000).u8(3).u8(2).toBytes());
+  await sentOne(radio, Cmd.SendTxtMsg, 6);
+  const tag = sentText(radio.sent.find((f) => f[0] === Cmd.SendTxtMsg)!).slice(0, 2);
+  radio.queue.push(cliFrame(HILL, `${tag}|> 20`));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  assert.equal(await reply, "> 20");
+  const entry = session.getState().consoles[HILL_KEY]?.[0];
+  assert.equal(entry?.status, "done");
+  assert.equal(entry?.wayBack, "renewed");
 });
 
 test("an answer to a later try resolves the request", async () => {

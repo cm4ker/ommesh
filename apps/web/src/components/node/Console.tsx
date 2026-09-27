@@ -27,7 +27,7 @@ export function Console({ contact }: { contact: ContactRecord }) {
   const [asking, setAsking] = useState(false);
   const [relearning, setRelearning] = useState(false);
   // The last command the node never answered: the node may no longer know its way back to us.
-  const lost = [...entries].reverse().find((e) => e.status === "timeout")?.id ?? null;
+  const lost = [...entries].reverse().find((e) => e.status === "timeout" && !e.wayBack)?.id ?? null;
   const lastLost = entries.at(-1)?.id === lost;
 
   /** A sign-in by flood with the saved password, or the sheet to type one. */
@@ -90,7 +90,7 @@ export function Console({ contact }: { contact: ContactRecord }) {
     <>
       <div className="console" ref={log} aria-live="polite">
         {entries.length === 0 ? (
-          <p className="muted">{contact.name ? t("node.console.intro", { name: contact.name }) : t("node.console.introUnnamed")}</p>
+          <p className="muted">{t("node.console.intro")}</p>
         ) : null}
         {entries.map((entry) => (
           <Entry key={entry.id} entry={entry} onRetry={() => send(entry.command)} />
@@ -209,13 +209,19 @@ function Entry({ entry, onRetry }: { entry: ConsoleEntry; onRetry: () => void })
           <span className="spinner" aria-hidden="true" />{" "}
           {entry.check === "checking"
             ? t("node.console.checking", { command: readBack(entry.command) })
-            : entry.attempt && entry.attempt > 1 && entry.attempts
-              ? t("node.console.try", { n: entry.attempt, of: entry.attempts })
-              : t("node.console.waiting")}
+            : entry.wayBack === "renewing"
+              ? t("node.console.renewing")
+              : entry.attempt && entry.attempt > 1 && entry.attempts
+                ? t("node.console.try", { n: entry.attempt, of: entry.attempts })
+                : t("node.console.waiting")}
         </div>
       ) : entry.status === "timeout" ? (
         <div className="c-out c-err">
-          {entry.attempt && entry.attempt > 1 ? t("node.console.noReplyTries", { count: entry.attempt }) : t("node.console.noReply")}
+          {entry.wayBack === "unreachable"
+            ? t("node.console.unreachable")
+            : entry.attempt && entry.attempt > 1
+              ? t("node.console.noReplyTries", { count: entry.attempt })
+              : t("node.console.noReply")}
           {/* A masked command cannot be sent again: its text here is not the command. */}
           {entry.command.includes("••") ? null : (
             <>
@@ -235,6 +241,8 @@ function Entry({ entry, onRetry }: { entry: ConsoleEntry; onRetry: () => void })
           <div className="c-out">{entry.reply}</div>
           {entry.check === "applied" ? (
             <div className="c-note c-good">{t("node.console.applied", { command: readBack(entry.command) })}</div>
+          ) : entry.wayBack === "renewed" ? (
+            <div className="c-note">{t("node.console.afterRenew")}</div>
           ) : entry.attempt && entry.attempt > 1 ? (
             <div className="c-note">{t("node.console.answeredOnTry", { n: entry.attempt })}</div>
           ) : null}

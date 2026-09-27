@@ -81,6 +81,12 @@ export function SignIn({
       }
       onSignedIn(key);
     } catch (err) {
+      // Silent along the route: the node may have lost its way back to us. Once in a while, by itself,
+      // the sign-in goes again to the whole mesh, which renews it; otherwise the button offers it.
+      if (err instanceof NoReplyError && !byFlood && session.canRenewWayBack(key)) {
+        setBusy(false);
+        return signIn(true);
+      }
       setError(err instanceof NoReplyError ? t("node.signIn.noReply", { name: contact.name || contact.prefix }) : errorText(err));
       setSilent(err instanceof NoReplyError && !byFlood);
     } finally {

@@ -5404,6 +5404,19 @@ button.hop {
 .tool-actions .button.survey-delete {
   flex: none;
 }
+/* Before a survey goes to a coverage map: where it goes, and that everyone will see it. */
+.survey-agree {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0 var(--space-4) var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--warning-subtle);
+}
+.survey-agree p {
+  margin: 0;
+  font-size: var(--text-sm);
+}
 /* Under "who hears me": the surveys kept. */
 .survey-more {
   display: flex;

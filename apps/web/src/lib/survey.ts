@@ -281,6 +281,14 @@ export function restoreSurvey(survey: Survey): void {
   persist();
 }
 
+/** Notes that a survey went to a coverage map, so its sheet says so and when. */
+export function markSurveySent(id: string, mapId: string, points: number): void {
+  const survey = surveyById(id);
+  if (!survey) return;
+  replaceSurvey({ ...survey, sent: { ...survey.sent, [mapId]: { at: Date.now(), points } } });
+  persist();
+}
+
 /** A repeater's name as the survey knew it, or as the contacts know it now. */
 export function surveyNodeName(survey: Survey, key: string): string {
   const c = session.getState().contacts[key];

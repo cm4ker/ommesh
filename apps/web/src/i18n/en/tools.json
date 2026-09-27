@@ -250,5 +250,15 @@
   "survey.downloadNote": "The file goes to Downloads",
   "survey.shareTitle": "Survey file",
   "survey.downloaded": "Saved to Downloads",
-  "survey.saveFailed": "The file was not saved"
+  "survey.saveFailed": "The file was not saved",
+  "survey.maps": "Coverage maps",
+  "survey.sendTo": "Send to {map}",
+  "survey.sendPublic": "Goes to {host}, another site; everyone sees the points there",
+  "survey.sendAppOnly": "From the phone or desktop app only",
+  "survey.sentAt": "Sent {when} · {points} · public on {host}",
+  "survey.agree": "Going to {host}: {points} with their places, times, repeaters and signal. It is another site, not Ommesh: the points join its public coverage map, everyone can see them, and they cannot be taken back from here.",
+  "survey.agreeSend": "Send to {host}",
+  "survey.sentTo": "Sent to {map}",
+  "survey.sentDetail": "{taken} taken, {known} were there already, {cells} new cells",
+  "survey.sendFailed": "Not sent to {map}"
 }

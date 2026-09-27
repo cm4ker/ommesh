@@ -17,7 +17,9 @@ import { usePhone } from "../../lib/phonePosition.js";
 import { isCapacitor } from "../../lib/platform.js";
 import { saveFile } from "../../lib/saveFile.js";
 import { useSession } from "../../lib/session.js";
-import { deleteSurvey, restoreSurvey, surveyNodeName, useSurveys, type SurveyRun } from "../../lib/survey.js";
+import { COVERAGE_MAPS, type CoverageMap } from "../../lib/coverage/maps.js";
+import { canSendCoverage, sendSurvey } from "../../lib/coverage/upload.js";
+import { deleteSurvey, markSurveySent, restoreSurvey, surveyNodeName, useSurveys, type SurveyRun } from "../../lib/survey.js";
 import { FIX_M, MOVE_M, PING_EVERY_MS, pointTone, repeaterRows, replyScore, surveyStats, type Survey, type SurveyPoint } from "../../lib/surveyData.js";
 import { FORMAT_TYPE, surveyFile, surveyFileName, type SurveyFormat } from "../../lib/surveyFiles.js";
 import { toast } from "../../lib/toast.js";
@@ -355,6 +357,66 @@ function ExportView({ survey }: { survey: Survey }) {
         ))}
       </ul>
       <div className="check-cost">{isCapacitor() ? t("tools.survey.shareNote") : t("tools.survey.downloadNote")}</div>
+      <div className="survey-label">{t("tools.survey.maps")}</div>
+      <ul className="list-rows hears" role="list">
+        {COVERAGE_MAPS.map((map) => (
+          <SendToMap key={map.id} survey={survey} map={map} />
+        ))}
+      </ul>
     </div>
+  );
+}
+
+/**
+ * A community coverage map the survey can go to. Every send asks first, in
+ * words that say the points leave for someone else's site and are public there.
+ */
+function SendToMap({ survey, map }: { survey: Survey; map: CoverageMap }) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const native = canSendCoverage();
+  const sent = survey.sent?.[map.id];
+  const send = async () => {
+    setAsking(false);
+    setBusy(true);
+    try {
+      const reply = await sendSurvey(map, survey, (key) => surveyNodeName(survey, key));
+      markSurveySent(survey.id, map.id, survey.points.length);
+      toast(t("tools.survey.sentTo", { map: map.name }), "", undefined, t("tools.survey.sentDetail", { taken: reply.processed, known: reply.deduped, cells: reply.cellsCreated }));
+    } catch (error) {
+      toast(t("tools.survey.sendFailed", { map: map.name }), "error", undefined, errorText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const sub = !native
+    ? t("tools.survey.sendAppOnly")
+    : sent
+      ? t("tools.survey.sentAt", { when: `${dayLabel(sent.at / 1000)}, ${timeOfDay(sent.at / 1000)}`, points: t("tools.survey.points", { count: sent.points }), host: map.host })
+      : t("tools.survey.sendPublic", { host: map.host });
+  return (
+    <li>
+      <button type="button" className="row" disabled={!native || busy || asking} aria-busy={busy} onClick={() => setAsking(true)}>
+        <ShareIcon size={18} />
+        <span className="row-main">
+          <span className="row-title">{t("tools.survey.sendTo", { map: map.name })}</span>
+          <span className="row-sub muted">{sub}</span>
+        </span>
+        <ChevronRightIcon size={16} className="muted" />
+      </button>
+      {asking ? (
+        <div className="survey-agree">
+          <p>{t("tools.survey.agree", { points: t("tools.survey.points", { count: survey.points.length }), host: map.host })}</p>
+          <div className="tool-actions">
+            <Button variant="primary" onClick={() => void send()}>
+              {t("tools.survey.agreeSend", { host: map.host })}
+            </Button>
+            <Button variant="ghost" onClick={() => setAsking(false)}>
+              {t("common.cancel")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </li>
   );
 }

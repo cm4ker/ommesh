@@ -42,6 +42,8 @@ export interface Survey {
   endedAt: number | null;
   points: SurveyPoint[];
   nodes: Record<string, SurveyNode>;
+  /** The coverage maps it was sent to, by id: when, and how many points it had then. */
+  sent?: Record<string, { at: number; points: number }>;
 }
 
 /** An ask every half minute at most: a repeater answers four in two minutes, whoever asks. */

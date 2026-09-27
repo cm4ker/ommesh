@@ -6,7 +6,8 @@
  * field of its own, which Wardrive passes over.
  */
 
-import { pointTone, type PointTone, type Survey, type SurveyPoint, type SurveyReply } from "./surveyData.js";
+import { heardBest, sampleId, shortId } from "./coverage/wardrive.js";
+import { pointTone, type PointTone, type Survey, type SurveyPoint } from "./surveyData.js";
 
 export type SurveyFormat = "json" | "gpx" | "kml" | "csv";
 
@@ -58,14 +59,6 @@ export function geohash(lat: number, lon: number, precision = 8): string {
   return hash;
 }
 
-/** The repeater the radio heard best at a point: the one Wardrive would have kept. */
-function heardBest(point: SurveyPoint): SurveyReply | null {
-  let best: SurveyReply | null = null;
-  for (const reply of point.replies) if (!best || reply.them > best.them) best = reply;
-  return best;
-}
-
-const shortId = (key: string) => key.slice(0, 8).toUpperCase();
 const iso = (ms: number) => new Date(ms).toISOString();
 
 function distanceMeters(survey: Survey): number {
@@ -88,7 +81,7 @@ export function surveyJson(survey: Survey, name: (key: string) => string): strin
   const samples = survey.points.map((point, i) => {
     const best = heardBest(point);
     return {
-      id: `${point.at}_${deviceId}_${i}`,
+      id: sampleId(survey, i),
       lat: point.lat,
       lon: point.lon,
       timestamp: iso(point.at),

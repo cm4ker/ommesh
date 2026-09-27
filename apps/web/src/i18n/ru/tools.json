@@ -250,5 +250,15 @@
   "survey.downloadNote": "Файл сохранится в «Загрузки»",
   "survey.shareTitle": "Файл замера",
   "survey.downloaded": "Сохранено в «Загрузки»",
-  "survey.saveFailed": "Файл не сохранился"
+  "survey.saveFailed": "Файл не сохранился",
+  "survey.maps": "Карты покрытия",
+  "survey.sendTo": "Отправить на {map}",
+  "survey.sendPublic": "Уйдёт на сторонний сайт {host}, точки там увидят все",
+  "survey.sendAppOnly": "Только из приложения на телефоне или компьютере",
+  "survey.sentAt": "Отправлено {when} · {points} · видно всем на {host}",
+  "survey.agree": "Что уйдёт на {host}: {points} с местом, временем, репитерами и сигналом. Это сторонний сайт, не Ommesh: точки попадут на его общую карту покрытия, их увидят все, и отсюда их не удалить.",
+  "survey.agreeSend": "Отправить на {host}",
+  "survey.sentTo": "Отправлено на {map}",
+  "survey.sentDetail": "принято {taken}, уже было {known}, новых клеток {cells}",
+  "survey.sendFailed": "Не отправилось на {map}"
 }

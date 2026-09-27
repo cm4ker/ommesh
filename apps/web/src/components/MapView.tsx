@@ -21,7 +21,7 @@ import { AdvType, type ContactRecord } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
 import { darkenPixels } from "../lib/darkTile.js";
 import { hasPosition } from "../lib/geo.js";
-import { EMPTY_OVERLAY, type MapHandle, type MapOverlay } from "../lib/mapOverlay.js";
+import { EMPTY_OVERLAY, type MapDot, type MapHandle, type MapOverlay } from "../lib/mapOverlay.js";
 import type { LosEnd } from "../lib/meshTool.js";
 import { NodeCanvas } from "../lib/nodeCanvas.js";
 import type { Fix } from "../lib/phonePosition.js";
@@ -153,7 +153,20 @@ export interface MapProps {
   putHere?: { distance: string | null; onPut: () => void } | null | undefined;
   /** "Where am I": finds the phone and says where it is, or null to go to this radio instead. */
   onLocate?: (() => Promise<{ lat: number; lon: number } | null>) | undefined;
+  /** A coverage survey's points, the one opened ringed; a tap on one hands up its place. */
+  dots?: MapDot[] | null | undefined;
+  pickedDot?: number | null | undefined;
+  onDot?: ((index: number) => void) | undefined;
+  /** Keeps the phone in view as it moves, until a finger moves the map. */
+  follow?: boolean | undefined;
+  /** A survey running: a red dot on the "who hears me" button. */
+  recording?: boolean | undefined;
 }
+
+/** How near a survey's point, in pixels, a tap opens it. */
+const DOT_PX = 18;
+/** After a finger moves the map, how long following the phone waits before it takes over again. */
+const FOLLOW_PAUSE_MS = 20_000;
 
 /** How near a node, in pixels, a dragged point lets go onto it. */
 const SNAP_PX = 36;
@@ -172,7 +185,7 @@ function groupingWanted(): boolean {
 /** Where the map was left, so coming back to it, from a profile or another section, finds it there. */
 let lastView: { center: L.LatLng; zoom: number } | null = null;
 
-export default function MapView({ selected, onSelect, onGroup, filter, coverBottom = 0, coverTop = 0, zoomButtons = false, overlay = EMPTY_OVERLAY, onLeg, onHold, onHandleDrop, onHears, hearsOn = false, fit = null, phone = null, putHere = null, onLocate }: MapProps) {
+export default function MapView({ selected, onSelect, onGroup, filter, coverBottom = 0, coverTop = 0, zoomButtons = false, overlay = EMPTY_OVERLAY, onLeg, onHold, onHandleDrop, onHears, hearsOn = false, fit = null, phone = null, putHere = null, onLocate, dots = null, pickedDot = null, onDot, follow = false, recording = false }: MapProps) {
   const state = useSession();
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -186,9 +199,13 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
   const [grouping, setGrouping] = useState(groupingWanted);
   const [locating, setLocating] = useState(false);
   const [zoom, setZoom] = useState<number | null>(null);
+  const dotLayer = useRef<L.LayerGroup | null>(null);
+  const dotRenderer = useRef<L.Renderer | null>(null);
+  // When a finger last moved the map, so following the phone steps aside for a while.
+  const draggedAt = useRef(0);
   // The handlers Leaflet holds are set once; they read the latest callbacks from here.
-  const calls = useRef({ onSelect, onGroup, onLeg, onHold, onHandleDrop, onPut: putHere?.onPut });
-  calls.current = { onSelect, onGroup, onLeg, onHold, onHandleDrop, onPut: putHere?.onPut };
+  const calls = useRef({ onSelect, onGroup, onLeg, onHold, onHandleDrop, onPut: putHere?.onPut, onDot, dots });
+  calls.current = { onSelect, onGroup, onLeg, onHold, onHandleDrop, onPut: putHere?.onPut, onDot, dots };
 
   const contacts = state.contacts;
   const selfLat = state.self && hasPosition(state.self.lat, state.self.lon) ? state.self.lat : null;
@@ -224,6 +241,10 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
     L.control.attribution({ prefix: false, position: "topleft" }).addTo(m);
     const tiles = new CachedTileLayer(TILE_URL, { maxZoom: 19, attribution: tileAttribution() }).addTo(m);
     routeLayer.current = L.layerGroup().addTo(m);
+    // A survey's points: over the lines drawn from one, under the nodes.
+    m.createPane("dots").style.zIndex = "420";
+    dotRenderer.current = L.svg({ pane: "dots" });
+    dotLayer.current = L.layerGroup().addTo(m);
     // Over the lines, under the markers left: this radio, a route's handles, the labels of legs.
     m.createPane("nodes").style.zIndex = "450";
     const nodeCanvas = new NodeCanvas({ pane: "nodes" }).addTo(m);
@@ -249,7 +270,24 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
       if (Date.now() - heldAt < 500) return;
       const mouse = (e.originalEvent as PointerEvent).pointerType === "mouse";
       const members = nodeCanvas.hit(e.layerPoint, mouse ? 3 : 10);
-      if (!members) return calls.current.onSelect(null);
+      if (!members) {
+        // Missing the nodes, a tap may land on a survey's point: the nearest within reach of a finger.
+        const { dots: points, onDot: open } = calls.current;
+        if (points && open) {
+          let best = -1;
+          let reach = mouse ? 8 : DOT_PX;
+          points.forEach((d, i) => {
+            if (d.tone === "off") return;
+            const gap = e.containerPoint.distanceTo(m.latLngToContainerPoint([d.lat, d.lon]));
+            if (gap < reach) {
+              best = i;
+              reach = gap;
+            }
+          });
+          if (best >= 0) return open(best);
+        }
+        return calls.current.onSelect(null);
+      }
       if (members.length === 1) return calls.current.onSelect(members[0]!.key);
       const bounds = L.latLngBounds(members.map((c) => [c.lat, c.lon] as L.LatLngTuple));
       const spread = bounds.getNorthEast().distanceTo(bounds.getSouthWest());
@@ -270,6 +308,9 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
       if (m.getSize().y > 0) lastView = { center: m.getCenter(), zoom: m.getZoom() };
     });
     m.on("zoomend", () => setZoom(m.getZoom()));
+    m.on("dragstart", () => {
+      draggedAt.current = Date.now();
+    });
     setZoom(m.getZoom());
     map.current = m;
     // The pane is sized by the layout, which changes when a phone turns or a desktop window is resized.
@@ -296,6 +337,8 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
       map.current = null;
       nodes.current = null;
       routeLayer.current = null;
+      dotLayer.current = null;
+      dotRenderer.current = null;
       selfMarker.current = null;
       phoneMarker.current = null;
       phoneHalo.current = null;
@@ -374,6 +417,34 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
       })
       .addTo(m);
   }, [putDistance, phoneLat, phoneLon]);
+
+  // A survey's points, drawn again when one is added or picked; a tap on one is looked up by the map's click.
+  useEffect(() => {
+    const layer = dotLayer.current;
+    const renderer = dotRenderer.current;
+    if (!layer || !renderer) return;
+    layer.clearLayers();
+    if (!dots) return;
+    dots.forEach((d, i) => {
+      const on = i === pickedDot;
+      L.circleMarker([d.lat, d.lon], { renderer, pane: "dots", interactive: false, radius: on ? 8 : d.tone === "off" ? 2.5 : 6, className: `map-dot ${d.tone}${on ? " on" : ""}` }).addTo(layer);
+    });
+  }, [dots, pickedDot]);
+
+  // Following the phone through a survey: kept in the middle of what the sheet leaves, close enough to see the street.
+  const following = useRef(false);
+  useEffect(() => {
+    const m = map.current;
+    if (!follow) {
+      following.current = false;
+      return;
+    }
+    if (!m || phoneLat === null || phoneLon === null) return;
+    if (following.current && Date.now() - draggedAt.current < FOLLOW_PAUSE_MS) return;
+    centerOn([phoneLat, phoneLon], following.current ? m.getZoom() : Math.max(m.getZoom(), 15));
+    following.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [follow, phoneLat, phoneLon]);
 
   // The lines over the nodes: a route and how it sounded, a line of sight, the answers to "who hears me".
   useEffect(() => {
@@ -635,8 +706,9 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
           <GroupIcon size={18} />
         </IconButton>
         {onHears ? (
-          <IconButton label={t("mesh.whoHearsMe")} className={hearsOn ? "on" : ""} aria-pressed={hearsOn} disabled={state.status !== "ready" && !hearsOn} onClick={onHears}>
+          <IconButton label={recording ? t("tools.survey.title") : t("mesh.whoHearsMe")} className={hearsOn ? "on" : ""} aria-pressed={hearsOn} disabled={state.status !== "ready" && !hearsOn && !recording} onClick={onHears}>
             <WavesIcon size={18} />
+            {recording ? <span className="map-rec" aria-hidden="true" /> : null}
           </IconButton>
         ) : null}
         <IconButton label={t("mesh.map.showAll")} onClick={fitAll}>

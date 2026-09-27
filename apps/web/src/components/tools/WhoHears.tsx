@@ -1,6 +1,7 @@
 /**
  * "Who hears me": the repeaters that answered, best first, each with how
- * well it heard this radio; the map draws a line to each.
+ * well it heard this radio; the map draws a line to each. Under it, the
+ * same question asked on the move: a coverage survey, and those kept.
  */
 
 import { useEffect, useState } from "react";
@@ -10,8 +11,10 @@ import { formatSnr } from "../../lib/los.js";
 import { showOnMap } from "../../lib/nav.js";
 import { setMeshTool } from "../../lib/meshTool.js";
 import { useSession } from "../../lib/session.js";
+import { useSurveys } from "../../lib/survey.js";
+import { beginSurvey, openSurvey } from "../../lib/toolActions.js";
 import { Button, IconButton } from "../../ui/Button.js";
-import { CloseIcon, RadioIcon, WavesIcon } from "../Icons.js";
+import { ChevronRightIcon, CloseIcon, RadioIcon, SurveyIcon, WavesIcon } from "../Icons.js";
 import { QualityChip } from "./RouteSheet.js";
 
 export function WhoHears({ onClose }: { onClose: () => void }) {
@@ -26,6 +29,8 @@ export function WhoHears({ onClose }: { onClose: () => void }) {
   const { left, nextAt } = asksLeft(now);
   const replies = [...hears.replies].sort((a, b) => b.heardUs - a.heardUs);
   const online = state.status === "ready";
+  const kept = useSurveys().list?.length ?? 0;
+  const [starting, setStarting] = useState(false);
 
   return (
     <div className="tool">
@@ -77,10 +82,30 @@ export function WhoHears({ onClose }: { onClose: () => void }) {
         <WavesIcon size={18} />
         {hears.listening ? t("tools.hears.listening") : left <= 0 ? t("tools.hears.againIn", { seconds: Math.max(1, Math.ceil(((nextAt ?? now) - now) / 1000)) }) : t("tools.askAgain")}
       </Button>
+      <Button
+        size="lg"
+        disabled={!online || starting}
+        busy={starting}
+        onClick={() => {
+          setStarting(true);
+          void beginSurvey().finally(() => setStarting(false));
+        }}
+      >
+        <SurveyIcon size={18} />
+        {t("tools.hears.survey")}
+      </Button>
       <div className="check-cost">
         <WavesIcon size={13} />
         {t("tools.hears.cost")}
       </div>
+      {kept > 0 ? (
+        <button type="button" className="survey-more" onClick={() => openSurvey("list")}>
+          <SurveyIcon size={16} />
+          <span>{t("tools.hears.surveys")}</span>
+          <span className="count">{kept}</span>
+          <ChevronRightIcon size={14} />
+        </button>
+      ) : null}
     </div>
   );
 }

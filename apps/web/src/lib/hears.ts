@@ -47,8 +47,14 @@ export function asksLeft(now = Date.now()): { left: number; nextAt: number | nul
   return { left: LIMIT - recent.length, nextAt: recent.length >= LIMIT ? recent[0]! + WINDOW_MS : null };
 }
 
-export async function askWhoHears(): Promise<void> {
-  if (state.listening || asksLeft().left <= 0) return;
+/** Whether an ask is out and its answers still coming. */
+export function hearsListening(): boolean {
+  return state.listening;
+}
+
+/** Asks once, as the button and a coverage survey do; the answers, or null when the ask did not go out. */
+export async function askWhoHears(): Promise<DiscoverReply[] | null> {
+  if (state.listening || asksLeft().left <= 0) return null;
   const now = Date.now();
   set({ listening: true, startedAt: now, replies: [], asks: [...state.asks.filter((t) => now - t < WINDOW_MS), now], error: null });
   try {
@@ -57,8 +63,10 @@ export async function askWhoHears(): Promise<void> {
       set({ replies: [...state.replies.filter((r) => r.key !== reply.key), reply] });
     });
     set({ replies });
+    return replies;
   } catch (error) {
     set({ error: errorText(error) });
+    return null;
   } finally {
     set({ listening: false });
   }

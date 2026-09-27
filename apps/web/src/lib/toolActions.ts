@@ -9,12 +9,13 @@ import { AdvType, contactRoute, type SessionState } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
 import { askWhoHears } from "./hears.js";
 import { relayOf, selfEnd, type MapHandle } from "./mapOverlay.js";
-import { getMeshTool, setMeshTool, type LosEnd, type NeighboursTool, type RouteTool } from "./meshTool.js";
+import { getMeshTool, setMeshTool, type LosEnd, type NeighboursTool, type RouteTool, type SurveyTool } from "./meshTool.js";
 import { fetchAllNeighbours } from "./neighbourFetch.js";
 import { neighbourRows } from "./neighbours.js";
 import { focusOnMap, getNav, goSection, setStack, showOnMap } from "./nav.js";
 import { clearPing, getPing, spanKey, stopPing } from "./ping.js";
 import { session } from "./session.js";
+import { startSurvey, stopSurvey } from "./survey.js";
 import { toast } from "./toast.js";
 
 /** The route to a contact, in its sheet over the map; opened from a profile over the map, it closes back to the profile. */
@@ -200,6 +201,25 @@ export function whoHearsMe(): void {
   void askWhoHears();
 }
 
+/** A coverage survey's sheet over the map: the one running, the list, or one of those kept. */
+export function openSurvey(view: SurveyTool["view"], id: string | null = null): void {
+  focusOnMap(null);
+  setMeshTool({ kind: "survey", view, id, point: null, only: null });
+}
+
+/** "Survey on the move": starts one and shows it running. */
+export async function beginSurvey(): Promise<void> {
+  const id = await startSurvey();
+  if (id) openSurvey("run", id);
+}
+
+/** Stops the survey running and opens what it found. */
+export function endSurvey(): void {
+  const id = stopSurvey();
+  if (id) openSurvey("summary", id);
+  else setMeshTool(null);
+}
+
 /**
  * Puts the tool away, one step: a line of sight back to the route it was
  * opened from, or to the node picked; a route back to where it was opened,
@@ -209,6 +229,11 @@ export function whoHearsMe(): void {
  */
 export function closeTool(): void {
   const tool = getMeshTool();
+  // A survey steps back: a point to the survey, its files to the survey; the one running goes on without its sheet.
+  if (tool?.kind === "survey" && (tool.point !== null || tool.view === "export")) {
+    setMeshTool(tool.point !== null ? { ...tool, point: null } : { ...tool, view: "summary" });
+    return;
+  }
   if (tool?.kind === "los" && tool.prev) {
     if (tool.prev.kind === "neighbours") showOnMap(tool.prev.key);
     setMeshTool(tool.prev);

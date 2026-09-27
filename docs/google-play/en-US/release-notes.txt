@@ -1,7 +1,7 @@
-• Russian: the app speaks the phone's language, or pick one under Radio › Appearance.
-• Messages and new nodes are announced even with the app closed.
-• Share the phone's radio with a computer.
-• Direct messages go again on their own until acknowledged.
-• A repeater's neighbours on the map; a way round a broken route.
-• Chats open at the first unread; sort chats and nodes; ten colour themes.
-• LiFePO4 batteries; sensor current in mA and power in mW.
+• Coverage survey on the move: see which repeaters hear you along the way, then export it or send it to the MeshCoreTel map.
+• Find messages in every chat, or within one.
+• Opens on your chats in about a second and reconnects faster.
+• The map shows where you are, and the radio can follow the phone.
+• One Readings block for every node; the battery as a charge.
+• Managing a repeater keeps working over a weak route.
+• Large emoji, the radio's signal on its card, smoother long chats.

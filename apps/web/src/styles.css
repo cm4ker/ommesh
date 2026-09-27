@@ -56,8 +56,9 @@
   --scrollbar: color-mix(in oklab, var(--text) 30%, transparent);
 
   --safe-top: env(safe-area-inset-top, 0px);
-  /* The keyboard covers the home bar, so the room kept for it shrinks as the keyboard rises. */
-  --safe-bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - var(--keyboard, 0px)));
+  --home-bar: env(safe-area-inset-bottom, 0px);
+  /* The keyboard covers the home bar, so the room kept for it goes while the keyboard is up. */
+  --safe-bottom: max(0px, calc(var(--home-bar) - var(--keyboard, 0px)));
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
 }
@@ -74,18 +75,27 @@
 
 /*
  * How far the keyboard reaches up the screen, where the page makes room for it
- * itself (iOS, lib/keyboard.ts); 0 elsewhere. Registered so that it animates:
- * it follows the keyboard over the keyboard's own quarter second, and all that
- * is laid out from it (the app's height, the safe area, the fixed layers) rises
- * with the keyboard instead of jumping once it is up.
+ * itself (iOS, lib/keyboard.ts); 0 elsewhere. `--keyboard` is where the
+ * keyboard is going, set at once. `--keyboard-rise` follows it over the
+ * keyboard's own quarter second on the few boxes laid out from it (the app and
+ * the fixed layers), so they rise with the keyboard instead of jumping once it
+ * is up.
+ *
+ * Only those boxes animate. `--keyboard` itself used to, on the root, and every
+ * element inherits it: WebKit restyled the whole page on every frame, 25 ms a
+ * frame in a chat of 600 messages, and the rise stuttered. `--keyboard-rise`
+ * is not inherited, and the room for the home bar changes once, at the start.
+ * A box's lift is the rise less that room, which the keyboard covers first:
+ * the room goes as the box starts to rise, and what sits in it stays put.
  */
-@property --keyboard {
+@property --keyboard-rise {
   syntax: "<length>";
-  inherits: true;
+  inherits: false;
   initial-value: 0px;
 }
-:root.keyboard-follows {
-  transition: --keyboard 0.25s cubic-bezier(0.38, 0.7, 0.125, 1);
+:root.keyboard-follows :is(#root, .sheet-layer, .palette-layer, .toast) {
+  --keyboard-rise: var(--keyboard, 0px);
+  transition: --keyboard-rise 0.25s cubic-bezier(0.38, 0.7, 0.125, 1);
 }
 
 html,
@@ -95,8 +105,8 @@ body,
   height: 100dvh;
 }
 #root {
-  height: calc(100% - var(--keyboard, 0px));
-  height: calc(100dvh - var(--keyboard, 0px));
+  height: calc(100% - max(var(--keyboard-rise), var(--home-bar)) + var(--safe-bottom));
+  height: calc(100dvh - max(var(--keyboard-rise), var(--home-bar)) + var(--safe-bottom));
 }
 
 body {
@@ -1998,7 +2008,7 @@ details.more .kv-grid {
 
 .sheet-layer {
   position: fixed;
-  inset: 0 0 var(--keyboard, 0px);
+  inset: 0 0 calc(max(var(--keyboard-rise), var(--home-bar)) - var(--safe-bottom));
   z-index: 1000;
   display: flex;
   flex-direction: column;
@@ -2404,7 +2414,7 @@ html.notices-window #root {
   position: fixed;
   left: 12px;
   right: 12px;
-  bottom: calc(var(--tabbar-height) + var(--safe-bottom) + var(--keyboard, 0px) + var(--space-3));
+  bottom: calc(var(--tabbar-height) + max(var(--keyboard-rise), var(--home-bar)) + var(--space-3));
   z-index: 1200;
   display: flex;
   align-items: center;
@@ -2487,7 +2497,7 @@ html.notices-window #root {
 
 .palette-layer {
   position: fixed;
-  inset: 0 0 var(--keyboard, 0px);
+  inset: 0 0 calc(max(var(--keyboard-rise), var(--home-bar)) - var(--safe-bottom));
   z-index: 1050;
   display: flex;
   justify-content: center;
@@ -3301,7 +3311,7 @@ button.hop {
   background: var(--bg);
 }
 /* With the keyboard up the home bar is under it, so no room is kept for it. Where the page
-   follows the keyboard (iOS), --safe-bottom already shrinks as the keyboard rises, and
+   follows the keyboard (iOS), --safe-bottom already goes as the keyboard starts to rise, and
    dropping it at once on focus would jump before the keyboard moves. Where the shell says
    whether the keyboard is up (Android), that is asked rather than the focus, which a field
    keeps with the keyboard put away. */

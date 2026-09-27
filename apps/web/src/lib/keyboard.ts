@@ -8,10 +8,9 @@ import { isCapacitor, nativePlatform } from "./platform.js";
  * and then shrinks it in one step: the keyboard slides over the conversation,
  * and only afterwards does the conversation jump up. Here the plugin leaves the
  * web view alone (`resize: "none"`, capacitor.config.ts) and reports the
- * keyboard's height as the keyboard starts to move. `--keyboard` animates to it
- * over the keyboard's own quarter second (styles.css), and the app, the safe
- * area under it and the fixed layers are laid out from it, so they rise with
- * the keyboard.
+ * keyboard's height as the keyboard starts to move. `--keyboard` takes it at
+ * once, and the app and the fixed layers follow over the keyboard's own quarter
+ * second (`--keyboard-rise`, styles.css), so they rise with the keyboard.
  *
  * The plugin hears every keyboard in the app, the one a system prompt brings up
  * too (the Bluetooth PIN on a reconnect), and drops its "will hide" when a

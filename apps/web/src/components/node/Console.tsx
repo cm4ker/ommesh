@@ -3,9 +3,13 @@ import type { ConsoleEntry, ContactRecord } from "@meshnet/meshcore";
 import { t } from "../../i18n/index.js";
 import { suggest } from "../../lib/cli.js";
 import { timeOfDay } from "../../lib/format.js";
+import { hasSavedPassword, readPassword } from "../../lib/secrets.js";
 import { session, useSession } from "../../lib/session.js";
+import { toast } from "../../lib/toast.js";
+import { errorText } from "../../i18n/errors.js";
 import { Button } from "../../ui/Button.js";
 import { Confirm } from "../../ui/Dialog.js";
+import { SignIn } from "./SignIn.js";
 
 /** Commands that take a node down, move it, or lock people out. */
 const DANGEROUS = /^(reboot|clkreboot|erase|start ota|poweroff|shutdown|set radio |password |set prv\.key|set guest\.password|setperm |set wifi\.(ssid|pwd) )/;
@@ -20,6 +24,27 @@ export function Console({ contact }: { contact: ContactRecord }) {
   const [recall, setRecall] = useState<number | null>(null);
   const log = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  const [asking, setAsking] = useState(false);
+  const [relearning, setRelearning] = useState(false);
+  // The last command the node never answered: the node may no longer know its way back to us.
+  const lost = [...entries].reverse().find((e) => e.status === "timeout")?.id ?? null;
+  const lastLost = entries.at(-1)?.id === lost;
+
+  /** A sign-in by flood with the saved password, or the sheet to type one. */
+  const relearn = async () => {
+    if (!hasSavedPassword(key)) return setAsking(true);
+    const password = await readPassword(key);
+    if (password === null) return setAsking(true);
+    setRelearning(true);
+    try {
+      const login = await session.relearnReturnPath(key, password);
+      toast(login.ok ? t("node.console.relearned", { name: contact.name || contact.prefix }) : t("node.signIn.refused"), login.ok ? "" : "error");
+    } catch (error) {
+      toast(errorText(error), "error");
+    } finally {
+      setRelearning(false);
+    }
+  };
 
   useEffect(() => {
     const el = log.current;
@@ -70,6 +95,14 @@ export function Console({ contact }: { contact: ContactRecord }) {
         {entries.map((entry) => (
           <Entry key={entry.id} entry={entry} onRetry={() => send(entry.command)} />
         ))}
+        {lost && lastLost ? (
+          <div className="c-wayback">
+            <span className="muted small">{t("node.console.wayBack")}</span>
+            <Button size="sm" busy={relearning} disabled={!online || relearning} onClick={() => void relearn()}>
+              {t("node.console.relearn")}
+            </Button>
+          </div>
+        ) : null}
       </div>
       <form className="composer console-composer" onSubmit={submit}>
         <div className="chips console-chips">
@@ -115,6 +148,16 @@ export function Console({ contact }: { contact: ContactRecord }) {
           </Button>
         </div>
       </form>
+      <SignIn
+        open={asking}
+        nodeKey={key}
+        relearn
+        onClose={() => setAsking(false)}
+        onSignedIn={() => {
+          setAsking(false);
+          toast(t("node.console.relearned", { name: contact.name || contact.prefix }));
+        }}
+      />
       <Confirm
         open={confirming !== null}
         title={t("node.console.sendTitle", { command: confirming ?? "" })}

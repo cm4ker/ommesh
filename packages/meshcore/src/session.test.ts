@@ -1354,6 +1354,37 @@ test("a route set by hand is tried five times and never dropped for a flood", as
   assert.ok(session.routeSetByHand(HILL_KEY));
 });
 
+test("a route set by hand is put back when the radio learns another from an answer", async () => {
+  const { radio, session } = await nodeSession();
+  await session.setRoute(HILL_KEY, ["3f", "a1"]);
+  const writes = () => radio.sent.filter((f) => f[0] === Cmd.AddUpdateContact).length;
+  const before = writes();
+  // An answer came in another way, and the radio took that way as its route.
+  radio.contacts = [contactFrame(HILL, "Hill", 10, 2, [0xdc, 0x89])];
+  radio.push(new ByteWriter().u8(Push.PathUpdated).bytes(HILL).toBytes());
+  await tick(10);
+  assert.equal(writes(), before + 1);
+  const write = radio.sent.filter((f) => f[0] === Cmd.AddUpdateContact).at(-1)!;
+  assert.equal(write[35], 2);
+  assert.deepEqual([...write.subarray(36, 38)], [0x3f, 0xa1]);
+  assert.ok(session.routeSetByHand(HILL_KEY));
+});
+
+test("a sign-in by flood goes with no route and puts ours back the moment it has gone", async () => {
+  const { radio, session } = await nodeSession();
+  await session.setRoute(HILL_KEY, ["3f", "a1"]);
+  const from = radio.sent.length;
+  const login = session.relearnReturnPath(HILL_KEY, "secret");
+  await tick(10);
+  const order = radio.sent.slice(from).map((f) => f[0]).filter((c) => c === Cmd.ResetPath || c === Cmd.SendLogin || c === Cmd.AddUpdateContact);
+  assert.deepEqual(order, [Cmd.ResetPath, Cmd.SendLogin, Cmd.AddUpdateContact]);
+  const write = radio.sent.filter((f) => f[0] === Cmd.AddUpdateContact).at(-1)!;
+  assert.deepEqual([...write.subarray(35, 38)], [2, 0x3f, 0xa1]);
+  radio.push(new ByteWriter().u8(Push.LoginSuccess).u8(1).bytes(HILL.subarray(0, 6)).u32(1_700_000_000).u8(3).u8(2).toBytes());
+  assert.equal((await login).ok, true);
+  assert.ok(session.routeSetByHand(HILL_KEY));
+});
+
 test("an answer to a later try resolves the request", async () => {
   const { radio, session } = await nodeSession({ replyWaitMs: () => 20 });
   radio.contacts = [contactFrame(HILL, "Hill", 10, 2, [0x3f])];

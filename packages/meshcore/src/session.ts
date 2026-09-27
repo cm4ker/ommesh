@@ -1640,6 +1640,14 @@ export class MeshSession {
     this.log("path", `${contact.name || key.slice(0, 12)}: route set by hand, ${hashes.length ? hashes.join(" ") : "direct"}`);
   }
 
+  /** The route last written by hand for this contact, whatever the radio holds now. */
+  private manualRoute(key: string): { outPathLen: number; outPath: string } | null {
+    const manual = this.state.routing.contacts[key]?.manual;
+    if (!manual || manual === "none") return null;
+    const [len, hex = ""] = manual.split(":");
+    return { outPathLen: Number(len), outPath: hex.padEnd(128, "0") };
+  }
+
   /** Whether the route the radio holds for this contact is the one last written by hand. */
   routeSetByHand(key: string): boolean {
     const contact = this.state.contacts[key];
@@ -2729,6 +2737,40 @@ export class MeshSession {
     return this.state.logins[key]!;
   }
 
+  /**
+   * Makes a node learn the way back to this radio anew, and signs in. A node
+   * answers along a route it holds for us, learned from a path packet our radio
+   * once sent it, and keeps it however stale it gets: then every request of
+   * ours reaches it and every answer is lost, while a check of the route, which
+   * comes back the way we choose, still passes. A sign-in that reaches it as a
+   * flood makes it forget that route and answer by flood. So the sign-in goes
+   * as a flood, and our own route to the node is put back the moment it has
+   * gone: when the flooded answer reaches us, our radio, holding a route to the
+   * node, sends it the way that answer came, directly along ours. Resolves like
+   * `login`.
+   */
+  async relearnReturnPath(key: string, password: string): Promise<NodeLogin> {
+    const contact = this.needContact(key);
+    const bytes = fromHex(key);
+    const held = this.manualRoute(key) ?? (contact.outPathLen === 0xff ? null : { outPathLen: contact.outPathLen, outPath: contact.outPath });
+    await this.remoteRequest(
+      key,
+      "sign in by flood",
+      async (client) => {
+        await client.resetPath(bytes);
+        const sent = await client.sendLogin(bytes, password);
+        const now = this.state.contacts[key] ?? contact;
+        if (held) await this.writeContact({ ...now, ...held, pathSince: now.pathSince });
+        return sent;
+      },
+      (event) => event.kind === "login" && event.prefix === contact.prefix,
+      { floodOnSilence: false },
+    );
+    const login = this.state.logins[key]!;
+    this.log("path", `${contact.name || key.slice(0, 12)}: ${login.ok ? "signed in by flood; it now learns the way back" : "sign-in by flood refused"}`);
+    return login;
+  }
+
   /** Ends a room's keep-alive and forgets the role; the node keeps its own record of us. */
   async logout(key: string): Promise<void> {
     await this.need().logout(this.contactBytes(key));
@@ -3301,6 +3343,14 @@ export class MeshSession {
         void record.then((r) => {
           if (r && r.outPathLen !== 0xff && isConversationType(r.type) && this.routePolicy(key).flood && this.client === client) {
             this.dropRoute(client, key, "flood pinned").catch((e: Error) => this.log("error", e.message));
+          }
+          // The radio takes the way an answer came in as its route to the sender; a route set
+          // by hand is put back, since it was chosen over what the radio learns.
+          const manual = this.manualRoute(key);
+          if (r && manual && routeKey(r.outPathLen, r.outPath) !== routeKey(manual.outPathLen, manual.outPath) && this.client === client) {
+            this.writeContact({ ...r, ...manual })
+              .then(() => this.log("path", `${r.name || key.slice(0, 12)}: route set by hand put back over ${pathHashes(r.outPathLen, r.outPath).join(" ") || "direct"}`))
+              .catch((e: Error) => this.log("error", e.message));
           }
         });
         this.log("path", `route to ${this.state.contacts[key]?.name ?? key.slice(0, 12)} updated`);

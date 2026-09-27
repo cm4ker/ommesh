@@ -5,8 +5,10 @@ import { connectors, lastLink, type Connector } from "../../transports/index.js"
 import { LinkIcon, PlayIcon } from "../Icons.js";
 import { PrivacyButton } from "../Privacy.js";
 import { UpdateButton } from "../Updates.js";
+import { ToastHost } from "../../ui/Menu.js";
 import { t } from "../../i18n/index.js";
 import { ConnectorPanel } from "./ConnectorPanel.js";
+import type { CardSignal } from "./parts.js";
 import { cardRadio, RadioCard } from "./RadioCard.js";
 
 /**
@@ -22,6 +24,9 @@ export function ConnectView() {
     const wanted = link.target?.connectorId ?? lastLink()?.connectorId;
     return list.find((c) => c.id === wanted) ?? list[0] ?? null;
   });
+  // How well the card's radio is heard, from the search under its own tab.
+  const [signal, setSignal] = useState<CardSignal>(null);
+  const cardHidden = card && active && card.connector.id === active.id ? (card.device?.id ?? null) : null;
 
   // Esc gives up a connect, as the card's Cancel does.
   useEffect(() => {
@@ -44,7 +49,7 @@ export function ConnectView() {
           <NoLink />
         ) : (
           <>
-            {card ? <RadioCard {...card} /> : null}
+            {card ? <RadioCard {...card} signal={cardHidden ? signal : null} /> : null}
             <section className="connect-ways">
               {list.length > 1 ? (
                 <div className="segmented" role="tablist">
@@ -68,8 +73,9 @@ export function ConnectView() {
                 <ConnectorPanel
                   key={active.id}
                   connector={active}
-                  hideId={card && card.connector.id === active.id ? (card.device?.id ?? null) : null}
+                  hideId={cardHidden}
                   other={card !== null}
+                  onCardSignal={setSignal}
                 />
               ) : null}
             </section>
@@ -81,6 +87,8 @@ export function ConnectView() {
           <PrivacyButton />
         </footer>
       </div>
+      {/* The card's bars say their figure in a toast. */}
+      <ToastHost />
     </div>
   );
 }

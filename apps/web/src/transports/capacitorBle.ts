@@ -95,6 +95,8 @@ class CapacitorBleTransport extends BaseTransport {
 }
 
 const SCAN_MS = 10_000;
+/** How often the adverts heard in a search reach the screen. */
+const UPDATE_MS = 1_000;
 
 /** Longer than Android's own wait for a PIN, so its answer, not this, ends a pairing. */
 const PAIR_MS = 40_000;
@@ -159,14 +161,28 @@ export const capacitorBleConnector: Connector = {
     }
     if (seen.size > 0) onFound([...seen.values()]);
     if (signal.aborted) return;
-    await client.requestLEScan({ services: [BLE.service], allowDuplicates: false }, (result) => {
+    // Every advert, so the signal follows the radio as the phone moves (one per pass only gave the
+    // first). A radio new to the list shows at once; the rest reach the screen once a second.
+    let told = 0;
+    let later: ReturnType<typeof setTimeout> | undefined;
+    const tell = () => {
+      clearTimeout(later);
+      later = undefined;
+      told = Date.now();
+      onFound([...seen.values()]);
+    };
+    signal.addEventListener("abort", () => clearTimeout(later), { once: true });
+    await client.requestLEScan({ services: [BLE.service], allowDuplicates: true }, (result) => {
+      const known = seen.get(result.device.deviceId);
+      // Not every advert carries the name: one without keeps the name heard before.
       seen.set(result.device.deviceId, {
         id: result.device.deviceId,
-        name: result.localName ?? result.device.name ?? "MeshCore",
+        name: result.localName ?? result.device.name ?? known?.name ?? "MeshCore",
         detail: null,
-        rssi: result.rssi ?? null,
+        rssi: result.rssi ?? known?.rssi ?? null,
       });
-      onFound([...seen.values()]);
+      if (!known || Date.now() - told >= UPDATE_MS) tell();
+      else later ??= setTimeout(tell, UPDATE_MS - (Date.now() - told));
     });
     // The plugin scans until told to stop and resolves as soon as it starts.
     // This one stops after a while, and resolves then, so the screen can tell

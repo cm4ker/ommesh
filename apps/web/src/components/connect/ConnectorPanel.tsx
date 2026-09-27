@@ -7,10 +7,12 @@ import { Input } from "../../ui/Field.js";
 import { ChevronDownIcon, PlusIcon } from "../Icons.js";
 import { t } from "../../i18n/index.js";
 import { errorText } from "../../i18n/errors.js";
-import { DeviceIcon, nameOf, rowLine, SignalBars } from "./parts.js";
+import { DeviceIcon, nameOf, rowLine, SignalBars, type CardSignal } from "./parts.js";
 
 /** How long a Bluetooth radio missing from a pass stays listed: one quiet pass should not make the rows jump. */
 const KEEP_MS = 30_000;
+/** How long a search goes without hearing the card's radio before the card's bars go empty: a radio heard at all is heard by then. */
+const QUIET_MS = 2_000;
 
 /**
  * What one way of connecting offers, under its tab: the radios it finds
@@ -19,11 +21,24 @@ const KEEP_MS = 30_000;
  * and rests while a connect is under way, so the screen shows one thing
  * working at a time.
  */
-export function ConnectorPanel({ connector, hideId, other }: { connector: Connector; hideId: string | null; other: boolean }) {
+export function ConnectorPanel({
+  connector,
+  hideId,
+  other,
+  onCardSignal,
+}: {
+  connector: Connector;
+  hideId: string | null;
+  other: boolean;
+  /** How well the radio hidden for the card is heard; told again whenever that changes. */
+  onCardSignal?: (signal: CardSignal) => void;
+}) {
   const link = useLink();
   const busy = link.phase === "connecting";
   const [remembered, setRemembered] = useState<FoundDevice[]>([]);
   const [found, setFound] = useState<FoundDevice[]>([]);
+  // A search has gone on long enough that a radio not heard in it is not about.
+  const [settled, setSettled] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanRun, setScanRun] = useState(0);
@@ -51,6 +66,8 @@ export function ConnectorPanel({ connector, hideId, other }: { connector: Connec
     const keep = connector.kind === "ble" ? KEEP_MS : 0;
     setScanning(true);
     setScanError(null);
+    const quiet = setTimeout(() => setSettled(true), QUIET_MS);
+    abort.signal.addEventListener("abort", () => clearTimeout(quiet));
     connector
       .scan((devices) => {
         const now = Date.now();
@@ -66,6 +83,13 @@ export function ConnectorPanel({ connector, hideId, other }: { connector: Connec
       });
     return () => abort.abort();
   }, [connector, scanRun, busy]);
+
+  // The card's radio is left out of the list, but how well it is heard goes up to the card. Only
+  // Bluetooth says: a port or an address is there or not, with no signal to it.
+  const cardDevice = hideId ? found.find((d) => d.id === hideId) : undefined;
+  const cardSignal: CardSignal = connector.kind !== "ble" || connector.mode !== "scan" || !hideId ? null : cardDevice ? cardDevice.rssi : settled ? "quiet" : null;
+  useEffect(() => onCardSignal?.(cardSignal), [cardSignal, onCardSignal]);
+  useEffect(() => () => onCardSignal?.(null), [onCardSignal]);
 
   const connect = (device: FoundDevice | null) => void connectWith(connector, device).catch(() => undefined);
 

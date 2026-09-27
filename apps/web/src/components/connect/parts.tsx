@@ -1,6 +1,7 @@
 import type { Connector, FoundDevice } from "../../transports/index.js";
 import { bleAddress, roleOf, sharedRadio, shownName } from "../../transports/role.js";
 import { t } from "../../i18n/index.js";
+import { toast } from "../../lib/toast.js";
 import { LinkIcon, PhoneIcon, PlayIcon, PortIcon } from "../Icons.js";
 
 /** What the screen calls a device. The demo keeps its full name, which the README tells a newcomer to look for. */
@@ -37,14 +38,49 @@ export function cardLine(device: FoundDevice | null, connector: Connector, radio
   return [connector.title, second].filter(Boolean).join(" · ");
 }
 
-/** Four bars for how well the radio is heard; the figure itself is in the tooltip. */
-export function SignalBars({ rssi }: { rssi: number }) {
-  const lit = rssi >= -60 ? 4 : rssi >= -75 ? 3 : rssi >= -90 ? 2 : 1;
+/** Four bars for how well the radio is heard; the figure itself is in the tooltip. Null: not heard, the bars empty. */
+export function SignalBars({ rssi }: { rssi: number | null }) {
+  const lit = rssi === null ? 0 : barsOf(rssi);
+  const label = rssi === null ? t("connect.signal.quiet") : t("connect.signal.bars", { level: lit });
   return (
-    <span className="signal-bars" title={t("connect.signal.dbm", { value: rssi })} aria-label={t("connect.signal.bars", { level: lit })}>
+    <span className={["signal-bars", rssi === null ? "quiet" : ""].join(" ")} title={rssi === null ? label : t("connect.signal.dbm", { value: rssi })} aria-label={label}>
       {[1, 2, 3, 4].map((n) => (
         <i key={n} className={n <= lit ? "on" : ""} style={{ height: `${n * 25}%` }} />
       ))}
     </span>
+  );
+}
+
+function barsOf(rssi: number): number {
+  return rssi >= -60 ? 4 : rssi >= -75 ? 3 : rssi >= -90 ? 2 : 1;
+}
+
+/**
+ * How well the card's radio is heard by the search under the tabs, which hides
+ * it from its list: its signal in dBm, "quiet" when a search has gone on for a
+ * while without hearing it, or null when there is nothing to say (another way
+ * of connecting, no search yet, a radio heard with no figure).
+ */
+export type CardSignal = number | "quiet" | null;
+
+/** The card's bars: a tap says the figure, or why the radio may not be heard. */
+export function CardSignalBars({ signal }: { signal: CardSignal }) {
+  if (signal === null) return null;
+  const rssi = signal === "quiet" ? null : signal;
+  return (
+    <button
+      type="button"
+      className="connect-card-signal"
+      onClick={() =>
+        toast(
+          rssi === null ? t("connect.signal.quiet") : t("connect.signal.card", { value: rssi }),
+          "",
+          undefined,
+          rssi === null ? t("connect.signal.quietWhy") : t("connect.signal.bars", { level: barsOf(rssi) }),
+        )
+      }
+    >
+      <SignalBars rssi={rssi} />
+    </button>
   );
 }

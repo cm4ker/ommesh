@@ -75,7 +75,7 @@ iOS в CI нет — сборка на Mac, TestFlight вручную (см. [mo
 
 CLI: `node scripts/release.mjs prepare|manifest|publish [dir=out]`.
 
-- **prepare** — версия из корневого `package.json` должна быть `X.Y.Z`; тег обязан быть `v<version>`. Тег → `X.Y.Z`, канал `stable`; иначе `X.Y.Z-dev.<run>.<attempt>`, канал `dev`, тег `dev-<version>`. Пишет gitignored `apps/desktop/src-tauri/tauri.release.json`, экспортирует `MESHNET_VERSION`.
+- **prepare** — версия из корневого `package.json` должна быть `X.Y.Z`; тег обязан быть `v<version>`. Тег → `X.Y.Z`, канал `stable`; иначе `X.Y.Z-dev.<run>.<attempt>`, канал `dev`, тег `dev-<version>`. Сборка не из `master` получает метку ветки и коммита: `X.Y.Z-dev.<run>.<attempt>.<ветка>.g<sha7>`, у PR — только `.<ветка>` (`branchMark()`). Эта версия попадает в имя инсталлятора и в «О приложении». Пишет gitignored `apps/desktop/src-tauri/tauri.release.json`, экспортирует `MESHNET_VERSION`.
 - **manifest** — `latest.json` для Tauri updater: ровно один `_<arch>-setup.exe` + непустой `.sig` на каждую из x64/arm64/x86 (`windows-x86_64|aarch64|i686`). Offline-инсталляторы в фид не попадают.
 - **publish** — создаёт версионный релиз черновиком, заливает, публикует (stable `--latest`, dev `--prerelease`); для dev зеркалирует ассеты в скользящий релиз `dev` (если сборка новее), `latest.json` заливается последним; хранит 2 последних dev-релиза.
 - Фиды: stable `releases/latest/download/latest.json`, dev `releases/download/dev/latest.json`.

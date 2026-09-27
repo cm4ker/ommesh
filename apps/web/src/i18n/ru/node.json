@@ -105,7 +105,6 @@
   "access.removed": "Убрано из списка.",
 
   "console.command": "Команда консоли",
-  "console.placeholder": "Команда, например get tx",
   "console.disconnected": "Не подключено",
   "console.sendTitle": "Отправить «{command}»?",
   "console.radioWarn": "После следующей перезагрузки узел уйдёт с вашего канала. tempradio сначала пробует новые настройки на время.",

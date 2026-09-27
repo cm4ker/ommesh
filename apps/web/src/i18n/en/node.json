@@ -95,7 +95,6 @@
   "access.removed": "Removed.",
 
   "console.command": "Console command",
-  "console.placeholder": "Command, e.g. get tx",
   "console.disconnected": "Disconnected",
   "console.sendTitle": "Send “{command}”?",
   "console.radioWarn": "This moves the node off your channel from its next reboot. tempradio tries new settings for a while first.",

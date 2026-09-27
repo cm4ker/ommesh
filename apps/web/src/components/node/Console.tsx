@@ -9,6 +9,7 @@ import { toast } from "../../lib/toast.js";
 import { errorText } from "../../i18n/errors.js";
 import { Button } from "../../ui/Button.js";
 import { Confirm } from "../../ui/Dialog.js";
+import { SendIcon } from "../Icons.js";
 import { SignIn } from "./SignIn.js";
 
 /** Commands that take a node down, move it, or lock people out. */
@@ -26,6 +27,7 @@ export function Console({ contact }: { contact: ContactRecord }) {
   const input = useRef<HTMLInputElement>(null);
   const [asking, setAsking] = useState(false);
   const [relearning, setRelearning] = useState(false);
+  const [focused, setFocused] = useState(false);
   // The last command the node never answered: the node may no longer know its way back to us.
   const lost = [...entries].reverse().find((e) => e.status === "timeout" && !e.wayBack)?.id ?? null;
   const lastLost = entries.at(-1)?.id === lost;
@@ -101,7 +103,8 @@ export function Console({ contact }: { contact: ContactRecord }) {
           </div>
         ) : null}
       </div>
-      <form className="composer console-composer" onSubmit={submit}>
+      {/* The same frame as a chat's composer, so a command is written the way a message is. */}
+      <form className={["compose", "console-compose", focused ? "focus" : "", draft ? "has" : "", online ? "" : "waiting"].join(" ")} onSubmit={submit}>
         <div className="chips console-chips">
           {chips.map((s) => (
             <button
@@ -123,26 +126,35 @@ export function Console({ contact }: { contact: ContactRecord }) {
           ) : null}
         </div>
         {hint ? <span className="console-hint mono">{hint}</span> : null}
-        <div className="composer-row">
-          <span className="prompt" aria-hidden="true">
-            ›
-          </span>
-          <input
-            ref={input}
-            className="input mono"
-            aria-label={t("node.console.command")}
-            autoComplete="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            placeholder={online ? t("node.console.placeholder") : t("node.console.disconnected")}
-            value={draft}
-            disabled={!online}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={onKey}
-          />
-          <Button type="submit" variant="primary" disabled={!online || !typed}>
-            {t("common.send")}
-          </Button>
+        <div className="compose-box">
+          <div className="compose-row">
+            <div className="compose-field">
+              <input
+                ref={input}
+                aria-label={t("node.console.command")}
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                enterKeyHint="send"
+                placeholder={online ? undefined : t("node.console.disconnected")}
+                value={draft}
+                disabled={!online}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={onKey}
+                onFocus={() => setFocused(true)}
+                onBlur={() => setFocused(false)}
+              />
+            </div>
+            <button
+              type="submit"
+              className={["compose-send", online && typed ? "ready" : "idle"].join(" ")}
+              aria-label={t("common.send")}
+              disabled={!online || !typed}
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              <SendIcon size={18} />
+            </button>
+          </div>
         </div>
       </form>
       <SignIn

@@ -3381,17 +3381,6 @@ button.hop {
   text-align: left;
 }
 
-.composer {
-  flex: none;
-  padding: var(--space-2) var(--space-3) max(var(--space-2), var(--safe-bottom));
-  border-top: 1px solid var(--border);
-  background: var(--panel);
-}
-.composer-row {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-2);
-}
 /*
  * A conversation's composer: one frame for the text and its button, a bubble's
  * outline with nothing painted in it.
@@ -3415,6 +3404,7 @@ button.hop {
   }
   /* A touch screen's fields are at least 16 px (see the end of this file), and the layer under this one must match. */
   .compose-field textarea,
+  .compose-field input,
   .compose-mirror {
     font-size: max(16px, var(--text-base));
     line-height: calc(22px * var(--text-scale));
@@ -3461,6 +3451,7 @@ button.hop {
 }
 /* The field and the layer under it that marks mentions and overflow must lay the text out alike. */
 .compose-field textarea,
+.compose-field input,
 .compose-mirror {
   margin: 0;
   border: 0;
@@ -3490,7 +3481,8 @@ button.hop {
   border-radius: 2px;
   background: color-mix(in oklab, var(--danger) 30%, transparent);
 }
-.compose-field textarea {
+.compose-field textarea,
+.compose-field input {
   position: relative;
   display: block;
   width: 100%;
@@ -4497,8 +4489,7 @@ button.hop {
   align-items: baseline;
   gap: var(--space-2);
 }
-.c-prompt,
-.prompt {
+.c-prompt {
   color: var(--accent);
   font-family: var(--font-mono);
 }
@@ -4547,8 +4538,13 @@ button.hop {
 .console-chips {
   padding: 0 0 var(--space-2);
 }
-.console-composer .input {
-  font-size: var(--text-sm);
+/* A command is typed as it is read back above: in the console's letters. */
+.console-compose .compose-field input {
+  font-family: var(--font-mono);
+}
+.console-compose .compose-field input::placeholder {
+  font-family: var(--font-ui);
+  color: var(--text-faint);
 }
 /* What the value after the command is, once the command is typed. */
 .console-hint {
@@ -4556,9 +4552,6 @@ button.hop {
   padding: 0 0 var(--space-2) var(--space-1);
   font-size: var(--text-xs);
   color: var(--text-muted);
-}
-.console-composer .composer-row {
-  align-items: center;
 }
 .multiline {
   white-space: pre-line;

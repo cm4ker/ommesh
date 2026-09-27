@@ -52,6 +52,17 @@ import { t } from "../i18n/index.js";
 /** Asks the open chat for its own search, from Ctrl+F on the desktop. */
 export const FIND_IN_CHAT_EVENT = "meshnet:find-in-chat";
 
+/**
+ * How many of the latest messages a chat draws when it opens; older ones come a
+ * page at a time as the reader scrolls up. A channel of six hundred messages,
+ * drawn whole, took 0.65 s to open on a phone, and every change to the page's
+ * style (the keyboard coming up) restyled all of them.
+ */
+const FIRST_DRAWN = 60;
+const MORE_DRAWN = 100;
+/** Messages still drawn above one the chat opens or jumps to: the first unread, a match. */
+const ABOVE = 10;
+
 export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversation: string; chrome: Chrome; infoOpen?: boolean | undefined; onInfo?: () => void }) {
   const state = useSession();
   const messages = useMemo(() => messagesIn(state, conversation), [state, conversation]);
@@ -100,6 +111,14 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     const count = Math.min(heard.length, takeUnread(conversation) || (state.unread[conversation] ?? 0));
     return count > 0 ? { first: heard[heard.length - count]!.id, count, ids: heard.slice(-count).map((m) => m.id) } : null;
   });
+
+  // The first message drawn; null draws them all. The unread are drawn from the start, with a few above.
+  const [from, setFrom] = useState<string | null>(() => {
+    const unreadAt = unread ? messages.findIndex((m) => m.id === unread.first) : -1;
+    const start = Math.min(messages.length - FIRST_DRAWN, unreadAt < 0 ? Infinity : unreadAt - ABOVE);
+    return start > 0 ? messages[start]!.id : null;
+  });
+  const fromAt = from ? Math.max(0, messages.findIndex((m) => m.id === from)) : 0;
 
   // Messages heard that the reader has not yet had on screen, in order: the unread on opening, and
   // those that come while they read further up. Each drops off once it has been in sight.
@@ -210,6 +229,30 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   // Held by its id, so a match arriving meanwhile does not move the one looked at.
   const index = Math.max(0, matches.findIndex((m) => m.id === picked));
   const current = matches[index]?.id ?? null;
+
+  // A message jumped to further up than is drawn (a search result, a match) is drawn in, with a few
+  // above, in the same pass that puts it in sight; the chat then keeps drawing from there.
+  const jumpAt = Math.min(...[found?.id, current].map((id) => (id ? messages.findIndex((m) => m.id === id) : -1)).filter((at) => at >= 0));
+  const drawnAt = Math.min(fromAt, Math.max(0, jumpAt - ABOVE));
+  const drawn = drawnAt > 0 ? messages.slice(drawnAt) : messages;
+  useLayoutEffect(() => {
+    if (drawnAt < fromAt) setFrom(drawnAt > 0 ? messages[drawnAt]!.id : null);
+  }, [drawnAt, fromAt, messages]);
+  // Older ones drawn in above keep what is on screen where it was: the distance to the bottom stays.
+  const keepBottom = useRef<number | null>(null);
+  const drawMore = () => {
+    const el = scroller.current;
+    if (!el || drawnAt <= 0 || keepBottom.current !== null) return;
+    keepBottom.current = el.scrollHeight - el.scrollTop;
+    setFrom(drawnAt > MORE_DRAWN ? messages[drawnAt - MORE_DRAWN]!.id : null);
+  };
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || keepBottom.current === null) return;
+    el.scrollTop = el.scrollHeight - keepBottom.current;
+    keepBottom.current = null;
+  }, [from]);
+
   const move = (by: number) => {
     const next = matches[index + by];
     if (next) setPicked(next.id);
@@ -329,13 +372,15 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
           const el = e.currentTarget;
           stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
           measure();
+          // Within a screen of the top, the page above is drawn in.
+          if (el.scrollTop < el.clientHeight) drawMore();
         }}
       >
         <div className="chat-inner" ref={inner}>
           {messages.length === 0 ? <div className="empty muted">{target.kind === "channel" ? t("chats.chat.emptyChannel") : t("chats.chat.empty")}</div> : null}
-          {messages.map((m, i) => {
-            const prev = messages[i - 1];
-            const next = messages[i + 1];
+          {drawn.map((m, i) => {
+            const prev = drawn[i - 1];
+            const next = drawn[i + 1];
             const newDay = !prev || dayLabel(shownAt(prev)) !== dayLabel(shownAt(m));
             const opens = m.id === unread?.first;
             const first = !prev || !sameRun(prev, m) || opens;

@@ -118,6 +118,12 @@
   "console.waiting": "ожидание ответа…",
   "console.noReply": "нет ответа",
   "console.sendAgain": "Отправить ещё раз",
+  "console.try": "попытка {n} из {of}…",
+  "console.answeredOnTry": "ответ на {n}-ю попытку",
+  "console.noReplyTries": { "one": "нет ответа на {count} попытку", "few": "нет ответа на {count} попытки", "many": "нет ответа на {count} попыток", "other": "нет ответа на {count} попытки" },
+  "console.checking": "ответа нет · проверяю через {command}…",
+  "console.applied": "применилось · проверено через {command}",
+  "console.differs": "не применилось: {command} отвечает {value}",
 
   "history.lastHour": "Последний час",
   "history.day": "24 часа",
@@ -246,7 +252,8 @@
 
   "signIn.refused": "Узел не принял этот пароль.",
   "signIn.unknownRadio": "Узел не знает это радио, а с пустым паролем посторонних сюда не пускают.",
-  "signIn.noReply": "Нет ответа от {name}. Возможно, узел вне досягаемости или маршрут к нему устарел — попробуйте ещё раз.",
+  "signIn.trying": "попытка {n} из {of}…",
+  "signIn.noReply": "Нет ответа от {name}, хотя вход уходил несколько раз. Узел вне досягаемости, или путь к нему не работает: проверьте маршрут.",
   "signIn.title": "Войти на {name}",
   "signIn.addNode": "Добавить узел",
   "signIn.nodes": "Репитеры, комнаты и датчики из ваших контактов",

@@ -77,6 +77,8 @@ export function SignIn({
 
   const title = nodeKey && contact ? t("node.signIn.title", { name: contact.name || contact.prefix }) : t("node.signIn.addNode");
   const login = key ? state.logins[key] : undefined;
+  // On a weak route the sign-in goes several times; which try it is shows while it does.
+  const job = busy && key && state.remote.active?.key === key && state.remote.active.label === "sign in" ? state.remote.active : null;
 
   return (
     <Dialog open={open} title={title} onClose={onClose}>
@@ -125,6 +127,7 @@ export function SignIn({
         </label>
         {login && !login.ok && !error ? <p className="muted small">{t("node.signIn.lastRefused")}</p> : null}
         {login?.ok && login.role !== null && !error ? <p className="muted small">{t("node.signIn.lastRole", { role: roleName(login.role) })}</p> : null}
+        {job && job.attempt > 1 ? <p className="muted small">{t("node.signIn.trying", { n: job.attempt, of: job.attempts })}</p> : null}
         {error ? <p className="connect-error">{error}</p> : null}
         <div className="dialog-foot">
           <Button onClick={onClose}>{t("common.cancel")}</Button>

@@ -1323,26 +1323,38 @@ test("a node that never answers times the request out and lets the next one go",
   const second = session.requestStatus(HILL_KEY);
   await assert.rejects(first, /no reply/);
   await tick();
-  assert.equal(radio.sent.filter((f) => f[0] === Cmd.SendStatusReq).length, 2);
+  // With no route each floods, twice at most: the first's two, and the second's first.
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.SendStatusReq).length, 3);
   await assert.rejects(second, /no reply/);
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.SendStatusReq).length, 4);
 });
 
-test("a request that hears nothing along a route drops it and goes once more as a flood", async () => {
+test("a request that hears nothing along a learned route tries it five times, then drops it and floods once", async () => {
   const { radio, session } = await nodeSession({ replyWaitMs: () => 20 });
   radio.contacts = [contactFrame(HILL, "Hill", 10, 2, [0x3f, 0xa1])];
   await session.refreshContacts(true);
   const status = session.requestStatus(HILL_KEY);
-  await tick(40);
-  assert.equal(radio.sent.filter((f) => f[0] === Cmd.SendStatusReq).length, 2);
+  await tick(50);
+  // A lost round trip says nothing about the route: it is kept through the tries.
+  assert.ok(radio.sent.filter((f) => f[0] === Cmd.SendStatusReq).length >= 2);
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.ResetPath).length, 0);
+  assert.equal(session.getState().remote.active?.attempts, 5);
+  await assert.rejects(status, /no reply/);
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.SendStatusReq).length, 6);
   assert.equal(radio.sent.filter((f) => f[0] === Cmd.ResetPath).length, 1);
   assert.equal(session.getState().contacts[HILL_KEY]?.outPathLen, 0xff);
-  assert.equal(session.getState().remote.active?.flooded, true);
-  await assert.rejects(status, /no reply/);
-  // The flood heard nothing either: it is not sent a third time.
-  assert.equal(radio.sent.filter((f) => f[0] === Cmd.SendStatusReq).length, 2);
 });
 
-test("a flood that gets an answer after the route went silent resolves the request", async () => {
+test("a route set by hand is tried five times and never dropped for a flood", async () => {
+  const { radio, session } = await nodeSession({ replyWaitMs: () => 20 });
+  await session.setRoute(HILL_KEY, ["3f", "a1"]);
+  await assert.rejects(session.requestStatus(HILL_KEY), /no reply/);
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.SendStatusReq).length, 5);
+  assert.ok(!radio.sent.some((f) => f[0] === Cmd.ResetPath));
+  assert.ok(session.routeSetByHand(HILL_KEY));
+});
+
+test("an answer to a later try resolves the request", async () => {
   const { radio, session } = await nodeSession({ replyWaitMs: () => 20 });
   radio.contacts = [contactFrame(HILL, "Hill", 10, 2, [0x3f])];
   await session.refreshContacts(true);
@@ -1353,13 +1365,56 @@ test("a flood that gets an answer after the route went silent resolves the reque
   assert.equal((await login).ok, true);
 });
 
-test("a console command that hears nothing along a route is not sent again", async () => {
+test("a console command that changes something goes again with the same stamp, and never floods", async () => {
   const { radio, session } = await nodeSession({ replyWaitMs: () => 20 });
   radio.contacts = [contactFrame(HILL, "Hill", 10, 2, [0x3f])];
   await session.refreshContacts(true);
   await assert.rejects(session.runCli(HILL_KEY, "reboot"), /no reply/);
-  assert.equal(radio.sent.filter((f) => f[0] === Cmd.SendTxtMsg).length, 1);
+  const sends = radio.sent.filter((f) => f[0] === Cmd.SendTxtMsg);
+  assert.equal(sends.length, 5);
+  // One stamp: the node carries out the first copy that arrives and takes the rest for repeats.
+  const stamps = new Set(sends.map((f) => new DataView(f.buffer, f.byteOffset).getUint32(3, true)));
+  assert.equal(stamps.size, 1);
   assert.ok(!radio.sent.some((f) => f[0] === Cmd.ResetPath));
+  assert.equal(session.getState().consoles[HILL_KEY]?.[0]?.status, "timeout");
+});
+
+test("a console command that only reads goes again with a new stamp until it is answered", async () => {
+  const { radio, session } = await nodeSession({ replyWaitMs: () => 20 });
+  radio.contacts = [contactFrame(HILL, "Hill", 10, 2, [0x3f])];
+  await session.refreshContacts(true);
+  const reply = session.runCli(HILL_KEY, "get tx");
+  await tick(30);
+  const sends = radio.sent.filter((f) => f[0] === Cmd.SendTxtMsg);
+  assert.ok(sends.length >= 2);
+  const stamps = sends.map((f) => new DataView(f.buffer, f.byteOffset).getUint32(3, true));
+  assert.ok(stamps.every((stamp, i) => i === 0 || stamp > stamps[i - 1]!));
+  const tag = sentText(sends[0]!).slice(0, 2);
+  radio.queue.push(cliFrame(HILL, `${tag}|> 20`));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  assert.equal(await reply, "> 20");
+  const entry = session.getState().consoles[HILL_KEY]?.[0];
+  assert.equal(entry?.status, "done");
+  assert.ok((entry?.attempt ?? 0) >= 2);
+});
+
+test("a set that hears nothing is read back, and the console says it took", async () => {
+  const { radio, session } = await nodeSession({ replyWaitMs: () => 20 });
+  radio.contacts = [contactFrame(HILL, "Hill", 10, 2, [0x3f])];
+  await session.refreshContacts(true);
+  const write = session.writeNodeSetting(HILL_KEY, "tx", "22");
+  // Five silent sends of the set, then the read.
+  for (let i = 0; i < 100 && !radio.sent.some((f) => f[0] === Cmd.SendTxtMsg && sentText(f).endsWith("|get tx")); i++) await tick(5);
+  const get = radio.sent.find((f) => f[0] === Cmd.SendTxtMsg && sentText(f).endsWith("|get tx"))!;
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.SendTxtMsg && sentText(f).endsWith("|set tx 22")).length, 5);
+  assert.equal(session.getState().consoles[HILL_KEY]?.[0]?.check, "checking");
+  radio.queue.push(cliFrame(HILL, `${sentText(get).slice(0, 2)}|> 22`));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  assert.equal(await write, "> 22");
+  const entry = session.getState().consoles[HILL_KEY]?.[0];
+  assert.equal(entry?.status, "done");
+  assert.equal(entry?.check, "applied");
+  assert.equal(session.getState().nodeSettings[HILL_KEY]?.["tx"]?.value, "22");
 });
 
 test("a path discovery writes the way it found as the route, and says how the answer came back", async () => {

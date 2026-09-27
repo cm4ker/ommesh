@@ -108,6 +108,12 @@
   "console.waiting": "waiting for the reply…",
   "console.noReply": "no reply",
   "console.sendAgain": "Send again",
+  "console.try": "try {n} of {of}…",
+  "console.answeredOnTry": "answered on try {n}",
+  "console.noReplyTries": { "one": "no reply to {count} try", "other": "no reply to {count} tries" },
+  "console.checking": "no reply · checking with {command}…",
+  "console.applied": "applied · checked with {command}",
+  "console.differs": "not applied: {command} says {value}",
 
   "history.lastHour": "Last hour",
   "history.day": "24 hours",
@@ -212,7 +218,8 @@
 
   "signIn.refused": "The node refused this password.",
   "signIn.unknownRadio": "The node does not know this radio, and a blank password lets no stranger in here.",
-  "signIn.noReply": "No reply from {name}. It may be out of range, or the route to it stale; try again.",
+  "signIn.trying": "try {n} of {of}…",
+  "signIn.noReply": "No answer from {name}, though the sign-in went several times. The node is out of reach, or the way to it does not work: check the route.",
   "signIn.title": "Sign in to {name}",
   "signIn.addNode": "Add a node",
   "signIn.nodes": "Repeaters, rooms and sensors in your contacts",

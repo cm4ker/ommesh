@@ -4525,6 +4525,15 @@ button.hop {
 .c-err {
   color: var(--danger);
 }
+/* Under a reply: which try it answered, or that a setting was read back as set. */
+.c-note {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.c-note.c-good {
+  color: var(--success);
+}
 .console-chips {
   padding: 0 0 var(--space-2);
 }

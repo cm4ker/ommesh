@@ -284,12 +284,14 @@ export function sendLogin(publicKey: Uint8Array, password: string): Uint8Array {
 }
 
 /**
- * A console command for a repeater, room or sensor. The radio stamps it with
- * its own clock and expects no ack; the answer comes back as a contact
- * message of type `CliData`.
+ * A console command for a repeater, room or sensor. It carries the stamp
+ * given here, this clock's by default, and expects no ack; the answer comes
+ * back as a contact message of type `CliData`. The node carries out a command
+ * only if its stamp is past the last one it had from us, and answers one with
+ * the same stamp as a repeat, with nothing.
  */
-export function sendCliCommand(recipientPrefix: Uint8Array, text: string): Uint8Array {
-  return sendTextMessage(recipientPrefix, text, { txtType: TxtType.CliData });
+export function sendCliCommand(recipientPrefix: Uint8Array, text: string, timestamp?: number): Uint8Array {
+  return sendTextMessage(recipientPrefix, text, { txtType: TxtType.CliData, ...(timestamp === undefined ? {} : { timestamp }) });
 }
 
 function random4(): Uint8Array {

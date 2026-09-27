@@ -104,7 +104,6 @@
   "access.removeBody": "Клиент потеряет роль на {name} и сможет войти снова только с паролем.",
   "access.removed": "Убрано из списка.",
 
-  "console.intro": "Узел отвечает только администраторам.",
   "console.command": "Команда консоли",
   "console.placeholder": "Команда, например get tx",
   "console.disconnected": "Не подключено",

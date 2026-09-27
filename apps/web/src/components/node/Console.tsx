@@ -89,9 +89,6 @@ export function Console({ contact }: { contact: ContactRecord }) {
   return (
     <>
       <div className="console" ref={log} aria-live="polite">
-        {entries.length === 0 ? (
-          <p className="muted">{t("node.console.intro")}</p>
-        ) : null}
         {entries.map((entry) => (
           <Entry key={entry.id} entry={entry} onRetry={() => send(entry.command)} />
         ))}

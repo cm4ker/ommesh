@@ -94,7 +94,6 @@
   "access.removeBody": "They lose their role on {name}, and sign in again only with a password.",
   "access.removed": "Removed.",
 
-  "console.intro": "The node answers admins only.",
   "console.command": "Console command",
   "console.placeholder": "Command, e.g. get tx",
   "console.disconnected": "Disconnected",

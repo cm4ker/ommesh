@@ -175,6 +175,20 @@ function Phone() {
 
   // The conversation takes the whole height: its composer sits where the tabs were.
   const tabs = shown?.kind !== "chat";
+  // The screen under a conversation has the tabs, though, and they go and come with it: drawn
+  // under the conversation as it slides in, and as a swipe back uncovers that screen.
+  const underTabs = !tabs && (screens.length < 2 || screens[screens.length - 2]!.kind !== "chat");
+  const tabbar = (className: string) => (
+    <nav className={className} aria-label={t("connect.tabs.label")} {...(className === "tabbar" ? {} : { inert: true, "aria-hidden": true })}>
+      {SECTIONS.map((s) => (
+        <button key={s.id} type="button" className={nav.section === s.id ? "on" : ""} aria-current={nav.section === s.id ? "page" : undefined} onClick={() => goSection(s.id, nav.section === s.id)}>
+          {s.icon}
+          <span className="tab-label">{t(s.label)}</span>
+          <Badge section={s.id} badges={badges} />
+        </button>
+      ))}
+    </nav>
+  );
   return (
     <div className={["app", "narrow", tabs ? "" : "detail"].join(" ")}>
       <main className="content" ref={content}>
@@ -193,19 +207,10 @@ function Phone() {
             </div>
           );
         })}
+        {underTabs ? tabbar(["tabbar", "under-tabs", slide ? "leave" : ""].join(" ")) : null}
         <div className="layer-dim" aria-hidden="true" />
       </main>
-      {tabs ? (
-        <nav className="tabbar" aria-label={t("connect.tabs.label")}>
-          {SECTIONS.map((s) => (
-            <button key={s.id} type="button" className={nav.section === s.id ? "on" : ""} aria-current={nav.section === s.id ? "page" : undefined} onClick={() => goSection(s.id, nav.section === s.id)}>
-              {s.icon}
-              <span className="tab-label">{t(s.label)}</span>
-              <Badge section={s.id} badges={badges} />
-            </button>
-          ))}
-        </nav>
-      ) : null}
+      {tabs ? tabbar("tabbar") : null}
       <Sheet open={sheet !== null} onClose={back} title={t("connect.sheet.travelled")}>
         {sheet ? <MessageView conversation={sheet.conversation} id={sheet.id} chrome={{}} bare /> : null}
       </Sheet>
@@ -241,41 +246,41 @@ function useEdgeSwipe(ref: React.RefObject<HTMLElement | null>, enabled: boolean
     let settling = 0;
     const top = () => el.querySelector<HTMLElement>(":scope > .layer[data-layer=top]");
     // Under the first screen in Mesh lies the map, kept mounted and hidden.
-    const under = () => el.querySelector<HTMLElement>(":scope > .layer[data-layer=under]") ?? el.querySelector<HTMLElement>(":scope > .mesh-phone[hidden]");
+    const below = () => el.querySelector<HTMLElement>(":scope > .layer[data-layer=under]") ?? el.querySelector<HTMLElement>(":scope > .mesh-phone[hidden]");
+    // Under a conversation the tabs go with the screen below.
+    const under = () => [below(), el.querySelector<HTMLElement>(":scope > .under-tabs")].filter((box) => box !== null);
     const dim = () => el.querySelector<HTMLElement>(":scope > .layer-dim");
-    // Each screen by its own transform and the dim by its opacity: a move restyles those three
+    // Each screen by its own transform and the dim by its opacity: a move restyles those few
     // boxes and paints nothing. A value the screen below inherited restyled all of it on every move.
-    const place = (t: HTMLElement, u: HTMLElement | null, dx: number) => {
+    const place = (t: HTMLElement, u: HTMLElement[], dx: number) => {
       const p = Math.min(1, dx / width);
       t.style.transform = `translateX(${dx}px)`;
-      if (u) u.style.transform = `translateX(${-30 * (1 - p)}%)`;
+      for (const box of u) box.style.transform = `translateX(${-30 * (1 - p)}%)`;
       const d = dim();
       if (d) d.style.opacity = String(0.3 * (1 - p));
     };
-    const lift = (t: HTMLElement, u: HTMLElement | null) => {
+    const lift = (t: HTMLElement, u: HTMLElement[]) => {
       // Their own layers while they move: a whole screen repainted on every touch move drops frames.
       // A screen still settling back from the last swipe is taken up again, not let go under the finger.
       clearTimeout(settling);
       width = el.clientWidth || 1;
-      for (const box of [t, u, dim()]) {
+      for (const box of [t, ...u, dim()]) {
         if (box) box.style.transition = "none";
       }
       t.classList.add("moving");
-      u?.classList.add("peek");
+      for (const box of u) box.classList.add("peek");
       dim()?.classList.add("on");
     };
-    const settle = (t: HTMLElement, u: HTMLElement | null) => {
+    const settle = (t: HTMLElement, u: HTMLElement[]) => {
       t.classList.remove("moving");
-      u?.classList.remove("peek");
+      for (const box of u) box.classList.remove("peek");
       dim()?.classList.remove("on");
-      for (const box of [t, u, dim()]) {
+      for (const box of [t, ...u, dim()]) {
         if (box) box.style.transform = box.style.opacity = box.style.transition = "";
       }
     };
-    const finish = (t: HTMLElement, u: HTMLElement | null, go: boolean) => {
-      for (const box of [t, u]) {
-        if (box) box.style.transition = `transform ${SLIDE_MS}ms ease-out`;
-      }
+    const finish = (t: HTMLElement, u: HTMLElement[], go: boolean) => {
+      for (const box of [t, ...u]) box.style.transition = `transform ${SLIDE_MS}ms ease-out`;
       const d = dim();
       if (d) d.style.transition = `opacity ${SLIDE_MS}ms ease-out`;
       place(t, u, go ? width : 0);

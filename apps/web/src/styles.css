@@ -1201,11 +1201,27 @@ textarea.input {
 .layer-dim.on {
   visibility: visible;
 }
+/* The tabs of the screen under a conversation, which has none: they show with that screen, as a swipe back uncovers it and as a conversation slides in over it. */
+.content > .under-tabs {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.content > .under-tabs.peek {
+  visibility: visible;
+  will-change: transform;
+  transform: translateX(-30%);
+}
 @media (prefers-reduced-motion: no-preference) {
   .layer.enter {
     animation: layer-enter 0.22s ease-out;
   }
-  .layer.leave {
+  .layer.leave,
+  .content > .under-tabs.leave {
     animation: layer-leave 0.22s ease-out;
   }
 }

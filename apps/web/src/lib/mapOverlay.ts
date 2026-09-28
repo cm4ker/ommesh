@@ -16,6 +16,7 @@ import { quality } from "./los.js";
 import type { LosEnd, MeshTool, NeighboursTool } from "./meshTool.js";
 import { neighbourRows } from "./neighbours.js";
 import { legSnr, measuredLegs, type Ping } from "./ping.js";
+import { replyScore, type Survey } from "./surveyData.js";
 
 /** `found` is the way a discovery found there, `back` the way its answer came, `was` the route it replaced. */
 export type LineTone = "good" | "fair" | "weak" | "fail" | "flight" | "plain" | "unknown" | "dest" | "look" | "found" | "back" | "was";
@@ -62,7 +63,14 @@ export interface MapOverlay {
   pulse: { lat: number; lon: number } | null;
 }
 
-export const EMPTY_OVERLAY: MapOverlay = { lines: [], pins: [], numbers: {}, handles: [], pulse: null };
+/** A survey's point on the map, by its colour; "off" is one where the repeater picked did not answer. */
+export interface MapDot {
+  lat: number;
+  lon: number;
+  tone: "good" | "fair" | "weak" | "none" | "off";
+}
+
+export const EMPTY_OVERLAY: MapOverlay ={ lines: [], pins: [], numbers: {}, handles: [], pulse: null };
 
 export function selfEnd(state: SessionState): LosEnd | null {
   const self = state.self;
@@ -293,6 +301,21 @@ export function hearsOverlay(hears: Hears, state: SessionState): MapOverlay {
     const c = state.contacts[reply.key];
     const end = c ? contactEnd(c) : null;
     if (end) lines.push({ from: me, to: end, tone: quality(reply.heardUs), tappable: true });
+  }
+  return { lines, pins: [], numbers: {}, handles: [], pulse: null };
+}
+
+/** From a survey's point opened on the map, a line to each repeater that answered there, coloured by the worse of the two ways. */
+export function surveyOverlay(survey: Survey | null, point: number | null, state: SessionState): MapOverlay {
+  const p = survey && point !== null ? survey.points[point] : undefined;
+  if (!survey || !p) return EMPTY_OVERLAY;
+  const from: LosEnd = { lat: p.lat, lon: p.lon, name: t("tools.thisSpot"), key: null };
+  const lines: OverlayLine[] = [];
+  for (const reply of p.replies) {
+    const c = state.contacts[reply.key];
+    const node = survey.nodes[reply.key];
+    const to = (c ? contactEnd(c) : null) ?? (node && node.lat !== null && node.lon !== null ? { lat: node.lat, lon: node.lon, name: node.name, key: reply.key } : null);
+    if (to) lines.push({ from, to, tone: quality(replyScore(reply)), tappable: false });
   }
   return { lines, pins: [], numbers: {}, handles: [], pulse: null };
 }

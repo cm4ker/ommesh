@@ -4,6 +4,7 @@ import { LosView } from "./LosView.js";
 import { NeighboursSheet } from "./NeighboursSheet.js";
 import { RouteSheet } from "./RouteSheet.js";
 import { SpanSheet } from "./SpanSheet.js";
+import { SurveySheet } from "./Survey.js";
 import { WhoHears } from "./WhoHears.js";
 
 /** The tool in use, as the phone's sheet and the desktop's panel show it. */
@@ -12,5 +13,6 @@ export function ToolPanel({ tool }: { tool: MeshTool }) {
   if (tool.kind === "route") return <RouteSheet tool={tool} onClose={closeTool} />;
   if (tool.kind === "span") return <SpanSheet tool={tool} onClose={closeTool} />;
   if (tool.kind === "neighbours") return <NeighboursSheet tool={tool} />;
+  if (tool.kind === "survey") return <SurveySheet tool={tool} />;
   return <WhoHears onClose={closeAllTools} />;
 }

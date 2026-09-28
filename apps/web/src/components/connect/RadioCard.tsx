@@ -9,7 +9,7 @@ import { Input } from "../../ui/Field.js";
 import { AlertIcon, CheckIcon, LockIcon } from "../Icons.js";
 import { t } from "../../i18n/index.js";
 import { errorText } from "../../i18n/errors.js";
-import { cardLine, DeviceIcon, nameOf } from "./parts.js";
+import { cardLine, CardSignalBars, DeviceIcon, nameOf, type CardSignal } from "./parts.js";
 
 /** The radio at the top of the screen. */
 export interface CardRadio {
@@ -59,9 +59,10 @@ function hint(connector: Connector): string | null {
 /**
  * One radio and what is happening with it: Connect; while connecting, the
  * step it has reached and Cancel; a PIN field when the radio wants a bond;
- * the failure, what to check, and Try again.
+ * the failure, what to check, and Try again. Before a connect and after a
+ * failed one, bars in the corner say how well the phone hears it.
  */
-export function RadioCard({ connector, device, radioName, last }: CardRadio) {
+export function RadioCard({ connector, device, radioName, last, signal = null }: CardRadio & { signal?: CardSignal }) {
   const link = useLink();
   const step = useSelector((s) => (s.status === "connecting" ? s.connectStep : null));
   // Once the radio has said who it is, the card says it too.
@@ -99,6 +100,7 @@ export function RadioCard({ connector, device, radioName, last }: CardRadio) {
           <span className="connect-card-name">{name}</span>
           <span className="connect-card-line">{line}</span>
         </span>
+        {phase === "idle" || phase === "failed" ? <CardSignalBars signal={signal} /> : null}
       </div>
 
       {phase === "busy" || phase === "done" ? (

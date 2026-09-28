@@ -815,6 +815,7 @@ function AboutPage() {
     <Group note={t("radio.about.note")}>
       <InfoRow label="Ommesh" icon={<img src="./icon.svg" alt="" width={24} height={24} />}>{info.version}</InfoRow>
       <InfoRow label={t("radio.about.runningIn")}>{shell() === "tauri" ? t("radio.about.desktop") : shell() === "capacitor" ? t("radio.about.phone") : t("radio.about.browser")}</InfoRow>
+      <PrivacyButton row />
     </Group>
     {stops.length > 0 ? (
       <Group title={t("radio.about.stopped")} note={t("radio.about.stoppedNote")}>
@@ -826,7 +827,6 @@ function AboutPage() {
       </Group>
     ) : null}
     <UpdateButton />
-    <PrivacyButton />
   </>;
 }
 

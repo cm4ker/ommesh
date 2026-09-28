@@ -3,9 +3,14 @@ import type { ConsoleEntry, ContactRecord } from "@meshnet/meshcore";
 import { t } from "../../i18n/index.js";
 import { suggest } from "../../lib/cli.js";
 import { timeOfDay } from "../../lib/format.js";
+import { hasSavedPassword, readPassword } from "../../lib/secrets.js";
 import { session, useSession } from "../../lib/session.js";
+import { toast } from "../../lib/toast.js";
+import { errorText } from "../../i18n/errors.js";
 import { Button } from "../../ui/Button.js";
 import { Confirm } from "../../ui/Dialog.js";
+import { SendIcon } from "../Icons.js";
+import { SignIn } from "./SignIn.js";
 
 /** Commands that take a node down, move it, or lock people out. */
 const DANGEROUS = /^(reboot|clkreboot|erase|start ota|poweroff|shutdown|set radio |password |set prv\.key|set guest\.password|setperm |set wifi\.(ssid|pwd) )/;
@@ -20,6 +25,28 @@ export function Console({ contact }: { contact: ContactRecord }) {
   const [recall, setRecall] = useState<number | null>(null);
   const log = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  const [asking, setAsking] = useState(false);
+  const [relearning, setRelearning] = useState(false);
+  const [focused, setFocused] = useState(false);
+  // The last command the node never answered: the node may no longer know its way back to us.
+  const lost = [...entries].reverse().find((e) => e.status === "timeout" && !e.wayBack)?.id ?? null;
+  const lastLost = entries.at(-1)?.id === lost;
+
+  /** A sign-in by flood with the saved password, or the sheet to type one. */
+  const relearn = async () => {
+    if (!hasSavedPassword(key)) return setAsking(true);
+    const password = await readPassword(key);
+    if (password === null) return setAsking(true);
+    setRelearning(true);
+    try {
+      const login = await session.relearnReturnPath(key, password);
+      toast(login.ok ? t("node.console.relearned", { name: contact.name || contact.prefix }) : t("node.signIn.refused"), login.ok ? "" : "error");
+    } catch (error) {
+      toast(errorText(error), "error");
+    } finally {
+      setRelearning(false);
+    }
+  };
 
   useEffect(() => {
     const el = log.current;
@@ -64,14 +91,20 @@ export function Console({ contact }: { contact: ContactRecord }) {
   return (
     <>
       <div className="console" ref={log} aria-live="polite">
-        {entries.length === 0 ? (
-          <p className="muted">{contact.name ? t("node.console.intro", { name: contact.name }) : t("node.console.introUnnamed")}</p>
-        ) : null}
         {entries.map((entry) => (
           <Entry key={entry.id} entry={entry} onRetry={() => send(entry.command)} />
         ))}
+        {lost && lastLost ? (
+          <div className="c-wayback">
+            <span className="muted small">{t("node.console.wayBack")}</span>
+            <Button size="sm" busy={relearning} disabled={!online || relearning} onClick={() => void relearn()}>
+              {t("node.console.relearn")}
+            </Button>
+          </div>
+        ) : null}
       </div>
-      <form className="composer console-composer" onSubmit={submit}>
+      {/* The same frame as a chat's composer, so a command is written the way a message is. */}
+      <form className={["compose", "console-compose", focused ? "focus" : "", draft ? "has" : "", online ? "" : "waiting"].join(" ")} onSubmit={submit}>
         <div className="chips console-chips">
           {chips.map((s) => (
             <button
@@ -93,28 +126,47 @@ export function Console({ contact }: { contact: ContactRecord }) {
           ) : null}
         </div>
         {hint ? <span className="console-hint mono">{hint}</span> : null}
-        <div className="composer-row">
-          <span className="prompt" aria-hidden="true">
-            ›
-          </span>
-          <input
-            ref={input}
-            className="input mono"
-            aria-label={t("node.console.command")}
-            autoComplete="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            placeholder={online ? t("node.console.placeholder") : t("node.console.disconnected")}
-            value={draft}
-            disabled={!online}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={onKey}
-          />
-          <Button type="submit" variant="primary" disabled={!online || !typed}>
-            {t("common.send")}
-          </Button>
+        <div className="compose-box">
+          <div className="compose-row">
+            <div className="compose-field">
+              <input
+                ref={input}
+                aria-label={t("node.console.command")}
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                enterKeyHint="send"
+                placeholder={online ? undefined : t("node.console.disconnected")}
+                value={draft}
+                disabled={!online}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={onKey}
+                onFocus={() => setFocused(true)}
+                onBlur={() => setFocused(false)}
+              />
+            </div>
+            <button
+              type="submit"
+              className={["compose-send", online && typed ? "ready" : "idle"].join(" ")}
+              aria-label={t("common.send")}
+              disabled={!online || !typed}
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              <SendIcon size={18} />
+            </button>
+          </div>
         </div>
       </form>
+      <SignIn
+        open={asking}
+        nodeKey={key}
+        relearn
+        onClose={() => setAsking(false)}
+        onSignedIn={() => {
+          setAsking(false);
+          toast(t("node.console.relearned", { name: contact.name || contact.prefix }));
+        }}
+      />
       <Confirm
         open={confirming !== null}
         title={t("node.console.sendTitle", { command: confirming ?? "" })}
@@ -163,11 +215,22 @@ function Entry({ entry, onRetry }: { entry: ConsoleEntry; onRetry: () => void })
         <div className="c-out c-wait">{t("node.console.queued")}</div>
       ) : entry.status === "waiting" ? (
         <div className="c-out c-wait">
-          <span className="spinner" aria-hidden="true" /> {t("node.console.waiting")}
+          <span className="spinner" aria-hidden="true" />{" "}
+          {entry.check === "checking"
+            ? t("node.console.checking", { command: readBack(entry.command) })
+            : entry.wayBack === "renewing"
+              ? t("node.console.renewing")
+              : entry.attempt && entry.attempt > 1 && entry.attempts
+                ? t("node.console.try", { n: entry.attempt, of: entry.attempts })
+                : t("node.console.waiting")}
         </div>
       ) : entry.status === "timeout" ? (
         <div className="c-out c-err">
-          {t("node.console.noReply")}
+          {entry.wayBack === "unreachable"
+            ? t("node.console.unreachable")
+            : entry.attempt && entry.attempt > 1
+              ? t("node.console.noReplyTries", { count: entry.attempt })
+              : t("node.console.noReply")}
           {/* A masked command cannot be sent again: its text here is not the command. */}
           {entry.command.includes("••") ? null : (
             <>
@@ -179,10 +242,27 @@ function Entry({ entry, onRetry }: { entry: ConsoleEntry; onRetry: () => void })
           )}
         </div>
       ) : entry.status === "failed" ? (
-        <div className="c-out c-err">{entry.error}</div>
+        <div className="c-out c-err">
+          {entry.check === "differs" ? t("node.console.differs", { command: readBack(entry.command), value: entry.reply ?? "" }) : entry.error}
+        </div>
       ) : (
-        <div className="c-out">{entry.reply}</div>
+        <>
+          <div className="c-out">{entry.reply}</div>
+          {entry.check === "applied" ? (
+            <div className="c-note c-good">{t("node.console.applied", { command: readBack(entry.command) })}</div>
+          ) : entry.wayBack === "renewed" ? (
+            <div className="c-note">{t("node.console.afterRenew")}</div>
+          ) : entry.attempt && entry.attempt > 1 ? (
+            <div className="c-note">{t("node.console.answeredOnTry", { n: entry.attempt })}</div>
+          ) : null}
+        </>
       )}
     </div>
   );
+}
+
+/** The `get` a `set` is read back with. */
+function readBack(command: string): string {
+  const name = /^set\s+(\S+)/i.exec(command.trim())?.[1];
+  return name ? `get ${name}` : command;
 }

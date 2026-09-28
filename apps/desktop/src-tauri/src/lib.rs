@@ -4,6 +4,7 @@
 //! screens — is the client's, and the same on every platform.
 
 mod announce;
+mod coverage;
 mod notices;
 mod secrets;
 mod tcp;
@@ -95,6 +96,7 @@ pub fn run() {
         secrets::secret_get,
         secrets::secret_set,
         secrets::secret_delete,
+        coverage::coverage_upload,
     ]);
     #[cfg(not(windows))]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -117,6 +119,7 @@ pub fn run() {
         secrets::secret_get,
         secrets::secret_set,
         secrets::secret_delete,
+        coverage::coverage_upload,
     ]);
 
     builder

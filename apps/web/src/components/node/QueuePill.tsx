@@ -5,6 +5,7 @@ import { session, useSession } from "../../lib/session.js";
 /** The session's names for its requests; anything else is a console command, shown as typed. */
 const JOBS: Record<string, Key> = {
   "sign in": "node.queue.job.signIn",
+  "sign in by flood": "node.queue.job.renewWayBack",
   status: "node.queue.job.status",
   telemetry: "node.queue.job.telemetry",
   "path discovery": "node.queue.job.pathDiscovery",

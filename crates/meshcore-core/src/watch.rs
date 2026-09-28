@@ -13,6 +13,12 @@
 //! first time waits the same moment for the page to say it announced it
 //! (`announced`). Back in front, the watch's notices are withdrawn: the page
 //! reads its inbox and announces what is still unread.
+//!
+//! News that keeps coming, each within [`QUIET_MS`] of the last, is one burst:
+//! a queue of a hundred messages read out after a time away is one, a chat
+//! whose people write seconds apart is a burst per message. A burst rings once,
+//! with its first notice; the notices after it only bring the count up to
+//! date (gh #46).
 
 use std::collections::HashMap;
 
@@ -24,6 +30,9 @@ use crate::{Effect, Timer};
 
 /// How long a message waits for an awake page to take it, in ms.
 pub const GRACE_MS: i64 = 5000;
+/// How long news must stop for a burst of it to be over, in ms. The mux reads the radio's
+/// queue at a message per 60–450 ms; people in a chat write seconds apart.
+pub const QUIET_MS: i64 = 1500;
 /// More chats than this with a notice each become one notice for all of them.
 const SEPARATE: usize = 3;
 /// The latest messages a chat's notice shows.
@@ -215,6 +224,8 @@ pub struct Notice {
     pub title: String,
     pub body: String,
     pub kind: NoticeKind,
+    /// Shown without the signal: a burst of news rings with its first notice only.
+    pub silent: bool,
 }
 
 impl Notice {
@@ -225,6 +236,7 @@ impl Notice {
             title,
             body,
             kind,
+            silent: false,
         }
     }
 }
@@ -272,9 +284,15 @@ pub(crate) struct Watch {
     config: WatchConfig,
     background: bool,
     waiting: Vec<Waiting>,
-    /// The grace timer's number; bumped to let one that is running do nothing.
+    /// The number of the grace and quiet timers; bumped to let ones that are running do nothing.
     grace: i32,
     armed: bool,
+    /// A burst of news is coming: the quiet timer is set.
+    busy: bool,
+    /// News came since the quiet timer was set, so the burst goes on.
+    busy_again: bool,
+    /// The burst has not rung yet: its next notice rings.
+    unrung: bool,
     chats: Vec<Chat>,
     /// Chats with a notice of their own out.
     out: Vec<String>,
@@ -291,6 +309,9 @@ impl Watch {
             waiting: Vec::new(),
             grace: 0,
             armed: false,
+            busy: false,
+            busy_again: false,
+            unrung: false,
             chats: Vec::new(),
             out: Vec::new(),
             all_out: false,
@@ -329,6 +350,9 @@ impl Watch {
         self.chats.clear();
         self.all_out = false;
         self.armed = false;
+        self.busy = false;
+        self.busy_again = false;
+        self.unrung = false;
         self.grace = self.grace.wrapping_add(1);
     }
 
@@ -338,6 +362,7 @@ impl Watch {
             return;
         }
         self.waiting.push(Waiting::Message(frame.to_vec()));
+        self.news();
         self.arm();
     }
 
@@ -389,6 +414,7 @@ impl Watch {
             NoticeKind::Nodes,
         );
         self.waiting.push(Waiting::Node(notice));
+        self.news();
         self.arm();
     }
 
@@ -411,6 +437,46 @@ impl Watch {
         });
     }
 
+    /// News came. The first after a quiet starts a burst, which has not rung yet.
+    fn news(&mut self) {
+        if self.busy {
+            self.busy_again = true;
+            return;
+        }
+        self.busy = true;
+        self.unrung = true;
+        self.wait_for_quiet();
+    }
+
+    /// One timer at a time rather than one per message: a burst of a hundred would leave a
+    /// hundred waiting. So the burst is over a whole quiet after its last news, at most two.
+    fn wait_for_quiet(&mut self) {
+        self.effects.push(Effect::Wait {
+            timer: Timer::Quiet {
+                generation: self.grace,
+            },
+            millis: QUIET_MS,
+        });
+    }
+
+    /// The quiet timer is due: the burst goes on if news came meanwhile, and is over if not.
+    pub fn quiet(&mut self, generation: i32) {
+        if generation != self.grace || !self.busy {
+            return;
+        }
+        if std::mem::take(&mut self.busy_again) {
+            self.wait_for_quiet();
+        } else {
+            self.busy = false;
+        }
+    }
+
+    /// Posts a notice: the burst's first rings, the rest bring what is out up to date quietly.
+    fn post(&mut self, mut notice: Notice) {
+        notice.silent = !std::mem::take(&mut self.unrung);
+        self.effects.push(Effect::Post { notice });
+    }
+
     /// The grace is over: what the page left is announced.
     pub fn timeout(&mut self, generation: i32) {
         if generation != self.grace || !self.armed {
@@ -422,7 +488,7 @@ impl Watch {
             match waiting {
                 Waiting::Node(notice) => {
                     self.nodes_out.push(notice.tag.clone());
-                    self.effects.push(Effect::Post { notice });
+                    self.post(notice);
                 }
                 Waiting::Message(frame) => {
                     if let Some(conversation) = self.add(&frame) {
@@ -598,7 +664,7 @@ impl Watch {
             }
             self.all_out = true;
             let notice = self.all_chats_notice();
-            self.effects.push(Effect::Post { notice });
+            self.post(notice);
             return;
         }
         for conversation in fresh {
@@ -609,7 +675,7 @@ impl Watch {
             if !self.out.contains(&conversation) {
                 self.out.push(conversation);
             }
-            self.effects.push(Effect::Post { notice });
+            self.post(notice);
         }
     }
 
@@ -782,6 +848,7 @@ mod tests {
     struct Rig {
         core: Core,
         grace: Vec<Timer>,
+        quiet: Vec<Timer>,
         posted: Vec<Notice>,
         withdrawn: Vec<String>,
     }
@@ -791,6 +858,7 @@ mod tests {
             let mut rig = Rig {
                 core: Core::new(Vec::new()),
                 grace: vec![],
+                quiet: vec![],
                 posted: vec![],
                 withdrawn: vec![],
             };
@@ -814,6 +882,10 @@ mod tests {
                         timer: timer @ Timer::Grace { .. },
                         ..
                     } => self.grace.push(timer),
+                    Effect::Wait {
+                        timer: timer @ Timer::Quiet { .. },
+                        ..
+                    } => self.quiet.push(timer),
                     Effect::Post { notice } => self.posted.push(notice),
                     Effect::Withdraw { tag, .. } => self.withdrawn.push(tag),
                     _ => {}
@@ -845,6 +917,22 @@ mod tests {
                 self.note(effects);
             }
             self
+        }
+
+        /// News stops long enough for its burst to be over.
+        fn quiet_comes(&mut self) -> &mut Self {
+            while !self.quiet.is_empty() {
+                for timer in std::mem::take(&mut self.quiet) {
+                    let effects = self.core.timeout(timer);
+                    self.note(effects);
+                }
+            }
+            self
+        }
+
+        /// Whether each notice posted rang.
+        fn rang(&self) -> Vec<bool> {
+            self.posted.iter().map(|n| !n.silent).collect()
         }
 
         fn titles(&self) -> Vec<&str> {
@@ -1089,5 +1177,52 @@ mod tests {
         rig.note(effects);
         rig.grace_ends();
         assert_eq!(rig.posted.len(), 1, "the page said it announced it");
+    }
+
+    #[test]
+    fn a_queue_read_out_rings_once_however_long_it_takes() {
+        let mut rig = Rig::new(config());
+        for i in 0..10 {
+            rig.arrives(channel(0, &format!("a: {i}")));
+        }
+        rig.grace_ends();
+        for i in 10..20 {
+            rig.arrives(channel(0, &format!("a: {i}")));
+        }
+        rig.arrives(direct(&ALICE[..12], 1, "hi")).grace_ends();
+        assert_eq!(
+            rig.rang(),
+            vec![true, false, false],
+            "the first rings, the counts after it come quietly"
+        );
+        assert_eq!(rig.posted[1].title, "Public · 20 new");
+        rig.quiet_comes()
+            .arrives(channel(0, "b: later"))
+            .grace_ends();
+        assert_eq!(
+            rig.rang().last(),
+            Some(&true),
+            "news after a quiet rings again"
+        );
+    }
+
+    #[test]
+    fn messages_seconds_apart_ring_each() {
+        let mut rig = Rig::new(config());
+        rig.arrives(channel(0, "a: one")).quiet_comes().grace_ends();
+        rig.arrives(channel(0, "b: two")).quiet_comes().grace_ends();
+        rig.arrives(direct(&ALICE[..12], 1, "three"))
+            .quiet_comes()
+            .grace_ends();
+        assert_eq!(rig.rang(), vec![true, true, true]);
+    }
+
+    #[test]
+    fn a_burst_in_several_chats_rings_with_its_first_notice() {
+        let mut rig = Rig::new(config());
+        rig.arrives(channel(0, "a: 1"))
+            .arrives(channel(1, "b: 2"))
+            .grace_ends();
+        assert_eq!(rig.rang(), vec![true, false]);
     }
 }

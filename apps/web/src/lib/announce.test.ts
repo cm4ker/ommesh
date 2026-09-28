@@ -1,7 +1,7 @@
-import { beforeEach, test } from "node:test";
+import { afterEach, beforeEach, mock, test } from "node:test";
 import assert from "node:assert/strict";
 import type { MessageRecord, SessionState } from "@meshnet/meshcore";
-import { ALL_CHATS, createAnnouncer, type Notice } from "./announce.js";
+import { ALL_CHATS, CATCH_UP_MS, QUIET_MS, createAnnouncer, type Notice } from "./announce.js";
 
 const BOB = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";
 const EVE = "2102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";
@@ -86,6 +86,8 @@ let wanted: (m: MessageRecord) => boolean;
 /** What each notice says, as the tests below compare it; `full` keeps whose circle it shows and its thread. */
 let shown: Notice[];
 let full: Notice[];
+/** The tags of the notices that rang. */
+let rang: string[];
 let withdrawn: string[];
 let announcer: ReturnType<typeof createAnnouncer>;
 
@@ -100,10 +102,18 @@ function receive(m: MessageRecord): void {
   announcer.received(m);
 }
 
-/** The radio's queue drained in one pass, as at connect. */
+/** The radio's queue drained in one pass, as at connect, and then a quiet. */
 function drain(messages: MessageRecord[]): void {
   set({ syncing: true });
   for (const m of messages) receive(m);
+  set({ syncing: false });
+  mock.timers.tick(QUIET_MS);
+}
+
+/** One message in a pass of its own, as the phone's radio core hands its copy of the queue over. */
+function handOver(m: MessageRecord): void {
+  set({ syncing: true });
+  receive(m);
   set({ syncing: false });
 }
 
@@ -116,13 +126,16 @@ function markRead(conversation: string): void {
 function start(from: SessionState = initial()): void {
   state = from;
   announcer = createAnnouncer({ state: () => state, wanted: (m) => wanted(m), show: (n) => {
-    const { face: _face, thread: _thread, ...said } = n;
+    const { face: _face, thread: _thread, silent, ...said } = n;
     shown.push(said);
     full.push(n);
+    if (!silent) rang.push(n.tag);
   }, withdraw: (t) => withdrawn.push(t) });
 }
 
 beforeEach(() => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  rang = [];
   focused = null;
   wanted = () => true;
   shown = [];
@@ -130,6 +143,8 @@ beforeEach(() => {
   withdrawn = [];
   start();
 });
+
+afterEach(() => mock.timers.reset());
 
 test("the history read back at connect is not announced, unread or not", () => {
   start(initial([]));
@@ -282,4 +297,41 @@ test("the notice for several chats shows no one's circle", () => {
   assert.equal(notice?.tag, ALL_CHATS);
   assert.equal(notice?.face, undefined);
   assert.equal(notice?.thread, undefined);
+});
+
+test("a queue handed over a message at a time rings once, and the count is shown once it stops", () => {
+  for (let i = 0; i < 150; i++) {
+    handOver(i % 2 ? message("ch:0", `m${i}`, "Alice") : message(`c:${BOB}`, `m${i}`));
+    mock.timers.tick(100);
+  }
+  assert.deepEqual(rang, [`c:c:${BOB}`]);
+  assert.ok(shown.length < 2 * (15_000 / CATCH_UP_MS + 2), "brought up to date every few seconds, not message by message");
+  shown = [];
+  mock.timers.tick(QUIET_MS);
+  assert.deepEqual(shown.map((n) => n.title).sort(), ["Bob · 75 new", "Public · 75 new"]);
+  assert.deepEqual(rang, [`c:c:${BOB}`], "quietly");
+});
+
+test("messages seconds apart ring each, at once", () => {
+  handOver(message(`c:${BOB}`, "one"));
+  assert.deepEqual(rang, [`c:c:${BOB}`]);
+  mock.timers.tick(4000);
+  handOver(message(`c:${BOB}`, "two"));
+  mock.timers.tick(4000);
+  handOver(message("ch:0", "three", "Alice"));
+  assert.deepEqual(rang, [`c:c:${BOB}`, `c:c:${BOB}`, "c:ch:0"]);
+});
+
+test("a burst in several chats rings with its first notice only", () => {
+  drain([message("ch:0", "a", "Alice"), message(`c:${BOB}`, "b")]);
+  assert.deepEqual(shown.map((n) => n.tag), ["c:ch:0", `c:c:${BOB}`]);
+  assert.deepEqual(rang, ["c:ch:0"]);
+});
+
+test("news nobody wants to hear of leaves the burst to ring for what they do", () => {
+  wanted = (m) => m.conversation !== "ch:0";
+  handOver(message("ch:0", "chatter", "Alice"));
+  mock.timers.tick(100);
+  handOver(message(`c:${BOB}`, "ping"));
+  assert.deepEqual(rang, [`c:c:${BOB}`]);
 });

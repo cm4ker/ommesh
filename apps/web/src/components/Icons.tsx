@@ -87,6 +87,14 @@ export const SortIcon = icon('<path d="M4 7h16M7 12h10M10 17h4"/>');
 export const WavesIcon = icon(
   '<path d="M3 8.5c1.5-1.4 3-1.4 4.5 0s3 1.4 4.5 0 3-1.4 4.5 0 3 1.4 4.5 0"/><path d="M3 13c1.5-1.4 3-1.4 4.5 0s3 1.4 4.5 0 3-1.4 4.5 0 3 1.4 4.5 0"/><path d="M3 17.5c1.5-1.4 3-1.4 4.5 0s3 1.4 4.5 0 3-1.4 4.5 0 3 1.4 4.5 0"/>',
 );
+/** North on a turned map: the needle's north half filled. */
+export const CompassIcon = icon('<path d="M12 3l4 9h-8z" fill="currentColor"/><path d="M8 12l4 9 4-9"/>');
+/** A coverage survey: a drive with a point every so often. */
+export const SurveyIcon = icon('<path d="M4 18.5c3.5 0 4-5 8-5s4.5-5 8-5"/><circle cx="4" cy="18.5" r="1.6"/><circle cx="12" cy="13.5" r="1.6"/><circle cx="20" cy="8.5" r="1.6"/>');
+/** A file handed on: to the share sheet, or downloaded. */
+export const ShareIcon = icon('<path d="M12 14.5v-11M8 7.5l4-4 4 4"/><path d="M7 10.5H5.5v10h13v-10H17"/>');
+export const FileIcon = icon('<path d="M7 3.5h7l4 4v13H7z"/><path d="M14 3.5v4h4"/>');
+export const PauseIcon = icon('<path d="M9 6.5v11M15 6.5v11"/>');
 /** Marks an action that transmits: it costs airtime, and happens only when asked. */
 export const AirIcon = icon('<path d="M12 21v-8.5"/><circle cx="12" cy="10.5" r="1.6"/><path d="M8.3 7a5.2 5.2 0 0 0 0 7M15.7 7a5.2 5.2 0 0 1 0 7"/><path d="M5.6 4.4a9 9 0 0 0 0 12.2M18.4 4.4a9 9 0 0 1 0 12.2"/>');
 export const SearchIcon = icon('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>');

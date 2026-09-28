@@ -1,89 +1,75 @@
 /**
  * The nodes on a map: every contact whose last advert carried a position, and
- * this radio. Tiles are OpenStreetMap's, kept on the device as they are seen
- * (lib/tiles.ts). The nodes are painted on one canvas (lib/nodeCanvas.ts),
- * which keeps a pan and a pinch smooth with hundreds of them. Nodes that
- * would overlap at the current zoom are gathered into one circle with their
- * count unless grouping is turned off; tapping it zooms in on them, or hands
- * them up as a group when they share a spot. The picked node,
- * and the lines over the nodes (lib/mapOverlay.ts: a route coloured by a
- * ping, a line of sight), are the caller's: the map draws them and reports
- * taps, on a node, on a line, and a long press anywhere, and a point of a
- * route dragged onto a node. The phone, once asked where it is, is a ring
- * with a button under it that puts this radio there. Nothing here asks the
- * air for anything.
+ * this radio. The map is MapLibre's, so it pans, pinches and turns with two
+ * fingers; a compass button turns it back to north. Tiles are OpenStreetMap's,
+ * kept on the device as they are seen (lib/tiles.ts) and handed to the map
+ * through a protocol of their own; a dark theme turns them over on the GPU.
+ *
+ * The nodes are painted on one canvas (lib/nodeCanvas.ts), which keeps a pan
+ * and a pinch smooth with hundreds of them. Nodes that would overlap at the
+ * current zoom are gathered into one circle with their count unless grouping
+ * is turned off; tapping it zooms in on them, or hands them up as a group when
+ * they share a spot. The picked node, and the lines over the nodes
+ * (lib/mapOverlay.ts: a route coloured by a ping, a line of sight), are the
+ * caller's: the map draws them and reports taps, on a node, on a line, and a
+ * long press anywhere, and a point of a route dragged onto a node. The phone,
+ * once asked where it is, is a ring with a button under it that puts this
+ * radio there. Nothing here asks the air for anything.
  */
 
-import * as L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import { addProtocol, LngLatBounds, Map as MapLibre, Marker, type StyleSpecification } from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AdvType, type ContactRecord } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
-import { darkenPixels } from "../lib/darkTile.js";
-import { hasPosition } from "../lib/geo.js";
-import { EMPTY_OVERLAY, type MapHandle, type MapOverlay } from "../lib/mapOverlay.js";
+import { distanceKm, hasPosition } from "../lib/geo.js";
+import { EMPTY_OVERLAY, type MapDot, type MapHandle, type MapOverlay } from "../lib/mapOverlay.js";
 import type { LosEnd } from "../lib/meshTool.js";
-import { NodeCanvas } from "../lib/nodeCanvas.js";
+import { NodeCanvas, type LatLon } from "../lib/nodeCanvas.js";
 import type { Fix } from "../lib/phonePosition.js";
 import type { MenuAt } from "../lib/press.js";
 import { useSession } from "../lib/session.js";
 import { TILE_URL, tileAttribution, tileBlob } from "../lib/tiles.js";
 import { IconButton } from "../ui/Button.js";
-import { FitIcon, GroupIcon, LocateIcon, MinusIcon, PlusIcon, WavesIcon } from "./Icons.js";
+import { CompassIcon, FitIcon, GroupIcon, LocateIcon, MinusIcon, PlusIcon, WavesIcon } from "./Icons.js";
 
 function darkTheme(): boolean {
   return document.documentElement.dataset["appearance"] === "dark";
 }
 
-function decode(blob: Blob): Promise<CanvasImageSource & { close?: () => void }> {
-  if (typeof createImageBitmap === "function") return createImageBitmap(blob);
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(img);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("tile did not decode"));
-    };
-    img.src = url;
+/** Tiles through lib/tiles.ts, which keeps them for use with no network; registered once for every map. */
+let tilesServed = false;
+function serveTiles(): void {
+  if (tilesServed) return;
+  tilesServed = true;
+  addProtocol("osm-cache", async (params) => {
+    const m = /^osm-cache:\/\/(\d+)\/(\d+)\/(\d+)/.exec(params.url);
+    if (!m) throw new Error(`not a tile: ${params.url}`);
+    const blob = await tileBlob(TILE_URL.replace("{z}", m[1]!).replace("{x}", m[2]!).replace("{y}", m[3]!));
+    return { data: await blob.arrayBuffer() };
   });
 }
 
 /**
- * Serves each tile from the device's copy when it has one (lib/tiles.ts), and
- * draws it on a canvas, recoloured once for a dark theme (lib/darkTile.ts)
- * rather than filtered live on every frame of a zoom.
+ * OSM's light tiles as they are, or turned over for a dark theme: the CSS
+ * filter the map once had, invert(1) hue-rotate(180deg) brightness(0.92)
+ * contrast(0.88) saturate(0.55), done by the map's shader instead. Inverting
+ * last is the same as first, since a half turn of hue, saturation and contrast
+ * are all even about the middle grey.
  */
-class CachedTileLayer extends L.TileLayer {
-  protected override createTile(coords: L.Coords, done: L.DoneCallback): HTMLElement {
-    const canvas = document.createElement("canvas");
-    canvas.setAttribute("role", "presentation");
-    const size = this.getTileSize();
-    canvas.width = size.x;
-    canvas.height = size.y;
-    tileBlob(this.getTileUrl(coords))
-      .then(decode)
-      .then((image) => {
-        const dark = darkTheme();
-        const context = canvas.getContext("2d", { willReadFrequently: dark });
-        if (!context) throw new Error("no canvas");
-        context.drawImage(image, 0, 0, canvas.width, canvas.height);
-        image.close?.();
-        if (dark) {
-          const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-          darkenPixels(pixels.data);
-          context.putImageData(pixels, 0, 0);
-        }
-        done(undefined, canvas);
-      })
-      .catch((error: Error) => done(error, canvas));
-    return canvas;
-  }
+function tilePaint(dark: boolean) {
+  return dark
+    ? { "raster-hue-rotate": 180, "raster-saturation": -0.45, "raster-contrast": -0.12, "raster-brightness-min": 0.92, "raster-brightness-max": 0 }
+    : { "raster-hue-rotate": 0, "raster-saturation": 0, "raster-contrast": 0, "raster-brightness-min": 0, "raster-brightness-max": 1 };
 }
 
+function mapStyle(dark: boolean): StyleSpecification {
+  return {
+    version: 8,
+    sources: { osm: { type: "raster", tiles: ["osm-cache://{z}/{x}/{y}"], tileSize: 256, maxzoom: 19 } },
+    layers: [{ id: "osm", type: "raster", source: "osm", paint: tilePaint(dark) }],
+  };
+}
 
 /** A group spread less than this, in metres, is the same spot at any zoom, and is listed rather than zoomed into. */
 const SAME_SPOT_M = 25;
@@ -92,33 +78,178 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
-function selfIcon(name: string): L.DivIcon {
-  return L.divIcon({
-    className: "map-self",
-    html: `<span class="map-self-pulse"></span><span class="map-self-dot"></span><span class="map-name">${escapeHtml(name)}</span>`,
-    iconSize: [22, 22],
-    iconAnchor: [11, 11],
-  });
+function element(className: string, html: string, size: [number, number]): HTMLDivElement {
+  const el = document.createElement("div");
+  el.className = className;
+  el.innerHTML = html;
+  el.style.width = `${size[0]}px`;
+  el.style.height = `${size[1]}px`;
+  return el;
+}
+
+function selfHtml(name: string): string {
+  return `<span class="map-self-pulse"></span><span class="map-self-dot"></span><span class="map-name">${escapeHtml(name)}</span>`;
 }
 
 /** The phone: a hollow ring, apart from this radio's filled dot; unnamed under the radio's own name when the two are together. */
-function phoneIcon(named: boolean): L.DivIcon {
+function phoneHtml(named: boolean): string {
   const name = named ? `<span class="map-name">${escapeHtml(t("mesh.map.phone"))}</span>` : "";
-  return L.divIcon({
-    className: "map-phone",
-    html: `<span class="map-phone-ring"></span>${name}`,
-    iconSize: [16, 16],
-    iconAnchor: [8, 8],
-  });
+  return `<span class="map-phone-ring"></span>${name}`;
 }
 
 /** The button under the phone's ring; the marker has no size, and the button hangs from its point. */
-function putIcon(distance: string | null): L.DivIcon {
+function putHtml(distance: string | null): string {
   const pin = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z"/><circle cx="12" cy="10" r="2"/></svg>';
   const far = distance ? ` <small>${escapeHtml(distance)}</small>` : "";
-  return L.divIcon({ className: "map-put", html: `<span>${pin}${escapeHtml(t("mesh.map.putHere"))}${far}</span>`, iconSize: [0, 0], iconAnchor: [0, 0] });
+  return `<span>${pin}${escapeHtml(t("mesh.map.putHere"))}${far}</span>`;
 }
 
+const SVG = "http://www.w3.org/2000/svg";
+
+interface Path {
+  el: SVGPathElement;
+  points: LatLon[];
+}
+
+/**
+ * What the map draws between its tiles and its nodes, placed again on every
+ * frame the map draws: the lines of the overlay as SVG paths with the CSS
+ * classes they always had, a survey's points, the circle of how sure the
+ * phone's fix is, and the rings of a flood. A line that opens something has a
+ * wide path nobody sees over it, for a finger to find.
+ */
+class Overlay {
+  private readonly svg = document.createElementNS(SVG, "svg");
+  private readonly under = document.createElementNS(SVG, "g");
+  private readonly lines = document.createElementNS(SVG, "g");
+  private readonly dotGroup = document.createElementNS(SVG, "g");
+  private readonly html = document.createElement("div");
+  private paths: Path[] = [];
+  private dots: { el: SVGCircleElement; at: LatLon }[] = [];
+  private halo: { el: SVGCircleElement; at: LatLon; metres: number } | null = null;
+  private floats: { el: HTMLElement; at: LatLon; half: number }[] = [];
+
+  constructor(
+    private readonly map: MapLibre,
+    parent: HTMLElement,
+  ) {
+    this.svg.setAttribute("class", "map-overlay");
+    this.svg.setAttribute("aria-hidden", "true");
+    this.svg.append(this.under, this.lines, this.dotGroup);
+    this.html.className = "map-overlay";
+    parent.append(this.html, this.svg);
+    map.on("render", this.frame);
+  }
+
+  remove(): void {
+    this.map.off("render", this.frame);
+    this.svg.remove();
+    this.html.remove();
+  }
+
+  /** A path through `points` in the given classes; tapping it runs `onTap` when there is one. */
+  path(points: LatLon[], className: string, onTap?: () => void): Path {
+    const el = document.createElementNS(SVG, "path");
+    el.setAttribute("class", className);
+    if (onTap) {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onTap();
+      });
+    }
+    this.lines.append(el);
+    const path = { el, points };
+    this.paths.push(path);
+    return path;
+  }
+
+  drop(path: Path): void {
+    path.el.remove();
+    this.paths = this.paths.filter((p) => p !== path);
+  }
+
+  clearPaths(): void {
+    for (const p of this.paths) p.el.remove();
+    this.paths = [];
+    for (const f of this.floats) f.el.remove();
+    this.floats = [];
+  }
+
+  /** An element held at a spot under the nodes, by its middle: the rings of a flood. */
+  float(el: HTMLElement, at: LatLon, size: number): void {
+    el.style.width = `${size}px`;
+    el.style.height = `${size}px`;
+    this.html.append(el);
+    this.floats.push({ el, at, half: size / 2 });
+  }
+
+  setDots(dots: MapDot[] | null, picked: number | null): void {
+    for (const d of this.dots) d.el.remove();
+    this.dots = (dots ?? []).map((d, i) => {
+      const el = document.createElementNS(SVG, "circle");
+      const on = i === picked;
+      el.setAttribute("class", `map-dot ${d.tone}${on ? " on" : ""}`);
+      el.setAttribute("r", String(on ? 8 : d.tone === "off" ? 2.5 : 6));
+      this.dotGroup.append(el);
+      return { el, at: { lat: d.lat, lon: d.lon } };
+    });
+    this.map.triggerRepaint();
+  }
+
+  setHalo(at: LatLon | null, metres: number): void {
+    if (!at) {
+      this.halo?.el.remove();
+      this.halo = null;
+    } else {
+      if (!this.halo) {
+        const el = document.createElementNS(SVG, "circle");
+        el.setAttribute("class", "map-phone-halo");
+        this.under.append(el);
+        this.halo = { el, at, metres };
+      }
+      this.halo.at = at;
+      this.halo.metres = metres;
+    }
+    this.map.triggerRepaint();
+  }
+
+  private frame = (): void => {
+    const map = this.map;
+    const at = (p: LatLon) => map.project([p.lon, p.lat]);
+    for (const p of this.paths) {
+      if (p.points.length < 2) {
+        p.el.removeAttribute("d");
+        continue;
+      }
+      p.el.setAttribute(
+        "d",
+        p.points
+          .map((q, i) => {
+            const s = at(q);
+            return `${i ? "L" : "M"}${s.x.toFixed(1)} ${s.y.toFixed(1)}`;
+          })
+          .join(""),
+      );
+    }
+    for (const d of this.dots) {
+      const { x, y } = at(d.at);
+      d.el.setAttribute("cx", x.toFixed(1));
+      d.el.setAttribute("cy", y.toFixed(1));
+    }
+    if (this.halo) {
+      const { x, y } = at(this.halo.at);
+      // The map's world is 512 pixels round at zoom 0.
+      const metresPerPixel = (40_075_016.686 * Math.cos((this.halo.at.lat * Math.PI) / 180)) / (512 * 2 ** map.getZoom());
+      this.halo.el.setAttribute("cx", x.toFixed(1));
+      this.halo.el.setAttribute("cy", y.toFixed(1));
+      this.halo.el.setAttribute("r", Math.max(0, this.halo.metres / metresPerPixel).toFixed(1));
+    }
+    for (const f of this.floats) {
+      const { x, y } = at(f.at);
+      f.el.style.transform = `translate(${x - f.half}px, ${y - f.half}px)`;
+    }
+  };
+}
 
 export interface MapProps {
   /** The node picked, drawn ringed with its route. */
@@ -153,10 +284,32 @@ export interface MapProps {
   putHere?: { distance: string | null; onPut: () => void } | null | undefined;
   /** "Where am I": finds the phone and says where it is, or null to go to this radio instead. */
   onLocate?: (() => Promise<{ lat: number; lon: number } | null>) | undefined;
+  /** A coverage survey's points, the one opened ringed; a tap on one hands up its place. */
+  dots?: MapDot[] | null | undefined;
+  pickedDot?: number | null | undefined;
+  onDot?: ((index: number) => void) | undefined;
+  /**
+   * Keeps the phone in view as it moves, with these points: a survey's last
+   * point and the repeaters that answered there. The map zooms out as far as
+   * they need, and steps aside for a while when a finger moves it.
+   */
+  follow?: [number, number][] | null | undefined;
+  /** A survey running: a red dot on the "who hears me" button. */
+  recording?: boolean | undefined;
 }
 
 /** How near a node, in pixels, a dragged point lets go onto it. */
 const SNAP_PX = 36;
+/** How near a survey's point, in pixels, a tap opens it. */
+const DOT_PX = 18;
+/** After a finger moves the map, how long following the phone waits before it takes over again. */
+const FOLLOW_PAUSE_MS = 20_000;
+/**
+ * A finger held this long on the map opens the spot's menu. The map takes the
+ * touch from its start, so neither Android's web view nor iOS's turns a long
+ * press into a `contextmenu` of their own; a mouse still has its right click.
+ */
+const HOLD_MS = 550;
 
 const GROUPING_KEY = "meshnet.map.grouping";
 
@@ -169,26 +322,32 @@ function groupingWanted(): boolean {
   }
 }
 
-/** Where the map was left, so coming back to it, from a profile or another section, finds it there. */
-let lastView: { center: L.LatLng; zoom: number } | null = null;
+/** Where the map was left, so coming back to it, from a profile or another section, finds it there, turned as it was. */
+let lastView: { center: [number, number]; zoom: number; bearing: number } | null = null;
 
-export default function MapView({ selected, onSelect, onGroup, filter, coverBottom = 0, coverTop = 0, zoomButtons = false, overlay = EMPTY_OVERLAY, onLeg, onHold, onHandleDrop, onHears, hearsOn = false, fit = null, phone = null, putHere = null, onLocate }: MapProps) {
+export default function MapView({ selected, onSelect, onGroup, filter, coverBottom = 0, coverTop = 0, zoomButtons = false, overlay = EMPTY_OVERLAY, onLeg, onHold, onHandleDrop, onHears, hearsOn = false, fit = null, phone = null, putHere = null, onLocate, dots = null, pickedDot = null, onDot, follow = null, recording = false }: MapProps) {
   const state = useSession();
   const box = useRef<HTMLDivElement>(null);
-  const map = useRef<L.Map | null>(null);
+  const map = useRef<MapLibre | null>(null);
   const nodes = useRef<NodeCanvas | null>(null);
-  const routeLayer = useRef<L.LayerGroup | null>(null);
-  const selfMarker = useRef<L.Marker | null>(null);
-  const phoneMarker = useRef<L.Marker | null>(null);
-  const phoneHalo = useRef<L.Circle | null>(null);
-  const putMarker = useRef<L.Marker | null>(null);
+  const layer = useRef<Overlay | null>(null);
+  const selfMarker = useRef<Marker | null>(null);
+  const phoneMarker = useRef<Marker | null>(null);
+  const putMarker = useRef<Marker | null>(null);
+  // Markers the overlay brings: pins, the labels of legs, a route's handles.
+  const overlayMarkers = useRef<Marker[]>([]);
   const fitted = useRef(false);
   const [grouping, setGrouping] = useState(groupingWanted);
   const [locating, setLocating] = useState(false);
   const [zoom, setZoom] = useState<number | null>(null);
-  // The handlers Leaflet holds are set once; they read the latest callbacks from here.
-  const calls = useRef({ onSelect, onGroup, onLeg, onHold, onHandleDrop, onPut: putHere?.onPut });
-  calls.current = { onSelect, onGroup, onLeg, onHold, onHandleDrop, onPut: putHere?.onPut };
+  // Whether the map is turned off north, which brings the compass; the needle itself is turned without a render.
+  const [turned, setTurned] = useState(false);
+  const needle = useRef<HTMLSpanElement>(null);
+  // When a finger last moved the map, so following the phone steps aside for a while.
+  const draggedAt = useRef(0);
+  // The handlers the map holds are set once; they read the latest callbacks from here.
+  const calls = useRef({ onSelect, onGroup, onLeg, onHold, onHandleDrop, onPut: putHere?.onPut, onDot, dots });
+  calls.current = { onSelect, onGroup, onLeg, onHold, onHandleDrop, onPut: putHere?.onPut, onDot, dots };
 
   const contacts = state.contacts;
   const selfLat = state.self && hasPosition(state.self.lat, state.self.lon) ? state.self.lat : null;
@@ -198,14 +357,21 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
   // Read when the map moves rather than when it renders: the sheet over it moves often and should not redraw it.
   const cover = useRef({ top: coverTop, bottom: coverBottom });
   cover.current = { top: coverTop, bottom: coverBottom };
-  /** A fit keeps clear of the controls, the attribution, and what lies over the map. */
-  const padding = (): L.FitBoundsOptions => ({ paddingTopLeft: [40, 56 + cover.current.top], paddingBottomRight: [64, 40 + cover.current.bottom] });
+  /** A fit keeps clear of the controls, the credit, and what lies over the map. */
+  const padding = () => ({ top: 56 + cover.current.top, bottom: 40 + cover.current.bottom, left: 40, right: 64 });
+  const size = () => ({ x: box.current?.clientWidth ?? 0, y: box.current?.clientHeight ?? 0 });
   /** A point in the middle of what is left uncovered, not of the whole map. */
-  const centerOn = (at: L.LatLngExpression, zoom: number) => {
-    const m = map.current;
-    if (!m) return;
+  const centerOn = (at: LatLon, z: number, animate = true) => {
     const { top, bottom } = cover.current;
-    m.setView(m.unproject(m.project(at, zoom).add([0, (bottom - top) / 2]), zoom), zoom);
+    map.current?.easeTo({ center: [at.lon, at.lat], zoom: z, offset: [0, (top - bottom) / 2], ...(animate ? {} : { duration: 0 }) });
+  };
+  /** Several points in view, the map left turned as it is. */
+  const fitPoints = (points: [number, number][], maxZoom: number, animate = true) => {
+    const m = map.current;
+    if (!m || points.length === 0) return;
+    const bounds = new LngLatBounds();
+    for (const [lat, lon] of points) bounds.extend([lon, lat]);
+    m.fitBounds(bounds, { padding: padding(), maxZoom, bearing: m.getBearing(), animate });
   };
 
   const placed = useMemo(() => Object.values(contacts).filter((c) => hasPosition(c.lat, c.lon)).sort((a, b) => (a.key < b.key ? -1 : 1)), [contacts]);
@@ -213,71 +379,159 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
   const picked = selected ? contacts[selected] ?? null : null;
   const numbers = overlay.numbers;
   // What a dragged point can let go onto, read while it is dragged: every node on the map, and this radio.
-  const targets = useRef<{ key: string; at: L.LatLng }[]>([]);
-  targets.current = [...placed.map((c) => ({ key: c.key, at: L.latLng(c.lat, c.lon) })), ...(self ? [{ key: "self", at: L.latLng(self.lat, self.lon) }] : [])];
+  const targets = useRef<{ key: string; at: LatLon }[]>([]);
+  targets.current = [...placed.map((c) => ({ key: c.key, at: { lat: c.lat, lon: c.lon } })), ...(self ? [{ key: "self", at: self }] : [])];
 
   // The map itself, once.
   useEffect(() => {
-    if (!box.current) return;
-    // A long press picks a spot; iOS needs Leaflet's own timer for it, Android and a mouse fire it themselves.
-    const m = L.map(box.current, { zoomControl: false, attributionControl: false, worldCopyJump: true, minZoom: 2, maxZoom: 19, tapHold: true });
-    L.control.attribution({ prefix: false, position: "topleft" }).addTo(m);
-    const tiles = new CachedTileLayer(TILE_URL, { maxZoom: 19, attribution: tileAttribution() }).addTo(m);
-    routeLayer.current = L.layerGroup().addTo(m);
-    // Over the lines, under the markers left: this radio, a route's handles, the labels of legs.
-    m.createPane("nodes").style.zIndex = "450";
-    const nodeCanvas = new NodeCanvas({ pane: "nodes" }).addTo(m);
+    const el = box.current;
+    if (!el) return;
+    serveTiles();
+    const m = new MapLibre({
+      container: el,
+      style: mapStyle(darkTheme()),
+      center: lastView?.center ?? [0, 20],
+      zoom: lastView?.zoom ?? 1,
+      bearing: lastView?.bearing ?? 0,
+      minZoom: 1,
+      maxZoom: 18,
+      maxPitch: 0,
+      pitchWithRotate: false,
+      touchPitch: false,
+      attributionControl: false,
+      renderWorldCopies: true,
+    });
+    if (lastView) fitted.current = true;
+    const canvasBox = m.getCanvasContainer();
+    // Over the tiles: the overlay's lines, then the nodes; the markers come over both.
+    const overlayLayer = new Overlay(m, canvasBox);
+    const nodeCanvas = new NodeCanvas(m, canvasBox);
+    layer.current = overlayLayer;
     nodes.current = nodeCanvas;
-    if (lastView) {
-      m.setView(lastView.center, lastView.zoom, { animate: false });
-      fitted.current = true;
-    } else {
-      m.setView([20, 0], 2);
-    }
-    // The finger lifting after a long press is not a tap on the map as well.
+
+    // The finger lifting after a long press is not a tap on the map as well, however long it stayed down.
     let heldAt = 0;
-    m.on("contextmenu", (e: L.LeafletMouseEvent) => {
+    let fingerHeld = false;
+    const hold = (x: number, y: number) => {
       if (!calls.current.onHold) return;
       heldAt = Date.now();
       // A map panned round the world gives longitudes past 180; the spot is the same one back on the globe.
-      const spot = e.latlng.wrap();
-      const box = m.getContainer().getBoundingClientRect();
-      calls.current.onHold(spot.lat, spot.lng, { x: box.left + e.containerPoint.x, y: box.top + e.containerPoint.y });
+      const spot = m.unproject([x, y]).wrap();
+      const rect = el.getBoundingClientRect();
+      calls.current.onHold(spot.lat, spot.lng, { x: rect.left + x, y: rect.top + y });
+    };
+    m.on("contextmenu", (e) => {
+      e.preventDefault();
+      if (Date.now() - heldAt < 800) return;
+      hold(e.point.x, e.point.y);
     });
+    {
+      let timer = 0;
+      let start: { x: number; y: number } | null = null;
+      const cancel = () => {
+        window.clearTimeout(timer);
+        start = null;
+      };
+      canvasBox.addEventListener(
+        "touchstart",
+        (e) => {
+          cancel();
+          fingerHeld = false;
+          const touch = e.touches[0];
+          if (e.touches.length !== 1 || !touch) return;
+          const rect = el.getBoundingClientRect();
+          start = { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+          const at = start;
+          timer = window.setTimeout(() => {
+            fingerHeld = true;
+            hold(at.x, at.y);
+          }, HOLD_MS);
+        },
+        { passive: true },
+      );
+      canvasBox.addEventListener(
+        "touchmove",
+        (e) => {
+          const touch = e.touches[0];
+          if (!start || !touch) return;
+          const rect = el.getBoundingClientRect();
+          if (e.touches.length > 1 || Math.hypot(touch.clientX - rect.left - start.x, touch.clientY - rect.top - start.y) > 10) cancel();
+        },
+        { passive: true },
+      );
+      canvasBox.addEventListener("touchend", cancel);
+      canvasBox.addEventListener("touchcancel", cancel);
+    }
     // The canvas takes no pointer events: a tap lands on the map, and is looked up among the nodes drawn.
-    m.on("click", (e: L.LeafletMouseEvent) => {
-      if (Date.now() - heldAt < 500) return;
+    m.on("click", (e) => {
+      if (fingerHeld || Date.now() - heldAt < 500) {
+        fingerHeld = false;
+        return;
+      }
       const mouse = (e.originalEvent as PointerEvent).pointerType === "mouse";
-      const members = nodeCanvas.hit(e.layerPoint, mouse ? 3 : 10);
-      if (!members) return calls.current.onSelect(null);
+      const members = nodeCanvas.hit(e.point, mouse ? 3 : 10);
+      if (!members) {
+        // Missing the nodes, a tap may land on a survey's point: the nearest within reach of a finger.
+        const { dots: points, onDot: open } = calls.current;
+        if (points && open) {
+          let best = -1;
+          let reach = mouse ? 8 : DOT_PX;
+          points.forEach((d, i) => {
+            if (d.tone === "off") return;
+            const p = m.project([d.lon, d.lat]);
+            const gap = Math.hypot(p.x - e.point.x, p.y - e.point.y);
+            if (gap < reach) {
+              best = i;
+              reach = gap;
+            }
+          });
+          if (best >= 0) return open(best);
+        }
+        return calls.current.onSelect(null);
+      }
       if (members.length === 1) return calls.current.onSelect(members[0]!.key);
-      const bounds = L.latLngBounds(members.map((c) => [c.lat, c.lon] as L.LatLngTuple));
-      const spread = bounds.getNorthEast().distanceTo(bounds.getSouthWest());
+      const lats = members.map((c) => c.lat);
+      const lons = members.map((c) => c.lon);
+      const spread = distanceKm(Math.min(...lats), Math.min(...lons), Math.max(...lats), Math.max(...lons)) * 1000;
       if (spread < SAME_SPOT_M || m.getZoom() >= m.getMaxZoom()) calls.current.onGroup(members.map((c) => c.key));
-      else m.fitBounds(bounds, { ...padding(), maxZoom: m.getMaxZoom() });
+      else fitPoints(members.map((c) => [c.lat, c.lon]), m.getMaxZoom());
     });
     // A pointer over a node shows it can be clicked; looked up once a frame at most.
     let hoverFrame = 0;
-    m.on("mousemove", (e: L.LeafletMouseEvent) => {
+    m.on("mousemove", (e) => {
       if (hoverFrame) return;
       hoverFrame = requestAnimationFrame(() => {
         hoverFrame = 0;
-        m.getContainer().style.cursor = nodeCanvas.hit(e.layerPoint, 3) ? "pointer" : "";
+        m.getCanvas().style.cursor = nodeCanvas.hit(e.point, 3) ? "pointer" : "";
       });
     });
     // Not while hidden under a profile: a map with no size has no middle to remember.
     m.on("moveend", () => {
-      if (m.getSize().y > 0) lastView = { center: m.getCenter(), zoom: m.getZoom() };
+      if (el.clientHeight > 0) {
+        const c = m.getCenter();
+        lastView = { center: [c.lng, c.lat], zoom: m.getZoom(), bearing: m.getBearing() };
+      }
     });
     m.on("zoomend", () => setZoom(m.getZoom()));
+    const turn = () => {
+      const b = m.getBearing();
+      setTurned(Math.abs(b) >= 0.5);
+      if (needle.current) needle.current.style.transform = `rotate(${-b}deg)`;
+    };
+    m.on("rotate", turn);
+    m.on("dragstart", () => {
+      draggedAt.current = Date.now();
+    });
     setZoom(m.getZoom());
+    turn();
     map.current = m;
     // The pane is sized by the layout, which changes when a phone turns or a desktop window is resized.
-    const resize = new ResizeObserver(() => m.invalidateSize());
-    resize.observe(box.current);
-    // Tiles and nodes are coloured when drawn, so a change of theme draws them again.
+    const resize = new ResizeObserver(() => m.resize());
+    resize.observe(el);
+    // The tiles are turned over for a dark theme by the map itself; the nodes are coloured when drawn.
     const theme = new MutationObserver(() => {
-      tiles.redraw();
+      const paint = tilePaint(darkTheme());
+      if (m.getLayer("osm")) for (const [key, value] of Object.entries(paint)) m.setPaintProperty("osm", key, value);
       nodeCanvas.redraw();
     });
     theme.observe(document.documentElement, { attributes: true, attributeFilter: ["data-appearance"] });
@@ -285,28 +539,31 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
     void document.fonts?.ready.then(() => nodeCanvas.redraw());
     // "4 min" beside a name turns into "5 min".
     const minute = window.setInterval(() => {
-      if (m.getSize().y > 0) nodeCanvas.redraw();
+      if (el.clientHeight > 0) nodeCanvas.redraw();
     }, 30_000);
     return () => {
       window.clearInterval(minute);
       cancelAnimationFrame(hoverFrame);
       theme.disconnect();
       resize.disconnect();
+      nodeCanvas.remove();
+      overlayLayer.remove();
       m.remove();
       map.current = null;
       nodes.current = null;
-      routeLayer.current = null;
+      layer.current = null;
       selfMarker.current = null;
       phoneMarker.current = null;
-      phoneHalo.current = null;
       putMarker.current = null;
+      overlayMarkers.current = [];
       fitted.current = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // The nodes: handed to the canvas, which groups them for the zoom and paints them.
   useEffect(() => {
-    nodes.current?.setData({ nodes: shown, selected, numbers, grouping, self: self ? L.latLng(self.lat, self.lon) : null });
+    nodes.current?.setData({ nodes: shown, selected, numbers, grouping, self });
   }, [shown, selected, numbers, grouping, self]);
 
   // This radio, kept as one marker so its pulse is not restarted by every change.
@@ -319,10 +576,10 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
       return;
     }
     if (!selfMarker.current) {
-      selfMarker.current = L.marker([self.lat, self.lon], { icon: selfIcon(selfName), interactive: false, zIndexOffset: 1000 }).addTo(m);
+      selfMarker.current = new Marker({ element: element("map-self", selfHtml(selfName), [22, 22]) }).setLngLat([self.lon, self.lat]).addTo(m);
     } else {
-      selfMarker.current.setLatLng([self.lat, self.lon]);
-      selfMarker.current.setIcon(selfIcon(selfName));
+      selfMarker.current.setLngLat([self.lon, self.lat]);
+      selfMarker.current.getElement().innerHTML = selfHtml(selfName);
     }
   }, [self, selfName]);
 
@@ -334,29 +591,27 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
   const phoneNamed = useMemo(() => {
     const m = map.current;
     if (!m || zoom === null || phoneLat === null || phoneLon === null || !self) return true;
-    return m.project([phoneLat, phoneLon], zoom).distanceTo(m.project([self.lat, self.lon], zoom)) > 40;
+    const a = m.project([phoneLon, phoneLat]);
+    const b = m.project([self.lon, self.lat]);
+    return Math.hypot(a.x - b.x, a.y - b.y) > 40;
   }, [zoom, phoneLat, phoneLon, self]);
   useEffect(() => {
     const m = map.current;
     if (!m) return;
     if (phoneLat === null || phoneLon === null || phoneAccuracy === null) {
       phoneMarker.current?.remove();
-      phoneHalo.current?.remove();
       phoneMarker.current = null;
-      phoneHalo.current = null;
+      layer.current?.setHalo(null, 0);
       return;
     }
-    const at = L.latLng(phoneLat, phoneLon);
-    if (!phoneMarker.current) {
-      phoneHalo.current = L.circle(at, { radius: phoneAccuracy, className: "map-phone-halo", interactive: false }).addTo(m);
-      phoneMarker.current = L.marker(at, { icon: phoneIcon(phoneNamed), interactive: false, keyboard: false, zIndexOffset: 900 }).addTo(m);
-    } else {
-      phoneMarker.current.setLatLng(at);
-      phoneHalo.current?.setLatLng(at).setRadius(phoneAccuracy);
-    }
-  }, [phoneLat, phoneLon, phoneAccuracy, phoneNamed]);
+    if (!phoneMarker.current) phoneMarker.current = new Marker({ element: element("map-phone", phoneHtml(phoneNamed), [16, 16]) }).setLngLat([phoneLon, phoneLat]).addTo(m);
+    else phoneMarker.current.setLngLat([phoneLon, phoneLat]);
+    layer.current?.setHalo({ lat: phoneLat, lon: phoneLon }, phoneAccuracy);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phoneLat, phoneLon, phoneAccuracy]);
   useEffect(() => {
-    phoneMarker.current?.setIcon(phoneIcon(phoneNamed));
+    const el = phoneMarker.current?.getElement();
+    if (el) el.innerHTML = phoneHtml(phoneNamed);
   }, [phoneNamed]);
 
   // "Put the radio here", hanging under the phone's ring.
@@ -367,73 +622,108 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
     putMarker.current = null;
     if (!m || putDistance === undefined || phoneLat === null || phoneLon === null) return;
     const label = t("mesh.map.putHere");
-    putMarker.current = L.marker([phoneLat, phoneLon], { icon: putIcon(putDistance), title: label, alt: label, zIndexOffset: 1600 })
-      .on("click", (e) => {
-        L.DomEvent.stopPropagation(e);
-        calls.current.onPut?.();
-      })
-      .addTo(m);
+    const el = element("map-put", putHtml(putDistance), [0, 0]);
+    el.title = label;
+    el.setAttribute("role", "button");
+    el.setAttribute("aria-label", label);
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      calls.current.onPut?.();
+    });
+    putMarker.current = new Marker({ element: el, anchor: "top-left" }).setLngLat([phoneLon, phoneLat]).addTo(m);
   }, [putDistance, phoneLat, phoneLon]);
+
+  // A survey's points, drawn again when one is added or picked; a tap on one is looked up by the map's click.
+  useEffect(() => {
+    layer.current?.setDots(dots, pickedDot);
+  }, [dots, pickedDot]);
+
+  // Following the phone through a survey: it and the points given, fitted to what the sheet leaves, no closer
+  // than a street. With nobody placed to show, that is the phone alone.
+  const following = useRef(false);
+  const followKey = follow ? JSON.stringify(follow) : null;
+  useEffect(() => {
+    const m = map.current;
+    if (!follow) {
+      following.current = false;
+      return;
+    }
+    if (!m || phoneLat === null || phoneLon === null) return;
+    if (following.current && Date.now() - draggedAt.current < FOLLOW_PAUSE_MS) return;
+    fitPoints([[phoneLat, phoneLon], ...follow], 15, following.current);
+    following.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [followKey, phoneLat, phoneLon]);
 
   // The lines over the nodes: a route and how it sounded, a line of sight, the answers to "who hears me".
   useEffect(() => {
-    const layer = routeLayer.current;
-    if (!layer) return;
-    layer.clearLayers();
+    const m = map.current;
+    const lines = layer.current;
+    if (!m || !lines) return;
+    lines.clearPaths();
+    for (const marker of overlayMarkers.current) marker.remove();
+    overlayMarkers.current = [];
     for (const line of overlay.lines) {
-      const points: L.LatLngTuple[] = [
-        [line.from.lat, line.from.lon],
-        [line.to.lat, line.to.lon],
+      const points = [
+        { lat: line.from.lat, lon: line.from.lon },
+        { lat: line.to.lat, lon: line.to.lon },
       ];
       const mark = line.mark ? ` ${line.mark}` : "";
       // Thin lines drawn beside a route go without its halo.
-      if (line.tone !== "back" && line.tone !== "was") L.polyline(points, { className: `map-leg-under${mark}`, interactive: false }).addTo(layer);
-      L.polyline(points, { className: `map-leg ${line.tone}${mark}`, interactive: false }).addTo(layer);
-      if (line.tappable) {
-        // A wide line nobody sees, so a finger finds a thin one.
-        L.polyline(points, { weight: 24, opacity: 0, bubblingMouseEvents: false })
-          .on("click", () => calls.current.onLeg?.(line.from, line.to))
-          .addTo(layer);
-      }
+      if (line.tone !== "back" && line.tone !== "was") lines.path(points, `map-leg-under${mark}`);
+      lines.path(points, `map-leg ${line.tone}${mark}`);
+      // A wide line nobody sees, so a finger finds a thin one.
+      if (line.tappable) lines.path(points, "map-hit", () => calls.current.onLeg?.(line.from, line.to));
       if (line.label) {
-        const middle = L.latLng((line.from.lat + line.to.lat) / 2, (line.from.lon + line.to.lon) / 2);
         // Above the leg's middle, clear of the point that drags it.
-        L.marker(middle, { interactive: false, keyboard: false, icon: L.divIcon({ className: "map-leg-label", html: escapeHtml(line.label), iconSize: [64, 18], iconAnchor: [32, 30] }) }).addTo(layer);
+        const el = element("map-leg-label", escapeHtml(line.label), [64, 18]);
+        el.style.pointerEvents = "none";
+        overlayMarkers.current.push(new Marker({ element: el, offset: [0, -21] }).setLngLat([(line.from.lon + line.to.lon) / 2, (line.from.lat + line.to.lat) / 2]).addTo(m));
       }
     }
     for (const pin of overlay.pins) {
-      L.marker([pin.lat, pin.lon], { interactive: false, keyboard: false, icon: L.divIcon({ className: "map-spot", html: "<span></span>", iconSize: [20, 20], iconAnchor: [10, 20] }) }).addTo(layer);
+      const el = element("map-spot", "<span></span>", [20, 20]);
+      el.style.pointerEvents = "none";
+      overlayMarkers.current.push(new Marker({ element: el, anchor: "bottom" }).setLngLat([pin.lon, pin.lat]).addTo(m));
     }
-    for (const handle of overlay.handles) dragHandle(layer, handle, handle.key ? overlay.numbers[handle.key] : undefined);
+    for (const handle of overlay.handles) overlayMarkers.current.push(dragHandle(m, lines, handle, handle.key ? overlay.numbers[handle.key] : undefined));
     if (overlay.pulse) {
       // A flood going out: rings spreading from this radio, under the nodes.
-      L.marker([overlay.pulse.lat, overlay.pulse.lon], { pane: "overlayPane", interactive: false, keyboard: false, icon: L.divIcon({ className: "map-flood", html: "<i></i><i></i><i></i>", iconSize: [260, 260], iconAnchor: [130, 130] }) }).addTo(layer);
+      const el = document.createElement("div");
+      el.className = "map-flood";
+      el.innerHTML = "<i></i><i></i><i></i>";
+      lines.float(el, { lat: overlay.pulse.lat, lon: overlay.pulse.lon }, 260);
     }
+    m.triggerRepaint();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overlay]);
 
   /** The node nearest to a point, within reach of a finger letting go. */
-  const snapAt = (at: L.LatLng): { key: string; at: L.LatLng } | null => {
+  const snapAt = (at: LatLon): { key: string; at: LatLon } | null => {
     const m = map.current;
     if (!m) return null;
-    const p = m.latLngToContainerPoint(at);
-    let best: { key: string; at: L.LatLng } | null = null;
+    const p = m.project([at.lon, at.lat]);
+    const px = (q: LatLon) => {
+      const s = m.project([q.lon, q.lat]);
+      return Math.hypot(s.x - p.x, s.y - p.y);
+    };
+    let best: { key: string; at: LatLon } | null = null;
     let reach = SNAP_PX;
-    for (const t of targets.current) {
-      const d = p.distanceTo(m.latLngToContainerPoint(t.at));
+    for (const target of targets.current) {
+      const d = px(target.at);
       if (d < reach) {
-        best = t;
+        best = target;
         reach = d;
       }
     }
     // Nodes gathered into a circle are let go onto through it: a repeater among them, the nearest first.
     for (const entry of nodes.current?.groups() ?? []) {
       if (entry.members.length < 2) continue;
-      const at = entry.at;
-      const d = p.distanceTo(m.latLngToContainerPoint(at));
+      const d = px(entry.at);
       if (d >= reach) continue;
-      const near = (c: ContactRecord) => p.distanceTo(m.latLngToContainerPoint([c.lat, c.lon]));
+      const near = (c: ContactRecord) => px({ lat: c.lat, lon: c.lon });
       const member = [...entry.members].sort((a, b) => Number(b.type === AdvType.Repeater) - Number(a.type === AdvType.Repeater) || near(a) - near(b))[0]!;
-      best = { key: member.key, at };
+      best = { key: member.key, at: entry.at };
       reach = d;
     }
     return best;
@@ -445,53 +735,56 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
    * back to its place and says where it was dropped; the caller redraws the
    * route. A tap on a relay picks it, a tap on a leg's middle opens the leg.
    */
-  function dragHandle(layer: L.LayerGroup, handle: MapHandle, number: number | undefined): void {
+  function dragHandle(m: MapLibre, lines: Overlay, handle: MapHandle, number: number | undefined): Marker {
     const size = handle.kind === "hop" ? 34 : 26;
     // A relay's place in a route being changed rides on its ring, which covers the marker's own.
     const badge = number ? `<b class="map-num">${number}</b>` : "";
-    const home = L.latLng(handle.lat, handle.lon);
-    const marker = L.marker(home, {
-      draggable: true,
-      autoPan: true,
-      keyboard: false,
-      zIndexOffset: handle.kind === "hop" ? 1500 : 1400,
-      icon: L.divIcon({ className: `map-handle map-handle-${handle.kind}`, html: `<span></span>${badge}`, iconSize: [size, size], iconAnchor: [size / 2, size / 2] }),
-    });
-    let rubber: L.Polyline | null = null;
-    let ring: L.Marker | null = null;
-    const stretch = (tip: L.LatLng) => {
-      const points: L.LatLng[] = [];
-      if (handle.from) points.push(L.latLng(handle.from.lat, handle.from.lon));
-      points.push(tip);
-      if (handle.to) points.push(L.latLng(handle.to.lat, handle.to.lon));
-      rubber?.setLatLngs(points);
+    const home = { lat: handle.lat, lon: handle.lon };
+    const el = element(`map-handle map-handle-${handle.kind}`, `<span></span>${badge}`, [size, size]);
+    el.style.zIndex = handle.kind === "hop" ? "5" : "4";
+    const marker = new Marker({ element: el, draggable: true }).setLngLat([home.lon, home.lat]).addTo(m);
+    let rubber: Path | null = null;
+    let ring: Marker | null = null;
+    let droppedAt = 0;
+    const stretch = (tip: LatLon) => {
+      if (!rubber) return;
+      rubber.points = [...(handle.from ? [{ lat: handle.from.lat, lon: handle.from.lon }] : []), tip, ...(handle.to ? [{ lat: handle.to.lat, lon: handle.to.lon }] : [])];
+      m.triggerRepaint();
+    };
+    const tip = (): LatLon => {
+      const at = marker.getLngLat();
+      return { lat: at.lat, lon: at.lng };
     };
     marker.on("dragstart", () => {
-      marker.getElement()?.classList.add("dragging");
-      rubber = L.polyline([], { className: "map-leg rubber", interactive: false }).addTo(layer);
-      ring = L.marker(home, { interactive: false, keyboard: false, opacity: 0, icon: L.divIcon({ className: "map-snap", html: "<span></span>", iconSize: [40, 40], iconAnchor: [20, 20] }) }).addTo(layer);
+      el.classList.add("dragging");
+      rubber = lines.path([], "map-leg rubber");
+      ring = new Marker({ element: element("map-snap", "<span></span>", [40, 40]) }).setLngLat([home.lon, home.lat]).setOpacity("0").addTo(m);
       stretch(home);
     });
     marker.on("drag", () => {
-      const snap = snapAt(marker.getLatLng());
-      stretch(snap?.at ?? marker.getLatLng());
-      if (snap) ring?.setLatLng(snap.at);
-      ring?.setOpacity(snap ? 1 : 0);
+      const snap = snapAt(tip());
+      stretch(snap?.at ?? tip());
+      if (snap) ring?.setLngLat([snap.at.lon, snap.at.lat]);
+      ring?.setOpacity(snap ? "1" : "0");
     });
     marker.on("dragend", () => {
-      const snap = snapAt(marker.getLatLng());
-      rubber?.remove();
+      const snap = snapAt(tip());
+      if (rubber) lines.drop(rubber);
+      rubber = null;
       ring?.remove();
-      marker.getElement()?.classList.remove("dragging");
-      marker.setLatLng(home);
+      ring = null;
+      el.classList.remove("dragging");
+      droppedAt = Date.now();
+      marker.setLngLat([home.lon, home.lat]);
       if (snap) calls.current.onHandleDrop?.(handle, snap.key);
     });
-    marker.on("click", (e) => {
-      L.DomEvent.stopPropagation(e);
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (Date.now() - droppedAt < 400) return;
       if (handle.kind === "hop" && handle.key) calls.current.onSelect(handle.key);
       else if (handle.kind === "gap" && handle.from && handle.to) calls.current.onLeg?.(handle.from, handle.to);
     });
-    marker.addTo(layer);
+    return marker;
   }
 
   // A node picked from outside the map, from its profile or the list, is brought into view. On a phone the
@@ -502,25 +795,24 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
     const m = map.current;
     const c = contacts[key];
     if (!m || !c) return;
-    m.invalidateSize();
-    const at = L.latLng(c.lat, c.lon);
-    const size = m.getSize();
+    m.resize();
+    const { x: width, y: height } = size();
     const { top, bottom } = cover.current;
-    const clear = { left: 40, right: size.x - 64, top: top + 56, bottom: size.y - bottom - 40 };
+    const clear = { left: 40, right: width - 64, top: top + 56, bottom: height - bottom - 40 };
     if (clear.right <= clear.left || clear.bottom <= clear.top) {
       unseenPick.current = key;
       return;
     }
     unseenPick.current = null;
-    const p = m.latLngToContainerPoint(at);
+    const p = m.project([c.lon, c.lat]);
     if (p.x > clear.left && p.x < clear.right && p.y > clear.top && p.y < clear.bottom) return;
     // In sight but under the sheet or at an edge: moved just clear. Out of sight: brought to the middle.
-    if (p.x >= 0 && p.x <= size.x && p.y >= 0 && p.y <= size.y) {
+    if (p.x >= 0 && p.x <= width && p.y >= 0 && p.y <= height) {
       const dx = p.x < clear.left ? p.x - clear.left : p.x > clear.right ? p.x - clear.right : 0;
       const dy = p.y < clear.top ? p.y - clear.top : p.y > clear.bottom ? p.y - clear.bottom : 0;
       m.panBy([dx, dy]);
     } else {
-      centerOn(at, Math.max(m.getZoom(), 13));
+      centerOn({ lat: c.lat, lon: c.lon }, Math.max(m.getZoom(), 12));
     }
   };
   const bringLatest = useRef(bringIntoView);
@@ -552,17 +844,17 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
 
   // A set of points asked to be seen together: after a pick's own move, so it has the last word.
   const fitId = fit?.id ?? null;
-  const fitPoints = useRef(fit?.points ?? []);
-  fitPoints.current = fit?.points ?? [];
+  const fitList = useRef(fit?.points ?? []);
+  fitList.current = fit?.points ?? [];
   useEffect(() => {
     const m = map.current;
     if (!m || !fitId) return;
     const frame = requestAnimationFrame(() => {
-      const points = fitPoints.current;
-      if (m.getSize().y === 0 || points.length === 0) return;
-      m.invalidateSize();
-      if (points.length === 1) centerOn(points[0]!, Math.max(m.getZoom(), 13));
-      else m.fitBounds(L.latLngBounds(points), { ...padding(), maxZoom: 15 });
+      const points = fitList.current;
+      if (size().y === 0 || points.length === 0) return;
+      m.resize();
+      if (points.length === 1) centerOn({ lat: points[0]![0], lon: points[0]![1] }, Math.max(m.getZoom(), 12));
+      else fitPoints(points, 14);
     });
     return () => cancelAnimationFrame(frame);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -572,25 +864,25 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
   useEffect(() => {
     const m = map.current;
     // A map with no size, hidden under a profile, has nothing to fit into.
-    if (!m || fitted.current || m.getSize().y === 0) return;
-    const points: L.LatLngTuple[] = placed.map((c) => [c.lat, c.lon]);
+    if (!m || fitted.current || size().y === 0) return;
+    const points: [number, number][] = placed.map((c) => [c.lat, c.lon]);
     if (self) points.push([self.lat, self.lon]);
-    if (points.length === 1) centerOn(points[0]!, 13);
-    else if (points.length > 1) m.fitBounds(L.latLngBounds(points), { ...padding(), maxZoom: 14 });
+    if (points.length === 1) centerOn({ lat: points[0]![0], lon: points[0]![1] }, 12, false);
+    else if (points.length > 1) fitPoints(points, 13, false);
     if (points.length > 0) fitted.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [placed, self]);
 
   const fitAll = () => {
-    const points: L.LatLngTuple[] = shown.map((c) => [c.lat, c.lon]);
+    const points: [number, number][] = shown.map((c) => [c.lat, c.lon]);
     if (self) points.push([self.lat, self.lon]);
-    if (points.length === 1) centerOn(points[0]!, 14);
-    else if (points.length > 1) map.current?.fitBounds(L.latLngBounds(points), { ...padding(), maxZoom: 15 });
+    if (points.length === 1) centerOn({ lat: points[0]![0], lon: points[0]![1] }, 13);
+    else if (points.length > 1) fitPoints(points, 14);
   };
 
   const toRadio = () => {
     const m = map.current;
-    if (m && self) centerOn([self.lat, self.lon], Math.max(m.getZoom(), 14));
+    if (m && self) centerOn(self, Math.max(m.getZoom(), 13));
   };
   // "Where am I" finds the phone, and goes to this radio when the phone cannot say.
   const locate = async () => {
@@ -600,14 +892,22 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
     const at = await onLocate().catch(() => null);
     setLocating(false);
     const m = map.current;
-    if (at && m) centerOn([at.lat, at.lon], Math.max(m.getZoom(), 15));
+    if (at && m) centerOn(at, Math.max(m.getZoom(), 14));
     else toRadio();
   };
 
   return (
     <div className="map-view">
       <div ref={box} className="map" />
+      <div className="map-attribution" dangerouslySetInnerHTML={{ __html: tileAttribution() }} />
       <div className="map-controls">
+        {turned ? (
+          <IconButton label={t("mesh.map.north")} onClick={() => map.current?.easeTo({ bearing: 0 })}>
+            <span ref={needle} className="map-needle" style={{ transform: `rotate(${-(map.current?.getBearing() ?? 0)}deg)` }}>
+              <CompassIcon size={18} />
+            </span>
+          </IconButton>
+        ) : null}
         {zoomButtons ? (
           <>
             <IconButton label={t("mesh.map.zoomIn")} onClick={() => map.current?.zoomIn()}>
@@ -635,8 +935,9 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
           <GroupIcon size={18} />
         </IconButton>
         {onHears ? (
-          <IconButton label={t("mesh.whoHearsMe")} className={hearsOn ? "on" : ""} aria-pressed={hearsOn} disabled={state.status !== "ready" && !hearsOn} onClick={onHears}>
+          <IconButton label={recording ? t("tools.survey.title") : t("mesh.whoHearsMe")} className={hearsOn ? "on" : ""} aria-pressed={hearsOn} disabled={state.status !== "ready" && !hearsOn && !recording} onClick={onHears}>
             <WavesIcon size={18} />
+            {recording ? <span className="map-rec" aria-hidden="true" /> : null}
           </IconButton>
         ) : null}
         <IconButton label={t("mesh.map.showAll")} onClick={fitAll}>

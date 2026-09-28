@@ -17,8 +17,10 @@ import type { LinkRadio } from "../lib/los.js";
 import { useDiscovery } from "../lib/discovery.js";
 import { FOLLOW_MOVE_M, followsPhone, radioHasGps, useFollowStatus } from "../lib/followPhone.js";
 import { locateOnce, locateText, phoneLocates, usePhone } from "../lib/phonePosition.js";
-import { contactEnd, defaultHeight, discoveryOverlay, EMPTY_OVERLAY, editOverlay, hearsOverlay, losOverlay, neighboursOverlay, relayOf, routeOverlay, selfEnd, spanOverlay, type MapHandle, type MapOverlay } from "../lib/mapOverlay.js";
-import { useMeshTool, type LosEnd } from "../lib/meshTool.js";
+import { contactEnd, defaultHeight, discoveryOverlay, EMPTY_OVERLAY, editOverlay, hearsOverlay, losOverlay, neighboursOverlay, relayOf, routeOverlay, selfEnd, spanOverlay, surveyOverlay, type MapDot, type MapHandle, type MapOverlay } from "../lib/mapOverlay.js";
+import { setMeshTool, useMeshTool, type LosEnd, type MeshTool, type SurveyTool } from "../lib/meshTool.js";
+import { useSurveys, type SurveysState } from "../lib/survey.js";
+import { toneFor, type Survey } from "../lib/surveyData.js";
 import { focusOnMap, openProfile, takeListLowered, useNav } from "../lib/nav.js";
 import { heardAt as heard, kindLabel } from "../lib/nodes.js";
 import { DEFAULT_NODE_ORDER, NODE_ORDERS, nodeComparator, orderInForce, pinnedFirst, placed, setNodeOrder, useNodeOrder } from "../lib/nodeOrder.js";
@@ -31,7 +33,7 @@ import { isYours, memoryTight, memoryUse } from "../lib/tidy.js";
 import { session, useSelector, useSession } from "../lib/session.js";
 import { act, toast } from "../lib/toast.js";
 import { isComplete, neighbourRows } from "../lib/neighbours.js";
-import { closeTool, dropOnRoute, lineOfSightTo, openLineOfSight, openNeighbourLink, tapInNeighbours, tapInRoute, tapInSpan, whoHearsMe } from "../lib/toolActions.js";
+import { closeAllTools, closeTool, dropOnRoute, lineOfSightTo, openLineOfSight, openNeighbourLink, openSurvey, tapInNeighbours, tapInRoute, tapInSpan, whoHearsMe } from "../lib/toolActions.js";
 import { getTextScale, subscribeTextSize } from "../theme/textSize.js";
 import { IconButton } from "../ui/Button.js";
 import { SearchField } from "../ui/Field.js";
@@ -42,7 +44,7 @@ import { Avatar } from "./Avatar.js";
 import { AlertIcon, ChartIcon, CloseIcon, CopyIcon, LocationIcon, SlidersIcon, StarFilledIcon } from "./Icons.js";
 import { ToolPanel } from "./tools/ToolPanel.js";
 
-// Leaflet and its styles load with the map, not with the app.
+// MapLibre and its styles load with the map, not with the app.
 const MapView = lazy(() => import("./MapView.js"));
 
 type Kind = "all" | "yours" | "people" | "repeaters" | "rooms" | "sensors";
@@ -424,8 +426,37 @@ const NodeRow = memo(function NodeRow({ contact: c, selected, yours, onOpen, log
  * picked or opened, coloured by its last check, or as its last search found
  * it, whichever is newer.
  */
+/** The survey a survey tool shows: the one running, or one kept. */
+function shownSurvey(tool: MeshTool | null, surveys: SurveysState): Survey | null {
+  if (tool?.kind !== "survey" || tool.view === "list") return null;
+  const id = tool.view === "run" && surveys.run ? surveys.run.id : tool.id;
+  return surveys.list?.find((s) => s.id === id) ?? null;
+}
+
+/** The point whose answers are drawn: the one opened, or else, while the survey runs, its last. */
+function shownPoint(tool: SurveyTool, surveys: SurveysState): number | null {
+  if (tool.point !== null) return tool.point;
+  const survey = tool.view === "run" && surveys.run ? shownSurvey(tool, surveys) : null;
+  return survey && survey.points.length ? survey.points.length - 1 : null;
+}
+
+/** While a survey runs, what the map keeps in view with the phone: the last point and the repeaters that answered there. */
+function followPoints(survey: Survey | null, state: SessionState): [number, number][] {
+  const last = survey?.points.at(-1);
+  if (!survey || !last) return [];
+  const points: [number, number][] = [[last.lat, last.lon]];
+  for (const reply of last.replies) {
+    const c = state.contacts[reply.key];
+    const node = survey.nodes[reply.key];
+    if (c && hasPosition(c.lat, c.lon)) points.push([c.lat, c.lon]);
+    else if (node && node.lat !== null && node.lon !== null) points.push([node.lat, node.lon]);
+  }
+  return points;
+}
+
 function useMeshOverlay(selected: string | null, state: SessionState): MapOverlay {
   const tool = useMeshTool();
+  const surveys = useSurveys();
   const focus = tool?.kind === "route" ? tool.key : tool?.kind === "span" ? tool.from : selected;
   const ping = usePing(tool?.kind === "span" ? (tool.to ? spanKey(tool.from, tool.to) : null) : focus);
   // A link between neighbours being checked marches.
@@ -456,6 +487,8 @@ function useMeshOverlay(selected: string | null, state: SessionState): MapOverla
         ? editOverlay(tool.key, tool.draft, state, new Set(blockedKey ? blockedKey.split(";") : []), ping)
         : tool?.kind === "hears"
           ? hearsOverlay(hears, state)
+        : tool?.kind === "survey"
+          ? surveyOverlay(shownSurvey(tool, surveys), shownPoint(tool, surveys), state)
           : tool?.kind === "span"
             ? spanOverlay(tool.from, tool.to, state, ping)
           : tool?.kind === "neighbours"
@@ -518,16 +551,17 @@ let phoneAsked = false;
  * radio follows it, and kept coming only while the map is in sight. Under it,
  * when this radio is somewhere else, a button puts the radio there.
  */
-function usePhoneOnMap(state: SessionState, active: boolean) {
+function usePhoneOnMap(state: SessionState, active: boolean, surveying: boolean) {
   const locates = phoneLocates();
   const [asked, setAsked] = useState(phoneAsked);
   const follow = useFollowStatus(state.self?.key);
   const following = follow.on && follow.gps !== true;
   const { fix } = usePhone(locates && active && asked);
-  const phone = locates && (asked || following) ? fix : null;
+  // A survey running holds the phone's position itself, and shows where it is.
+  const phone = locates && (asked || following || surveying) ? fix : null;
   const self = state.self;
   let putHere: { distance: string | null; onPut: () => void } | null = null;
-  if (phone && self && state.status === "ready" && !following && follow.gps !== true) {
+  if (phone && self && state.status === "ready" && !following && follow.gps !== true && !surveying) {
     // In steps of 10 m, so a fix that wanders a metre does not redraw the button.
     const far = hasPosition(self.lat, self.lon) ? Math.round(distanceKm(phone.lat, phone.lon, self.lat, self.lon) * 100) / 100 : null;
     if (far === null || far * 1000 > FOLLOW_MOVE_M) putHere = { distance: far === null ? null : formatDistance(far), onPut: () => void moveSelfTo(phone.lat, phone.lon) };
@@ -551,10 +585,17 @@ function usePhoneOnMap(state: SessionState, active: boolean) {
 /** The map with the filter applied, the focus and the tool drawn, and taps handed up or to the tool. */
 export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zoomButtons, active = true }: { selected: string | null; onSelect: (key: string | null) => void; onGroup: (keys: string[]) => void; coverTop?: number | undefined; coverBottom?: number | undefined; zoomButtons?: boolean | undefined; active?: boolean | undefined }) {
   const state = useSession();
-  const { phone, putHere, onLocate } = usePhoneOnMap(state, active);
+  const surveys = useSurveys();
+  const surveying = surveys.run !== null;
+  const { phone, putHere, onLocate } = usePhoneOnMap(state, active, surveying);
   const saved = useSavedPasswords();
   const { kind, query } = useFilter();
   const tool = useMeshTool();
+  // A survey's points, coloured by the repeater picked when one is.
+  const survey = shownSurvey(tool, surveys);
+  const only = tool?.kind === "survey" ? tool.only : null;
+  const dots = useMemo<MapDot[] | null>(() => (survey ? survey.points.map((p) => ({ lat: p.lat, lon: p.lon, tone: toneFor(p, only) })) : null), [survey, only]);
+  const onDot = tool?.kind === "survey" ? (index: number) => setMeshTool({ ...tool, point: index }) : undefined;
   const ping = usePing(tool?.kind === "span" ? (tool.to ? spanKey(tool.from, tool.to) : null) : selected);
   const overlay = useMeshOverlay(selected, state);
   // The map redraws markers when the filter function changes, so it changes only with what it filters by.
@@ -569,8 +610,10 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
   }, [linked, matches]);
   const pick = (key: string | null) => {
     if (tapInRoute(key, state) || tapInSpan(key, state) || tapInNeighbours(key, state)) return;
-    // A tap on the empty map puts a line of sight away, as it puts away a picked node.
-    if (key === null && tool && tool.kind !== "route") closeTool();
+    // A tap on the empty map puts a line of sight away, as it puts away a picked node; a survey only lets go of its point.
+    if (key === null && tool?.kind === "survey") {
+      if (tool.point !== null) closeTool();
+    } else if (key === null && tool && tool.kind !== "route") closeTool();
     onSelect(key);
   };
   const leg = (from: LosEnd, to: LosEnd) => {
@@ -607,10 +650,21 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
     return points;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hub, whole, hub ? state.neighbours[hub] : null]);
-  const fit = hub ? { id: `${hub}:${whole ? "all" : "part"}`, points: fitPoints } : null;
+  // A kept survey opened is brought into view whole, once.
+  const surveyFit = useMemo(() => (survey && survey.endedAt !== null ? { id: `survey:${survey.id}`, points: survey.points.map((p) => [p.lat, p.lon] as [number, number]) } : null), [survey]);
+  const fit = hub ? { id: `${hub}:${whole ? "all" : "part"}`, points: fitPoints } : surveyFit;
+  const running = tool?.kind === "survey" && tool.view === "run" && surveying && tool.point === null;
+  // A new list only when the last point or where its repeaters are changes, so the map is not fitted on every render.
+  const followList = running ? followPoints(survey, state) : null;
+  const followKey = followList ? JSON.stringify(followList) : null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const follow = useMemo(() => followList, [followKey]);
+  // The map's button: "who hears me", or back to the survey running; with either open, it puts it away.
+  const hearsOpen = tool?.kind === "hears" || tool?.kind === "survey";
+  const onHears = hearsOpen ? closeAllTools : surveying ? () => openSurvey("run", surveys.run!.id) : whoHearsMe;
   return (
     <Suspense fallback={<div className="empty muted">{t("mesh.map.loading")}</div>}>
-      <MapView selected={selected} onSelect={pick} onGroup={onGroup} filter={test} coverTop={coverTop} coverBottom={coverBottom} zoomButtons={zoomButtons} overlay={overlay} onLeg={leg} onHold={openSpotMenu} onHandleDrop={drop} onHears={tool?.kind === "hears" ? closeTool : whoHearsMe} hearsOn={tool?.kind === "hears"} fit={fit} phone={phone} putHere={putHere} onLocate={onLocate} />
+      <MapView selected={selected} onSelect={pick} onGroup={onGroup} filter={test} coverTop={coverTop} coverBottom={coverBottom} zoomButtons={zoomButtons} overlay={overlay} onLeg={leg} onHold={openSpotMenu} onHandleDrop={drop} onHears={onHears} hearsOn={hearsOpen} fit={fit} phone={phone} putHere={putHere} onLocate={onLocate} dots={dots} pickedDot={tool?.kind === "survey" ? tool.point : null} onDot={onDot} follow={follow} recording={surveying} />
     </Suspense>
   );
 }
@@ -702,10 +756,11 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
   }
   if (!hidden && takeListLowered() && detent !== "peek") setDetent("peek");
   // A tool opens over the map at its own height; so does a link between neighbours.
-  const toolId = tool ? (tool.kind === "neighbours" ? `neighbours:${tool.key}:${tool.link ?? ""}` : tool.kind) : null;
+  // A survey's own sheets (running, after, a point, its files) each open at their height too.
+  const toolId = tool ? (tool.kind === "neighbours" ? `neighbours:${tool.key}:${tool.link ?? ""}` : tool.kind === "survey" ? `survey:${tool.view}:${tool.point ?? ""}` : tool.kind) : null;
   const [shownTool, setShownTool] = useState(toolId);
   if (shownTool !== toolId) {
-    const opened = !!tool && (shownTool?.split(":")[0] !== tool.kind || (tool.kind === "neighbours" && tool.link !== null));
+    const opened = !!tool && (shownTool?.split(":")[0] !== tool.kind || (tool.kind === "neighbours" && tool.link !== null) || tool.kind === "survey");
     setShownTool(toolId);
     if (opened && detent !== "half") setDetent("half");
   }

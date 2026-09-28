@@ -65,6 +65,9 @@ interface NativeOptions {
   enableHighAccuracy?: boolean;
   timeout?: number;
   maximumAge?: number;
+  /** Android: how often a watch wants a fix; left out, it is `timeout`, a minute. */
+  interval?: number;
+  minimumUpdateInterval?: number;
 }
 interface GeolocationPlugin {
   checkPermissions(): Promise<{ location: Permission; coarseLocation: Permission }>;
@@ -183,13 +186,18 @@ export async function locateOnce(): Promise<Fix> {
   }
 }
 
-/** Follows the phone until the returned function is called; never asks the reader. */
-async function startWatch(onFix: (fix: Fix) => void, onProblem: (problem: LocateProblem) => void): Promise<() => void> {
-  const options = { enableHighAccuracy: true, timeout: FIX_TIMEOUT_MS, maximumAge: 10_000 };
+/**
+ * Follows the phone until the returned function is called; never asks the
+ * reader. Android sends a fix a minute unless asked for more: `often` asks
+ * for one every few seconds, as a survey on the move needs.
+ */
+async function startWatch(onFix: (fix: Fix) => void, onProblem: (problem: LocateProblem) => void, often: boolean): Promise<() => void> {
+  const options = { enableHighAccuracy: true, timeout: FIX_TIMEOUT_MS, maximumAge: often ? 3_000 : 10_000 };
   if (isCapacitor()) {
     return withGeo(async (geo) => {
       await allowed(geo, false);
-      const id = await geo.watchPosition(options, (position, error) => (position ? onFix(fixOf(position)) : onProblem(nativeProblem(error).problem)));
+      const asked = often ? { ...options, interval: 3_000, minimumUpdateInterval: 1_000 } : options;
+      const id = await geo.watchPosition(asked, (position, error) => (position ? onFix(fixOf(position)) : onProblem(nativeProblem(error).problem)));
       return () => void geo.clearWatch({ id }).catch(() => undefined);
     });
   }
@@ -199,11 +207,16 @@ async function startWatch(onFix: (fix: Fix) => void, onProblem: (problem: Locate
 }
 
 let holds = 0;
+/** Holds that want a fix every few seconds, and whether the watch running gives them that. */
+let oftenHolds = 0;
+let watchingOften = false;
 let stop: (() => void) | null = null;
 let hooked = false;
 
 function run(): void {
   if (stop || holds === 0 || document.visibilityState === "hidden") return;
+  const often = oftenHolds > 0;
+  watchingOften = often;
   let stopped = false;
   let clear: (() => void) | null = null;
   stop = () => {
@@ -217,30 +230,39 @@ function run(): void {
     // Leave taken away: nothing more comes until it is given back and asked for again.
     if (problem === "denied") stop?.();
   };
-  startWatch((fix) => !stopped && set({ fix, problem: null }), lost).then(
+  startWatch((fix) => !stopped && set({ fix, problem: null }), lost, often).then(
     (end) => (stopped ? end() : (clear = end)),
     (error: unknown) => lost(error instanceof LocateError ? error.problem : "unavailable"),
   );
 }
 
 /**
- * Keeps the phone's position coming until the returned function is called.
- * The watch pauses while the page is hidden: a phone's page sleeps there
- * anyway, and the location service need not keep the GPS on for it.
+ * Keeps the phone's position coming until the returned function is called,
+ * every few seconds when `often`. The watch pauses while the page is hidden:
+ * a phone's page sleeps there anyway, and the location service need not keep
+ * the GPS on for it.
  */
-export function holdPhone(): () => void {
+export function holdPhone(often = false): () => void {
   if (!hooked) {
     hooked = true;
     document.addEventListener("visibilitychange", () => (document.visibilityState === "hidden" ? stop?.() : run()));
   }
   holds++;
+  if (often) oftenHolds++;
+  // A watch sending a fix a minute is started again at the pace asked for.
+  if (often && stop && !watchingOften) stop();
   run();
   let released = false;
   return () => {
     if (released) return;
     released = true;
     holds--;
+    if (often) oftenHolds--;
     if (holds === 0) stop?.();
+    else if (often && oftenHolds === 0 && watchingOften) {
+      stop?.();
+      run();
+    }
   };
 }
 

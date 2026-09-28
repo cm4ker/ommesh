@@ -274,6 +274,20 @@ export interface ConsoleEntry {
   reply: string | null;
   repliedAt: number | null;
   error: string | null;
+  /** Which send this is while waiting, and of how many; once done, the send that was answered. */
+  attempt?: number | undefined;
+  attempts?: number | undefined;
+  /**
+   * A setting that got no reply to any send, read back with `get`: being read,
+   * read back as it was set, or read back as something else.
+   */
+  check?: "checking" | "applied" | "differs" | undefined;
+  /**
+   * No try was answered, so the node's way back to us was renewed by itself:
+   * being renewed, renewed (and the command sent again or read back), or the
+   * node answered that sign-in by flood no more than the command.
+   */
+  wayBack?: "renewing" | "renewed" | "unreachable" | undefined;
 }
 
 /** A value read from a node with `get`, or confirmed by a `set`. */
@@ -293,6 +307,10 @@ export interface RemoteJobInfo {
   flooded: boolean;
   /** Local ms by which its reply is due, once it went out. */
   until: number | null;
+  /** Which send this is, from 1; 0 while queued. */
+  attempt: number;
+  /** How many sends it may take this way: its tries along a route, or its floods. */
+  attempts: number;
 }
 
 export interface SessionState {
@@ -408,6 +426,11 @@ export interface SessionOptions {
    * history is read back. Absent keeps every one.
    */
   unsavedKeepMs?: (radioKey: string) => number | null;
+  /**
+   * The password kept for a node, or null. With it, a request that no try got
+   * an answer to renews the node's way back to us by itself, and goes again.
+   */
+  passwordFor?: (key: string) => Promise<string | null>;
 }
 
 /** One trace that came back. */
@@ -818,21 +841,51 @@ type RemoteEvent =
 
 interface RemoteJob {
   info: RemoteJobInfo;
-  /** Sends the command; the radio answers with the tag and how long the reply may take. */
-  start: (client: MeshCoreClient) => Promise<TextSendResult>;
+  /** Sends the request, the `attempt`th time; the radio answers with the tag and how long the reply may take. */
+  start: (client: MeshCoreClient, attempt: number) => Promise<TextSendResult>;
   /** Whether this event is the reply, given what the radio said when it sent the request. */
   answers: (event: RemoteEvent, sent: TextSendResult | null) => boolean;
-  /** Whether silence along a route sends it again as a flood; a console command is not sent twice. */
+  /** Whether a learned route that stays silent through every try is dropped for one flood; a command that changes something never floods. */
   floodOnSilence: boolean;
+  /** Sends along a route before it is given up. */
+  tries: number;
+  /** Sends so far along a route, and as a flood. */
+  alongTries: number;
+  floodTries: number;
+  /** Told of each send: which, of how many, and whether as a flood. */
+  onTry?: ((attempt: number, of: number, flood: boolean) => void) | undefined;
   /** Added to the radio's estimate: a node holds a console reply back before it sends it. */
   extraWaitMs: number;
-  sent: TextSendResult | null;
+  /** What the radio said of each send so far: a late reply to an earlier one still answers. */
+  sents: TextSendResult[];
+  /** A send the radio has not yet confirmed. */
+  sending: boolean;
   /** Events that arrived before the radio had confirmed the send. */
   early: RemoteEvent[];
   timer: ReturnType<typeof setTimeout> | null;
   resolve: (event: RemoteEvent) => void;
   reject: (error: Error) => void;
 }
+
+interface RemoteOptions {
+  extraWaitMs?: number;
+  onStart?: () => void;
+  floodOnSilence?: boolean;
+  tries?: number;
+  onTry?: (attempt: number, of: number, flood: boolean) => void;
+}
+
+/**
+ * How many times a request goes along its route before the route is given up.
+ * On a long, weak one most round trips are lost: to AMUR-21, two hops through
+ * PKIO and Marksa on 27 September 2026, three console commands in eight were
+ * answered. One try fails more often than not; five are answered nine times in ten.
+ */
+export const REMOTE_TRIES = 5;
+/** Every repeater that hears a flood sends it on: a request floods twice at most. */
+const FLOOD_TRIES = 2;
+/** A node's way back is renewed by itself at most this often: the sign-in that does it floods the whole mesh. */
+export const RENEW_EVERY_MS = 10 * 60_000;
 
 /** How long to wait for a remote node: the radio's estimate with room to spare, but not forever. */
 function replyWaitMs(estimateMs: number, extraMs: number): number {
@@ -887,12 +940,17 @@ export class MeshSession {
   private jobCounter = 0;
   /** The next console tag; two hex digits, so the node's `XX|` rule holds. */
   private cliTag = Math.floor(Math.random() * 256);
+  /** The last console stamp sent to each node. */
+  private cliStamps = new Map<string, number>();
   /** Traces on the air, by tag, each waiting for its way back. */
   private traceWaiters = new Map<number, (frame: Extract<PushFrame, { kind: "traceData" }>) => void>();
   private controlListeners = new Set<(frame: Extract<PushFrame, { kind: "controlData" }>) => void>();
   private heardListeners = new Set<(packet: HeardPacket) => void>();
   private readonly traceWait: (estimateMs: number) => number;
   private readonly unsavedKeep: (radioKey: string) => number | null;
+  private readonly passwordFor: ((key: string) => Promise<string | null>) | null;
+  /** When each node's way back was last renewed, local ms. */
+  private renewedAt = new Map<string, number>();
 
   constructor(options: SessionOptions = {}) {
     this.appName = options.appName ?? "Meshnet";
@@ -902,6 +960,7 @@ export class MeshSession {
     this.traceWait = options.traceWaitMs ?? ((budget) => Math.min(30_000, Math.max(2_500, budget)));
     this.trace = options.trace;
     this.unsavedKeep = options.unsavedKeepMs ?? (() => null);
+    this.passwordFor = options.passwordFor ?? null;
   }
 
   // ---- the store ----
@@ -1275,6 +1334,17 @@ export class MeshSession {
     if (total < this.savedCount()) {
       await this.reconcileContacts(client, since === undefined ? fresh : undefined);
     }
+    // A route set by hand that the radio replaced while this app was away (another app, a way
+    // an answer came in) is written back.
+    for (const c of fresh) {
+      const key = toHex(c.publicKey);
+      const manual = this.manualRoute(key);
+      const record = this.state.contacts[key];
+      if (manual && record && routeKey(record.outPathLen, record.outPath) !== routeKey(manual.outPathLen, manual.outPath)) {
+        await this.writeContact({ ...record, ...manual }).catch((e: Error) => this.log("error", e.message));
+        this.log("path", `${record.name || key.slice(0, 12)}: route set by hand put back over ${pathHashes(record.outPathLen, record.outPath).join(" ") || "none"}`);
+      }
+    }
   }
 
   /**
@@ -1628,6 +1698,14 @@ export class MeshSession {
     await this.writeContact({ ...contact, outPathLen, outPath, pathSince: this.now() });
     this.setPolicy(key, { flood: false, manual: routeKey(outPathLen, outPath) });
     this.log("path", `${contact.name || key.slice(0, 12)}: route set by hand, ${hashes.length ? hashes.join(" ") : "direct"}`);
+  }
+
+  /** The route last written by hand for this contact, whatever the radio holds now. */
+  private manualRoute(key: string): { outPathLen: number; outPath: string } | null {
+    const manual = this.state.routing.contacts[key]?.manual;
+    if (!manual || manual === "none") return null;
+    const [len, hex = ""] = manual.split(":");
+    return { outPathLen: Number(len), outPath: hex.padEnd(128, "0") };
   }
 
   /** Whether the route the radio holds for this contact is the one last written by hand. */
@@ -2761,8 +2839,46 @@ export class MeshSession {
       "sign in",
       (client) => client.sendLogin(bytes, password),
       (event) => event.kind === "login" && event.prefix === contact.prefix,
+      // The sign-in sheet renews the way back itself, with the password typed in it.
+      { renew: false },
     );
     return this.state.logins[key]!;
+  }
+
+  /**
+   * Makes a node learn the way back to this radio anew, and signs in. A node
+   * answers along a route it holds for us, learned from a path packet our radio
+   * once sent it, and keeps it however stale it gets: then every request of
+   * ours reaches it and every answer is lost, while a check of the route, which
+   * comes back the way we choose, still passes. A sign-in that reaches it as a
+   * flood makes it forget that route and answer by flood. So the sign-in goes
+   * as a flood, and our own route to the node is put back the moment it has
+   * gone: when the flooded answer reaches us, our radio, holding a route to the
+   * node, sends it the way that answer came, directly along ours. Resolves like
+   * `login`.
+   */
+  async relearnReturnPath(key: string, password: string): Promise<NodeLogin> {
+    const contact = this.needContact(key);
+    const bytes = fromHex(key);
+    const held = this.manualRoute(key) ?? (contact.outPathLen === 0xff ? null : { outPathLen: contact.outPathLen, outPath: contact.outPath });
+    // Counted from the moment it goes, answered or not: it floods the whole mesh.
+    this.renewedAt.set(key, this.now());
+    await this.remoteRequest(
+      key,
+      "sign in by flood",
+      async (client) => {
+        await client.resetPath(bytes);
+        const sent = await client.sendLogin(bytes, password);
+        const now = this.state.contacts[key] ?? contact;
+        if (held) await this.writeContact({ ...now, ...held, pathSince: now.pathSince });
+        return sent;
+      },
+      (event) => event.kind === "login" && event.prefix === contact.prefix,
+      { floodOnSilence: false, renew: false },
+    );
+    const login = this.state.logins[key]!;
+    this.log("path", `${contact.name || key.slice(0, 12)}: ${login.ok ? "signed in by flood; it now learns the way back" : "sign-in by flood refused"}`);
+    return login;
   }
 
   /** Ends a room's keep-alive and forgets the role; the node keeps its own record of us. */
@@ -2817,6 +2933,8 @@ export class MeshSession {
       "path discovery",
       (client) => client.sendPathDiscoveryReq(bytes),
       (event) => event.kind === "path" && event.prefix === contact.prefix,
+      // It floods the whole mesh each time: once is enough to ask.
+      { tries: 1, renew: false },
     );
     if (event.kind !== "path") throw new Error("unreachable");
     const held = this.state.contacts[key] ?? contact;
@@ -2855,7 +2973,8 @@ export class MeshSession {
   }
 
   async requestOwnerInfo(key: string): Promise<OwnerInfo> {
-    const data = await this.binaryRequest(key, "owner info", ownerInfoRequest());
+    // Asked after a sign-in, not by the reader: it does not renew the way back.
+    const data = await this.binaryRequest(key, "owner info", ownerInfoRequest(), { renew: false });
     const info: OwnerInfo = { ...readOwnerInfo(data), at: this.now() };
     this.set({ ownerInfo: { ...this.state.ownerInfo, [key]: info } });
     return info;
@@ -2870,7 +2989,7 @@ export class MeshSession {
     return record;
   }
 
-  private async binaryRequest(key: string, label: string, body: Uint8Array): Promise<Uint8Array> {
+  private async binaryRequest(key: string, label: string, body: Uint8Array, options: { renew?: boolean } = {}): Promise<Uint8Array> {
     this.needContact(key);
     const bytes = fromHex(key);
     const event = await this.remoteRequest(
@@ -2878,6 +2997,7 @@ export class MeshSession {
       label,
       (client) => client.sendBinaryReq(bytes, body),
       (event, sent) => event.kind === "binary" && sent !== null && event.tag === sent.ackTag,
+      options,
     );
     if (event.kind !== "binary") throw new Error("unreachable");
     return event.data;
@@ -2892,7 +3012,6 @@ export class MeshSession {
   async runCli(key: string, command: string, options: { mask?: string } = {}): Promise<string> {
     const contact = this.needContact(key);
     const tag = (this.cliTag++ & 0xff).toString(16).padStart(2, "0");
-    const prefix = fromHex(contact.prefix);
     if (options.mask) this.maskedTags.add(`${contact.prefix}:${tag}`);
     const entry: ConsoleEntry = {
       id: newId(this.now()),
@@ -2905,30 +3024,108 @@ export class MeshSession {
       error: null,
     };
     this.appendConsole(key, entry);
-    try {
-      const event = await this.remoteRequest(
-        key,
-        options.mask ?? command,
-        (client) => client.sendCliCommand(prefix, `${tag}|${command}`),
-        (event) => event.kind === "cli" && event.prefix === contact.prefix && event.tag === tag,
-        {
-          // The node holds a console reply back for about half a second.
-          extraWaitMs: 1_500,
-          onStart: () => this.patchConsole(key, entry.id, { status: "waiting", at: this.now() }),
-          // A command the node carried out but whose reply was lost must not run twice.
-          floodOnSilence: false,
+    let attempt = 0;
+    const send = () =>
+      this.sendCli(key, tag, command, options.mask ?? command, {
+        onStart: () => this.patchConsole(key, entry.id, { status: "waiting", at: this.now() }),
+        onTry: (n, of) => {
+          attempt = n;
+          this.patchConsole(key, entry.id, { attempt: n, attempts: of });
         },
-      );
-      const reply = event.kind === "cli" ? event.text : "";
-      this.patchConsole(key, entry.id, { status: "done", reply: options.mask ? maskReply(reply) : reply, repliedAt: this.now() });
-      return reply;
-    } catch (error) {
-      this.patchConsole(key, entry.id, {
-        status: error instanceof NoReplyError ? "timeout" : "failed",
-        error: (error as Error).message,
       });
+    const done = (reply: string) => {
+      this.patchConsole(key, entry.id, { status: "done", reply: options.mask ? maskReply(reply) : reply, repliedAt: this.now(), attempt });
+      return reply;
+    };
+    const fail = (error: unknown): never => {
+      this.patchConsole(key, entry.id, { status: error instanceof NoReplyError ? "timeout" : "failed", error: (error as Error).message });
       throw error;
+    };
+    try {
+      return done(await send());
+    } catch (error) {
+      if (!(error instanceof NoReplyError) || options.mask) return fail(error);
+      const set = /^set\s+(\S+)\s+(.+)$/i.exec(command.trim());
+      // Every command may have arrived and every answer been lost on the node's way back to us:
+      // renewed once, a read goes again, and a set is read back rather than carried out twice.
+      if (!set && !readsOnly(command)) return fail(error);
+      const renewed = await this.renewWayBack(key, () => this.patchConsole(key, entry.id, { status: "waiting", wayBack: "renewing" }));
+      this.patchConsole(key, entry.id, { wayBack: renewed === "renewed" ? "renewed" : renewed === "silent" ? "unreachable" : undefined });
+      if (set) return this.checkSetting(key, entry.id, set[1]!, set[2]!, error);
+      if (renewed !== "renewed") return fail(error);
+      try {
+        return done(await send());
+      } catch (again) {
+        return fail(again);
+      }
     }
+  }
+
+  /**
+   * Sends one console command until it is answered. A command that only reads
+   * goes with a new stamp each time, since the node answers every copy of it;
+   * after every try along a learned route it floods once. One that changes
+   * something goes with one stamp however often it is sent: the node carries
+   * out the first copy that reaches it and takes the rest for repeats, which it
+   * does not answer; it never floods.
+   */
+  private sendCli(
+    key: string,
+    tag: string,
+    command: string,
+    label: string,
+    hooks: { onStart?: () => void; onTry?: (attempt: number, of: number) => void } = {},
+  ): Promise<string> {
+    const contact = this.needContact(key);
+    const prefix = fromHex(contact.prefix);
+    const reads = readsOnly(command);
+    const fixed = reads ? null : this.cliStamp(key);
+    return this.remoteRequest(
+      key,
+      label,
+      (client) => client.sendCliCommand(prefix, `${tag}|${command}`, fixed ?? this.cliStamp(key)),
+      (event) => event.kind === "cli" && event.prefix === contact.prefix && event.tag === tag,
+      {
+        // The node holds a console reply back for about half a second.
+        extraWaitMs: 1_500,
+        floodOnSilence: reads,
+        // runCli renews the way back itself: a read goes again, a set is read back.
+        renew: false,
+        ...(hooks.onStart ? { onStart: hooks.onStart } : {}),
+        ...(hooks.onTry ? { onTry: (n: number, of: number) => hooks.onTry!(n, of) } : {}),
+      },
+    ).then((event) => (event.kind === "cli" ? event.text : ""));
+  }
+
+  /**
+   * A `set` that heard nothing back may still have been carried out: its reply
+   * is as easily lost as its command. The setting is read back, and the
+   * console says whether it took.
+   */
+  private async checkSetting(key: string, entryId: string, name: string, value: string, silence: NoReplyError): Promise<string> {
+    this.patchConsole(key, entryId, { status: "waiting", check: "checking" });
+    const tag = (this.cliTag++ & 0xff).toString(16).padStart(2, "0");
+    let reply: string;
+    try {
+      reply = await this.sendCli(key, tag, `get ${name}`, `get ${name}`);
+    } catch {
+      this.patchConsole(key, entryId, { status: "timeout", check: undefined, error: silence.message });
+      throw silence;
+    }
+    const now = cliValue(reply) ?? reply.trim();
+    if (now.toLowerCase() === value.trim().toLowerCase()) {
+      this.patchConsole(key, entryId, { status: "done", check: "applied", reply, repliedAt: this.now() });
+      return reply;
+    }
+    this.patchConsole(key, entryId, { status: "failed", check: "differs", reply, error: `get ${name}: ${now}` });
+    throw new NodeCommandError(`${name} is ${now}`);
+  }
+
+  /** The stamp for a console command: this clock's second, but past any the node has had from us, which it would take for a repeat. */
+  private cliStamp(key: string): number {
+    const stamp = Math.max(Math.floor(this.now() / 1000), (this.cliStamps.get(key) ?? 0) + 1);
+    this.cliStamps.set(key, stamp);
+    return stamp;
   }
 
   /** `get <name>`, or another command whose reply is the value; remembered per node. */
@@ -3022,27 +3219,80 @@ export class MeshSession {
     this.appendConsole(key, { id: newId(this.now()), command: "", tag: tag ?? "", at: this.now(), status: "done", reply, repliedAt: this.now(), error: null });
   }
 
+  /**
+   * A request to a node, sent until answered (see `launchRemote`). One that no
+   * try got an answer to renews the node's way back to us, if it may
+   * (`renewWayBack`), and goes once more. `renew: false` for a request the
+   * reader did not ask for, and for the sign-ins themselves.
+   */
   private remoteRequest(
     key: string,
     label: string,
     start: RemoteJob["start"],
     answers: (event: RemoteEvent, sent: TextSendResult | null) => boolean,
-    options: { extraWaitMs?: number; onStart?: () => void; floodOnSilence?: boolean } = {},
+    options: RemoteOptions & { renew?: boolean } = {},
+  ): Promise<RemoteEvent> {
+    const once = () => this.enqueueRemote(key, label, start, answers, options);
+    if (options.renew === false) return once();
+    return once().catch(async (error: unknown) => {
+      if (!(error instanceof NoReplyError) || (await this.renewWayBack(key)) !== "renewed") throw error;
+      return once();
+    });
+  }
+
+  /**
+   * Renews a node's way back to us by itself, when a request heard nothing:
+   * with its kept password, and at most once in `RENEW_EVERY_MS`. Says whether
+   * the node answered the sign-in (`renewed`), so the request is worth sending
+   * again; `silent` when it did not answer that either; `skipped` when there
+   * was no password or it was renewed too lately.
+   */
+  private async renewWayBack(key: string, onStart?: () => void): Promise<"renewed" | "silent" | "skipped"> {
+    if (!this.passwordFor || !this.canRenewWayBack(key)) return "skipped";
+    const password = await this.passwordFor(key).catch(() => null);
+    if (password === null) return "skipped";
+    const name = this.state.contacts[key]?.name || key.slice(0, 12);
+    this.log("path", `${name}: no answer to any try; renewing its way back`);
+    onStart?.();
+    try {
+      return (await this.relearnReturnPath(key, password)).ok ? "renewed" : "silent";
+    } catch {
+      this.log("path", `${name}: answered neither along the route nor to the whole mesh`);
+      return "silent";
+    }
+  }
+
+  /** Whether a node's way back may be renewed by itself now: not within `RENEW_EVERY_MS` of the last. */
+  canRenewWayBack(key: string): boolean {
+    return this.now() - (this.renewedAt.get(key) ?? -Infinity) >= RENEW_EVERY_MS;
+  }
+
+  private enqueueRemote(
+    key: string,
+    label: string,
+    start: RemoteJob["start"],
+    answers: (event: RemoteEvent, sent: TextSendResult | null) => boolean,
+    options: RemoteOptions = {},
   ): Promise<RemoteEvent> {
     if (!this.client || this.client.isClosed) return Promise.reject(new Error("not connected"));
-    const { extraWaitMs = 0, onStart, floodOnSilence = true } = options;
+    const { extraWaitMs = 0, onStart, floodOnSilence = true, tries = REMOTE_TRIES, onTry } = options;
     return new Promise((resolve, reject) => {
       this.jobCounter += 1;
       this.remoteQueue.push({
-        info: { id: `r${this.jobCounter}`, key, label, startedAt: null, flooded: false, until: null },
-        start: async (client) => {
-          onStart?.();
-          return start(client);
+        info: { id: `r${this.jobCounter}`, key, label, startedAt: null, flooded: false, until: null, attempt: 0, attempts: 0 },
+        start: async (client, attempt) => {
+          if (attempt === 1) onStart?.();
+          return start(client, attempt);
         },
         answers,
         floodOnSilence,
+        tries: Math.max(1, tries),
+        alongTries: 0,
+        floodTries: 0,
+        onTry,
         extraWaitMs,
-        sent: null,
+        sents: [],
+        sending: false,
         early: [],
         timer: null,
         resolve,
@@ -3064,43 +3314,67 @@ export class MeshSession {
   }
 
   /**
-   * Sends the request in the radio's slot and waits for its reply. One that
-   * went along a learned route and heard nothing goes once more as a flood:
-   * the route is the likeliest thing to have broken, and a flood that gets
-   * through brings a fresh one back.
+   * Sends the request in the radio's slot and waits for its reply, and sends
+   * it again while none comes. Along a route it goes up to `tries` times: on
+   * a weak route most round trips are lost, and one lost says nothing about
+   * the route. Only when every try along a learned route has gone unanswered
+   * is the route dropped and the request flooded once, which brings a fresh
+   * route back if it gets through. A route set by hand is never dropped: it
+   * was chosen because the floods do not get there. With no route at all the
+   * request floods, at most twice.
    */
-  private async launchRemote(job: RemoteJob, flood: boolean): Promise<void> {
+  private async launchRemote(job: RemoteJob, dropRouteFirst: boolean): Promise<void> {
     const client = this.client;
     if (!client || client.isClosed) {
       this.finishRemote(job, new Error("not connected"));
       return;
     }
+    const name = this.state.contacts[job.info.key]?.name || job.info.key.slice(0, 12);
     try {
-      if (flood) {
-        await this.dropRoute(client, job.info.key, `${job.info.label} got no reply along it`);
+      if (dropRouteFirst) {
+        await this.dropRoute(client, job.info.key, `${job.info.label} got no reply along it in ${job.alongTries} tries`);
         if (this.remoteActive !== job) return;
         job.info = { ...job.info, flooded: true };
-        this.publishRemote();
       }
-      const sent = await job.start(client);
+      const attempt = job.alongTries + job.floodTries + 1;
+      job.sending = true;
+      const sent = await job.start(client, attempt);
+      job.sending = false;
       if (this.remoteActive !== job) return;
-      job.sent = sent;
+      job.sents.push(sent);
+      if (sent.flood) job.floodTries += 1;
+      else job.alongTries += 1;
+      // A flood after the route gave up is the last send; floods from the start are counted apart.
+      const of = !sent.flood ? job.tries : job.info.flooded ? attempt : Math.min(FLOOD_TRIES, job.tries);
       const wait = this.replyWait(sent.estTimeoutMs, job.extraWaitMs);
-      job.info = { ...job.info, until: this.now() + wait };
+      job.info = { ...job.info, until: this.now() + wait, attempt, attempts: of };
       this.publishRemote();
+      job.onTry?.(attempt, of, sent.flood);
+      this.log("remote", `${job.info.label} to ${name}: try ${attempt} of ${of}, ${sent.flood ? "as a flood" : "along its route"}`);
       job.timer = setTimeout(() => {
         job.timer = null;
-        if (job.floodOnSilence && !flood && !sent.flood) {
-          job.sent = null;
-          void this.launchRemote(job, true);
+        if (!sent.flood) {
+          if (job.alongTries < job.tries) void this.launchRemote(job, false);
+          // A route is dropped once per request: a radio that went along one again learned it anew.
+          else if (job.floodOnSilence && !job.info.flooded && !this.routeSetByHand(job.info.key)) void this.launchRemote(job, true);
+          else this.giveUp(job, name, wait);
+        } else if (!job.info.flooded && job.floodTries < Math.min(FLOOD_TRIES, job.tries)) {
+          void this.launchRemote(job, false);
         } else {
-          this.finishRemote(job, new NoReplyError(job.info.label, wait));
+          this.giveUp(job, name, wait);
         }
       }, wait);
       for (const event of job.early.splice(0)) this.remoteEvent(event);
     } catch (error) {
+      job.sending = false;
       this.finishRemote(job, error instanceof Error ? error : new Error(String(error)));
     }
+  }
+
+  private giveUp(job: RemoteJob, name: string, waitMs: number): void {
+    const sends = job.alongTries + job.floodTries;
+    this.log("remote", `${job.info.label} to ${name}: no reply to ${sends} ${sends === 1 ? "send" : "sends"}`);
+    this.finishRemote(job, new NoReplyError(job.info.label, waitMs));
   }
 
   private finishRemote(job: RemoteJob, error: Error | null, event?: RemoteEvent): void {
@@ -3118,12 +3392,14 @@ export class MeshSession {
     const job = this.remoteActive;
     if (!job) return false;
     // A binary reply is known by the tag the radio gave when it sent the
-    // request; one that overtakes that answer waits for it.
-    if (!job.sent && event.kind === "binary") {
+    // request; one that overtakes that answer waits for it. A reply to any
+    // earlier send of the same request answers it as well.
+    if (event.kind === "binary" && (job.sending || job.sents.length === 0) && !job.sents.some((sent) => job.answers(event, sent))) {
       job.early.push(event);
       return true;
     }
-    if (!job.answers(event, job.sent)) return false;
+    const answered = job.sents.length === 0 ? job.answers(event, null) : job.sents.some((sent) => job.answers(event, sent));
+    if (!answered) return false;
     this.finishRemote(job, null, event);
     return true;
   }
@@ -3239,6 +3515,14 @@ export class MeshSession {
           if (r && r.outPathLen !== 0xff && isConversationType(r.type) && this.routePolicy(key).flood && this.client === client) {
             this.dropRoute(client, key, "flood pinned").catch((e: Error) => this.log("error", e.message));
           }
+          // The radio takes the way an answer came in as its route to the sender; a route set
+          // by hand is put back, since it was chosen over what the radio learns.
+          const manual = this.manualRoute(key);
+          if (r && manual && routeKey(r.outPathLen, r.outPath) !== routeKey(manual.outPathLen, manual.outPath) && this.client === client) {
+            this.writeContact({ ...r, ...manual })
+              .then(() => this.log("path", `${r.name || key.slice(0, 12)}: route set by hand put back over ${pathHashes(r.outPathLen, r.outPath).join(" ") || "direct"}`))
+              .catch((e: Error) => this.log("error", e.message));
+          }
         });
         this.log("path", `route to ${this.state.contacts[key]?.name ?? key.slice(0, 12)} updated`);
         return;
@@ -3344,6 +3628,15 @@ export class MeshSession {
 }
 
 /** A console reply with a password in it, as the console shows it. */
+/**
+ * A console command that only reads, so a copy the node answers twice does no
+ * harm: `get`, and the few plain reads. Anything else is taken to change
+ * something, and is never carried out twice.
+ */
+export function readsOnly(command: string): boolean {
+  return /^(get\s+\S|ver$|clock$|neighbors$|board$|memory$|eth\.status$)/i.test(command.trim());
+}
+
 function maskReply(reply: string): string {
   return reply.replace(/^(password now:\s*).*$/is, "$1••••••");
 }

@@ -123,7 +123,8 @@ final class MeshRelay: NSObject {
             case .inboxesChanged:
                 saveInboxes()
             case let .post(notice):
-                let sound = UserDefaults.standard.string(forKey: MeshRelay.soundKey)
+                // A burst of news rings with its first notice only.
+                let sound = notice.silent ? nil : UserDefaults.standard.string(forKey: MeshRelay.soundKey)
                 let shown = PageNotice(id: Int(notice.id), tag: notice.tag, title: notice.title, body: notice.body, sound: sound, avatar: nil, thread: nil)
                 MeshWatch.show(shown) { error in
                     if let error { NSLog("MeshRelay: a notice was not shown: %@", error.localizedDescription) }

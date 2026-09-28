@@ -10,9 +10,15 @@
  * - a conversation has one notice at most, which says how many are unread
  *   and shows the latest of them, is replaced as more arrive, and is
  *   withdrawn once the conversation is read, wherever it is read;
- * - the radio hands its queue over in a burst, at connect and whenever it
- *   says messages are waiting, and a burst is announced once it is drained,
- *   not message by message;
+ * - news that keeps coming, each within a moment (`QUIET_MS`) of the last,
+ *   is one burst: the queue read out at connect, a hundred messages or
+ *   more, is one, and a chat whose people write seconds apart is a burst
+ *   per message. A burst rings once, with its first notice; after it the
+ *   notices are brought up to date quietly, every few seconds while it goes
+ *   on and once it is over (gh #46). A burst is told by time, not by the
+ *   session's `syncing` alone: on a phone the radio core reads the radio's
+ *   queue itself and hands it to the page a message at a time, each its own
+ *   sync;
  * - when more than three conversations would each have a notice, one
  *   notice stands for them all, until the app is opened or all is read;
  * - only what the reader wants rings (noticePrefs.ts): a chat left at
@@ -64,6 +70,8 @@ export interface Notice {
    * several people speak in it, and the unread messages shown, oldest first.
    */
   thread?: { title: string; group: boolean; face: Face; lines: NoticeLine[] };
+  /** Shown without the signal: a burst of news rings with its first notice only. */
+  silent?: boolean;
 }
 
 /** At most this many conversations each have a notice of their own. */
@@ -72,6 +80,14 @@ const SEPARATE = 3;
 const LINES = 3;
 /** How many conversations the notice for several of them names. */
 const NAMED = 4;
+/**
+ * How long news must stop for a burst of it to be over, in ms. The radio core
+ * reads the radio's queue at a message per 60–450 ms; people in a chat write
+ * seconds apart, and a LoRa message alone takes about a second on the air.
+ */
+export const QUIET_MS = 1500;
+/** How often a burst that goes on brings its notices up to date, in ms. */
+export const CATCH_UP_MS = 5000;
 
 /** The tag of the notice for several conversations; a click on it opens the chat list. */
 export const ALL_CHATS = "c:";
@@ -187,8 +203,15 @@ export function createAnnouncer(deps: {
   let allOut = false;
   /** The unread counts at the last change, to see what has been read since. */
   let before = deps.state().unread;
+  /** The wait for the burst of news coming now to stop; none between bursts. */
+  let quiet: ReturnType<typeof setTimeout> | null = null;
+  /** Whether the burst has yet to ring. */
+  let unrung = false;
+  /** When the burst's notices were last brought up to date. */
+  let shownAt = 0;
 
-  function announce(state: SessionState): void {
+  /** Shows what is pending, the first notice with the signal if `ring`; whether anything was shown. */
+  function announce(state: SessionState, ring: boolean): boolean {
     // Each message by the conversation it is in now: one from an unknown
     // sender moves under the contact once the contact is read.
     const fresh = new Set<string>();
@@ -196,31 +219,66 @@ export function createAnnouncer(deps: {
       if (pending.has(m.id) && (state.unread[m.conversation] ?? 0) > 0 && deps.wanted(m)) fresh.add(m.conversation);
     }
     pending.clear();
-    if (fresh.size === 0) return;
+    if (fresh.size === 0) return false;
 
+    let shown = false;
+    const show = (notice: Notice): void => {
+      deps.show(ring && !shown ? notice : { ...notice, silent: true });
+      shown = true;
+    };
     if (allOut || new Set([...out, ...fresh]).size > SEPARATE) {
       for (const c of out) deps.withdraw(conversationTag(c));
       out.clear();
       const notice = allChatsNotice(state, deps.wanted);
       if (notice) {
-        deps.show(notice);
+        show(notice);
         allOut = true;
       }
-      return;
+      return shown;
     }
     for (const c of fresh) {
       const notice = conversationNotice(state, c, deps.wanted);
       if (!notice) continue;
-      deps.show(notice);
+      show(notice);
       out.add(c);
     }
+    return shown;
+  }
+
+  /**
+   * What is pending goes out once the queue is drained: at once, ringing, when
+   * the burst has not rung; after that every `CATCH_UP_MS` while it goes on,
+   * and once it is over.
+   */
+  function flush(): void {
+    const state = deps.state();
+    if (pending.size === 0 || state.syncing) return;
+    const now = Date.now();
+    if (unrung) {
+      // What nobody wants to hear of leaves the burst still to ring for what they do.
+      if (announce(state, true)) unrung = false;
+      shownAt = now;
+    } else if (!quiet || now - shownAt >= CATCH_UP_MS) {
+      announce(state, false);
+      shownAt = now;
+    }
+  }
+
+  /** News came: the first after a quiet starts a burst, and each holds it open a moment longer. */
+  function news(): void {
+    if (quiet) clearTimeout(quiet);
+    else unrung = true;
+    quiet = setTimeout(() => {
+      quiet = null;
+      flush();
+    }, QUIET_MS);
   }
 
   return {
     received(message) {
       pending.add(message.id);
-      const state = deps.state();
-      if (!state.syncing) announce(state);
+      news();
+      flush();
     },
 
     changed() {
@@ -240,7 +298,7 @@ export function createAnnouncer(deps: {
         }
         before = state.unread;
       }
-      if (pending.size > 0 && !state.syncing) announce(state);
+      flush();
     },
 
     opened() {

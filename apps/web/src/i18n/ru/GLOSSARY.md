@@ -30,7 +30,7 @@
 | neighbours | соседи | |
 | favourite | избранный; Избранные | |
 | telemetry | телеметрия | |
-| sign in | войти | admin — администратор, guest — гость |
+| sign in | войти | admin — администратор, guest — гость; на кнопке профиля, где места мало, — «Админ» |
 | public / private key | открытый / закрытый ключ | |
 | frequency, bandwidth | частота, полоса | |
 | spreading factor, coding rate | SF, CR | |

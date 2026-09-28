@@ -1,22 +1,20 @@
 /**
  * The nodes of the map drawn on one canvas rather than a DOM marker each.
  *
- * A marker is an element with its own 3D transform, so a few hundred of them
- * are a few hundred compositor layers: every frame of a pan or a pinch moves
- * them all, and every zoom step writes all their positions. The canvas is one
- * element. It rides the map pane while panning and is scaled whole during a
- * zoom, as Leaflet's own vector renderer is; it is painted again only when a
- * move ends, a node changes, or the minute turns. It reaches a third of a
- * screen past the view on every side, and a longer drag paints it again
- * round where the view has got to, so a pan shows drawn nodes, not a gap.
+ * A marker is an element with its own transform, so a few hundred of them are
+ * a few hundred compositor layers that every frame of a pan, a pinch or a turn
+ * moves. The canvas is one element the size of the map, over its tiles, and
+ * is painted on every frame the map draws: each node is placed where the map
+ * puts its spot now, so a turned map keeps names and pins upright.
  *
  * It takes no pointer events: the map hands taps and hovers to `hit()`.
  * Nodes too close to tell apart are gathered by lib/cluster.ts when grouping
- * is on, once per zoom; with it off every node is drawn, and names that would
- * run over a pin or another name are left out until a zoom makes room.
+ * is on, again whenever the zoom has moved on; with it off every node is
+ * drawn, and names that would run over a pin or another name are left out
+ * until a zoom makes room.
  */
 
-import * as L from "leaflet";
+import type { Map as MapLibre } from "maplibre-gl";
 import { AdvType, type ContactRecord } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
 import { clusterPoints } from "./cluster.js";
@@ -27,14 +25,17 @@ import { freshness } from "./geo.js";
 const CLUSTER_RADIUS = 44;
 /** A pin's half size. */
 const PIN = 11;
-/** Room on the canvas past the view, as a share of it on each side. */
-const PADDING = 0.3;
 /** The most device pixels the canvas takes: about 24 MB of memory. */
 const MAX_PIXELS = 6_000_000;
 
+export interface LatLon {
+  lat: number;
+  lon: number;
+}
+
 export interface NodeGroup {
   members: ContactRecord[];
-  at: L.LatLng;
+  at: LatLon;
 }
 
 export interface NodeData {
@@ -43,19 +44,12 @@ export interface NodeData {
   /** Places in a route being changed, by key. */
   numbers: Record<string, number>;
   grouping: boolean;
-  self: L.LatLng | null;
-}
-
-interface Placed {
-  group: NodeGroup;
-  /** Pixels at the zoom it was grouped for. */
-  px: number;
-  py: number;
+  self: LatLon | null;
 }
 
 interface Drawn {
   group: NodeGroup;
-  /** Layer pixels. */
+  /** Pixels on the map. */
   x: number;
   y: number;
   r: number;
@@ -226,16 +220,31 @@ function groupSize(n: number): number {
   return n < 10 ? 32 : n < 100 ? 38 : 44;
 }
 
-export class NodeCanvas extends L.Renderer {
+export class NodeCanvas {
   private data: NodeData = { nodes: [], selected: null, numbers: {}, grouping: true, self: null };
-  private placed: Placed[] = [];
+  private placed: NodeGroup[] = [];
   private placedZoom: number | null = null;
   private drawn: Drawn[] = [];
   private widths = new Map<string, number>();
   private widthFont = "";
+  private readonly canvas: HTMLCanvasElement;
+  private readonly ctx: CanvasRenderingContext2D | null;
 
-  constructor(options?: L.RendererOptions) {
-    super({ padding: PADDING, ...options });
+  constructor(
+    private readonly map: MapLibre,
+    parent: HTMLElement,
+  ) {
+    this.canvas = document.createElement("canvas");
+    this.canvas.className = "map-nodes";
+    this.canvas.setAttribute("aria-hidden", "true");
+    parent.append(this.canvas);
+    this.ctx = this.canvas.getContext("2d");
+    map.on("render", this.paint);
+  }
+
+  remove(): void {
+    this.map.off("render", this.paint);
+    this.canvas.remove();
   }
 
   /** New nodes, a new pick, grouping turned on or off: grouped again and painted. */
@@ -243,13 +252,13 @@ export class NodeCanvas extends L.Renderer {
     const regroup = data.nodes !== this.data.nodes || data.grouping !== this.data.grouping;
     this.data = data;
     if (regroup) this.placedZoom = null;
-    this.paint();
+    this.map.triggerRepaint();
   }
 
   /** Painted again as it is: the times beside the names, a new theme, a font that arrived. */
   redraw(): this {
     this.widths.clear();
-    this.paint();
+    this.map.triggerRepaint();
     return this;
   }
 
@@ -259,11 +268,11 @@ export class NodeCanvas extends L.Renderer {
   }
 
   /**
-   * What is under a point of the layer: the nodes of the topmost circle, or of
+   * What is under a point of the map: the nodes of the topmost circle, or of
    * the pins within `slop` of it. Pins stacked on one spot come back together;
    * otherwise the nearest one alone.
    */
-  hit(point: L.Point, slop: number): ContactRecord[] | null {
+  hit(point: { x: number; y: number }, slop: number): ContactRecord[] | null {
     let best: Drawn | null = null;
     let bestD = Infinity;
     const singles: { d: Drawn; dist: number }[] = [];
@@ -282,85 +291,30 @@ export class NodeCanvas extends L.Renderer {
     return stacked.length > 1 ? stacked.map((s) => s.d.group.members[0]!) : best.group.members;
   }
 
-  // ---- Leaflet's renderer contract ----
-
-  _initContainer(): void {
-    const canvas = document.createElement("canvas");
-    canvas.style.pointerEvents = "none";
-    const self = this as unknown as { _container: HTMLCanvasElement; _ctx: CanvasRenderingContext2D | null };
-    self._container = canvas;
-    self._ctx = canvas.getContext("2d");
-  }
-
-  _destroyContainer(): void {
-    const self = this as unknown as { _container?: HTMLCanvasElement; _ctx?: CanvasRenderingContext2D | null };
-    cancelAnimationFrame(this.moveFrame);
-    this.moveFrame = 0;
-    self._container?.remove();
-    delete self._container;
-    delete self._ctx;
-  }
-
-  getEvents(): { [name: string]: L.LeafletEventHandlerFn } {
-    return { ...super.getEvents?.(), move: this.onMove };
-  }
-
-  /**
-   * A long drag that has carried the view past the painted edge: painted again
-   * round where it is, at most once a frame, so nodes do not wait for the
-   * finger to lift. A zoom scales the canvas instead and is left alone.
-   */
-  private moveFrame = 0;
-  private onMove = (): void => {
-    const self = this as unknown as { _map?: L.Map & { _animatingZoom?: boolean }; _bounds?: L.Bounds };
-    const map = self._map;
-    const b = self._bounds;
-    if (!map || !b?.min || !b.max || map._animatingZoom || this.moveFrame) return;
-    const topLeft = map.containerPointToLayerPoint([0, 0]);
-    const bottomRight = map.containerPointToLayerPoint(map.getSize());
-    if (topLeft.x >= b.min.x && topLeft.y >= b.min.y && bottomRight.x <= b.max.x && bottomRight.y <= b.max.y) return;
-    this.moveFrame = requestAnimationFrame(() => {
-      this.moveFrame = 0;
-      if ((this as unknown as { _map?: L.Map })._map) this._update();
-    });
-  };
-
-  _update(): void {
-    const self = this as unknown as { _map: L.Map & { _animatingZoom?: boolean }; _bounds?: L.Bounds; _container: HTMLCanvasElement };
-    if (self._map._animatingZoom && self._bounds) return;
-    (L.Renderer.prototype as unknown as { _update: () => void })._update.call(this);
-    const b = self._bounds!;
-    const size = b.getSize();
-    // Sharp on the screen's pixels, but never past MAX_PIXELS: a phone's WebView refuses, or runs out
-    // of memory for, a canvas much larger than that.
-    const ratio = Math.min(window.devicePixelRatio || 1, 3, Math.sqrt(MAX_PIXELS / Math.max(1, size.x * size.y)));
-    const canvas = self._container;
-    L.DomUtil.setPosition(canvas, b.min!);
-    canvas.width = Math.round(size.x * ratio);
-    canvas.height = Math.round(size.y * ratio);
-    canvas.style.width = `${size.x}px`;
-    canvas.style.height = `${size.y}px`;
-    this.paint();
-  }
-
   // ---- painting ----
 
-  private regroup(map: L.Map, zoom: number): void {
+  /**
+   * Gathered anew for the view as it is. A turn changes no distance on the
+   * screen, so only a zoom asks for it: at the end of one, or while a pinch
+   * carries the zoom a whole step away.
+   */
+  private regroup(): void {
+    const map = this.map;
     const { nodes, grouping } = this.data;
-    const points = nodes.map((c) => {
-      const p = map.project([c.lat, c.lon], zoom);
-      return { item: c, x: p.x, y: p.y };
-    });
     if (!grouping) {
-      this.placed = points.map((p) => ({ group: { members: [p.item], at: L.latLng(p.item.lat, p.item.lon) }, px: p.x, py: p.y }));
+      this.placed = nodes.map((c) => ({ members: [c], at: { lat: c.lat, lon: c.lon } }));
     } else {
-      this.placed = clusterPoints(points, CLUSTER_RADIUS).map((g) => ({
-        group: { members: g.members, at: g.members.length === 1 ? L.latLng(g.members[0]!.lat, g.members[0]!.lon) : map.unproject([g.x, g.y], zoom) },
-        px: g.x,
-        py: g.y,
-      }));
+      const points = nodes.map((c) => {
+        const p = map.project([c.lon, c.lat]);
+        return { item: c, x: p.x, y: p.y };
+      });
+      this.placed = clusterPoints(points, CLUSTER_RADIUS).map((g) => {
+        if (g.members.length === 1) return { members: g.members, at: { lat: g.members[0]!.lat, lon: g.members[0]!.lon } };
+        const at = map.unproject([g.x, g.y]);
+        return { members: g.members, at: { lat: at.lat, lon: at.lng } };
+      });
     }
-    this.placedZoom = zoom;
+    this.placedZoom = map.getZoom();
   }
 
   private width(ctx: CanvasRenderingContext2D, text: string): number {
@@ -376,23 +330,27 @@ export class NodeCanvas extends L.Renderer {
     return w;
   }
 
-  private paint(): void {
-    const self = this as unknown as { _map?: L.Map; _bounds?: L.Bounds; _ctx?: CanvasRenderingContext2D | null; _container?: HTMLCanvasElement };
-    const map = self._map;
-    const ctx = self._ctx;
-    const bounds = self._bounds;
-    const canvas = self._container;
-    if (!map || !ctx || !bounds?.min || !bounds.max || !canvas) return;
-    const { min, max } = bounds;
+  private paint = (): void => {
+    const map = this.map;
+    const ctx = this.ctx;
+    const canvas = this.canvas;
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    if (!ctx || width === 0 || height === 0) return;
     const zoom = map.getZoom();
-    if (this.placedZoom !== zoom) this.regroup(map, zoom);
+    if (this.placedZoom === null || Math.abs(zoom - this.placedZoom) >= 1 || (Math.abs(zoom - this.placedZoom) > 0.01 && !map.isZooming())) this.regroup();
 
-    const ratio = canvas.width / Math.max(1, max.x - min.x);
+    // Sharp on the screen's pixels, but never past MAX_PIXELS: a phone's WebView refuses, or runs out
+    // of memory for, a canvas much larger than that.
+    const ratio = Math.min(window.devicePixelRatio || 1, 3, Math.sqrt(MAX_PIXELS / Math.max(1, width * height)));
+    if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
+      canvas.width = Math.round(width * ratio);
+      canvas.height = Math.round(height * ratio);
+    }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.setTransform(ratio, 0, 0, ratio, -min.x * ratio, -min.y * ratio);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 
-    const origin = map.getPixelOrigin();
     const { selected, numbers, self: me } = this.data;
     const pal = palette();
     const nowSec = Date.now() / 1000;
@@ -402,17 +360,12 @@ export class NodeCanvas extends L.Renderer {
     const now = t("mesh.map.now");
 
     // Only what falls on the canvas, with room for a name reaching in from the left.
-    const x0 = min.x - 240;
-    const x1 = max.x + 30;
-    const y0 = min.y - 30;
-    const y1 = max.y + 30;
     const drawn: Drawn[] = [];
-    for (const p of this.placed) {
-      const x = p.px - origin.x;
-      const y = p.py - origin.y;
-      if (x < x0 || x > x1 || y < y0 || y > y1) continue;
-      const n = p.group.members.length;
-      drawn.push({ group: p.group, x, y, r: n === 1 ? PIN : groupSize(n) / 2 });
+    for (const group of this.placed) {
+      const { x, y } = map.project([group.at.lon, group.at.lat]);
+      if (x < -240 || x > width + 30 || y < -30 || y > height + 30) continue;
+      const n = group.members.length;
+      drawn.push({ group, x, y, r: n === 1 ? PIN : groupSize(n) / 2 });
     }
     // South over north, as markers stack; the pick on top of everything.
     const holdsPick = (d: Drawn) => selected !== null && d.group.members.some((c) => c.key === selected);
@@ -424,9 +377,7 @@ export class NodeCanvas extends L.Renderer {
     const taken = new Boxes();
     for (const d of drawn) taken.add({ x0: d.x - d.r, y0: d.y - d.r, x1: d.x + d.r, y1: d.y + d.r });
     if (me) {
-      const p = map.project(me, zoom);
-      const x = p.x - origin.x;
-      const y = p.y - origin.y;
+      const { x, y } = map.project([me.lon, me.lat]);
       taken.add({ x0: x - PIN, y0: y - PIN, x1: x + PIN, y1: y + PIN });
     }
     const labels: { d: Drawn; c: ContactRecord; name: string; when: string; state: string; left: number }[] = [];
@@ -474,7 +425,7 @@ export class NodeCanvas extends L.Renderer {
         ctx.fillText(l.when, l.left + w, y);
       }
     }
-  }
+  };
 
   private pin(ctx: CanvasRenderingContext2D, pal: Palette, d: Drawn, nowSec: number): void {
     const c = d.group.members[0]!;

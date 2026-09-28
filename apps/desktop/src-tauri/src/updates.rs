@@ -76,7 +76,7 @@ pub async fn desktop_check_update(
 
 /// reqwest's own message is only "error sending request for url (…)"; what
 /// actually went wrong (a refused proxy, a bad certificate) is in the causes.
-fn with_causes(error: &dyn std::error::Error) -> String {
+pub(crate) fn with_causes(error: &dyn std::error::Error) -> String {
     let mut text = error.to_string();
     let mut cause = error.source();
     while let Some(e) = cause {

@@ -26,7 +26,7 @@ import { session, useSession } from "../../lib/session.js";
 import { act, toast } from "../../lib/toast.js";
 import { cancelRouteEdit, openLineOfSight, openRoute, openSpan } from "../../lib/toolActions.js";
 import { Button, IconButton } from "../../ui/Button.js";
-import { LinkRow } from "../../ui/List.js";
+import { glue, LinkRow } from "../../ui/List.js";
 import { showMenu, type MenuItem } from "../../ui/Menu.js";
 import { AlertIcon, BackIcon, CheckIcon, ChevronRightIcon, MoreIcon } from "../Icons.js";
 import { SignIn } from "../node/SignIn.js";
@@ -49,7 +49,7 @@ export function RouteLink({ contactKey }: { contactKey: string }) {
   const contact = state.contacts[contactKey];
   if (!contact) return null;
   const status = routeStatus(contact, p, d);
-  return <LinkRow label={t("tools.route.title")} value={<span className={`route-${status.tone}`}>{status.text}</span>} onClick={() => openRoute(contactKey)} />;
+  return <LinkRow label={t("tools.route.title")} value={<span className={`route-${status.tone}`}>{glue(status.text)}</span>} onClick={() => openRoute(contactKey)} />;
 }
 
 /** The relays a ping went through, and the contact when it passes nothing on. */

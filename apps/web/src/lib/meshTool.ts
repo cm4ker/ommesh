@@ -34,7 +34,22 @@ export type MeshTool =
   | RouteTool
   | SpanTool
   | NeighboursTool
-  | { kind: "hears" };
+  | { kind: "hears" }
+  | SurveyTool;
+
+/**
+ * A coverage survey (lib/survey.ts): the one running, the surveys kept, one
+ * of them with the repeaters that answered, or its files. `point` is the
+ * point opened on the map, by its place in the survey; `only` the repeater
+ * whose points alone are coloured.
+ */
+export interface SurveyTool {
+  kind: "survey";
+  view: "run" | "list" | "summary" | "export";
+  id: string | null;
+  point: number | null;
+  only: string | null;
+}
 
 /**
  * The route to a contact. `draft` is a route being changed, contact keys (or

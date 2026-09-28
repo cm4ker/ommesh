@@ -20,13 +20,12 @@
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-updater": "^2.12.0",
     "capacitor-secure-storage-plugin": "0.13.0",
-    "leaflet": "1.9.4",
+    "maplibre-gl": "^5.24.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "tauri-plugin-serialplugin-api": "^3.0.7"
   },
   "devDependencies": {
-    "@types/leaflet": "~1.9.22",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@types/w3c-web-serial": "^1.0.8",

@@ -85,47 +85,30 @@ export function Neighbours({ contact }: { contact: ContactRecord }) {
           <p className="muted">{t("node.neighbours.none")}</p>
         ) : (
           <section className="section">
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>{t("node.neighbours.repeater")}</th>
-                    <th>
-                      {t("node.neighbours.snr")} <span className="table-unit">{t("node.neighbours.scale", { low: SNR_LOW, high: SNR_HIGH })}</span>
-                    </th>
-                    <th>{t("node.neighbours.heard")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => {
-                    const known = session.contactByPrefix(r.prefix);
-                    return (
-                      <tr key={r.prefix}>
-                        <td>
-                          <span className="who">
-                            <Avatar name={known?.name || r.prefix} type={known?.type ?? 2} size={26} />
-                            <span className="who-text">
-                              <span>{known?.name || <code>{r.prefix}</code>}</span>
-                              <span className="muted small">{known ? <code>{r.prefix}</code> : t("node.notInContacts")}</span>
-                            </span>
-                          </span>
-                        </td>
-                        <td>
-                          <span className="snr" title={t("node.unit.decibels", { value: r.snr.toFixed(2) })}>
-                            <span className="snr-track">
-                              <i className={quality(r.snr)} style={{ width: `${pct(r.snr)}%` }} />
-                              <span className="snr-zero" style={{ left: `${pct(0)}%` }} />
-                            </span>
-                            <span className="snr-value">{t("node.unit.decibels", { value: `${r.snr > 0 ? "+" : ""}${r.snr.toFixed(2)}` })}</span>
-                          </span>
-                        </td>
-                        <td className="muted">{ago(Date.now() - r.heardSecsAgo * 1000)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            {/* One row per neighbour rather than a table's columns, which a phone has no room for. */}
+            <ul className="list-rows nb-page-rows" role="list">
+              {rows.map((r) => {
+                const known = session.contactByPrefix(r.prefix);
+                return (
+                  <li key={r.prefix} className="nb-page-row">
+                    <Avatar name={known?.name || r.prefix} type={known?.type ?? 2} size={32} />
+                    <span className="row-main">
+                      <span className="row-title">{known?.name || <code>{r.prefix}</code>}</span>
+                      <span className="row-sub muted">
+                        {known ? <code>{r.prefix}</code> : t("node.notInContacts")} · {ago(Date.now() - r.heardSecsAgo * 1000)}
+                      </span>
+                    </span>
+                    <span className="snr">
+                      <span className="snr-value">{t("node.unit.decibels", { value: `${r.snr > 0 ? "+" : ""}${r.snr.toFixed(2)}` })}</span>
+                      <span className="snr-track">
+                        <i className={quality(r.snr)} style={{ width: `${pct(r.snr)}%` }} />
+                        <span className="snr-zero" style={{ left: `${pct(0)}%` }} />
+                      </span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
           </section>
         )
       ) : (
@@ -139,7 +122,7 @@ export function Neighbours({ contact }: { contact: ContactRecord }) {
             {t("node.neighbours.loadMore", { count: Math.min(more, 10) })}
           </Button>
         ) : null}
-        <span className="field-hint">{t("node.neighbours.hint")}</span>
+        <span className="field-hint">{t("node.neighbours.hint", { low: SNR_LOW, high: SNR_HIGH })}</span>
       </div>
     </div>
   );

@@ -162,16 +162,18 @@ export interface Card {
 /** The caller checks preferences and whether what it announces is already on screen. */
 export async function notify(notice: Notice): Promise<void> {
   const prefs = getNoticePrefs();
+  // A quiet notice plays nothing, whichever signal the reader picked.
+  const signal = notice.silent ? "none" : prefs.signal;
   if (prefs.shownBy === "app") {
     if (shell() === "tauri") {
       const card: Card = { tag: notice.tag, title: notice.title, body: notice.body, face: notice.face ?? null, chat: notice.tag.startsWith("c:") && notice.tag !== "c:" };
-      await invoke("notice_card", { card, corner: prefs.corner, signal: prefs.signal }).catch(() => undefined);
+      await invoke("notice_card", { card, corner: prefs.corner, signal }).catch(() => undefined);
       return;
     }
     // Only while the app is on screen: a hidden app's notices are the system's to draw.
     if (pageOnScreen()) {
       showBanner(notice);
-      void chime(prefs.signal);
+      void chime(signal);
       return;
     }
   }
@@ -184,7 +186,7 @@ async function system(notice: Notice, prefs: NoticePrefs): Promise<void> {
   switch (shell()) {
     case "tauri": {
       const avatar = notice.face ? await avatarPng(notice.face) : null;
-      await invoke("announce", { title, body, tag, avatar, signal: prefs.signal }).catch(() => undefined);
+      await invoke("announce", { title, body, tag, avatar, signal: notice.silent ? "none" : prefs.signal }).catch(() => undefined);
       return;
     }
     case "capacitor": {
@@ -205,7 +207,7 @@ async function system(notice: Notice, prefs: NoticePrefs): Promise<void> {
       if (!("Notification" in window) || Notification.permission !== "granted") return;
       const avatar = notice.face ? await avatarPng(notice.face, true) : null;
       try {
-        const shownNotice = new Notification(title, { body, tag, icon: avatar ? `data:image/png;base64,${avatar}` : "./icon-192.png", badge: "./notification-badge.png" });
+        const shownNotice = new Notification(title, { body, tag, icon: avatar ? `data:image/png;base64,${avatar}` : "./icon-192.png", badge: "./notification-badge.png", silent: notice.silent ?? false });
         shownNotice.onclick = () => {
           window.focus();
           clicked?.(tag);
@@ -240,6 +242,7 @@ async function nativeNotice(notice: Notice, prefs: NoticePrefs): Promise<NativeN
     body: notice.body,
     kind: notice.kind,
     sound: signalFile(prefs.signal),
+    silent: notice.silent ?? false,
     avatar: notice.face ? await avatarPng(notice.face) : null,
     thread: native,
   };

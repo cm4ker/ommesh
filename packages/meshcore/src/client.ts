@@ -307,8 +307,8 @@ export class MeshCoreClient {
   }
 
   /** Its `ackTag` is always zero: the answer is a `CliData` message, not an ack. */
-  async sendCliCommand(recipientPrefix: Uint8Array, text: string): Promise<TextSendResult> {
-    const f = await this.one("sendCliCommand", cmd.sendCliCommand(recipientPrefix, text), "sent");
+  async sendCliCommand(recipientPrefix: Uint8Array, text: string, timestamp?: number): Promise<TextSendResult> {
+    const f = await this.one("sendCliCommand", cmd.sendCliCommand(recipientPrefix, text, timestamp), "sent");
     return { flood: f.flood, ackTag: f.ackTag, estTimeoutMs: f.estTimeoutMs };
   }
 

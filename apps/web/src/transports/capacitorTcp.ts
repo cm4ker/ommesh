@@ -19,10 +19,19 @@ interface MeshTcpPlugin {
   addListener(event: "closed", listener: (event: { id: string; error?: string }) => void): Promise<PluginListenerHandle>;
 }
 
-let plugin: Promise<MeshTcpPlugin> | null = null;
-function tcp(): Promise<MeshTcpPlugin> {
-  plugin ??= import("@capacitor/core").then(({ registerPlugin }) => registerPlugin<MeshTcpPlugin>("MeshTcp"));
-  return plugin;
+let plugin: MeshTcpPlugin | null = null;
+
+/**
+ * Runs `use` with the plugin. Never resolve a Promise with the plugin itself:
+ * the Capacitor proxy answers `then`, and the promise would hang (see relay.ts).
+ * That hang kept every phone at "Connecting" to a radio on the network.
+ */
+async function withTcp<T>(use: (api: MeshTcpPlugin) => Promise<T>): Promise<T> {
+  if (!plugin) {
+    const { registerPlugin } = await import("@capacitor/core");
+    plugin = registerPlugin<MeshTcpPlugin>("MeshTcp");
+  }
+  return use(plugin);
 }
 
 function toBase64(bytes: Uint8Array): string {
@@ -103,11 +112,12 @@ export const capacitorTcpConnector: Connector = {
   async connect(device) {
     if (!device) throw new Error(t("connect.error.typeAddress"));
     const address = addressOf(device);
-    const api = await tcp();
-    await listen(api);
-    const { id } = await api.open({ ...address, timeout: TCP_CONNECT_TIMEOUT_S });
-    const transport = new CapacitorTcpTransport(api, id, device.name);
-    rememberAddress(device);
-    return transport;
+    return withTcp(async (api) => {
+      await listen(api);
+      const { id } = await api.open({ ...address, timeout: TCP_CONNECT_TIMEOUT_S });
+      const transport = new CapacitorTcpTransport(api, id, device.name);
+      rememberAddress(device);
+      return transport;
+    });
   },
 };

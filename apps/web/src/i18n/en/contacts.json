@@ -19,7 +19,7 @@
   "newNodes.drop": "Don't keep new ones",
   "newNodes.replace": "Replace the oldest",
   "tidy.title": "Tidy up",
-  "tidy.note": "Favourites, yours and chats stay. Runs while this app is connected to the radio. Nodes the radio heard but did not keep leave the list after as long; while this is off they stay.",
+  "tidy.note": "Favourites, yours and chats stay. Runs while this app is connected to the radio.",
   "tidy.removeAfter": "Remove nodes not heard for",
   "days": { "one": "{count} day", "other": "{count} days" },
   "removed": "Removed",

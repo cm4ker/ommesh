@@ -19,7 +19,7 @@ import { Button, IconButton } from "../ui/Button.js";
 import { Group, LinkRow } from "../ui/List.js";
 import { showMenu } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
-import { AirIcon, AlertIcon, BellIcon, GaugeIcon, InfoIcon, LinkIcon, LocationIcon, LogIcon, PaletteIcon, PowerIcon, RadioIcon, RefreshIcon, ShieldIcon, SlidersIcon, TextIcon, UsersIcon, WavesIcon } from "./Icons.js";
+import { AirIcon, AlertIcon, BellIcon, FileIcon, GaugeIcon, InfoIcon, LinkIcon, LocationIcon, LogIcon, PaletteIcon, PowerIcon, RadioIcon, RefreshIcon, ShieldIcon, SlidersIcon, TextIcon, UsersIcon, WavesIcon } from "./Icons.js";
 import { presetName, radioTitle } from "./RadioPages.js";
 import { readingsSummary } from "./Readings.js";
 
@@ -138,6 +138,7 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
         <Group title={t("radio.home.thisApp")}>
           {row("notifications", <BellIcon size={17} />, notices)}
           {row("messages", <TextIcon size={17} />, lookalikes.on ? t("radio.home.lookalikes") : undefined)}
+          {row("history", <FileIcon size={17} />)}
           {row("appearance", <PaletteIcon size={17} />, theme === "system" ? t("radio.home.themeSystem") : themeName(theme))}
           {row("connection", state.link ? <LinkIcon kind={state.link.kind} size={17} /> : <RadioIcon size={17} />, state.link ? { ble: "Bluetooth", serial: "USB", tcp: "Wi-Fi" }[state.link.kind] : undefined)}
         </Group>

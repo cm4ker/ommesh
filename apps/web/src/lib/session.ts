@@ -12,7 +12,6 @@ import { useSyncExternalStore } from "react";
 import { MeshSession, type SessionState } from "@meshnet/meshcore";
 import { hasSavedPassword, readPassword } from "./secrets.js";
 import { IndexedDbStorage } from "./storage.js";
-import { unsavedKeepMs } from "./tidy.js";
 import { pushTrace } from "./trace.js";
 
 export const storage = new IndexedDbStorage();
@@ -21,8 +20,6 @@ export const session = new MeshSession({
   appName: "Ommesh",
   storage,
   trace: pushTrace,
-  // Nodes the radio did not keep go by the tidy-up rule's days; with the rule off they stay.
-  unsavedKeepMs,
   // A node's kept password lets a request that heard nothing renew the node's way back by itself.
   passwordFor: async (key) => (hasSavedPassword(key) ? readPassword(key) : null),
 });

@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/cm4ker/ommesh/master/docs/schema/history-v1.json",
+  "title": "Ommesh history file, version 1",
+  "description": "The chats, contacts and messages of one MeshCore radio, as Ommesh saves them to a file and brings them in from one. See docs/history-format.md. Readers ignore fields they do not know.",
+  "type": "object",
+  "required": ["format", "version", "radio"],
+  "properties": {
+    "$schema": { "type": "string", "description": "This schema's address." },
+    "format": { "const": "ommesh-history" },
+    "version": { "const": 1, "description": "Raised only when a reader of the old version would read the file wrong." },
+    "exportedAt": { "$ref": "#/$defs/time", "description": "When the file was written." },
+    "app": { "type": "string", "description": "What wrote the file, with its version." },
+    "radio": {
+      "type": "object",
+      "description": "The radio whose history this is. Ommesh brings a file in only to this radio.",
+      "required": ["key"],
+      "properties": {
+        "key": { "$ref": "#/$defs/key" },
+        "name": { "type": "string" }
+      }
+    },
+    "channels": { "type": "array", "items": { "$ref": "#/$defs/channel" } },
+    "contacts": { "type": "array", "items": { "$ref": "#/$defs/contact" } },
+    "messages": { "type": "array", "items": { "$ref": "#/$defs/message" } }
+  },
+  "$defs": {
+    "time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339, written in UTC with a Z."
+    },
+    "key": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$",
+      "description": "A node's whole public key, 32 bytes in hex. Written lower-case."
+    },
+    "keyStart": {
+      "type": "string",
+      "pattern": "^([0-9a-fA-F]{2}){1,32}$",
+      "description": "The first bytes of a node's public key, in hex, as messages name their senders."
+    },
+    "secret": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{32}$",
+      "description": "A channel's 16-byte secret in hex."
+    },
+    "path": {
+      "type": "array",
+      "maxItems": 63,
+      "description": "The relays a packet went through, first relay first, each as the hash it signs the path with. All hashes of one path have the same size.",
+      "items": { "type": "string", "pattern": "^([0-9a-fA-F]{2}){1,4}$" }
+    },
+    "channel": {
+      "type": "object",
+      "required": ["secret", "name"],
+      "properties": {
+        "secret": { "$ref": "#/$defs/secret" },
+        "name": { "type": "string" }
+      }
+    },
+    "contact": {
+      "type": "object",
+      "required": ["key"],
+      "properties": {
+        "key": { "$ref": "#/$defs/key" },
+        "name": { "type": "string", "description": "Empty when absent." },
+        "kind": { "enum": ["chat", "repeater", "room", "sensor"], "description": "chat when absent." },
+        "on": {
+          "enum": ["radio", "removed", "heard"],
+          "description": "radio: the radio held it. removed: taken off the radio, kept to be put back. heard: its advert was heard but the radio did not keep it. radio when absent."
+        },
+        "removedBy": { "enum": ["you", "tidy", "radio"], "description": "For a removed contact: by hand, by the tidy-up rule, or by the radio itself." },
+        "flags": { "type": "integer", "minimum": 0, "maximum": 255, "description": "The contact's flags byte as MeshCore firmware keeps it; bit 0 is a favourite. 0 when absent." },
+        "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+        "lon": { "type": "number", "minimum": -180, "maximum": 180 },
+        "lastAdvert": { "$ref": "#/$defs/time", "description": "When its last advert was sent, by the node's own clock." },
+        "lastHeard": { "$ref": "#/$defs/time", "description": "When it was last heard, by the clock of the device that kept the history." },
+        "route": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/path" }],
+          "description": "The route the radio held to it. null: none, the next message floods. Empty: a neighbour reached direct."
+        }
+      }
+    },
+    "chat": {
+      "description": "The chat a message is in: a channel by its secret, a node by its key, or a sender the radio could not name by the start of its key.",
+      "oneOf": [
+        { "type": "object", "required": ["channel"], "properties": { "channel": { "$ref": "#/$defs/secret" } }, "additionalProperties": false },
+        { "type": "object", "required": ["contact"], "properties": { "contact": { "$ref": "#/$defs/key" } }, "additionalProperties": false },
+        { "type": "object", "required": ["prefix"], "properties": { "prefix": { "$ref": "#/$defs/keyStart" } }, "additionalProperties": false }
+      ]
+    },
+    "echo": {
+      "type": "object",
+      "required": ["path", "snr"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "snr": { "type": "number", "description": "dB." }
+      }
+    },
+    "message": {
+      "type": "object",
+      "required": ["chat", "direction", "text", "sentAt"],
+      "properties": {
+        "id": { "type": "string", "description": "Kept as it is. Two messages are the same when chat, direction, sentAt to the second, sender and text match, whatever their ids." },
+        "chat": { "$ref": "#/$defs/chat" },
+        "direction": { "enum": ["in", "out"], "description": "out: sent from this radio." },
+        "text": { "type": "string", "description": "On a channel, without the sender's name in front." },
+        "sentAt": { "$ref": "#/$defs/time", "description": "By the sender's clock, which can be far off." },
+        "receivedAt": { "$ref": "#/$defs/time", "description": "When it came in or was written, by the clock of the device that kept the history. sentAt when absent." },
+        "from": {
+          "type": "object",
+          "description": "Who sent a message that came in. On a channel only the name is known; in a room, the author of the post.",
+          "properties": {
+            "name": { "type": "string" },
+            "key": { "$ref": "#/$defs/keyStart" }
+          }
+        },
+        "roomPost": { "type": "boolean", "description": "A post a room server relayed, signed by its author." },
+        "snr": { "type": "number", "description": "How well the radio heard it, dB." },
+        "hops": { "type": "integer", "minimum": 0, "maximum": 63, "description": "Relays it passed on its way in." },
+        "status": {
+          "enum": ["queued", "sending", "sent", "delivered", "unheard", "unconfirmed", "failed"],
+          "description": "For an out message. queued: written while the radio was away. sending: waiting for an acknowledgement. sent: gone; on a channel, a repeater was heard sending it on. delivered: acknowledged. unheard: on a channel, no repeater was heard sending it on. unconfirmed: no acknowledgement came. failed: it could not go."
+        },
+        "roundTripMs": { "type": "integer", "minimum": 0, "description": "From sending to the acknowledgement." },
+        "error": { "type": "string" },
+        "route": { "$ref": "#/$defs/path", "description": "An out direct message: the relays it went along." },
+        "echoes": {
+          "type": "array",
+          "description": "Copies the radio heard, one per path: of an out channel message, repeaters sending it on; of one that came in, each copy that reached the radio.",
+          "items": { "$ref": "#/$defs/echo" }
+        }
+      }
+    }
+  }
+}

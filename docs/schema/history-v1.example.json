@@ -1,0 +1,107 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cm4ker/ommesh/master/docs/schema/history-v1.json",
+  "format": "ommesh-history",
+  "version": 1,
+  "exportedAt": "2026-09-28T14:03:11.000Z",
+  "app": "Ommesh 0.4.0",
+  "radio": { "key": "a2f04c5d9e1b7a3c8f6e2d4b0a9c7e5f3d1b8a6c4e2f0d9b7a5c3e1f8d6b4a2c", "name": "Node-21" },
+  "channels": [
+    { "secret": "8b3387e9c5cdea6ac9e5edbaa115cd72", "name": "Public" },
+    { "secret": "9cd8fcf22a47333b591d96a2b848b73f", "name": "#test" }
+  ],
+  "contacts": [
+    {
+      "key": "b0c4e1f27a9d3b6c8e0f2a4d6b8c0e2f4a6b8d0c2e4f6a8b0d2c4e6f8a0b19ad",
+      "name": "Kolya",
+      "kind": "chat",
+      "on": "radio",
+      "flags": 1,
+      "lat": 54.951456,
+      "lon": 73.396419,
+      "lastAdvert": "2026-09-28T13:02:00.000Z",
+      "lastHeard": "2026-09-28T13:02:04.512Z",
+      "route": ["b9", "3a"]
+    },
+    {
+      "key": "d00d5e7a1c3b9f2e4d6a8c0b2e4f6a8d0c2b4e6f8a0c2d4e6b8a0f2c4d6e8a01",
+      "name": "Club room",
+      "kind": "room",
+      "on": "radio",
+      "route": null
+    },
+    {
+      "key": "c07e55a9b3d1f7e2c4a6b8d0f2e4c6a8b0d2f4e6c8a0b2d4f6e8a0c2b4d622f1",
+      "name": "AMUR-21",
+      "kind": "repeater",
+      "on": "heard",
+      "lastHeard": "2026-09-27T21:40:12.000Z"
+    },
+    {
+      "key": "e1a5b9c3d7f1e5a9b3c7d1f5e9a3b7c1d5f9e3a7b1c5d9f3e7a1b5c9d3f7e5a1",
+      "name": "Old friend",
+      "on": "removed",
+      "removedBy": "you"
+    }
+  ],
+  "messages": [
+    {
+      "id": "3f6a2c1e-7b4d-4e9a-8c2f-1d5b7e9a0c3f",
+      "chat": { "channel": "8b3387e9c5cdea6ac9e5edbaa115cd72" },
+      "direction": "in",
+      "text": "всем привет",
+      "from": { "name": "Alice" },
+      "sentAt": "2026-09-28T13:59:40.000Z",
+      "receivedAt": "2026-09-28T13:59:41.300Z",
+      "snr": 7.5,
+      "hops": 1
+    },
+    {
+      "id": "8e1d4b7a-2c5f-4a8e-9b1d-3f6a9c2e5b8d",
+      "chat": { "channel": "8b3387e9c5cdea6ac9e5edbaa115cd72" },
+      "direction": "out",
+      "text": "hello all",
+      "sentAt": "2026-09-28T14:00:02.000Z",
+      "receivedAt": "2026-09-28T14:00:02.180Z",
+      "status": "sent",
+      "echoes": [
+        { "path": ["01"], "snr": 11.75 },
+        { "path": ["b9", "3a"], "snr": 8.5 }
+      ]
+    },
+    {
+      "chat": { "contact": "b0c4e1f27a9d3b6c8e0f2a4d6b8c0e2f4a6b8d0c2e4f6a8b0d2c4e6f8a0b19ad" },
+      "direction": "in",
+      "text": "ты где?",
+      "from": { "name": "Kolya", "key": "b0c4e1f27a9d" },
+      "sentAt": "2026-09-28T14:01:10.000Z",
+      "snr": 9.25,
+      "hops": 2
+    },
+    {
+      "chat": { "contact": "b0c4e1f27a9d3b6c8e0f2a4d6b8c0e2f4a6b8d0c2e4f6a8b0d2c4e6f8a0b19ad" },
+      "direction": "out",
+      "text": "на месте",
+      "sentAt": "2026-09-28T14:01:30.000Z",
+      "receivedAt": "2026-09-28T14:01:30.050Z",
+      "status": "delivered",
+      "roundTripMs": 1200,
+      "route": ["b9", "3a"]
+    },
+    {
+      "chat": { "contact": "d00d5e7a1c3b9f2e4d6a8c0b2e4f6a8d0c2b4e6f8a0c2d4e6b8a0f2c4d6e8a01" },
+      "direction": "in",
+      "text": "meeting at 7",
+      "from": { "name": "Bob", "key": "b0b0b0b0" },
+      "roomPost": true,
+      "sentAt": "2026-09-28T12:15:00.000Z",
+      "receivedAt": "2026-09-28T13:30:22.000Z"
+    },
+    {
+      "chat": { "channel": "5d41402abc4b2a76b9719d911017c592" },
+      "direction": "in",
+      "text": "a channel this radio does not hold",
+      "from": { "name": "Carol" },
+      "sentAt": "2026-09-27T09:00:00.000Z"
+    }
+  ]
+}

@@ -4,7 +4,9 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { readOfficialHistory, type ImportTarget } from "./officialImport.js";
+import { OtherRadioError, planImport, readHistorySource, type ImportTarget } from "./plan.js";
+import { readMeshCoreApp } from "./meshcoreApp.js";
+import { schemaErrors } from "./schemaCheck.js";
 import { parseColumns, SqliteFile } from "./sqlite.js";
 
 const SELF = "a2".repeat(32);
@@ -82,10 +84,10 @@ const target: ImportTarget = {
   // The radio holds Public in another slot than the official app saw it in, and no longer holds Old.
   channels: [{ index: 3, name: "Public", secret: PUBLIC }],
   contacts: {},
-  // The tidy-up rule is on at a week.
-  heardKeepMs: 7 * 86_400_000,
   now: NOW,
 };
+
+const iso = (seconds: number) => new Date(seconds * 1000).toISOString();
 
 test("the tables of an SQLite file read back as written, across pages and overflow", () => {
   const db = new SqliteFile(sample());
@@ -112,71 +114,125 @@ test("a table's columns come from its CREATE statement, quoted or not", () => {
   assert.equal(parseColumns(`CREATE TABLE t (id TEXT PRIMARY KEY, n INTEGER)`).rowidColumn, null);
 });
 
-test("the official app's export becomes this app's history for the radio", () => {
-  const history = readOfficialHistory(sample(), target);
-  assert.equal(history.radioKey, SELF);
+test("the official app's export reads as a history file holds one", () => {
+  const { radioKey, body, console } = readMeshCoreApp(sample());
+  assert.equal(radioKey, SELF);
+  assert.equal(console, 1);
+  assert.deepEqual(body.channels, [
+    { secret: PUBLIC, name: "Public" },
+    { secret: OLD, name: "Old" },
+  ]);
 
-  const channel = history.messages.filter((m) => m.conversation === "ch:3");
-  assert.equal(channel.length, 302);
-  const first = channel[0]!;
-  assert.equal(first.direction, "in");
-  assert.equal(first.sender, "Alice");
-  assert.equal(first.text, "hi 0");
-  assert.equal(first.timestamp, S - 1000);
-  assert.equal(first.receivedAt, (S - 1000) * 1000 + 300);
-  assert.equal(first.hops, 1);
-  assert.equal(first.snr, 7.5);
+  // Every message comes across, however old; which of them the radio can take is decided later.
+  const channel = body.messages.filter((m) => "channel" in m.chat);
+  assert.equal(channel.length, 305);
+  assert.deepEqual(channel[0], {
+    id: "official:ch:1",
+    chat: { channel: PUBLIC },
+    direction: "in",
+    text: "hi 0",
+    from: { name: "Alice" },
+    sentAt: iso(S - 1000),
+    receivedAt: new Date((S - 1000) * 1000 + 300).toISOString(),
+    snr: 7.5,
+    hops: 1,
+  });
   const ours = channel.find((m) => m.direction === "out")!;
   assert.equal(ours.text, "hello all");
-  assert.equal(ours.sender, "Me");
   assert.equal(ours.status, "sent");
+  assert.equal(ours.from, undefined);
   assert.deepEqual(ours.echoes, [
     { path: ["0101"], snr: 11.75 },
     { path: ["b93a", "468e"], snr: 8.5 },
   ]);
-  assert.deepEqual(history.skipped.channels, [{ name: "Old", messages: 1 }]);
-  assert.equal(history.skipped.oldMessages, 3);
-  assert.ok(history.messages.every((m) => m.text !== "too old"));
 
-  const bob = history.messages.filter((m) => m.conversation === `c:${BOB}`);
+  const bob = body.messages.filter((m) => "contact" in m.chat && m.chat.contact === BOB);
   assert.deepEqual(bob.map((m) => [m.direction, m.text, m.status]), [
-    ["in", "hi there", null],
+    ["in", "hi there", undefined],
     ["out", "hi back", "delivered"],
-    ["out", "are you there?", "unconfirmed"],
+    ["out", "are you there?", "sending"],
+    ["out", "too old", "delivered"],
   ]);
+  assert.deepEqual(bob[0]!.from, { key: BOB.slice(0, 12), name: "Bob" });
+  // Heard direct: no hop count.
+  assert.equal(bob[0]!.hops, undefined);
+  assert.equal(bob[1]!.roundTripMs, 1200);
+
+  const post = body.messages.find((m) => "contact" in m.chat && m.chat.contact === ROOM)!;
+  assert.deepEqual(post.from, { key: BOB.slice(0, 8), name: "Bob" });
+  assert.equal(post.roomPost, true);
+
+  assert.deepEqual(
+    body.contacts.map((c) => [c.name, c.kind, c.on]),
+    [
+      ["Bob", "chat", "radio"],
+      ["Our room", "room", "radio"],
+      ["Carol", "repeater", "heard"],
+      ["Dave", "repeater", "heard"],
+    ],
+  );
+  const [bobContact, room, carol] = body.contacts;
+  assert.equal(bobContact!.key, BOB);
+  assert.equal(bobContact!.route, null);
+  assert.equal(bobContact!.lat, 54.951456);
+  assert.deepEqual(room!.route, ["b9"]);
+  assert.equal(carol!.lastHeard, iso(S - 3600));
+
+  // What it reads is a history as the documentation describes one.
+  const schema = JSON.parse(readFileSync(new URL("../../../../../docs/schema/history-v1.json", import.meta.url), "utf8"));
+  const file = { format: "ommesh-history", version: 1, radio: { key: SELF }, ...body };
+  assert.deepEqual(schemaErrors(schema, JSON.parse(JSON.stringify(file)), true), []);
+});
+
+test("brought to the radio, a channel goes to the slot with its secret, and what cannot come is named", () => {
+  const source = readHistorySource(sample());
+  assert.equal(source.kind, "meshcoreApp");
+  const plan = planImport(source, target);
+  const { messages, contacts, removed, heard } = plan.history;
+
+  const channel = messages.filter((m) => m.conversation === "ch:3");
+  assert.equal(channel.length, 303);
+  assert.equal(channel[0]!.sender, "Alice");
+  assert.equal(channel[0]!.timestamp, S - 1000);
+  assert.equal(channel[0]!.receivedAt, (S - 1000) * 1000 + 300);
+  const ours = channel.find((m) => m.direction === "out")!;
+  assert.equal(ours.sender, "Me");
+  assert.equal(ours.senderPrefix, SELF.slice(0, 12));
+  assert.deepEqual(plan.left.channels, [{ name: "Old", messages: 2 }]);
+  assert.equal(plan.left.console, 1);
+
+  const bob = messages.filter((m) => m.conversation === `c:${BOB}`);
   assert.equal(bob[0]!.sender, "Bob");
   assert.equal(bob[0]!.senderPrefix, BOB.slice(0, 12));
-  assert.equal(bob[0]!.hops, null);
-  assert.equal(bob[1]!.ackTag, 3162209875);
-  assert.equal(bob[1]!.roundTripMs, 1200);
-  assert.equal(bob[2]!.attempt, 1);
-  assert.equal(history.skipped.console, 1);
+  // One the official app was still waiting on is not waited for here.
+  assert.equal(bob[2]!.status, "unconfirmed");
+  assert.ok(messages.every((m) => m.retryPlan === null && m.ackTag === null));
 
-  const post = history.messages.find((m) => m.conversation === `c:${ROOM}`)!;
+  const post = messages.find((m) => m.conversation === `c:${ROOM}`)!;
   assert.equal(post.sender, "Bob");
   assert.equal(post.senderPrefix, BOB.slice(0, 8));
   assert.equal(post.txtType, 2);
 
-  assert.deepEqual(history.contacts.map((c) => c.name), ["Bob", "Our room"]);
-  const bobContact = history.contacts[0]!;
-  assert.equal(bobContact.key, BOB);
-  assert.equal(bobContact.prefix, BOB.slice(0, 12));
-  assert.equal(bobContact.outPathLen, 0xff);
-  assert.equal(bobContact.pathSince, null);
-  assert.equal(bobContact.lat, 54.951456);
-  assert.equal(history.contacts[1]!.pathSince, (S - 60) * 1000);
-  // Carol was heard an hour ago; Dave a month ago is past the rule's week; Bob is a contact already.
-  assert.deepEqual(history.heard.map((c) => [c.name, c.unsaved, c.lastHeardAt]), [["Carol", true, NOW - 3_600_000]]);
-  assert.equal(history.skipped.quietNodes, 1);
+  assert.deepEqual(contacts.map((c) => c.name), ["Bob", "Our room"]);
+  assert.equal(contacts[0]!.outPathLen, 0xff);
+  assert.equal(contacts[0]!.pathSince, null);
+  assert.equal(contacts[1]!.outPathLen, 1);
+  assert.equal(contacts[1]!.pathSince, (S - 60) * 1000);
+  assert.deepEqual(removed, []);
+  // Carol was heard an hour ago; Dave a month ago, longer than a node heard here stays.
+  assert.deepEqual(heard.map((c) => [c.name, c.unsaved, c.lastHeardAt]), [["Carol", true, NOW - 3_600_000]]);
+  assert.equal(plan.left.quietNodes, 1);
+  assert.equal(plan.chats, 3);
+  // The oldest that comes: the one of 40 days ago is on the channel left out.
+  assert.equal(plan.from, (S - 31 * 86400) * 1000);
 });
 
-test("with the tidy-up rule off every node heard comes in, however long ago", () => {
-  const history = readOfficialHistory(sample(), { ...target, heardKeepMs: null });
-  assert.deepEqual(history.heard.map((c) => c.name), ["Carol", "Dave"]);
-  assert.equal(history.skipped.quietNodes, 0);
+test("another radio's history is refused", () => {
+  const other = { ...target, self: { ...target.self, key: "ee".repeat(32) } };
+  assert.throws(() => planImport(readHistorySource(sample()), other), (error) => error instanceof OtherRadioError && error.radioKey === SELF);
 });
 
 test("a file that is not the official app's export says so", () => {
   const bytes = officialDb((db) => db.exec(`DROP TABLE contacts`));
-  assert.throws(() => readOfficialHistory(bytes, target), /no contacts table/);
+  assert.throws(() => readMeshCoreApp(bytes), /no contacts table/);
 });

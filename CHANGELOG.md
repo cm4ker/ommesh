@@ -2,6 +2,25 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
+## Unreleased
+
+### Mesh and the map
+- A repeater's Neighbours page fits a phone: one row per neighbour, with its name, key and when it was heard on the left and its SNR over a bar on the right, in place of a table whose last column was cut off. What the bar spans is in the note under the list, and on a phone the order buttons have a line of their own.
+- On a node's Access page, a phone puts each client's role and Remove under its name, and the role is no longer cut short.
+- In the Neighbours and Who hears me sheets, when a node was heard and how far away it is wrap under its name instead of ending in "…".
+
+### Settings
+- On a phone the log puts each entry's time and kind above its text, so the text has the whole width.
+- The privacy policy is a row under About, with the version.
+
+### Fixes
+- A profile's buttons no longer run into one another when a word is long; a long word breaks instead.
+- A value that does not fit its row, such as a route, the firmware or a notification setting, goes on to a second line instead of ending in "…". A line never starts with "·".
+- An error message is shown whole, up to four lines, instead of being cut after two.
+- A time such as "2 h 32 min" no longer breaks between a number and its unit.
+- With large text, the tiles under On air stay inside the screen and no longer push it sideways.
+- On a desktop, the side rail is wide enough for its labels in Russian.
+
 ## 0.4.0 — 2026-09-28
 
 ### The name

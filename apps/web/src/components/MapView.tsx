@@ -157,8 +157,12 @@ export interface MapProps {
   dots?: MapDot[] | null | undefined;
   pickedDot?: number | null | undefined;
   onDot?: ((index: number) => void) | undefined;
-  /** Keeps the phone in view as it moves, until a finger moves the map. */
-  follow?: boolean | undefined;
+  /**
+   * Keeps the phone in view as it moves, with these points: a survey's last
+   * point and the repeaters that answered there. The map zooms out as far as
+   * they need, and steps aside for a while when a finger moves it.
+   */
+  follow?: [number, number][] | null | undefined;
   /** A survey running: a red dot on the "who hears me" button. */
   recording?: boolean | undefined;
 }
@@ -185,7 +189,7 @@ function groupingWanted(): boolean {
 /** Where the map was left, so coming back to it, from a profile or another section, finds it there. */
 let lastView: { center: L.LatLng; zoom: number } | null = null;
 
-export default function MapView({ selected, onSelect, onGroup, filter, coverBottom = 0, coverTop = 0, zoomButtons = false, overlay = EMPTY_OVERLAY, onLeg, onHold, onHandleDrop, onHears, hearsOn = false, fit = null, phone = null, putHere = null, onLocate, dots = null, pickedDot = null, onDot, follow = false, recording = false }: MapProps) {
+export default function MapView({ selected, onSelect, onGroup, filter, coverBottom = 0, coverTop = 0, zoomButtons = false, overlay = EMPTY_OVERLAY, onLeg, onHold, onHandleDrop, onHears, hearsOn = false, fit = null, phone = null, putHere = null, onLocate, dots = null, pickedDot = null, onDot, follow = null, recording = false }: MapProps) {
   const state = useSession();
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -431,8 +435,10 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
     });
   }, [dots, pickedDot]);
 
-  // Following the phone through a survey: kept in the middle of what the sheet leaves, close enough to see the street.
+  // Following the phone through a survey: it and the points given, fitted to what the sheet leaves, no closer
+  // than a street. With nobody placed to show, that is the phone alone.
   const following = useRef(false);
+  const followKey = follow ? JSON.stringify(follow) : null;
   useEffect(() => {
     const m = map.current;
     if (!follow) {
@@ -441,10 +447,11 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
     }
     if (!m || phoneLat === null || phoneLon === null) return;
     if (following.current && Date.now() - draggedAt.current < FOLLOW_PAUSE_MS) return;
-    centerOn([phoneLat, phoneLon], following.current ? m.getZoom() : Math.max(m.getZoom(), 15));
+    const bounds = L.latLngBounds([[phoneLat, phoneLon], ...follow]);
+    m.fitBounds(bounds, { ...padding(), maxZoom: 16, animate: following.current });
     following.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [follow, phoneLat, phoneLon]);
+  }, [followKey, phoneLat, phoneLon]);
 
   // The lines over the nodes: a route and how it sounded, a line of sight, the answers to "who hears me".
   useEffect(() => {

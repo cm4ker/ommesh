@@ -18,7 +18,7 @@ import { useDiscovery } from "../lib/discovery.js";
 import { FOLLOW_MOVE_M, followsPhone, radioHasGps, useFollowStatus } from "../lib/followPhone.js";
 import { locateOnce, locateText, phoneLocates, usePhone } from "../lib/phonePosition.js";
 import { contactEnd, defaultHeight, discoveryOverlay, EMPTY_OVERLAY, editOverlay, hearsOverlay, losOverlay, neighboursOverlay, relayOf, routeOverlay, selfEnd, spanOverlay, surveyOverlay, type MapDot, type MapHandle, type MapOverlay } from "../lib/mapOverlay.js";
-import { setMeshTool, useMeshTool, type LosEnd, type MeshTool } from "../lib/meshTool.js";
+import { setMeshTool, useMeshTool, type LosEnd, type MeshTool, type SurveyTool } from "../lib/meshTool.js";
 import { useSurveys, type SurveysState } from "../lib/survey.js";
 import { toneFor, type Survey } from "../lib/surveyData.js";
 import { focusOnMap, openProfile, takeListLowered, useNav } from "../lib/nav.js";
@@ -433,6 +433,27 @@ function shownSurvey(tool: MeshTool | null, surveys: SurveysState): Survey | nul
   return surveys.list?.find((s) => s.id === id) ?? null;
 }
 
+/** The point whose answers are drawn: the one opened, or else, while the survey runs, its last. */
+function shownPoint(tool: SurveyTool, surveys: SurveysState): number | null {
+  if (tool.point !== null) return tool.point;
+  const survey = tool.view === "run" && surveys.run ? shownSurvey(tool, surveys) : null;
+  return survey && survey.points.length ? survey.points.length - 1 : null;
+}
+
+/** While a survey runs, what the map keeps in view with the phone: the last point and the repeaters that answered there. */
+function followPoints(survey: Survey | null, state: SessionState): [number, number][] {
+  const last = survey?.points.at(-1);
+  if (!survey || !last) return [];
+  const points: [number, number][] = [[last.lat, last.lon]];
+  for (const reply of last.replies) {
+    const c = state.contacts[reply.key];
+    const node = survey.nodes[reply.key];
+    if (c && hasPosition(c.lat, c.lon)) points.push([c.lat, c.lon]);
+    else if (node && node.lat !== null && node.lon !== null) points.push([node.lat, node.lon]);
+  }
+  return points;
+}
+
 function useMeshOverlay(selected: string | null, state: SessionState): MapOverlay {
   const tool = useMeshTool();
   const surveys = useSurveys();
@@ -467,7 +488,7 @@ function useMeshOverlay(selected: string | null, state: SessionState): MapOverla
         : tool?.kind === "hears"
           ? hearsOverlay(hears, state)
         : tool?.kind === "survey"
-          ? surveyOverlay(shownSurvey(tool, surveys), tool.point, state)
+          ? surveyOverlay(shownSurvey(tool, surveys), shownPoint(tool, surveys), state)
           : tool?.kind === "span"
             ? spanOverlay(tool.from, tool.to, state, ping)
           : tool?.kind === "neighbours"
@@ -632,13 +653,18 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
   // A kept survey opened is brought into view whole, once.
   const surveyFit = useMemo(() => (survey && survey.endedAt !== null ? { id: `survey:${survey.id}`, points: survey.points.map((p) => [p.lat, p.lon] as [number, number]) } : null), [survey]);
   const fit = hub ? { id: `${hub}:${whole ? "all" : "part"}`, points: fitPoints } : surveyFit;
-  const running = tool?.kind === "survey" && tool.view === "run" && surveying;
+  const running = tool?.kind === "survey" && tool.view === "run" && surveying && tool.point === null;
+  // A new list only when the last point or where its repeaters are changes, so the map is not fitted on every render.
+  const followList = running ? followPoints(survey, state) : null;
+  const followKey = followList ? JSON.stringify(followList) : null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const follow = useMemo(() => followList, [followKey]);
   // The map's button: "who hears me", or back to the survey running; with either open, it puts it away.
   const hearsOpen = tool?.kind === "hears" || tool?.kind === "survey";
   const onHears = hearsOpen ? closeAllTools : surveying ? () => openSurvey("run", surveys.run!.id) : whoHearsMe;
   return (
     <Suspense fallback={<div className="empty muted">{t("mesh.map.loading")}</div>}>
-      <MapView selected={selected} onSelect={pick} onGroup={onGroup} filter={test} coverTop={coverTop} coverBottom={coverBottom} zoomButtons={zoomButtons} overlay={overlay} onLeg={leg} onHold={openSpotMenu} onHandleDrop={drop} onHears={onHears} hearsOn={hearsOpen} fit={fit} phone={phone} putHere={putHere} onLocate={onLocate} dots={dots} pickedDot={tool?.kind === "survey" ? tool.point : null} onDot={onDot} follow={running && tool.point === null} recording={surveying} />
+      <MapView selected={selected} onSelect={pick} onGroup={onGroup} filter={test} coverTop={coverTop} coverBottom={coverBottom} zoomButtons={zoomButtons} overlay={overlay} onLeg={leg} onHold={openSpotMenu} onHandleDrop={drop} onHears={onHears} hearsOn={hearsOpen} fit={fit} phone={phone} putHere={putHere} onLocate={onLocate} dots={dots} pickedDot={tool?.kind === "survey" ? tool.point : null} onDot={onDot} follow={follow} recording={surveying} />
     </Suspense>
   );
 }

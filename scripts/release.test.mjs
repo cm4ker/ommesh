@@ -13,20 +13,6 @@ test("stable tags must match the shared version; dev runs and retries have uniqu
   assert.equal(releaseInfo("0.2.0", { ...env, GITHUB_EVENT_NAME: "pull_request" }).publish, false);
   assert.equal(releaseInfo("0.2.0", { ...env, GITHUB_EVENT_NAME: "workflow_dispatch" }).publish, false);
 });
-test("a build of another branch names the branch and commit; master and tags do not", () => {
-  const sha = "0A1b2c3d4e5f60718293a4b5c6d7e8f901234567";
-  const branch = (name, extra = {}) => releaseInfo("0.2.0", { ...env, GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_REF: `refs/heads/${name}`, GITHUB_REF_NAME: name, GITHUB_SHA: sha, ...extra });
-  assert.equal(branch("feat/Map_Tiles").version, "0.2.0-dev.42.2.feat-map-tiles.g0a1b2c3");
-  assert.equal(branch("123").version, "0.2.0-dev.42.2.b123.g0a1b2c3");
-  assert.equal(branch("--").version, "0.2.0-dev.42.2.g0a1b2c3");
-  assert.equal(branch("x".repeat(40)).version, `0.2.0-dev.42.2.${"x".repeat(32)}.g0a1b2c3`);
-  assert.equal(branch("master").version, "0.2.0-dev.42.2");
-  assert.equal(branch("feat/x").publish, false);
-  assert.equal(releaseInfo("0.2.0", { ...env, GITHUB_REF_NAME: "master", GITHUB_SHA: sha }).version, "0.2.0-dev.42.2");
-  assert.equal(releaseInfo("0.2.0", { ...env, GITHUB_REF: "refs/tags/v0.2.0", GITHUB_REF_NAME: "v0.2.0", GITHUB_SHA: sha }).version, "0.2.0");
-  // A pull request: the head branch, and no mark for the merge commit it actually builds.
-  assert.equal(releaseInfo("0.2.0", { ...env, GITHUB_EVENT_NAME: "pull_request", GITHUB_REF: "refs/pull/7/merge", GITHUB_REF_NAME: "7/merge", GITHUB_HEAD_REF: "fix/usb", GITHUB_SHA: sha }).version, "0.2.0-dev.42.2.fix-usb");
-});
 const files = ["Ommesh_0.2.0_x64-setup.exe", "Ommesh_0.2.0_arm64-setup.exe", "Ommesh_0.2.0_x86-setup.exe"].flatMap((name) => [name, `${name}.sig`]);
 const options = { version: "0.2.0", tag: "v0.2.0", repository: "cm4ker/ommesh", files, signature: () => "signed-package\n", date: "2026-09-22T00:00:00Z" };
 test("feed selects the exact architecture and immutable release files", () => {

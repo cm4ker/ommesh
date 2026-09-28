@@ -7,18 +7,6 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 const json = (path, value) => writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 
-/** `.<branch>.g<sha>` for a build of any branch but master, so its installer and About page
- * say where it came from. SemVer allows only [0-9A-Za-z-] per identifier, and a purely numeric
- * one may not start with 0, hence the letters in front. Master and tags keep the plain version.
- * A pull request builds a merge commit that is on no branch, so it gets no commit mark. */
-function branchMark(env) {
-  const branch = env.GITHUB_HEAD_REF || env.GITHUB_REF_NAME;
-  if (!branch || branch === "master" || env.GITHUB_REF?.startsWith("refs/tags/")) return "";
-  const slug = branch.toLowerCase().replace(/[^0-9a-z]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32).replace(/-+$/, "");
-  const sha = !env.GITHUB_HEAD_REF && /^[0-9a-f]{7,}$/i.test(env.GITHUB_SHA ?? "") ? `.g${env.GITHUB_SHA.slice(0, 7).toLowerCase()}` : "";
-  return `${slug ? `.${/^\d+$/.test(slug) ? `b${slug}` : slug}` : ""}${sha}`;
-}
-
 export function releaseInfo(base, env) {
   if (!/^\d+\.\d+\.\d+$/.test(base)) throw new Error("package.json must contain a stable X.Y.Z version");
   const tagged = env.GITHUB_REF?.startsWith("refs/tags/");
@@ -27,7 +15,7 @@ export function releaseInfo(base, env) {
   const run = env.GITHUB_RUN_NUMBER ?? "0";
   const attempt = env.GITHUB_RUN_ATTEMPT ?? "1";
   if (!/^\d+$/.test(run) || !/^\d+$/.test(attempt)) throw new Error("Invalid build number");
-  const version = tagged ? base : `${base}-dev.${run}.${attempt}${branchMark(env)}`;
+  const version = tagged ? base : `${base}-dev.${run}.${attempt}`;
   return { version, channel: tagged ? "stable" : "dev", tag: tagged ? `v${base}` : `dev-${version}`, publish };
 }
 

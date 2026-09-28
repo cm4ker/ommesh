@@ -31,6 +31,7 @@
 
 ### Settings
 - The Radio tab is called Settings, with a gear. The paths to its pages and the command palette say Settings too.
+- Settings › Chat history saves the radio's chats to a file and brings them back from one. "Save to a file" writes its channels, contacts and every message with its time, signal and delivery; a phone hands the file to Share, a desktop downloads it. "Bring in from a file" takes such a file, or the database the official MeshCore app exports, and first shows how many messages, chats and contacts it brings, over which days, and what it leaves out. A channel goes to the slot on the radio with the same secret; one the radio does not have is left out and named. Contacts the radio does not hold go to Removed. A message already here is not added twice, so the same file brought in again adds nothing, and messages brought in are not unread. A file of another radio is refused. The file holds private messages and channel keys, but no node passwords. Its format is open and described in the project's docs, so other programs can write and read it.
 
 ### Chats
 - A message of one to three emoji and nothing else is drawn large, without a bubble, with its time on a small patch under it.

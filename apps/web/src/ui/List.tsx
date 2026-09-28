@@ -18,6 +18,14 @@ export function Group({ title, children, note }: { title?: ReactNode; children: 
   );
 }
 
+/**
+ * A value's parts stay whole when it wraps: "100 contacts · 8 channels" breaks
+ * after its dot, never before it, so no line starts with one.
+ */
+export function glue(value: ReactNode): ReactNode {
+  return typeof value === "string" ? value.replaceAll(" · ", "\u00a0· ") : value;
+}
+
 interface RowBase {
   label: ReactNode;
   hint?: ReactNode;
@@ -39,7 +47,7 @@ export function LinkRow({ label, hint, icon, value, onClick, disabled, tone, tra
     <button type="button" className={["line", "line-link", tone ?? "", selected ? "selected" : ""].join(" ")} aria-current={selected ? "page" : undefined} onClick={onClick} disabled={disabled}>
       {icon ? <span className="line-icon">{icon}</span> : null}
       <Text label={label} hint={hint} />
-      {value !== undefined ? <span className="line-value">{value}</span> : null}
+      {value !== undefined ? <span className="line-value">{glue(value)}</span> : null}
       {trailing ?? <ChevronRightIcon size={14} className="line-chev" />}
     </button>
   );
@@ -72,7 +80,7 @@ export function SelectRow<T extends string>({ label, hint, icon, value, options,
     <label className={["line", "line-select", disabled ? "off" : ""].join(" ")}>
       {icon ? <span className="line-icon">{icon}</span> : null}
       <Text label={label} hint={hint} />
-      <span className="line-value">{options.find((o) => o.value === value)?.label ?? value}</span>
+      <span className="line-value">{glue(options.find((o) => o.value === value)?.label ?? value)}</span>
       <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value as T)} aria-label={typeof label === "string" ? label : undefined}>
         {options.map((o) => (
           <option key={o.value} value={o.value}>
@@ -110,7 +118,7 @@ export function ChoiceRow({ label, hint, icon, value, checked, onSelect, disable
     <button type="button" role="radio" aria-checked={checked} className="line line-choice" onClick={onSelect} disabled={disabled}>
       {icon ? <span className="line-icon">{icon}</span> : null}
       <Text label={label} hint={hint} />
-      {value !== undefined ? <span className="line-value">{value}</span> : null}
+      {value !== undefined ? <span className="line-value">{glue(value)}</span> : null}
       <CheckIcon size={16} className="line-check" />
     </button>
   );
@@ -122,7 +130,7 @@ export function InfoRow({ label, hint, icon, children, mono }: RowBase & { child
     <div className="line">
       {icon ? <span className="line-icon">{icon}</span> : null}
       <Text label={label} hint={hint} />
-      <span className={["line-value", mono ? "mono" : ""].join(" ")}>{children}</span>
+      <span className={["line-value", mono ? "mono" : ""].join(" ")}>{glue(children)}</span>
     </div>
   );
 }

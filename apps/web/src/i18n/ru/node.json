@@ -129,7 +129,7 @@
   "console.afterRenew": "ответ после обновления пути назад",
   "console.unreachable": "узел не отвечает ни по пути, ни по всей сети",
 
-  "history.lastHour": "Последний час",
+  "history.lastHour": "1 час",
   "history.day": "24 часа",
   "history.week": "7 дней",
   "history.noReply": "Нет ответа за {seconds} с. Возможно, датчик вне досягаемости — попробуйте ещё раз.",
@@ -182,13 +182,9 @@
   "neighbours.ask": "Запросить у репитера",
   "neighbours.onMap": "На карте",
   "neighbours.none": "Сейчас он не слышит напрямую ни одного другого репитера.",
-  "neighbours.repeater": "Репитер",
-  "neighbours.snr": "SNR",
-  "neighbours.scale": "шкала {low} … +{high} дБ",
-  "neighbours.heard": "Слышно",
   "neighbours.intro": "Один запрос возвращает до десяти, в выбранном выше порядке; остальные — по странице за раз.",
   "neighbours.loadMore": "Загрузить ещё {count}",
-  "neighbours.hint": "Учитываются только репитеры, которых этот слышит напрямую, без хопов. SNR — по последнему пакету, услышанному от каждого.",
+  "neighbours.hint": "Учитываются только репитеры, которых этот слышит напрямую, без хопов. SNR — по последнему пакету, услышанному от каждого; полоса идёт от {low} до +{high} дБ, черта — ноль.",
 
   "settings.unknown": "Этот узел не знает {names} — возможно, у него старая прошивка.",
   "settings.onTrial": {
@@ -268,7 +264,7 @@
   "signIn.node": "Узел",
   "signIn.password": "Пароль",
   "signIn.adminPassword": "пароль администратора",
-  "signIn.adminOrGuest": "пароль администратора или гостя",
+  "signIn.adminOrGuest": "администратора или гостя",
   "signIn.tooLong": "Узел читает только первые {max} байт, а этот пароль длиннее.",
   "signIn.blank": "Пустой подойдёт, если узел уже знает это радио или пускает посторонних читать.",
   "signIn.remember": "Запомнить пароль",
@@ -332,9 +328,9 @@
     "many": "{count} пакетов",
     "other": "{count} пакета"
   },
-  "duration.days": "{days} дн. {hours} ч",
-  "duration.hours": "{hours} ч {minutes} мин",
-  "duration.minutes": "{minutes} мин",
+  "duration.days": "{days}\u00a0дн. {hours}\u00a0ч",
+  "duration.hours": "{hours}\u00a0ч {minutes}\u00a0мин",
+  "duration.minutes": "{minutes}\u00a0мин",
 
   "cli.radio": "freq,bw,sf,cr — например 869.525,250,11,5; применится после перезагрузки",
   "cli.dbm": "дБм",

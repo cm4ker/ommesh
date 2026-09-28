@@ -172,13 +172,9 @@
   "neighbours.ask": "Ask the repeater",
   "neighbours.onMap": "On map",
   "neighbours.none": "It hears no other repeater directly right now.",
-  "neighbours.repeater": "Repeater",
-  "neighbours.snr": "SNR",
-  "neighbours.scale": "scale {low} … +{high} dB",
-  "neighbours.heard": "Heard",
   "neighbours.intro": "One request brings back up to ten, in the order chosen above; more come a page at a time.",
   "neighbours.loadMore": "Load {count} more",
-  "neighbours.hint": "Only repeaters this one hears directly, zero hop, are tracked. The SNR is of the last packet it heard from each.",
+  "neighbours.hint": "Only repeaters this one hears directly, zero hop, are tracked. The SNR is of the last packet it heard from each; its bar runs from {low} to +{high} dB, the tick marks zero.",
 
   "settings.unknown": "This node does not know {names}; its firmware may be older.",
   "settings.onTrial": {
@@ -273,9 +269,9 @@
   "status.sendQueue": "Send queue",
   "status.empty": "empty",
   "status.queuePackets": { "one": "{count} packet", "other": "{count} packets" },
-  "duration.days": "{days} d {hours} h",
-  "duration.hours": "{hours} h {minutes} min",
-  "duration.minutes": "{minutes} min",
+  "duration.days": "{days}\u00a0d {hours}\u00a0h",
+  "duration.hours": "{hours}\u00a0h {minutes}\u00a0min",
+  "duration.minutes": "{minutes}\u00a0min",
 
   "cli.radio": "freq,bw,sf,cr — e.g. 869.525,250,11,5; reboot to apply",
   "cli.dbm": "dBm",

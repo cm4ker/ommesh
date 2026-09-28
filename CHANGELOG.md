@@ -4,6 +4,9 @@
 
 ## Unreleased
 
+### Connecting
+- With Bluetooth off, Android puts up its own prompt to turn it on: at launch, when the connect screen starts its search, and when a radio is picked. Turned down, the search and the line at the top say "Bluetooth is off" instead of finding nothing or trying for a long time; Try now asks again, and the radio is back a moment after Bluetooth is turned on. An iPhone says "Bluetooth is off" too.
+
 ### Mesh and the map
 - A repeater's Neighbours page fits a phone: one row per neighbour, with its name, key and when it was heard on the left and its SNR over a bar on the right, in place of a table whose last column was cut off. What the bar spans is in the note under the list, and on a phone the order buttons have a line of their own.
 - On a node's Access page, a phone puts each client's role and Remove under its name, and the role is no longer cut short.

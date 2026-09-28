@@ -116,6 +116,7 @@
   "error.portNotOpen": "порт не открыт",
   "error.noAnswer": "{what}: нет ответа за {seconds} с",
   "error.linkDropped": "связь прервалась",
+  "error.bluetoothOff": "Bluetooth выключен",
   "error.nothingToPair": "не с чем создавать пару",
   "error.dbOpen": "не удалось открыть базу данных",
   "error.dbAborted": "транзакция базы данных прервана",

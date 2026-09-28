@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { BaseTransport, type Transport } from "@meshnet/meshcore";
-import type { Connector, FoundDevice } from "../transports/types.js";
+import { BluetoothOffError, type Connector, type FoundDevice } from "../transports/types.js";
 import { cancelConnect, connectWith, disconnect, getLink, reconnectNow } from "./link.js";
 import { demoConnector } from "../transports/demo.js";
 import { lastLink } from "../transports/index.js";
@@ -155,4 +155,51 @@ test("a link is connected once the radio has answered, and one lost while its co
     stop();
     await disconnect();
   }
+});
+
+test("a radio picked by hand with Bluetooth off may ask once to turn it on, and is not tried again behind a no", async () => {
+  const asked: (boolean | undefined)[] = [];
+  const connector: Connector = {
+    ...demoConnector,
+    id: "bluetooth-off",
+    connect: async (_device, options) => {
+      asked.push(options?.mayAsk);
+      throw new BluetoothOffError("Bluetooth is off");
+    },
+  };
+  await assert.rejects(connectWith(connector, radio("MeshCore-demo")), BluetoothOffError);
+  assert.deepEqual(asked, [true]);
+  assert.equal(getLink().phase, "failed");
+  assert.equal(getLink().bluetoothOff, true);
+  await disconnect();
+});
+
+test("a dropped link waits out Bluetooth turned off without asking, and only a try by hand may ask", async () => {
+  let off = false;
+  const asked: (boolean | undefined)[] = [];
+  const connector: Connector = {
+    ...demoConnector,
+    id: "bluetooth-dropped",
+    connect: async (device, options) => {
+      if (!off) return demoConnector.connect(device);
+      asked.push(options?.mayAsk);
+      throw new BluetoothOffError("Bluetooth is off");
+    },
+  };
+  await connectWith(connector, radio("MeshCore-demo"));
+  off = true;
+  await session.reboot();
+  // The first try after the drop comes by itself, and does not ask.
+  await until(() => asked.length === 1 && getLink().waiting);
+  assert.equal(getLink().bluetoothOff, true);
+  // Looks for Bluetooth are not counted as tries, so the pause after them stays short.
+  assert.equal(getLink().attempt, 0);
+  reconnectNow();
+  await until(() => asked.length === 2 && getLink().waiting);
+  assert.deepEqual(asked, [false, true]);
+  off = false;
+  reconnectNow();
+  await until(() => getLink().phase === "connected");
+  assert.equal(getLink().bluetoothOff, false);
+  await disconnect();
 });

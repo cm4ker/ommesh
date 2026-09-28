@@ -116,6 +116,7 @@
   "error.portNotOpen": "port not open",
   "error.noAnswer": "{what} did not answer in {seconds} s",
   "error.linkDropped": "link dropped",
+  "error.bluetoothOff": "Bluetooth is off",
   "error.nothingToPair": "nothing to pair with",
   "error.dbOpen": "could not open the database",
   "error.dbAborted": "database transaction aborted",

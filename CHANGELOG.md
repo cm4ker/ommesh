@@ -13,6 +13,9 @@
 - On a phone the log puts each entry's time and kind above its text, so the text has the whole width.
 - The privacy policy is a row under About, with the version.
 
+### Notifications and the background
+- Messages that arrive all at once, such as the ones the radio kept while the app was away, ring once rather than once each: the first notice sounds, and the rest bring its count up to date quietly. Messages written seconds apart still ring each.
+
 ### Fixes
 - A profile's buttons no longer run into one another when a word is long; a long word breaks instead.
 - A value that does not fit its row, such as a route, the firmware or a notification setting, goes on to a second line instead of ending in "…". A line never starts with "·".

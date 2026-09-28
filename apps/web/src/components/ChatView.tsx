@@ -42,6 +42,7 @@ import {
   RefreshIcon,
   ReplyIcon,
   SearchIcon,
+  SendIcon,
   StopIcon,
   TrashIcon,
   WavesIcon,
@@ -705,7 +706,7 @@ const Message = memo(function Message({ message, lead, showSender, avatar, me, o
             {/* A red bubble carries its state in the strip below; a tick beside it would say the opposite. */}
             {out && !bad ? <Status message={message} trying={trying} /> : null}
           </span>
-          {bad ? <Unrelayed message={message} busy={busy} onRetry={() => void retry()} /> : null}
+          {bad ? <Unrelayed message={message} busy={busy} onRetry={() => void retry()} onKeepTrying={() => void keepTrying()} /> : null}
         </div>
         {retryable && !bad && !trying ? (
           <button type="button" className={["msg-retry", message.status === "failed" ? "danger" : "warn"].join(" ")} disabled={busy} onClick={() => void retry()} title={message.error ?? undefined}>
@@ -753,10 +754,48 @@ function countdown(ms: number): string {
  * it. A tap target of its own, apart from the text, which opens how the
  * message travelled. While a loop runs it counts down and a tap stops it.
  */
-function Unrelayed({ message, busy, onRetry }: { message: MessageRecord; busy: boolean; onRetry: () => void }) {
+function Unrelayed({ message, busy, onRetry, onKeepTrying }: { message: MessageRecord; busy: boolean; onRetry: () => void; onKeepTrying: () => void }) {
   const plan = message.retryPlan;
   const looping = plan !== null && plan.made < plan.total;
   const now = useClock(looping && plan.nextAt !== null);
+  // A press here neither opens the message nor starts the long-press menu,
+  // so letting go after a long press can never send by accident.
+  const own = { onPointerDown: (e: { stopPropagation(): void }) => e.stopPropagation(), onKeyDown: (e: { stopPropagation(): void }) => e.stopPropagation() };
+
+  // A channel message nobody relayed: the red says what is wrong, so the strip
+  // is only the two ways on, one more send or the loop, where people look (#57).
+  if (!looping && !isDirect(message)) {
+    return (
+      <div className="msg-strip pair" {...own}>
+        <button
+          type="button"
+          className="msg-strip-half"
+          disabled={busy}
+          title={t("chats.strip.noRepeater")}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRetry();
+          }}
+        >
+          <SendIcon size={12} />
+          <span>{t("chats.strip.again")}</span>
+        </button>
+        <button
+          type="button"
+          className="msg-strip-half"
+          disabled={busy}
+          title={loopHint()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onKeepTrying();
+          }}
+        >
+          <RefreshIcon size={12} />
+          <span>{t("chats.message.keepTrying")}</span>
+        </button>
+      </div>
+    );
+  }
 
   let icon: ReactNode;
   let label: string;
@@ -769,12 +808,9 @@ function Unrelayed({ message, busy, onRetry }: { message: MessageRecord; busy: b
       message.status === "sending"
         ? t("chats.strip.sending", { made: plan.made, total: plan.total })
         : t("chats.strip.next", { made: plan.made, total: plan.total, time: countdown(plan.nextAt! - now) });
-  } else if (isDirect(message)) {
-    icon = <AlertIcon size={12} />;
-    label = t("chats.strip.noAnswer", { count: plan?.made ?? 1 });
   } else {
     icon = <AlertIcon size={12} />;
-    label = t("chats.strip.notRelayed");
+    label = t("chats.strip.noAnswer", { count: plan?.made ?? 1 });
   }
 
   return (
@@ -782,11 +818,8 @@ function Unrelayed({ message, busy, onRetry }: { message: MessageRecord; busy: b
       type="button"
       className="msg-strip"
       disabled={busy && !looping}
-      title={looping ? t("chats.message.stopTrying") : isDirect(message) ? t("chats.strip.noAck") : t("chats.strip.noRepeater")}
-      // Its own target: a press here neither opens the message nor starts the long-press menu,
-      // so letting go after a long press can never send by accident.
-      onPointerDown={(e) => e.stopPropagation()}
-      onKeyDown={(e) => e.stopPropagation()}
+      title={looping ? t("chats.message.stopTrying") : t("chats.strip.noAck")}
+      {...own}
       onClick={(e) => {
         e.stopPropagation();
         if (looping) session.stopTrying(message.id);

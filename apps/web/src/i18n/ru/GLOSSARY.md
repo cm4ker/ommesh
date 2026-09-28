@@ -39,7 +39,7 @@
 | acknowledged, ack | подтверждено, подтверждение | |
 | notification, notice | уведомление | |
 | mention | упоминание | |
-| Keep trying | Пробовать дальше | |
+| Keep trying | Повторять | |
 | Undo | Отменить | |
 | clean up, tidy | очистка, уборка | |
 | archive | архив | |

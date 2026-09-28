@@ -100,7 +100,7 @@
     "one": "No answer to {count} try · Send again",
     "other": "No answer to {count} tries · Send again"
   },
-  "strip.notRelayed": "Not relayed · Send again",
+  "strip.again": "Send again",
   "strip.noAck": "No try was acknowledged. Send it again",
   "strip.noRepeater": "No repeater has been heard sending it on. Send it again",
   "status.waitingTries": "Waiting for the radio to send it again: {made} of {total} tries made",

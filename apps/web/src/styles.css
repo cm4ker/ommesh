@@ -3027,6 +3027,48 @@ html.notices-window #root {
 .msg-strip-stop {
   margin-left: auto;
 }
+/* A channel message nobody relayed: two halves, one more send and the loop, each its own target. */
+.msg-strip.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  padding: 0;
+  cursor: default;
+}
+.msg-strip.pair:hover {
+  background: transparent;
+}
+.msg-strip-half {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: calc(30px * var(--box-scale));
+  padding: 4px 11px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.msg-strip-half:first-child {
+  border-radius: 0 0 0 16px;
+}
+.msg-strip-half:last-child {
+  border-left: 1px solid color-mix(in oklab, var(--danger) 45%, transparent);
+  border-radius: 0 0 16px 0;
+}
+.msg-strip-half:hover {
+  background: color-mix(in oklab, var(--danger) 9%, transparent);
+}
+.msg-strip-half:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.msg-strip-half:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 .bubble:focus-visible {
   outline: 2px solid var(--accent);
 }

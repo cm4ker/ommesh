@@ -100,7 +100,7 @@
   "message.copyText": "Копировать текст",
   "message.sendAgainFlood": "Отправить ещё раз по всей сети",
   "message.sendAgain": "Отправить ещё раз",
-  "message.keepTrying": "Пробовать дальше",
+  "message.keepTrying": "Повторять",
   "message.stopTrying": "Прекратить попытки",
   "message.dontSend": "Не отправлять",
   "message.travelled": "Путь сообщения",
@@ -116,7 +116,7 @@
     "many": "Нет ответа на {count} попыток · Отправить ещё раз",
     "other": "Нет ответа на {count} попытки · Отправить ещё раз"
   },
-  "strip.notRelayed": "Не ретранслировано · Отправить ещё раз",
+  "strip.again": "Ещё раз",
   "strip.noAck": "Ни одна попытка не подтверждена. Отправить ещё раз",
   "strip.noRepeater": "Не слышно, чтобы репитер передал его дальше. Отправить ещё раз",
   "status.waitingTries": "Ждём радио, чтобы отправить снова: попыток {made} из {total}",

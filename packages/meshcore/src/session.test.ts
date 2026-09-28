@@ -2091,3 +2091,61 @@ test("the radio's own receiver is read without going on the air", async () => {
   assert.equal(stats.rxAirSecs, 3400);
   await session.disconnect();
 });
+
+test("history from a file comes in once, beside what is here", async () => {
+  const now = 1_700_000_000_000;
+  const session = new MeshSession({ now: () => now });
+  const radio = new ScriptedRadio();
+  radio.queue.push(dmFrame(BOB, "from last time"));
+  await session.connect(radio);
+  const here = session.getState().messages[0]!;
+  const bob = session.getState().contacts[here.conversation.slice(2)]!;
+  const older = { ...here, id: "official:dm:1", text: "long ago", timestamp: here.timestamp - 3600, receivedAt: here.receivedAt - 3_600_000 };
+  // Another file's message that happens to carry an id taken here.
+  const clash = { ...here, text: "same id, other text", timestamp: here.timestamp - 60, receivedAt: here.receivedAt - 60_000 };
+  const gone = { ...bob, key: "ee".repeat(32), prefix: "ee".repeat(6), name: "Gone" };
+  const taken = { ...bob, key: "ab".repeat(32), prefix: "ab".repeat(6), name: "Taken off" };
+  const heard = { ...bob, key: "dd".repeat(32), prefix: "dd".repeat(6), name: "Heard", lastHeardAt: 1_699_999_000_000 };
+  const history = {
+    messages: [older, { ...here, id: "official:dm:2" }, clash],
+    contacts: [bob, gone],
+    removed: [{ contact: taken, at: now - 200 * 86_400_000, by: "you" as const }],
+    heard: [heard],
+  };
+
+  const unread = session.getState().unread;
+  const summary = session.importHistory(history);
+  assert.deepEqual(summary, { messages: 2, already: 1, removedContacts: 2, heard: 1 });
+  const state = session.getState();
+  // Filed by when they arrived: the old ones go first. Old messages are not unread.
+  assert.deepEqual(state.messages.map((m) => m.text), ["long ago", "same id, other text", "from last time"]);
+  assert.notEqual(state.messages[1]!.id, here.id);
+  assert.equal(new Set(state.messages.map((m) => m.id)).size, 3);
+  assert.deepEqual(state.unread, unread);
+  // The radio's own contact stays as it is; one it lost is kept as removed; a heard node is not saved.
+  assert.equal(state.contacts[bob.key], bob);
+  assert.equal(state.removed[gone.key]?.contact.name, "Gone");
+  assert.equal(state.removed[gone.key]?.by, "radio");
+  // One removed before keeps who removed it, and is kept as long as one removed now.
+  assert.deepEqual(state.removed[taken.key], { contact: taken, at: now, by: "you" });
+  assert.equal(state.contacts[heard.key]?.unsaved, true);
+
+  // The same file again adds nothing.
+  assert.deepEqual(session.importHistory(history), { messages: 0, already: 3, removedContacts: 0, heard: 0 });
+
+  // What is here already is never written over: not a contact on the radio, a removed one, or a node heard.
+  const renamed = (c: typeof bob) => ({ ...c, name: `${c.name} from the file`, lat: 1, lon: 2, flags: 0xff });
+  session.importHistory({
+    messages: [],
+    contacts: [renamed(bob), renamed(gone), renamed(heard)],
+    removed: [renamed(bob), renamed(gone), renamed(heard)].map((contact) => ({ contact, at: now, by: "you" as const })),
+    heard: [renamed(bob), renamed(gone), renamed(heard)],
+  });
+  const after = session.getState();
+  assert.equal(after.contacts[bob.key], bob);
+  assert.equal(after.removed[gone.key]?.contact.name, "Gone");
+  assert.equal(after.contacts[heard.key]?.name, "Heard");
+  assert.equal(after.contacts[gone.key], undefined);
+  assert.equal(after.removed[heard.key], undefined);
+  await session.disconnect();
+});

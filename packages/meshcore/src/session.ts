@@ -386,6 +386,26 @@ export interface PersistedState {
   routing?: RoutingSettings;
 }
 
+/** History brought in from a file, as `importHistory` takes it. */
+export interface ImportedHistory {
+  messages: MessageRecord[];
+  /** The contacts the radio held when the file was written; the radio's own list decides which of them still are. */
+  contacts: ContactRecord[];
+  /** Contacts that were already taken off the radio then. */
+  removed: RemovedContact[];
+  /** Nodes heard but not kept by the radio. */
+  heard: ContactRecord[];
+}
+
+export interface ImportSummary {
+  messages: number;
+  /** Messages that were here already. */
+  already: number;
+  /** Contacts the radio does not hold, kept as removed. */
+  removedContacts: number;
+  heard: number;
+}
+
 export interface SessionStorage {
   /** Null when nothing is stored for the radio. A history that is there but cannot be read rejects: it is not the same as none. */
   load(radioKey: string): Promise<PersistedState | null>;
@@ -525,6 +545,13 @@ export function pathHashes(pathLen: number, path: Uint8Array | string): string[]
   const hashes: string[] = [];
   for (let i = 0; i < (pathLen & 63); i++) hashes.push(hex.slice(i * size, (i + 1) * size));
   return hashes;
+}
+
+/** The length byte and path the radio holds for a route of these hashes, which are all of one size. */
+export function pathOf(hashes: string[]): { outPathLen: number; outPath: string } {
+  const size = hashes[0] ? hashes[0].length / 2 : 1;
+  // Kept at the radio's full width, as it hands contacts back.
+  return { outPathLen: hashes.length | ((size - 1) << 6), outPath: hashes.join("").padEnd(128, "0") };
 }
 
 /** A route as one string, so two can be compared: its length byte and the hashes it holds. */
@@ -670,7 +697,7 @@ function historyOf(state: SessionState): PersistedState {
 const REMOVED_KEEP_MS = 90 * 24 * 3600 * 1000;
 
 /** How long a node the radio did not keep stays in the list after it was last heard. */
-const UNSAVED_KEEP_MS = 7 * 24 * 3600 * 1000;
+export const UNSAVED_KEEP_MS = 7 * 24 * 3600 * 1000;
 
 /** A contact as the radio holds it, without what only this app knows. */
 function saved(record: ContactRecord): ContactRecord {
@@ -1796,6 +1823,60 @@ export class MeshSession {
     const unread = { ...this.state.unread };
     delete unread[conversation];
     this.set({ messages: this.state.messages.filter((m) => m.conversation !== conversation), unread });
+  }
+
+  /**
+   * History kept for this radio elsewhere, brought in beside what is here. A
+   * message already here (the same text, stamp and sender in the same chat)
+   * is not added again, so bringing the same file in twice adds nothing; one
+   * whose id is taken by another message gets an id of its own. A contact the
+   * radio holds stays as the radio has it; one it does not hold is kept as
+   * removed, to be put back. Old messages are not unread.
+   */
+  importHistory(history: ImportedHistory): ImportSummary {
+    if (!this.state.self) throw new Error("no radio");
+    const same = (m: MessageRecord) =>
+      [m.conversation, m.direction, m.timestamp, m.direction === "in" && m.conversation.startsWith("ch:") ? m.sender : m.senderPrefix, m.text].join("\n");
+    const ids = new Set(this.state.messages.map((m) => m.id));
+    const seen = new Set(this.state.messages.map(same));
+    const added: MessageRecord[] = [];
+    for (const m of history.messages) {
+      const key = same(m);
+      if (seen.has(key)) continue;
+      const id = ids.has(m.id) ? newId(this.now()) : m.id;
+      ids.add(id);
+      seen.add(key);
+      added.push(id === m.id ? m : { ...m, id });
+    }
+
+    const contacts = { ...this.state.contacts };
+    const removed = { ...this.state.removed };
+    const at = this.now();
+    let gone = 0;
+    for (const contact of history.contacts) {
+      if (contacts[contact.key] || removed[contact.key]) continue;
+      removed[contact.key] = { contact, at, by: "radio" };
+      gone++;
+    }
+    for (const entry of history.removed) {
+      if (contacts[entry.contact.key] || removed[entry.contact.key]) continue;
+      // Kept as long as one removed now, however long ago it went.
+      removed[entry.contact.key] = { ...entry, at };
+      gone++;
+    }
+    let heard = 0;
+    for (const node of history.heard) {
+      if (contacts[node.key] || removed[node.key]) continue;
+      contacts[node.key] = { ...node, unsaved: true };
+      heard++;
+    }
+
+    // Filed by when they arrived, as the radio's own come in.
+    const messages = added.length ? [...this.state.messages, ...added].sort((a, b) => a.receivedAt - b.receivedAt) : this.state.messages;
+    this.set({ messages, contacts, removed });
+    this.rebindOrphans();
+    this.log("import", `brought in ${added.length} messages, ${gone} contacts not on the radio and ${heard} nodes heard`);
+    return { messages: added.length, already: history.messages.length - added.length, removedContacts: gone, heard };
   }
 
   /** Drains the radio's queue. Re-entrant calls collapse into one more pass. */

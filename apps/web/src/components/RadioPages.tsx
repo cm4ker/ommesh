@@ -31,6 +31,7 @@ import { ContactsPage, RemovedPage } from "./ContactsPages.js";
 import { LogView } from "./LogView.js";
 import { AirView } from "./AirView.js";
 import { OwnReadings } from "./NodeReadings.js";
+import { HistoryPage } from "./HistoryPage.js";
 import { ScreenHead, type Chrome } from "./ScreenHead.js";
 import { UpdateButton } from "./Updates.js";
 import { useDesktopUpdateInfo } from "../lib/updates.js";
@@ -55,6 +56,7 @@ export const RADIO_TITLES: Record<RadioPage, Key> = {
   notifications: "radio.titles.notifications",
   sound: "radio.titles.sound",
   messages: "radio.titles.messages",
+  history: "radio.titles.history",
   appearance: "radio.titles.appearance",
   connection: "radio.titles.connection",
   air: "radio.titles.air",
@@ -222,6 +224,8 @@ function PageBody({ page }: { page: RadioPage }) {
       return <SoundPage />;
     case "messages":
       return <MessagesPage />;
+    case "history":
+      return self ? <HistoryPage self={self} /> : <Offline />;
     case "appearance":
       return <AppearancePage />;
     case "connection":

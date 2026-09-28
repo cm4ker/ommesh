@@ -52,7 +52,7 @@ Open `http://localhost:5180/?demo`, choose **Demo**, connect to **MeshCore-demo*
 
 **`apps/mobile`** is the Capacitor 8 shell. Phones put the page's JavaScript to sleep in the background while the Bluetooth link stays up, so native code (`MeshRelay` on Android and iOS, an Android foreground service) holds the link. Read `apps/mobile/README.md` before touching it.
 
-**`crates/meshcore-core`** is the Rust core the phone shells run through UniFFI while the page sleeps. `mux` shares one radio between several clients and keeps each client's messages; `watch` raises notices for what stays unread. It is pure logic (no Bluetooth, clock or threads); the native owner performs the `Effect`s each call returns, so its rules are covered by `cargo test`.
+**`crates/meshcore-core`** is the Rust core the phone shells run through UniFFI while the page sleeps. `mux` shares one radio between several clients and keeps each client's messages; `watch` raises notices for what stays unread. It is pure logic (no Bluetooth, clock or threads); the native owner performs the `Effect`s each call returns, so its rules are covered by `cargo test`. Its `codes.rs` and `frames.rs` repeat the opcodes and frames of `packages/meshcore/src/protocol/`: change both together.
 
 ## Protocol source of truth
 
@@ -62,13 +62,15 @@ Anything sent over the air to test a change goes to the `#test` channel, never P
 
 ## Conventions
 
-- **Every visible word is translated.** Strings live in `apps/web/src/i18n/<lang>/*.json` and are read with `t()`. Add each key to both `en` and `ru`. `pnpm --filter @meshnet/web test` fails on a missing key or a wrong plural form. Russian terms and style are in `i18n/ru/GLOSSARY.md`.
+- **Every visible word is translated.** Strings live in `apps/web/src/i18n/<lang>/*.json` and are read with `t()`. Add each key to both `en` and `ru`. `pnpm --filter @meshnet/web test` fails on a missing key or a wrong plural form. Russian terms and style are in `i18n/ru/GLOSSARY.md`. Call `t()` while drawing or acting, never at a module's top level, and show an error to the reader through `errorText()`.
 - **Plain words in the UI.** Name things the way a radio user would, not by protocol terms. The existing strings set the tone.
 - **Lean UI first.** The maintainer has pushed back on overloaded screens more than once. Start with the smallest version and put details behind a tap.
 - **Comments** are full sentences that explain why and what the reader cannot see from the code, as in the existing files. Match the surrounding style.
 - **Names.** The product is called Ommesh, but package names (`@meshnet/*`), app identifiers (`dev.cm4ker.meshnet`) and storage names stay `meshnet`. Renaming them would cut installed apps off from their updates and stored history.
+- **Colours** come only from the theme's custom properties (`apps/web/src/theme/themes.ts`); `styles.css` names none.
 - **Artwork.** The only source is `apps/web/public/icon.svg`; run `pnpm icons` after changing it.
-- **Commits** read `type(scope): What changes for the user (#issue)`, for example `feat(search): Put a clearing cross in every search field (#44)`. Types are `feat`, `fix`, `perf`, `docs`, `ci`.
+- **Generated files** are not edited by hand: the icons, the sounds (`pnpm sounds`), `apps/mobile/ios/App/CapApp-SPM/Package.swift` (written by `cap sync`) and `apps/desktop/src-tauri/tauri.release.json` (written by `scripts/release.mjs`).
+- **Commits** read `type(scope): What changes for the user (#issue)`, for example `feat(search): Put a clearing cross in every search field (#44)`. Types are `feat`, `fix`, `perf`, `docs`, `ci`. They are in English, and the body says in prose what changed and why.
 - **Changelog.** Each user-visible change gets a line in both `CHANGELOG.md` and `CHANGELOG.ru.md` under `## Unreleased`, in the matching area heading, written for users. Commit it separately as `docs(changelog): …`.
 - **Releases.** Every push to `master` publishes a Dev release that installed apps on the Dev channel update to. A `vX.Y.Z` tag that matches the root `package.json` version makes a stable release. Work on a branch and open a pull request unless the maintainer says otherwise.
 - **Issues** are tracked on GitHub (`cm4ker/ommesh`). Reference the issue number in commits.

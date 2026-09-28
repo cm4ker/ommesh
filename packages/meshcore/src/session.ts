@@ -11,10 +11,10 @@
 
 import { MeshCoreClient, MeshCoreError, TimeoutError, type TextSendResult } from "./client.js";
 import { ByteReader, bytesEqual, fromHex, pathByteLength, toHex, unixNow } from "./protocol/bytes.js";
-import { traceBudgetMs } from "./protocol/airtime.js";
+import { neighbourSearchMs, traceBudgetMs } from "./protocol/airtime.js";
 import { groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
 import { PayloadType, parseRawPacket, type RawPacket } from "./protocol/packet.js";
-import { AclRole, AdvType, Cmd, ContactFlag, ControlType, ErrCode, MAX_TEXT_LEN, PUB_KEY_PREFIX_SIZE, StatsType, TxtType } from "./protocol/codes.js";
+import { AclRole, AdvType, Cmd, ContactFlag, ControlType, ErrCode, MAX_TEXT_LEN, NeighbourOrder, PUB_KEY_PREFIX_SIZE, StatsType, TxtType } from "./protocol/codes.js";
 import {
   accessListRequest,
   avgMinMaxRequest,
@@ -422,6 +422,8 @@ export interface SessionOptions {
   trace?: ConstructorParameters<typeof MeshCoreClient>[1] extends infer O ? (O extends { trace?: infer T } ? T : never) : never;
   /** How long to wait for a trace to come back, from the time worked out for it; for tests. */
   traceWaitMs?: (estimateMs: number) => number;
+  /** How long a neighbour search waits for the neighbours' answers, from the time worked out for it; for tests. */
+  searchWaitMs?: (estimateMs: number) => number;
   /**
    * The password kept for a node, or null. With it, a request that no try got
    * an answer to renews the node's way back to us by itself, and goes again.
@@ -462,6 +464,20 @@ export interface DiscoverReply {
   rssi: number;
   /** Local clock, ms. */
   at: number;
+}
+
+/** What a repeater's neighbour search found. */
+export interface NeighbourSearch {
+  /** The list read after the neighbours had time to answer, newest first. */
+  list: NeighbourList;
+  /** The prefixes of the neighbours in `list` that answered. */
+  answered: string[];
+  /**
+   * Those of them the list did not hold before. Null when that cannot be
+   * told: the list had not been read, or only part of it, and more answered
+   * from outside that part than it grew by.
+   */
+  fresh: string[] | null;
 }
 
 /** One battery reading kept for a node's week. */
@@ -953,6 +969,7 @@ export class MeshSession {
   private controlListeners = new Set<(frame: Extract<PushFrame, { kind: "controlData" }>) => void>();
   private heardListeners = new Set<(packet: HeardPacket) => void>();
   private readonly traceWait: (estimateMs: number) => number;
+  private readonly searchWait: (estimateMs: number) => number;
   private readonly passwordFor: ((key: string) => Promise<string | null>) | null;
   /** When each node's way back was last renewed, local ms. */
   private renewedAt = new Map<string, number>();
@@ -963,6 +980,7 @@ export class MeshSession {
     this.now = options.now ?? (() => Date.now());
     this.replyWait = options.replyWaitMs ?? replyWaitMs;
     this.traceWait = options.traceWaitMs ?? ((budget) => Math.min(30_000, Math.max(2_500, budget)));
+    this.searchWait = options.searchWaitMs ?? ((budget) => budget);
     this.trace = options.trace;
     this.passwordFor = options.passwordFor ?? null;
   }
@@ -2974,6 +2992,39 @@ export class MeshSession {
     const record: NeighbourList = { total, order, neighbours: list, at: this.now() };
     this.set({ neighbours: { ...this.state.neighbours, [key]: record } });
     return record;
+  }
+
+  /**
+   * Has a repeater call the repeaters it hears direct (`discover.neighbors`),
+   * then reads its list once they have had time to answer. The repeater asks
+   * zero hop, and each neighbour answers after a random pause; every one
+   * that answers goes into the list as heard now, so the list is read newest
+   * first. A neighbour with relaying off stays silent, and so does one that
+   * has answered four searches in two minutes. `onCalled` hears how long the
+   * wait for the answers is, once the repeater says it has called them.
+   */
+  async searchNeighbours(key: string, onCalled?: (waitMs: number) => void): Promise<NeighbourSearch> {
+    const prior = this.state.neighbours[key];
+    const reply = (await this.runCli(key, "discover.neighbors")).trim();
+    if (!/^ok\b/i.test(reply)) throw new NodeCommandError(reply);
+    const calledAt = this.now();
+    const self = this.state.self;
+    const wait = this.searchWait(self && self.bandwidthHz > 0 ? neighbourSearchMs(self) : 12_000);
+    onCalled?.(wait);
+    await new Promise((resolve) => setTimeout(resolve, wait));
+    const list = await this.requestNeighbours(key, { order: NeighbourOrder.Newest });
+    // The repeater says how long ago it heard each, by its own clock. It called them a
+    // moment before its reply reached us, however long that reply took on the way back.
+    const since = Math.ceil((this.now() - calledAt) / 1000) + 3;
+    const answered = list.neighbours.filter((n) => n.heardSecsAgo <= since).map((n) => n.prefix);
+    const known = new Set(prior?.neighbours.map((n) => n.prefix));
+    const outside = answered.filter((prefix) => !known.has(prefix));
+    // Of a list read only in part, an answer from outside that part may be an old neighbour
+    // not fetched; they are new for certain only when the list grew by as many.
+    const whole = prior !== undefined && prior.neighbours.length >= prior.total;
+    const fresh = prior && (whole || outside.length <= list.total - prior.total) ? outside : null;
+    this.log("neighbours", `${this.state.contacts[key]?.name || key.slice(0, 12)}: ${answered.length} answered a search, ${fresh ? fresh.length : "unknown how many"} new`);
+    return { list, answered, fresh };
   }
 
   async requestAccessList(key: string): Promise<AccessRecord[]> {

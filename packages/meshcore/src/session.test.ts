@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { ByteWriter, fromHex } from "./protocol/bytes.js";
 import { Cmd, Push, Resp, TxtType } from "./protocol/codes.js";
 import { groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
-import { channelConversation, contactConversation, MeshSession, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
+import { channelConversation, contactConversation, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
 import { BaseTransport } from "./transport.js";
 import { TimeoutError, TransportClosedError } from "./client.js";
 
@@ -1588,6 +1588,58 @@ test("neighbours come back under the radio's tag, with prefixes, age and SNR", a
     { prefix: "aabbccddeeff", heardSecsAgo: 120, snr: 7.25 },
     { prefix: "010203040506", heardSecsAgo: 3600, snr: -8.5 },
   ]);
+});
+
+function neighboursReply(radio: ScriptedRadio, total: number, rows: [string, number, number][]): Uint8Array {
+  const w = new ByteWriter().u8(Push.BinaryResponse).u8(0).u32(radio.binaryTag).u16(total).u16(rows.length);
+  for (const [prefix, secs, snr] of rows) w.bytes(fromHex(prefix)).u32(secs).i8(snr * 4);
+  return w.toBytes();
+}
+
+/** Runs a neighbour search on Hill that the repeater answers with `reply`, and returns it with the sends. */
+async function searchHill(prior: [number, [string, number, number][]] | null, reply: string) {
+  const { radio, session } = await nodeSession({ searchWaitMs: () => 5 });
+  if (prior) {
+    const read = session.requestNeighbours(HILL_KEY);
+    await sentOne(radio, Cmd.SendBinaryReq);
+    radio.push(neighboursReply(radio, prior[0], prior[1]));
+    await read;
+  }
+  const waits: number[] = [];
+  const search = session.searchNeighbours(HILL_KEY, (ms) => waits.push(ms));
+  await sentOne(radio, Cmd.SendTxtMsg);
+  const command = sentText(radio.sent.find((f) => f[0] === Cmd.SendTxtMsg)!);
+  radio.queue.push(cliFrame(HILL, `${command.slice(0, 2)}|${reply}`));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  return { radio, session, search, command, waits, reads: prior ? 2 : 1 };
+}
+
+test("a neighbour search has the repeater call its neighbours, then reads its list newest first", async () => {
+  const { radio, search, command, waits, reads } = await searchHill([2, [["aabbccddeeff", 900, 7.25], ["010203040506", 3600, -8.5]]], "OK - Discover sent");
+  assert.match(command, /^[0-9a-f]{2}\|discover\.neighbors$/);
+  await sentOne(radio, Cmd.SendBinaryReq, reads);
+  assert.deepEqual(waits, [5]);
+  // Order 0: the newest first, where the neighbours that answered are.
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.SendBinaryReq)[1]![38], 0);
+  radio.push(neighboursReply(radio, 3, [["0a0b0c0d0e0f", 2, -4.75], ["aabbccddeeff", 1, 7.5], ["010203040506", 3602, -8.5]]));
+  const found = await search;
+  assert.deepEqual(found.answered, ["0a0b0c0d0e0f", "aabbccddeeff"]);
+  assert.deepEqual(found.fresh, ["0a0b0c0d0e0f"]);
+  assert.equal(found.list.total, 3);
+});
+
+test("a neighbour search cannot tell who is new when the list was read only in part", async () => {
+  // Twelve known, two of them fetched: the answer from outside those two may be an old one.
+  const { radio, search, reads } = await searchHill([12, [["aabbccddeeff", 900, 7.25], ["010203040506", 3600, -8.5]]], "OK - Discover sent");
+  await sentOne(radio, Cmd.SendBinaryReq, reads);
+  radio.push(neighboursReply(radio, 12, [["0a0b0c0d0e0f", 2, -4.75], ["aabbccddeeff", 1, 7.5]]));
+  assert.equal((await search).fresh, null);
+});
+
+test("a neighbour search on firmware that lacks it says what the repeater answered", async () => {
+  const { radio, search } = await searchHill(null, "Unknown command");
+  await assert.rejects(search, (error: Error) => error instanceof NodeCommandError && error.message === "Unknown command");
+  assert.ok(!radio.sent.some((f) => f[0] === Cmd.SendBinaryReq));
 });
 
 test("a console command carries a tag, and its reply goes to the console, not the chat", async () => {

@@ -34,3 +34,16 @@ export function traceBudgetMs(hops: number, hashSize: number, radio: AirtimeRadi
   const bytes = 2 + 9 + hops * hashSize + Math.ceil(hops / 2);
   return 1500 + (hops + 1) * (3 * loraAirtimeMs(bytes, radio) + 80);
 }
+
+/**
+ * How long a repeater's neighbours take to answer `discover.neighbors`, ms.
+ * Each answers once, zero hop, after a random pause of up to twenty times
+ * its answer's time on air times its `txdelay` (`simple_repeater`: five
+ * times the retransmit delay, widened four times). The wait covers a
+ * `txdelay` of 1, twice the default, and stays inside the minute the
+ * repeater listens. The answer is 40 bytes: a header, a path length and six
+ * bytes of type, SNR and tag before the whole key.
+ */
+export function neighbourSearchMs(radio: AirtimeRadio): number {
+  return Math.min(60_000, 1500 + 20 * loraAirtimeMs(40, radio));
+}

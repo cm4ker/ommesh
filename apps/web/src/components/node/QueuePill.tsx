@@ -11,6 +11,7 @@ const JOBS: Record<string, Key> = {
   "path discovery": "node.queue.job.pathDiscovery",
   neighbours: "node.queue.job.neighbours",
   "more neighbours": "node.queue.job.moreNeighbours",
+  "discover.neighbors": "node.queue.job.neighbourSearch",
   "access list": "node.queue.job.accessList",
   "owner info": "node.queue.job.ownerInfo",
   "min/max/avg": "node.queue.job.series",

@@ -317,6 +317,8 @@ class DemoRadio extends BaseTransport {
   private prefs = new Map<Person, Record<string, string>>(PEOPLE.filter((p) => p.type >= 2).map((p) => [p, nodePrefs(p)]));
   /** Nodes that took our admin password; only they answer the console. */
   private admins = new Set<Person>();
+  /** When each repeater last called its neighbours, local ms. */
+  private searched = new Map<Person, number>();
   /** The route this radio holds to each contact, as a hop count; 0xff for none. */
   private routes = new Map<Person, number>(PEOPLE.map((p) => [p, p.hops]));
   /** Contacts taken off this radio, and the flags written to the others. */
@@ -518,7 +520,11 @@ class DemoRadio extends BaseTransport {
     if (command === "advert.zerohop") return "OK - zerohop advert sent";
     if (command === "clear stats") return "OK";
     if (command === "reboot") return null;
-    if (command === "neighbors") return neighboursOf(p).slice(0, 5).map(([prefix, secs, snr]) => `${prefix.slice(0, 8)}:${secs}:${snr * 4}`).join("\n");
+    if (command === "discover.neighbors") {
+      this.searched.set(p, Date.now());
+      return "OK - Discover sent";
+    }
+    if (command === "neighbors") return this.neighboursNow(p).slice(0, 5).map(([prefix, secs, snr]) => `${prefix.slice(0, 8)}:${secs}:${snr * 4}`).join("\n");
     if (command === "powersaving") return prefs["powersaving"]!;
     if (command === "powersaving on" || command === "powersaving off") {
       prefs["powersaving"] = command.slice(12);
@@ -538,6 +544,26 @@ class DemoRadio extends BaseTransport {
     return "Unknown command";
   }
 
+  /**
+   * A repeater's neighbours as it knows them now. After it calls them, those
+   * it heard within the hour answer a second or so apart and are heard anew;
+   * the rest stay silent, and Hill hears two repeaters it did not know.
+   */
+  private neighboursNow(p: Person): [string, number, number][] {
+    const all = neighboursOf(p);
+    const at = this.searched.get(p);
+    if (at === undefined) return all;
+    const since = (Date.now() - at) / 1000;
+    const answers = all.filter(([, secs]) => secs < 3600);
+    if (p.name === "Hill Repeater") answers.splice(1, 0, ["c3a91e7700b2", 0, -4.75], ["5e0f4d21a8c6", 0, 1.5]);
+    const heard = new Map(all.map((row) => [row[0], row]));
+    answers.forEach(([prefix, , snr], i) => {
+      const delay = 0.8 + i * 0.6;
+      if (since >= delay) heard.set(prefix, [prefix, Math.floor(since - delay), snr]);
+    });
+    return [...heard.values()];
+  }
+
   private binary(p: Person, tag: number, req: Uint8Array): Uint8Array | null {
     const w = new ByteWriter().u8(Push.BinaryResponse).u8(0).u32(tag);
     switch (req[0]) {
@@ -545,7 +571,7 @@ class DemoRadio extends BaseTransport {
         const count = req[2] ?? 10;
         const offset = (req[3] ?? 0) | ((req[4] ?? 0) << 8);
         const order = req[5] ?? 0;
-        const all = neighboursOf(p);
+        const all = this.neighboursNow(p);
         const sorted = [...all].sort((a, b) => (order === 0 ? a[1] - b[1] : order === 1 ? b[1] - a[1] : order === 2 ? b[2] - a[2] : a[2] - b[2]));
         const page = sorted.slice(offset, offset + Math.min(count, 11));
         w.u16(all.length).u16(page.length);

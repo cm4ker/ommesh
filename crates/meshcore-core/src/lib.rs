@@ -70,6 +70,8 @@ pub enum Timer {
     Command { flight: i32 },
     /// The moment a message waits for an awake page to take it.
     Grace { generation: i32 },
+    /// The wait for news to stop coming, which ends a burst of it (`watch::QUIET_MS`).
+    Quiet { generation: i32 },
 }
 
 /// What the core asks its owner to do.
@@ -187,6 +189,7 @@ impl Core {
         match timer {
             Timer::Command { flight } => self.mux.timeout(flight),
             Timer::Grace { generation } => self.watch.timeout(generation),
+            Timer::Quiet { generation } => self.watch.quiet(generation),
         }
         self.settle()
     }

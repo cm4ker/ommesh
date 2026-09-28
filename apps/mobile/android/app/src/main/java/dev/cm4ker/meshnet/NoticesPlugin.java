@@ -109,6 +109,8 @@ public class NoticesPlugin extends Plugin {
         }
         NotificationCompat.Builder builder =
             builder(context, id, tag, call.getString("kind", "chats"), call.getString("title", ""), call.getString("body", ""), call.getString("sound"));
+        // A burst of news rings with its first notice; the rest keep the channel and drop the sound.
+        if (Boolean.TRUE.equals(call.getBoolean("silent", false))) builder.setSilent(true);
 
         JSObject thread = call.getObject("thread");
         try {
@@ -129,10 +131,14 @@ public class NoticesPlugin extends Plugin {
         }
     }
 
-    /** A plain notice of the radio core's, on the page's channel for its kind, under the page's id for its tag. */
-    static void show(Context context, int id, String tag, String kind, String title, String body, String sound) {
+    /**
+     * A plain notice of the radio core's, on the page's channel for its kind, under the page's id for its tag;
+     * {@code silent} for one after the first of a burst of news.
+     */
+    static void show(Context context, int id, String tag, String kind, String title, String body, String sound, boolean silent) {
         NotificationCompat.Builder builder = builder(context, id, tag, kind, title, body, sound)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(body));
+        if (silent) builder.setSilent(true);
         try {
             NotificationManagerCompat.from(context).notify(id, builder.build());
         } catch (SecurityException refused) {

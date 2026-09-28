@@ -31,6 +31,12 @@ export interface NativeNotice {
   kind: string;
   /** `signal_<id>.wav`, or null for a quiet notice. */
   sound: string | null;
+  /**
+   * Shown without its sound this once (a burst of news rings with its first
+   * notice only), on Android's channel all the same: a channel's sound is
+   * fixed, and `sound` picks the channel.
+   */
+  silent: boolean;
   /** Whose circle it shows, base64 PNG; none shows the app's icon. */
   avatar: string | null;
   thread: NativeThread | null;

@@ -161,7 +161,8 @@ final class MeshWatchPlugin: CAPPlugin, CAPBridgedPlugin {
             tag: call.getString("tag") ?? "",
             title: call.getString("title") ?? "",
             body: call.getString("body") ?? "",
-            sound: call.getString("sound"),
+            // A burst of news rings with its first notice only.
+            sound: call.getBool("silent") == true ? nil : call.getString("sound"),
             avatar: call.getString("avatar").flatMap { Data(base64Encoded: $0) },
             thread: call.getObject("thread")
         )

@@ -100,6 +100,24 @@ test("a quiet signal posts a notice without a sound", async () => {
   assert.equal((calls[0]?.options as NativeNotice).sound, null);
 });
 
+test("a later notice of a burst keeps Android's channel for the signal, and drops the sound this once", async () => {
+  platform = "android";
+  await notify({ ...channelMessage, silent: true });
+  const native = calls.find((c) => c.method === "post")?.options as NativeNotice;
+  assert.equal(native.sound, "signal_chirp.wav");
+  assert.equal(native.silent, true);
+});
+
+test("a later notice of a burst shows its banner without the signal", async () => {
+  setNoticePrefs({ shownBy: "app" });
+  await settle();
+  calls.length = 0;
+  await notify({ ...channelMessage, silent: true });
+  await settle();
+  assert.equal(getBanner()?.notice.tag, "c:ch:1");
+  assert.deepEqual(calls, []);
+});
+
 test("a phone's page is on screen while it is visible, whatever it says about focus", () => {
   assert.equal(pageOnScreen(), true);
   page.hasFocus = () => false;

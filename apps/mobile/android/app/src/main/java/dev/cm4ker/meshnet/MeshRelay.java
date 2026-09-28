@@ -270,7 +270,7 @@ final class MeshRelay {
             } else if (effect instanceof Effect.Post) {
                 Notice notice = ((Effect.Post) effect).getNotice();
                 NoticesPlugin.show(context, notice.getId(), notice.getTag(), kind(notice), notice.getTitle(), notice.getBody(),
-                    prefs().getString(SOUND_KEY, null));
+                    prefs().getString(SOUND_KEY, null), notice.getSilent());
             } else if (effect instanceof Effect.Withdraw) {
                 NotificationManagerCompat.from(context).cancel(((Effect.Withdraw) effect).getId());
             } else if (effect instanceof Effect.Log) {

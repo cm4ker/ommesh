@@ -31,17 +31,27 @@ export interface Connector {
   description: string;
   mode: "picker" | "scan" | "address";
   /** Lists devices as they are found until the signal aborts. `scan` connectors only. */
-  scan?(onFound: (devices: FoundDevice[]) => void, signal: AbortSignal): Promise<void>;
+  scan?(onFound: (devices: FoundDevice[]) => void, signal: AbortSignal, options?: ReachOptions): Promise<void>;
   /** Devices this platform can reconnect to without a scan or a chooser. */
   remembered(): Promise<FoundDevice[]>;
   /** `null` asks the picker; a device connects to it. */
-  connect(device: FoundDevice | null): Promise<Transport>;
+  connect(device: FoundDevice | null, options?: ReachOptions): Promise<Transport>;
   /**
    * Bonds with a radio using the PIN on its screen, where the platform lets
    * the client do that itself. A `connect` that fails with `needsPairing`
    * set is the cue to ask for the PIN and call this.
    */
   pair?(device: FoundDevice, pin: string): Promise<void>;
+}
+
+export interface ReachOptions {
+  /**
+   * The phone may put up its own prompt to turn Bluetooth on (Android does):
+   * this search or connect was asked for by hand, or at launch. One started
+   * by a timer leaves it down, or a prompt turned down would come back at
+   * every try.
+   */
+  mayAsk?: boolean;
 }
 
 /** A connect failure the client can do something about: pair, then try again. */
@@ -55,6 +65,19 @@ export class NeedsPairingError extends Error {
 
 export function needsPairing(error: unknown): boolean {
   return error instanceof NeedsPairingError || /NEEDS_PAIRING|insufficient auth|ProtocolError/i.test(String((error as Error)?.message ?? error));
+}
+
+/** Bluetooth is off on this device, and stays off: no search or connect over it works until it is turned on. */
+export class BluetoothOffError extends Error {
+  readonly bluetoothOff = true;
+  constructor(message: string) {
+    super(message);
+    this.name = "BluetoothOffError";
+  }
+}
+
+export function bluetoothOff(error: unknown): boolean {
+  return error instanceof BluetoothOffError;
 }
 
 export interface RememberedLink {

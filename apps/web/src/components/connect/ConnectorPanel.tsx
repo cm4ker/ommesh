@@ -46,6 +46,8 @@ export function ConnectorPanel({
   const [tip, setTip] = useState(false);
   // Kept across the pauses for a connect, so a radio heard before one is still listed after.
   const seen = useRef(new Map<string, { device: FoundDevice; at: number }>());
+  // Which search last had the chance to ask to turn Bluetooth on (see the search below).
+  const asked = useRef<{ connector: Connector; run: number } | null>(null);
 
   // Read again after each connect: an address or a radio that worked is remembered then.
   useEffect(() => {
@@ -60,6 +62,11 @@ export function ConnectorPanel({
   }, [connector, busy]);
 
   useEffect(() => {
+    // The search the tab opens with, and one asked for again, may ask to turn Bluetooth on. One
+    // that follows a connect may not: the connect had its own chance, and was answered.
+    const last = asked.current;
+    const mayAsk = !last || last.connector !== connector || last.run !== scanRun;
+    asked.current = { connector, run: scanRun };
     if (connector.mode !== "scan" || !connector.scan || busy) return;
     const abort = new AbortController();
     // A port that is gone is gone; a radio can miss one pass of a Bluetooth search.
@@ -74,7 +81,7 @@ export function ConnectorPanel({
         for (const device of devices) seen.current.set(device.id, { device, at: now });
         for (const [id, entry] of seen.current) if (entry.at < now - keep) seen.current.delete(id);
         setFound([...seen.current.values()].map((entry) => entry.device));
-      }, abort.signal)
+      }, abort.signal, { mayAsk })
       .catch((error: unknown) => {
         if (!abort.signal.aborted) setScanError(errorText(error));
       })

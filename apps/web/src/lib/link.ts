@@ -8,7 +8,18 @@
 import { useSyncExternalStore } from "react";
 import { session } from "./session.js";
 import type { Transport } from "@meshnet/meshcore";
-import { autoConnectWanted, connectorById, lastLink, needsPairing, rememberLink, type Connector, type FoundDevice, type RememberedLink } from "../transports/index.js";
+import {
+  autoConnectWanted,
+  bluetoothOff,
+  connectorById,
+  lastLink,
+  needsPairing,
+  rememberLink,
+  type Connector,
+  type FoundDevice,
+  type ReachOptions,
+  type RememberedLink,
+} from "../transports/index.js";
 import { t } from "../i18n/index.js";
 import { errorText } from "../i18n/errors.js";
 import { onRelayUp } from "./relay.js";
@@ -26,6 +37,8 @@ export interface LinkState {
   pair: boolean;
   /** A dropped link waits for its next try; `reconnectNow` brings it forward. */
   waiting: boolean;
+  /** The last try found Bluetooth off. A try by hand asks to turn it on, where the phone lets the app ask. */
+  bluetoothOff: boolean;
   /** The radio asked for, from the first try until a disconnect or a cancel; `device` is null for a chooser. */
   target: { connectorId: string; device: FoundDevice | null } | null;
   /**
@@ -36,7 +49,18 @@ export interface LinkState {
   dropped: boolean;
 }
 
-let state: LinkState = { phase: "idle", error: null, retrying: false, attempt: 0, unpaired: false, pair: false, waiting: false, target: null, dropped: false };
+let state: LinkState = {
+  phase: "idle",
+  error: null,
+  retrying: false,
+  attempt: 0,
+  unpaired: false,
+  pair: false,
+  waiting: false,
+  bluetoothOff: false,
+  target: null,
+  dropped: false,
+};
 const listeners = new Set<() => void>();
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let wantedLink: { connector: Connector; device: FoundDevice | null } | null = null;
@@ -44,7 +68,7 @@ let wantedLink: { connector: Connector; device: FoundDevice | null } | null = nu
 let generation = 0;
 
 function set(patch: Partial<LinkState>): void {
-  state = { ...state, unpaired: false, pair: false, waiting: false, ...patch };
+  state = { ...state, unpaired: false, pair: false, waiting: false, bluetoothOff: false, ...patch };
   for (const listener of listeners) listener();
 }
 
@@ -86,8 +110,8 @@ function withTimeout<T>(promise: Promise<T>, what: string): Promise<T> {
  * up, or after another radio was picked, is closed rather than left holding
  * a radio nobody reads (and, on a phone, reconnected to at the next drop).
  */
-async function open(connector: Connector, device: FoundDevice | null, gen: number): Promise<Transport | null> {
-  const opening = connector.connect(device);
+async function open(connector: Connector, device: FoundDevice | null, gen: number, options: ReachOptions): Promise<Transport | null> {
+  const opening = connector.connect(device, options);
   let transport: Transport;
   try {
     transport = await withTimeout(opening, device ? device.name : connector.title);
@@ -118,7 +142,8 @@ async function reach(connector: Connector, device: FoundDevice | null, dropped: 
     set({ phase: "connecting", error: null, retrying: false, attempt: tries > 1 ? attempt : 0, target: { connectorId: connector.id, device }, dropped });
     let usable = false;
     try {
-      const transport = await open(connector, device, gen);
+      // Asked for by hand, or at launch: the phone may ask to turn Bluetooth on.
+      const transport = await open(connector, device, gen, { mayAsk: attempt === 1 });
       if (!transport) return;
       // Connected once the link is usable; the radio's contacts and channels are read after.
       await session.connect(transport, () => {
@@ -137,15 +162,17 @@ async function reach(connector: Connector, device: FoundDevice | null, dropped: 
       // Given up for another radio or a disconnect: its failure is no news. One
       // after the link was usable closed it, and is retried as a drop.
       if (gen !== generation || usable) return;
-      if (attempt < tries && !needsPairing(error)) continue;
+      // Bluetooth left off is not turned on by trying again, and each try would ask once more.
+      const off = bluetoothOff(error);
+      if (attempt < tries && !needsPairing(error) && !off) continue;
       const message = errorText(error);
       if (dropped && tries > 1 && !needsPairing(error)) {
         // A link got back behind its chats is tried for as long as it takes, as after a drop.
         set({ error: message, attempt: 0 });
-        scheduleRetry();
+        scheduleRetry(off);
         return;
       }
-      set({ phase: "failed", error: message, attempt: 0, unpaired: needsPairing(error), pair: canPair(connector, device, error) });
+      set({ phase: "failed", error: message, attempt: 0, unpaired: needsPairing(error), pair: canPair(connector, device, error), bluetoothOff: off });
       throw error;
     }
   }
@@ -232,23 +259,32 @@ session.subscribe(() => {
 
 /** The longest pause between two tries. */
 const RETRY_MAX_MS = 30_000;
+/**
+ * How soon a link that found Bluetooth off looks again. The look costs next to
+ * nothing, and Bluetooth turned on from the phone's quick settings leaves the
+ * app on screen, with nothing to bring the next try forward.
+ */
+const OFF_RETRY_MS = 2_000;
 
-function scheduleRetry(): void {
-  const attempt = state.attempt + 1;
-  const delay = Math.min(RETRY_MAX_MS, 1000 * 2 ** (attempt - 1));
+/** `off`: the last try found Bluetooth off, which is not counted as a try. */
+function scheduleRetry(off = false): void {
+  const attempt = off ? 0 : state.attempt + 1;
+  const delay = off ? OFF_RETRY_MS : Math.min(RETRY_MAX_MS, 1000 * 2 ** (attempt - 1));
   const gen = generation;
-  set({ phase: "connecting", retrying: true, attempt, error: null, waiting: true, dropped: true });
-  retryTimer = setTimeout(() => void retry(gen), delay);
+  set({ phase: "connecting", retrying: true, attempt, error: null, waiting: true, dropped: true, bluetoothOff: off });
+  retryTimer = setTimeout(() => void retry(gen, false), delay);
 }
 
-async function retry(gen: number): Promise<void> {
+/** `mayAsk`: this try was asked for by hand, and may ask to turn Bluetooth on. */
+async function retry(gen: number, mayAsk: boolean): Promise<void> {
   retryTimer = null;
   const link = wantedLink;
   if (!link || gen !== generation) return;
-  set({ waiting: false });
+  // Still off until the try finds otherwise, or the line would blink at every look.
+  set({ waiting: false, bluetoothOff: state.bluetoothOff });
   let usable = false;
   try {
-    const transport = await open(link.connector, link.device, gen);
+    const transport = await open(link.connector, link.device, gen, { mayAsk });
     if (!transport) return;
     await session.connect(transport, () => {
       if (gen !== generation) return;
@@ -265,32 +301,40 @@ async function retry(gen: number): Promise<void> {
       return;
     }
     set({ error: message });
-    scheduleRetry();
+    scheduleRetry(bluetoothOff(error));
   }
 }
 
 /**
  * Tries the dropped link at once: the next try, brought forward, or the link
- * that failed, again. A try already under way is left to finish.
+ * that failed, again. A try already under way is left to finish. Asked for
+ * by hand, it may ask to turn Bluetooth on.
  */
 export function reconnectNow(): void {
   if (retryTimer) {
     clearTimeout(retryTimer);
-    void retry(generation);
+    void retry(generation, true);
   } else if (state.phase === "failed" && wantedLink) {
     void reach(wantedLink.connector, wantedLink.device, state.dropped).catch(() => undefined);
   }
 }
 
+/** The next try, brought forward by the app rather than by hand: it leaves Bluetooth as it is. */
+function tryNow(): void {
+  if (!retryTimer) return;
+  clearTimeout(retryTimer);
+  void retry(generation, false);
+}
+
 // Back on screen (the window out of the tray, a phone unlocked), the next try goes at once.
 if (typeof document !== "undefined") {
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && retryTimer) reconnectNow();
+    if (document.visibilityState === "visible") tryNow();
   });
   // So it does when the phone's own link to the radio comes back by itself: the
   // try finds it up and takes it over, rather than waiting out its pause.
   onRelayUp((radio) => {
-    if (retryTimer && wantedLink?.device?.id.toUpperCase() === radio.toUpperCase()) reconnectNow();
+    if (wantedLink?.device?.id.toUpperCase() === radio.toUpperCase()) tryNow();
   });
 }
 

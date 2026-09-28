@@ -81,7 +81,15 @@ function Offline() {
   if (state.status === "ready") return null;
   return (
     <div className="offline" role="status">
-      {link.phase === "connecting" ? (
+      {link.phase === "connecting" && link.bluetoothOff ? (
+        <>
+          {/* Looked at again every couple of seconds; Try now may ask the phone to turn it on. */}
+          <span className="offline-text">{t("connect.error.bluetoothOff")}</span>
+          <Button size="sm" onClick={reconnectNow}>
+            {t("connect.status.tryNow")}
+          </Button>
+        </>
+      ) : link.phase === "connecting" ? (
         <>
           <span className="spinner" />
           <span className="offline-text">{link.attempt ? t("connect.status.reconnectingAttempt", { attempt: link.attempt }) : t("connect.status.reconnecting")}</span>

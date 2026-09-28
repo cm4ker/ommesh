@@ -5,7 +5,7 @@
  */
 
 import { BaseTransport, BLE } from "@meshnet/meshcore";
-import { NeedsPairingError, type Connector, type FoundDevice } from "./types.js";
+import { BluetoothOffError, NeedsPairingError, type Connector, type FoundDevice, type ReachOptions } from "./types.js";
 import { nativePlatform } from "../lib/platform.js";
 import { openRelay, relayComesUp, relayHolds, type RelayLink } from "../lib/relay.js";
 import { readSetting, writeSetting } from "../lib/storage.js";
@@ -24,6 +24,30 @@ async function ble(): Promise<BleModule["BleClient"]> {
     initialised = true;
   }
   return mod.BleClient;
+}
+
+/** The phone's prompt to turn Bluetooth on while it is up, to its answer: whether it was turned on. */
+let asking: Promise<boolean> | null = null;
+
+/**
+ * With Bluetooth off a search stays empty and a connect waits out its time,
+ * and neither says why. Android asks to turn it on with its own prompt; iOS
+ * puts its own up by itself the first time the app reaches for Bluetooth,
+ * so there it is only said.
+ */
+async function switchedOn(client: BleModule["BleClient"], options: ReachOptions | undefined): Promise<void> {
+  if (await client.isEnabled().catch(() => true)) return;
+  if (options?.mayAsk && nativePlatform() === "android") {
+    // Resolves once Bluetooth is on; turned down, it rejects.
+    asking ??= client
+      .requestEnable()
+      .then(() => true, () => false)
+      .finally(() => (asking = null));
+  }
+  // A search and a connect that both find it off while the prompt is up take its one answer.
+  const answer = asking;
+  if (answer && (await answer)) return;
+  throw new BluetoothOffError(t("connect.error.bluetoothOff"));
 }
 
 class CapacitorBleTransport extends BaseTransport {
@@ -148,8 +172,9 @@ export const capacitorBleConnector: Connector = {
   },
   mode: "scan",
 
-  async scan(onFound, signal) {
+  async scan(onFound, signal, options) {
     const client = await ble();
+    await switchedOn(client, options);
     const seen = new Map<string, FoundDevice>();
     // A radio already connected to this phone, by another app or by the
     // system, stops advertising, and iOS leaves it out of every scan. iOS
@@ -202,7 +227,7 @@ export const capacitorBleConnector: Connector = {
     return known();
   },
 
-  async connect(device) {
+  async connect(device, options) {
     if (!device) throw new Error(t("connect.error.pickRadio"));
     // A page made anew while the phone kept its link (Android lets a page go
     // for memory; the link and its service stay) takes the link over as it is:
@@ -216,6 +241,7 @@ export const capacitorBleConnector: Connector = {
     let transport: CapacitorBleTransport | null = null;
     const reaching = (async () => {
       const client = await ble();
+      await switchedOn(client, options);
       // iOS connects only to a peripheral the plugin has met since launch. A
       // remembered radio, or the one "Reconnect at launch" reaches for, is met
       // by asking the system for it by id.

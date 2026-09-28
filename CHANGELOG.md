@@ -8,6 +8,7 @@
 - A repeater's Neighbours page fits a phone: one row per neighbour, with its name, key and when it was heard on the left and its SNR over a bar on the right, in place of a table whose last column was cut off. What the bar spans is in the note under the list, and on a phone the order buttons have a line of their own.
 - On a node's Access page, a phone puts each client's role and Remove under its name, and the role is no longer cut short.
 - In the Neighbours and Who hears me sheets, when a node was heard and how far away it is wrap under its name instead of ending in "…".
+- On a repeater's Neighbours page an admin can have the repeater look for its neighbours. Find neighbours has it call the repeaters it hears on the air, waits the few seconds they take to answer and reads the list again, newest first. A line above the list counts down while they answer, then says how many answered and how many of them are new; the new ones are lit for a moment and marked "new".
 
 ### Settings
 - On a phone the log puts each entry's time and kind above its text, so the text has the whole width.

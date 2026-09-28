@@ -6370,6 +6370,15 @@ button.hop {
 .memory-strip.busy {
   background: var(--panel);
 }
+.memory-strip.news {
+  background: var(--accent-subtle);
+}
+/* The cross closes the strip without making it taller than its line. */
+.memory-strip .strip-close {
+  width: 28px;
+  height: 28px;
+  margin: -4px -6px -4px 0;
+}
 .memory-strip .grow {
   flex: 1;
   min-width: 0;

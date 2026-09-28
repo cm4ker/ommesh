@@ -18,6 +18,7 @@ import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
 import { BellOffIcon, CheckIcon, ChevronDownIcon, HashIcon, PersonIcon, PlusIcon, SortIcon, StarFilledIcon, TrashIcon } from "./Icons.js";
 import { marked } from "./Marked.js";
+import { NewBuildStrip } from "./NewBuild.js";
 import { NewChat } from "./NewChat.js";
 import { t } from "../i18n/index.js";
 
@@ -81,6 +82,7 @@ export function ChatList({ selected }: { selected: string | null }) {
         enterKeyHint="search"
         data-find
       />
+      <NewBuildStrip />
       {rows.length === 0 ? (
         <div className="empty muted">{t("chats.list.empty")}</div>
       ) : q ? (

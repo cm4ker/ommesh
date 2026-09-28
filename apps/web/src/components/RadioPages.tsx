@@ -36,6 +36,7 @@ import { ScreenHead, type Chrome } from "./ScreenHead.js";
 import { UpdateButton } from "./Updates.js";
 import { useDesktopUpdateInfo } from "../lib/updates.js";
 import { PrivacyButton } from "./Privacy.js";
+import { NewBuildRow } from "./NewBuild.js";
 import { getLanguagePreference, languageName, languages, setLanguagePreference, subscribeLanguage, systemLanguage, t, type Key } from "../i18n/index.js";
 import { errorText } from "../i18n/errors.js";
 
@@ -816,6 +817,7 @@ function AboutPage() {
   return <>
     <Group note={t("radio.about.note")}>
       <InfoRow label="Ommesh" icon={<img src="./icon.svg" alt="" width={24} height={24} />}>{info.version}</InfoRow>
+      <NewBuildRow />
       <InfoRow label={t("radio.about.runningIn")}>{shell() === "tauri" ? t("radio.about.desktop") : shell() === "capacitor" ? t("radio.about.phone") : t("radio.about.browser")}</InfoRow>
       <PrivacyButton row />
     </Group>

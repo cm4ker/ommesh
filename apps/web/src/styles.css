@@ -4608,14 +4608,60 @@ button.hop {
   inset: 0;
   background: var(--panel);
   font: inherit;
+  /* A long press opens the spot's menu, not the system's callout or a selection. */
+  -webkit-touch-callout: none;
+  user-select: none;
 }
-.map-view .map .leaflet-control-attribution {
+/* Over the tiles: the overlay's lines and a survey's points, then the nodes' canvas, then the markers. */
+.map-view .map-overlay,
+.map-view .map-nodes {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.map-view .map-overlay {
+  z-index: 1;
+}
+.map-view .map-nodes {
+  z-index: 2;
+}
+.map-view .maplibregl-marker {
+  z-index: 3;
+}
+/* The wide line nobody sees over one that opens something, for a finger to find. */
+.map-view .map-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 24;
+  stroke-linecap: round;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.map-attribution {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  padding: 0 5px;
+  border-bottom-right-radius: 4px;
   background: color-mix(in oklab, var(--bg) 80%, transparent);
   color: var(--text-faint);
   font-size: 10px;
+  line-height: 16px;
 }
-.map-view .leaflet-control-attribution a {
+.map-attribution a {
   color: var(--text-muted);
+}
+/* The compass's needle turns with the map, north at its filled half. */
+.map-needle {
+  display: grid;
+  place-items: center;
+}
+.map-needle svg {
+  color: var(--danger);
 }
 
 .map-controls {
@@ -4669,20 +4715,20 @@ button.hop {
 .mesh-phone .map-view {
   position: absolute;
   inset: 0;
-  /* Its own stacking context, so Leaflet's panes and controls stay under the sheet. */
+  /* Its own stacking context, so the map's layers and controls stay under the sheet. */
   z-index: 0;
 }
 .mesh-phone .map-controls {
   top: calc(var(--mesh-top) + var(--space-3));
 }
-.mesh-phone .leaflet-top {
+.mesh-phone .map-attribution {
   top: var(--mesh-top);
 }
 /* With the list all the way up the map is out of sight, and its credit would show cut in the gap above. */
-.mesh-phone .leaflet-control-attribution {
+.mesh-phone .map-attribution {
   transition: opacity 0.2s;
 }
-.mesh-phone[data-detent="full"] .leaflet-control-attribution {
+.mesh-phone[data-detent="full"] .map-attribution {
   opacity: 0;
 }
 /* The status bar's clock and battery, legible over a busy map. */
@@ -4809,7 +4855,7 @@ button.hop {
 
 /* The phone (#34): a hollow ring in the text's colour, apart from this radio's filled dot in every
    theme, over a circle of how sure the fix is. */
-.leaflet-marker-icon.map-phone {
+.maplibregl-marker.map-phone {
   overflow: visible;
 }
 .map-phone-ring {
@@ -4832,7 +4878,7 @@ button.hop {
   stroke-width: 1;
 }
 /* "Put the radio here", hanging under the phone's ring. */
-.leaflet-marker-icon.map-put {
+.maplibregl-marker.map-put {
   overflow: visible;
 }
 .map-put > span {
@@ -5888,7 +5934,10 @@ button.hop {
   stroke-width: 3;
   stroke-dasharray: 1.5 7;
 }
-.leaflet-marker-icon.map-flood {
+.map-flood {
+  position: absolute;
+  top: 0;
+  left: 0;
   pointer-events: none;
 }
 .map-flood i {
@@ -5926,7 +5975,7 @@ button.hop {
     transform: scale(1);
   }
 }
-.leaflet-marker-icon.map-leg-label {
+.maplibregl-marker.map-leg-label {
   display: grid;
   place-items: center;
   border-radius: 4px;
@@ -5934,7 +5983,7 @@ button.hop {
   color: #fff;
   font: 600 10px/1 var(--font-ui);
 }
-.leaflet-marker-icon.map-spot span {
+.maplibregl-marker.map-spot span {
   display: block;
   width: 16px;
   height: 16px;
@@ -5961,12 +6010,12 @@ button.hop {
 }
 
 /* Points of a route that drag onto another repeater: a ring round a relay, a dot in a leg's middle. */
-.leaflet-marker-icon.map-handle {
+.maplibregl-marker.map-handle {
   display: grid;
   place-items: center;
   cursor: grab;
 }
-.leaflet-marker-icon.map-handle.dragging {
+.maplibregl-marker.map-handle.dragging {
   cursor: grabbing;
 }
 .map-handle-hop span {
@@ -5998,7 +6047,7 @@ button.hop {
   stroke-width: 3;
   stroke-dasharray: 4 6;
 }
-.leaflet-marker-icon.map-snap span {
+.maplibregl-marker.map-snap span {
   display: block;
   width: 40px;
   height: 40px;

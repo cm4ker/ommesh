@@ -44,7 +44,7 @@ import { Avatar } from "./Avatar.js";
 import { AlertIcon, ChartIcon, CloseIcon, CopyIcon, LocationIcon, SlidersIcon, StarFilledIcon } from "./Icons.js";
 import { ToolPanel } from "./tools/ToolPanel.js";
 
-// Leaflet and its styles load with the map, not with the app.
+// MapLibre and its styles load with the map, not with the app.
 const MapView = lazy(() => import("./MapView.js"));
 
 type Kind = "all" | "yours" | "people" | "repeaters" | "rooms" | "sensors";

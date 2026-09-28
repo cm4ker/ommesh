@@ -87,6 +87,8 @@ export const SortIcon = icon('<path d="M4 7h16M7 12h10M10 17h4"/>');
 export const WavesIcon = icon(
   '<path d="M3 8.5c1.5-1.4 3-1.4 4.5 0s3 1.4 4.5 0 3-1.4 4.5 0 3 1.4 4.5 0"/><path d="M3 13c1.5-1.4 3-1.4 4.5 0s3 1.4 4.5 0 3-1.4 4.5 0 3 1.4 4.5 0"/><path d="M3 17.5c1.5-1.4 3-1.4 4.5 0s3 1.4 4.5 0 3-1.4 4.5 0 3 1.4 4.5 0"/>',
 );
+/** North on a turned map: the needle's north half filled. */
+export const CompassIcon = icon('<path d="M12 3l4 9h-8z" fill="currentColor"/><path d="M8 12l4 9 4-9"/>');
 /** A coverage survey: a drive with a point every so often. */
 export const SurveyIcon = icon('<path d="M4 18.5c3.5 0 4-5 8-5s4.5-5 8-5"/><circle cx="4" cy="18.5" r="1.6"/><circle cx="12" cy="13.5" r="1.6"/><circle cx="20" cy="8.5" r="1.6"/>');
 /** A file handed on: to the share sheet, or downloaded. */

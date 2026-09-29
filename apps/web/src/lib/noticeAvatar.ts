@@ -108,7 +108,8 @@ async function draw(face: Face, round: boolean): Promise<string | null> {
 
 /** A node kind's glyph, stroked in the ink colour at 55% of the circle, as `Avatar` sizes it. */
 function drawGlyph(g: CanvasRenderingContext2D, markup: string, ink: string): Promise<void> {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${ink}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${markup}</svg>`;
+  // `color` as well as `stroke`: a glyph's filled parts take `currentColor`, which an SVG drawn as an image would leave black.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" color="${ink}" fill="none" stroke="${ink}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${markup}</svg>`;
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.onload = () => {

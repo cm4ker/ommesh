@@ -4,6 +4,8 @@
  * notification's circle from the same markup on a canvas.
  */
 
-export const REPEATER_GLYPH = '<path d="M12 21V9"/><path d="M8 9h8l-1-5H9z"/><path d="M6 14a8 8 0 0 1 0-6M18 14a8 8 0 0 0 0-6"/>';
+/** A tower on two legs with waves around its top: it stands in one place and passes everything on. The air mark is a mast on one pole, so the legs keep the two apart. */
+export const REPEATER_GLYPH =
+  '<circle cx="12" cy="8" r="1.5" fill="currentColor"/><path d="M8.5 21L12 10.5 15.5 21"/><path d="M9.2 5.2a4 4 0 0 0 0 5.6M14.8 5.2a4 4 0 0 1 0 5.6"/><path d="M6.7 2.7a7.5 7.5 0 0 0 0 10.6M17.3 2.7a7.5 7.5 0 0 1 0 10.6"/>';
 export const ROOM_GLYPH = '<path d="M4 20V8l8-5 8 5v12z"/><path d="M10 20v-6h4v6"/>';
 export const SENSOR_GLYPH = '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>';

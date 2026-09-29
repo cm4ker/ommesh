@@ -6,6 +6,7 @@
 
 ### Updates
 - An Android phone on a Dev build from GitHub hears of newer ones. A strip over the chats says "A newer build is out" with its version and Download, which opens the newest APK in the phone's browser. The cross hides the strip for a day. About has the newest build too. The app checks when it opens and when it comes back on screen, at most every six hours. Builds from Google Play keep updating through Play.
+- On a PC, Download update reads the feed again first and downloads the newest build. An update found hours before used to fail with "404 Not Found" once newer Dev builds had replaced it, until the app was restarted. An update already found is looked for again every six hours too, so the version on show stays the newest.
 
 ### Connecting
 - With Bluetooth off, Android puts up its own prompt to turn it on: at launch, when the connect screen starts its search, and when a radio is picked. Turned down, the search and the line at the top say "Bluetooth is off" instead of finding nothing or trying for a long time; Try now asks again, and the radio is back a moment after Bluetooth is turned on. An iPhone says "Bluetooth is off" too.

@@ -31,12 +31,16 @@ export function PasswordInput(props: Omit<InputHTMLAttributes<HTMLInputElement>,
   );
 }
 
-/** A search field: the magnifier, what is typed, and once something is, a cross that empties it (#44). */
-export function SearchField({ value, onValue, ref, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> & { value: string; onValue: (next: string) => void; ref?: Ref<HTMLInputElement> | undefined }) {
+/**
+ * A search field: the magnifier, what is typed, and once something is, a cross that empties it (#44). A note, such
+ * as how many the list shows, sits at its end, before the cross.
+ */
+export function SearchField({ value, onValue, note, ref, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> & { value: string; onValue: (next: string) => void; note?: ReactNode; ref?: Ref<HTMLInputElement> | undefined }) {
   return (
     <label className="search">
       <SearchIcon size={15} />
       <input ref={ref} value={value} onChange={(e) => onValue(e.target.value)} {...rest} />
+      {note}
       {value ? (
         // Pressing it keeps the focus, and a phone's keyboard, where it was.
         <button type="button" className="search-clear" aria-label={t("common.clear")} title={t("common.clear")} onMouseDown={(e) => e.preventDefault()} onClick={() => onValue("")}>

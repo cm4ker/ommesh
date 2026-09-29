@@ -24,6 +24,7 @@
   "list.emptyYours": "Repeaters, rooms and sensors you sign in to gather here.",
   "list.noMatch": "Nothing matches.",
   "list.count": { "one": "{count} node", "other": "{count} nodes" },
+  "list.shown": "{shown} of {count}",
   "list.unplaced": { "one": "{count} without position", "other": "{count} without position" },
   "list.yours": "Yours",
   "list.favourites": "Favourites",

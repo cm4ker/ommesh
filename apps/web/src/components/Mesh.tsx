@@ -259,8 +259,23 @@ function ActiveFilters({ self }: { self: SessionState["self"] }) {
 function MeshSearch() {
   const { query } = useFilter();
   return (
-    <SearchField value={query} onValue={(next) => setFilter({ query: next })} placeholder={t("mesh.find")} aria-label={t("mesh.find")} data-find />
+    <SearchField value={query} onValue={(next) => setFilter({ query: next })} note={<MeshCount />} placeholder={t("mesh.find")} aria-label={t("mesh.find")} data-find />
   );
+}
+
+/**
+ * At the end of the search field, how many nodes there are (#60): "68 nodes", or "15 of 68" in the accent while
+ * a kind or a search hides some. The order hides none, so it never makes it "of".
+ */
+function MeshCount() {
+  const state = useSession();
+  const saved = useSavedPasswords();
+  const { kind, query } = useFilter();
+  const all = Object.values(state.contacts);
+  if (all.length === 0) return null;
+  if (kind === "all" && !query.trim()) return <span className="search-note">{t("mesh.list.count", { count: all.length })}</span>;
+  const shown = all.filter(matcher(state, saved, kind, query)).length;
+  return <span className="search-note cut">{t("mesh.list.shown", { shown, count: all.length })}</span>;
 }
 
 function MeshListBody({ selected, onOpen, hideSearch = false, only }: { selected: string | null; onOpen: (key: string) => void; hideSearch?: boolean | undefined; only?: string[] | undefined }) {
@@ -1014,7 +1029,7 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
 function MeshSearchInline({ onFocus }: { onFocus: () => void }) {
   const { query } = useFilter();
   return (
-    <SearchField value={query} onFocus={onFocus} onValue={(next) => setFilter({ query: next })} placeholder={t("mesh.find")} aria-label={t("mesh.find")} enterKeyHint="search" />
+    <SearchField value={query} onFocus={onFocus} onValue={(next) => setFilter({ query: next })} note={<MeshCount />} placeholder={t("mesh.find")} aria-label={t("mesh.find")} enterKeyHint="search" />
   );
 }
 

@@ -24,6 +24,7 @@
   "list.emptyYours": "Здесь собираются репитеры, комнаты и датчики, в которые вы входите.",
   "list.noMatch": "Ничего не найдено.",
   "list.count": { "one": "{count} узел", "few": "{count} узла", "many": "{count} узлов", "other": "{count} узла" },
+  "list.shown": "{shown} из {count}",
   "list.unplaced": { "one": "{count} без местоположения", "few": "{count} без местоположения", "many": "{count} без местоположения", "other": "{count} без местоположения" },
   "list.yours": "Ваши",
   "list.favourites": "Избранные",

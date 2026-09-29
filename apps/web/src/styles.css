@@ -1474,6 +1474,17 @@ textarea.input {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+/* What a search field says at its end, such as how many nodes the list shows; in the accent while some are hidden. */
+.search-note {
+  flex: none;
+  font-size: var(--text-sm);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.search-note.cut {
+  color: var(--accent);
+}
 /* A word a search found (#42), in a result or in a message. */
 mark {
   border-radius: 3px;
@@ -4833,8 +4844,10 @@ button.hop {
   gap: var(--space-1);
   padding: 0 var(--space-2) var(--space-2) var(--space-3);
 }
+/* It gives way to the filter button: at a large text size the count at its end would push the button off the sheet. */
 .mesh-sheet-tools .search {
   flex: 1;
+  min-width: 0;
   margin: 0;
 }
 .mesh-sheet-body {
@@ -5768,6 +5781,7 @@ button.hop {
 }
 .mesh-search-row .search {
   flex: 1;
+  min-width: 0;
   margin: 0;
 }
 .filter-btn {

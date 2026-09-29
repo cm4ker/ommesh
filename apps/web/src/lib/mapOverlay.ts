@@ -8,13 +8,13 @@
 import { AdvType, contactRoute, type ContactRecord, type SessionState } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
 import { candidatesOfHash } from "./echoes.js";
-import { hasPosition } from "./geo.js";
+import { formatRoundDistance, hasPosition } from "./geo.js";
 import { legId } from "./legVerdicts.js";
 import type { Discovery } from "./discovery.js";
 import type { Hears } from "./hears.js";
 import { quality } from "./los.js";
 import type { LosEnd, MeshTool, NeighboursTool } from "./meshTool.js";
-import { neighbourRows } from "./neighbours.js";
+import { neighbourRows, passes } from "./neighbours.js";
 import { legSnr, measuredLegs, type Ping } from "./ping.js";
 import { replyScore, type Survey } from "./surveyData.js";
 
@@ -61,6 +61,16 @@ export interface MapOverlay {
   handles: MapHandle[];
   /** Where a flood is going out from, drawn as rings spreading from it. */
   pulse: { lat: number; lon: number } | null;
+  /** How far a filter by distance reaches from a node, drawn as circles round it. */
+  rings?: MapRing[];
+}
+
+/** A circle `km` round a point, with the distance written on it. */
+export interface MapRing {
+  lat: number;
+  lon: number;
+  km: number;
+  label: string;
 }
 
 /** A survey's point on the map, by its colour; "off" is one where the repeater picked did not answer. */
@@ -323,7 +333,8 @@ export function surveyOverlay(survey: Survey | null, point: number | null, state
 /**
  * A line from a repeater to each neighbour on the map, coloured by how well
  * the repeater hears it, faint for one heard long ago. With a link open, the
- * rest step back and it goes over them, marching while it is checked.
+ * rest step back and it goes over them, marching while it is checked. Those
+ * the filter hides are left out, and a filter by distance draws its ends.
  */
 export function neighboursOverlay(tool: NeighboursTool, state: SessionState, checking: boolean, now = Date.now()): MapOverlay {
   const hub = state.contacts[tool.key];
@@ -333,7 +344,7 @@ export function neighboursOverlay(tool: NeighboursTool, state: SessionState, che
   let open: OverlayLine | null = null;
   for (const n of neighbourRows(state, tool.key, now)) {
     const to = n.contact && n.placed ? contactEnd(n.contact) : null;
-    if (!to) continue;
+    if (!to || !passes(n, tool.filter)) continue;
     if (tool.link === n.contact!.key) {
       open = { from, to, tone: checking ? "flight" : quality(n.snr), tappable: true, mark: "on" };
       continue;
@@ -341,5 +352,8 @@ export function neighboursOverlay(tool: NeighboursTool, state: SessionState, che
     const dim = tool.link !== null;
     lines.push({ from, to, tone: quality(n.snr), tappable: true, mark: n.stale ? (dim ? "stale dim" : "stale") : dim ? "dim" : undefined });
   }
-  return { ...EMPTY_OVERLAY, lines: open ? [...lines, open] : lines };
+  const f = tool.filter;
+  const reach = f ? [...(f.fromKm > 0 ? [f.fromKm] : []), ...(f.toKm !== null ? [f.toKm] : [])] : [];
+  const rings = reach.map((km) => ({ lat: from.lat, lon: from.lon, km, label: formatRoundDistance(km) }));
+  return { ...EMPTY_OVERLAY, lines: open ? [...lines, open] : lines, ...(rings.length ? { rings } : {}) };
 }

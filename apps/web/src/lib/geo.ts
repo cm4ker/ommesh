@@ -43,6 +43,16 @@ export function bearingDeg(lat1: number, lon1: number, lat2: number, lon2: numbe
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
+/** The point `km` away from a place along a bearing, degrees clockwise from north. */
+export function destination(lat: number, lon: number, km: number, bearing: number): { lat: number; lon: number } {
+  const d = km / EARTH_KM;
+  const b = rad(bearing);
+  const la = rad(lat);
+  const to = Math.asin(Math.sin(la) * Math.cos(d) + Math.cos(la) * Math.sin(d) * Math.cos(b));
+  const lo = rad(lon) + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(la), Math.cos(d) - Math.sin(la) * Math.sin(to));
+  return { lat: (to * 180) / Math.PI, lon: ((((lo * 180) / Math.PI + 540) % 360) - 180) };
+}
+
 const POINTS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"] as const;
 
 export function compass(deg: number): string {
@@ -52,6 +62,12 @@ export function compass(deg: number): string {
 export function formatDistance(km: number): string {
   if (km < 1) return t("common.meters", { value: Math.round(km * 1000) });
   return t("common.kilometers", { value: km < 100 ? km.toFixed(1) : Math.round(km) });
+}
+
+/** A distance picked on a slider, with no figure it was not picked to: 500 m, 2.5 km, 20 km. */
+export function formatRoundDistance(km: number): string {
+  if (km < 1) return t("common.meters", { value: Math.round(km * 1000) });
+  return t("common.kilometers", { value: km < 10 ? Math.round(km * 10) / 10 : Math.round(km) });
 }
 
 export type Freshness = "fresh" | "aging" | "stale";

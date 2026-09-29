@@ -11,7 +11,7 @@ import { askWhoHears } from "./hears.js";
 import { relayOf, selfEnd, type MapHandle } from "./mapOverlay.js";
 import { getMeshTool, setMeshTool, type LosEnd, type NeighboursTool, type RouteTool, type SurveyTool } from "./meshTool.js";
 import { fetchAllNeighbours } from "./neighbourFetch.js";
-import { neighbourRows } from "./neighbours.js";
+import { isFiltering, neighbourRows, passes, type NeighbourFilter } from "./neighbours.js";
 import { focusOnMap, getNav, goSection, setStack, showOnMap } from "./nav.js";
 import { clearPing, getPing, spanKey, stopPing } from "./ping.js";
 import { session } from "./session.js";
@@ -157,14 +157,28 @@ export function openNeighbours(key: string): void {
   void fetchAllNeighbours(key);
 }
 
-/** Another repeater's neighbours, from its link in the sheet; Back returns to that link. */
+/** Another repeater's neighbours, from its link in the sheet, sifted as the ones before; Back returns to that link. */
 export function openNeighboursOf(key: string): void {
   const tool = getMeshTool();
   if (tool?.kind !== "neighbours") return openNeighbours(key);
   if (tool.link) stopPing(spanKey(tool.key, tool.link));
   showOnMap(key);
-  setMeshTool({ kind: "neighbours", key, link: null, returnTo: null, prev: tool });
+  setMeshTool({ kind: "neighbours", key, link: null, returnTo: null, prev: tool, filter: tool.filter ?? null });
   void fetchAllNeighbours(key);
+}
+
+/** Which neighbours the map and the list show; a filter that lets everyone through is none. */
+export function setNeighbourFilter(filter: NeighbourFilter | null): void {
+  const tool = getMeshTool();
+  if (tool?.kind !== "neighbours") return;
+  setMeshTool({ ...tool, filter: isFiltering(filter) ? filter : null });
+}
+
+/** The repeater and the neighbours the filter leaves brought into view, as when a finger lets go of the distance. */
+export function fitNeighbours(): void {
+  const tool = getMeshTool();
+  if (tool?.kind !== "neighbours") return;
+  setMeshTool({ ...tool, refit: (tool.refit ?? 0) + 1 });
 }
 
 /** The link to one neighbour opened in the sheet, or put away with null. */
@@ -179,7 +193,7 @@ export function openNeighbourLink(link: string | null): void {
 export function tapInNeighbours(key: string | null, state: SessionState): boolean {
   const tool = getMeshTool();
   if (tool?.kind !== "neighbours") return false;
-  const neighbour = key !== null && key !== tool.key && neighbourRows(state, tool.key, Date.now()).some((n) => n.contact?.key === key);
+  const neighbour = key !== null && key !== tool.key && neighbourRows(state, tool.key, Date.now()).some((n) => n.contact?.key === key && passes(n, tool.filter));
   if (neighbour) openNeighbourLink(key);
   else if (tool.link) openNeighbourLink(null);
   return true;
@@ -242,8 +256,9 @@ export function closeTool(): void {
   if (tool?.kind === "neighbours") {
     if (tool.link) openNeighbourLink(null);
     else if (tool.prev) {
+      // Back from a neighbour's neighbours, the filter set there stays.
       showOnMap(tool.prev.key);
-      setMeshTool(tool.prev);
+      setMeshTool({ ...tool.prev, filter: tool.filter ?? null });
     } else leaveNeighbours(tool);
     return;
   }

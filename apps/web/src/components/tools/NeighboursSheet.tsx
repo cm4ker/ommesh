@@ -1,6 +1,7 @@
 /**
  * A repeater's neighbours over the map: how many it hears and how well, the
- * list strongest first, and the rest of it on its way. A neighbour tapped,
+ * list strongest first, and the rest of it on its way. A funnel narrows the
+ * map and the list by signal, distance and how lately heard. A neighbour tapped,
  * in the list or on the map, opens the link between the two: how each hears
  * the other, a check both ways from this radio, and the terrain between.
  * Back steps from the link to the list, and from the list to where it was
@@ -13,21 +14,22 @@ import { t } from "../../i18n/index.js";
 import { nameOfHash } from "../../lib/echoes.js";
 import { profileBetween } from "../../lib/elevation.js";
 import { agoPhrase } from "../../lib/format.js";
-import { bearingDeg, compass, distanceKm, formatDistance, hasPosition } from "../../lib/geo.js";
+import { bearingDeg, compass, distanceKm, formatDistance, formatRoundDistance } from "../../lib/geo.js";
 import { lineOfSight, quality, verdictWord, type LineOfSight, type LinkRadio, type Profile } from "../../lib/los.js";
 import { contactEnd } from "../../lib/mapOverlay.js";
 import type { LosEnd, NeighboursTool } from "../../lib/meshTool.js";
 import { openProfile } from "../../lib/nav.js";
 import { fetchAllNeighbours, useNeighbourFetch } from "../../lib/neighbourFetch.js";
-import { heardInList, isComplete, neighbourRows, PAGE, type NeighbourRow } from "../../lib/neighbours.js";
+import { heardInList, isComplete, isFiltering, kmTicks, kmToPlace, neighbourRows, NO_FILTER, PAGE, passes, placeToKm, scaleKm, withinDistance, type NeighbourFilter, type NeighbourRow } from "../../lib/neighbours.js";
 import { measuredLegs, ping, ROUNDS, spanKey, stopPing, usePing } from "../../lib/ping.js";
 import { useSession } from "../../lib/session.js";
 import { toast } from "../../lib/toast.js";
-import { closeAllTools, closeTool, openLineOfSight, openNeighbourLink, openNeighboursOf } from "../../lib/toolActions.js";
+import { closeAllTools, closeTool, fitNeighbours, openLineOfSight, openNeighbourLink, openNeighboursOf, setNeighbourFilter } from "../../lib/toolActions.js";
 import { Button, IconButton } from "../../ui/Button.js";
 import { Group, InfoRow, LinkRow } from "../../ui/List.js";
+import { MarkedSlider } from "../../ui/Slider.js";
 import { Avatar } from "../Avatar.js";
-import { AirIcon, BackIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, LockIcon, RefreshIcon } from "../Icons.js";
+import { AirIcon, BackIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, FilterIcon, LockIcon, RefreshIcon } from "../Icons.js";
 import { SignIn } from "../node/SignIn.js";
 import { antennaHeight } from "./LosView.js";
 import { chainEnds, CheckResult, QualityChip, SheetHead } from "./RouteSheet.js";
@@ -49,11 +51,15 @@ function NeighbourList({ tool }: { tool: NeighboursTool }) {
   const state = useSession();
   const fetch = useNeighbourFetch(tool.key);
   const [offOpen, setOffOpen] = useState(false);
+  const [sifting, setSifting] = useState(false);
   const hub = state.contacts[tool.key];
   const hubName = hub ? nameOf(hub) : t("tools.nb.theRepeater");
   const list = state.neighbours[tool.key];
   const now = Date.now();
-  const rows = neighbourRows(state, tool.key, now);
+  const all = neighbourRows(state, tool.key, now);
+  const filter = tool.filter ?? null;
+  const filtering = isFiltering(filter);
+  const rows = all.filter((r) => passes(r, filter));
   const placed = rows.filter((r) => r.placed);
   const off = rows.filter((r) => !r.placed);
   const online = state.status === "ready";
@@ -61,15 +67,23 @@ function NeighbourList({ tool }: { tool: NeighboursTool }) {
   const complete = isComplete(list);
   const counts = { good: 0, fair: 0, weak: 0 };
   for (const r of placed) counts[quality(r.snr)]++;
-  const away = (r: NeighbourRow) => (hub && r.contact && hasPosition(hub.lat, hub.lon) ? formatDistance(distanceKm(hub.lat, hub.lon, r.contact.lat, r.contact.lon)) : null);
+  const away = (r: NeighbourRow) => (r.km !== null ? formatDistance(r.km) : null);
 
   const sub = !list
     ? running
       ? t("tools.nb.asking", { name: hubName })
       : t("tools.nb.notAsked")
     : complete
-      ? t("tools.nb.subComplete", { total: list.total, placed: placed.length, time: agoPhrase(list.at, now) })
+      ? filtering
+        ? t("tools.nb.subFiltered", { total: list.total, shown: placed.length, placed: all.filter((r) => r.placed).length, time: agoPhrase(list.at, now) })
+        : t("tools.nb.subComplete", { total: list.total, placed: placed.length, time: agoPhrase(list.at, now) })
       : t("tools.nb.soFar", { count: list.neighbours.length, total: list.total });
+  const funnel = all.length ? (
+    <IconButton label={t("tools.nb.filter")} className={["nb-filter-button", sifting ? "on" : ""].join(" ")} aria-expanded={sifting} onClick={() => setSifting(!sifting)}>
+      <FilterIcon size={18} />
+      {filtering && !sifting ? <span className="nb-filter-dot" aria-hidden="true" /> : null}
+    </IconButton>
+  ) : null;
   const missing = list ? list.total - list.neighbours.length : 0;
 
   let progress: React.ReactNode = null;
@@ -115,7 +129,9 @@ function NeighbourList({ tool }: { tool: NeighboursTool }) {
   const pages = Math.max(1, Math.ceil((list?.total ?? PAGE) / PAGE));
   return (
     <div className="tool nb-sheet">
-      <SheetHead title={t("tools.nb.title", { name: hubName })} sub={sub} onBack={closeTool} />
+      <SheetHead title={t("tools.nb.title", { name: hubName })} sub={sub} onBack={closeTool} action={funnel} />
+      {sifting ? <FilterPanel hubName={hubName} rows={all} filter={filter ?? NO_FILTER} onDone={() => setSifting(false)} /> : filtering ? <FilterPills filter={filter!} onOpen={() => setSifting(true)} /> : null}
+      {filtering && all.length && !rows.length ? <p className="tool-note muted">{t("tools.nb.nobody")}</p> : null}
       {placed.length ? (
         <div className="nb-summary">
           <span><i className="good" />{t("tools.nb.good", { count: counts.good })}</span>
@@ -191,6 +207,121 @@ function NeighbourList({ tool }: { tool: NeighboursTool }) {
         <AirIcon size={13} />
         {t("tools.nb.cost", { count: pages, name: hubName, max: KEPT })}
       </div>
+    </div>
+  );
+}
+
+/** How well the repeater hears, from the bottom of the neighbours page's bars to their top, dB. */
+const SNR_LOW = -20;
+const SNR_HIGH = 15;
+const snrPlace = (snr: number) => (Math.min(SNR_HIGH, Math.max(SNR_LOW, snr)) - SNR_LOW) / (SNR_HIGH - SNR_LOW);
+/** In half-dB steps: the list counts in quarters, which a finger cannot pick. */
+const snrAt = (place: number) => Math.round((SNR_LOW + place * (SNR_HIGH - SNR_LOW)) * 2) / 2;
+const signed = (snr: number) => `${snr > 0 ? "+" : snr < 0 ? "−" : ""}${Math.abs(snr)}`;
+const dbText = (snr: number) => t("tools.unit.db", { value: signed(snr) });
+
+/** The distance a filter keeps, in words: from, up to, or between. */
+function reachText(f: NeighbourFilter): string {
+  if (f.fromKm > 0 && f.toKm !== null) return t("tools.nb.kmSpan", { from: formatRoundDistance(f.fromKm), to: formatRoundDistance(f.toKm) });
+  if (f.fromKm > 0) return t("tools.nb.kmFrom", { from: formatRoundDistance(f.fromKm) });
+  if (f.toKm !== null) return t("tools.nb.kmTo", { to: formatRoundDistance(f.toKm) });
+  return t("tools.nb.anyDistance");
+}
+
+function clearFilter(): void {
+  setNeighbourFilter(null);
+  fitNeighbours();
+}
+
+/**
+ * The filter, open under the sheet's head (#51): how well the repeater hears
+ * a neighbour at worst, how far from it, and whether those not heard for a
+ * day stay. Dots over each slider show where the neighbours are on it. The
+ * map changes as a thumb moves, and comes to what is left when the distance
+ * is let go.
+ */
+function FilterPanel({ hubName, rows, filter, onDone }: { hubName: string; rows: NeighbourRow[]; filter: NeighbourFilter; onDone: () => void }) {
+  const set = (patch: Partial<NeighbourFilter>) => setNeighbourFilter({ ...filter, ...patch });
+  const placed = rows.filter((r) => r.km !== null);
+  const max = scaleKm(placed);
+  const stale = rows.filter((r) => r.stale).length;
+  const snrText = filter.minSnr === null ? t("tools.nb.anySignal") : dbText(filter.minSnr);
+  const moveReach = ([a, b]: number[]) => {
+    const fromKm = a! <= 0 ? 0 : placeToKm(a!, max);
+    const toKm = b! >= 1 ? null : Math.max(0.1, placeToKm(b!, max));
+    // Rounded to what a finger can pick, the two ends could meet; the step that makes them is not taken.
+    if (toKm === null || fromKm < toKm) set({ fromKm, toKm });
+  };
+  return (
+    <div className="nb-filter">
+      <div className="nb-filter-head">
+        <span>{t("tools.nb.minSnr")}</span>
+        <b>{snrText}</b>
+      </div>
+      <MarkedSlider
+        values={[snrPlace(filter.minSnr ?? SNR_LOW)]}
+        onChange={([place]) => {
+          const snr = snrAt(place!);
+          set({ minSnr: snr <= SNR_LOW ? null : snr });
+        }}
+        marks={rows.map((r) => ({ at: snrPlace(r.snr), tone: quality(r.snr), out: filter.minSnr !== null && r.snr < filter.minSnr }))}
+        ticks={[snrPlace(-5), snrPlace(0)]}
+        scale={[SNR_LOW, -5, 0, SNR_HIGH].map((v) => ({ at: snrPlace(v), text: v === SNR_HIGH ? dbText(v) : signed(v) }))}
+        names={[t("tools.nb.minSnr")]}
+        texts={[snrText]}
+      />
+      {placed.length ? (
+        <>
+          <div className="nb-filter-head">
+            <span>{t("tools.nb.distance", { name: hubName })}</span>
+            <b>{reachText(filter)}</b>
+          </div>
+          <MarkedSlider
+            values={[kmToPlace(filter.fromKm, max), filter.toKm === null ? 1 : kmToPlace(filter.toKm, max)]}
+            onChange={moveReach}
+            onDone={fitNeighbours}
+            marks={placed.map((r) => ({ at: kmToPlace(r.km!, max), tone: quality(r.snr), out: !withinDistance(r, filter) }))}
+            scale={kmTicks(max).map((k) => ({ at: kmToPlace(k, max), text: k === max ? formatRoundDistance(k) : String(k) }))}
+            names={[t("tools.nb.noNearer"), t("tools.nb.noFarther")]}
+            texts={[formatRoundDistance(filter.fromKm), filter.toKm === null ? t("tools.nb.anyDistance") : formatRoundDistance(filter.toKm)]}
+          />
+        </>
+      ) : null}
+      {stale || filter.recent ? (
+        <button type="button" role="switch" aria-checked={filter.recent} className="nb-filter-switch" onClick={() => set({ recent: !filter.recent })}>
+          <span className="grow">
+            {t("tools.nb.hideStale")} <span className="muted">· {stale}</span>
+          </span>
+          <span className={["switch", filter.recent ? "on" : ""].join(" ")} aria-hidden="true" />
+        </button>
+      ) : null}
+      <div className="nb-filter-foot">
+        <Button size="sm" disabled={!isFiltering(filter)} onClick={clearFilter}>
+          {t("tools.nb.reset")}
+        </Button>
+        <Button size="sm" variant="primary" onClick={onDone}>
+          {t("common.done")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** A filter at work while its panel is shut: what it keeps, which opens the panel again, and a cross that shows them all. */
+function FilterPills({ filter, onOpen }: { filter: NeighbourFilter; onOpen: () => void }) {
+  const pills = [filter.minSnr !== null ? t("tools.nb.noWorse", { value: dbText(filter.minSnr) }) : null, filter.fromKm > 0 || filter.toKm !== null ? reachText(filter) : null, filter.recent ? t("tools.nb.recentOnly") : null].filter((p): p is string => p !== null);
+  return (
+    <div className="nb-filter-pills">
+      <button type="button" className="nb-filter-pill-row" onClick={onOpen}>
+        {pills.map((p) => (
+          <span key={p} className="nb-pill">
+            {p}
+          </span>
+        ))}
+      </button>
+      <IconButton label={t("tools.nb.clearFilter")} onClick={clearFilter}>
+        <CloseIcon size={14} />
+      </IconButton>
     </div>
   );
 }

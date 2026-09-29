@@ -1,9 +1,10 @@
 import { beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import type { ContactRecord, SessionState } from "@meshnet/meshcore";
-import { getMeshTool, setMeshTool } from "./meshTool.js";
+import { getMeshTool, setMeshTool, type NeighboursTool } from "./meshTool.js";
 import { getNav, goSection, push, setStack } from "./nav.js";
-import { closeAllTools, closeTool, openLineOfSight, openNeighbourLink, openNeighbours, openNeighboursOf, tapInNeighbours } from "./toolActions.js";
+import { NO_FILTER } from "./neighbours.js";
+import { closeAllTools, closeTool, openLineOfSight, openNeighbourLink, openNeighbours, openNeighboursOf, setNeighbourFilter, tapInNeighbours } from "./toolActions.js";
 
 const HILL = "aa".repeat(32);
 const TOWER = "bb".repeat(32);
@@ -94,6 +95,35 @@ test("a line of sight opened from a link goes back to the link", () => {
   const tool = getMeshTool();
   assert.equal(tool?.kind === "neighbours" && tool.link, TOWER);
   assert.equal(getNav().meshFocus, HILL);
+});
+
+test("the filter goes along to a neighbour's neighbours and back, and closing the map drops it", () => {
+  onNeighboursPage();
+  openNeighbours(HILL);
+  setNeighbourFilter({ ...NO_FILTER, minSnr: -5 });
+  openNeighbourLink(TOWER);
+  openNeighboursOf(TOWER);
+  const filterOf = () => (getMeshTool() as NeighboursTool).filter;
+  assert.equal(filterOf()?.minSnr, -5);
+  setNeighbourFilter({ ...NO_FILTER, toKm: 10 });
+  closeTool();
+  assert.equal((getMeshTool() as NeighboursTool).key, HILL);
+  assert.deepEqual(filterOf(), { ...NO_FILTER, toKm: 10 });
+  // A filter that lets everyone through is no filter.
+  setNeighbourFilter(NO_FILTER);
+  assert.equal(filterOf(), null);
+  setNeighbourFilter({ ...NO_FILTER, recent: true });
+  closeAllTools();
+  openNeighbours(HILL);
+  assert.equal(filterOf(), undefined);
+});
+
+test("a neighbour the filter hides does not open from the map", () => {
+  onNeighboursPage();
+  openNeighbours(HILL);
+  setNeighbourFilter({ ...NO_FILTER, minSnr: 5 });
+  tapInNeighbours(TOWER, state);
+  assert.equal((getMeshTool() as NeighboursTool).link, null);
 });
 
 test("on the map, a neighbour opens its link, and the empty map or anyone else puts it away", () => {

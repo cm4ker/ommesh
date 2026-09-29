@@ -83,6 +83,8 @@ export const ChevronDownIcon = icon('<path d="M7 10l5 5 5-5"/>');
 export const ChevronUpIcon = icon('<path d="M7 14l5-5 5 5"/>');
 /** The order of a list. */
 export const SortIcon = icon('<path d="M4 7h16M7 12h10M10 17h4"/>');
+/** A funnel: which of a list are shown. */
+export const FilterIcon = icon('<path d="M4 5h16l-6.2 7.4V18l-3.6 2v-7.6z"/>');
 /** A flood: messages that go everywhere rather than along a route. */
 export const WavesIcon = icon(
   '<path d="M3 8.5c1.5-1.4 3-1.4 4.5 0s3 1.4 4.5 0 3-1.4 4.5 0 3 1.4 4.5 0"/><path d="M3 13c1.5-1.4 3-1.4 4.5 0s3 1.4 4.5 0 3-1.4 4.5 0 3 1.4 4.5 0"/><path d="M3 17.5c1.5-1.4 3-1.4 4.5 0s3 1.4 4.5 0 3-1.4 4.5 0 3 1.4 4.5 0"/>',

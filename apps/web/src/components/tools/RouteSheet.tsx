@@ -307,7 +307,7 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
   );
 }
 
-export function SheetHead({ title, sub, onBack, onMore }: { title: string; sub: ReactNode; onBack: () => void; onMore?: () => void }) {
+export function SheetHead({ title, sub, onBack, onMore, action }: { title: string; sub: ReactNode; onBack: () => void; onMore?: () => void; action?: ReactNode }) {
   return (
     <div className="tool-head">
       <IconButton label={t("common.back")} onClick={onBack}>
@@ -317,6 +317,7 @@ export function SheetHead({ title, sub, onBack, onMore }: { title: string; sub: 
         <span className="row-title">{title}</span>
         <span className="row-sub muted">{sub}</span>
       </span>
+      {action}
       {onMore ? (
         <IconButton label={t("tools.route.settings")} onClick={onMore}>
           <MoreIcon size={18} />

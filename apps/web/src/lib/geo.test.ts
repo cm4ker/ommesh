@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AdvType } from "@meshnet/meshcore";
-import { bearingDeg, compass, distanceKm, formatDistance, formatLatLon, freshness, hasPosition, parseLatLon } from "./geo.js";
+import { bearingDeg, compass, destination, distanceKm, formatDistance, formatLatLon, formatRoundDistance, freshness, hasPosition, parseLatLon } from "./geo.js";
 
 test("0, 0 is no position, and so is anything off the globe", () => {
   assert.equal(hasPosition(0, 0), false);
@@ -21,6 +21,20 @@ test("short distances read in metres, long ones without decimals", () => {
   assert.equal(formatDistance(0.579), "579 m");
   assert.equal(formatDistance(6.44), "6.4 km");
   assert.equal(formatDistance(312.4), "312 km");
+});
+
+test("a distance picked on a slider keeps no figure it was not picked to", () => {
+  assert.equal(formatRoundDistance(0.5), "500 m");
+  assert.equal(formatRoundDistance(2.5), "2.5 km");
+  assert.equal(formatRoundDistance(5), "5 km");
+  assert.equal(formatRoundDistance(20), "20 km");
+});
+
+test("a point so far along a bearing is that far, in that direction", () => {
+  const p = destination(55.05, 73.4, 25, 60);
+  assert.ok(Math.abs(distanceKm(55.05, 73.4, p.lat, p.lon) - 25) < 0.01);
+  assert.ok(Math.abs(bearingDeg(55.05, 73.4, p.lat, p.lon) - 60) < 0.2);
+  assert.ok(Math.abs(destination(0, 179.9, 50, 90).lon + 179.65) < 0.01);
 });
 
 test("a repeater stays fresh for hours, a person for an hour", () => {

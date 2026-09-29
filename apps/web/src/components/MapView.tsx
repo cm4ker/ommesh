@@ -22,7 +22,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AdvType, type ContactRecord } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
-import { distanceKm, hasPosition } from "../lib/geo.js";
+import { destination, distanceKm, hasPosition } from "../lib/geo.js";
 import { EMPTY_OVERLAY, type MapDot, type MapHandle, type MapOverlay } from "../lib/mapOverlay.js";
 import type { LosEnd } from "../lib/meshTool.js";
 import { NodeCanvas, type LatLon } from "../lib/nodeCanvas.js";
@@ -663,6 +663,16 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
     lines.clearPaths();
     for (const marker of overlayMarkers.current) marker.remove();
     overlayMarkers.current = [];
+    // How far a filter reaches, under the lines it explains, with the distance written up and to the left, clear of the buttons.
+    for (const ring of overlay.rings ?? []) {
+      const round = Array.from({ length: 73 }, (_, i) => destination(ring.lat, ring.lon, ring.km, i * 5));
+      lines.path(round, "map-ring");
+      const el = document.createElement("div");
+      el.className = "map-ring-label";
+      el.textContent = ring.label;
+      const at = destination(ring.lat, ring.lon, ring.km, 315);
+      overlayMarkers.current.push(new Marker({ element: el }).setLngLat([at.lon, at.lat]).addTo(m));
+    }
     for (const line of overlay.lines) {
       const points = [
         { lat: line.from.lat, lon: line.from.lon },

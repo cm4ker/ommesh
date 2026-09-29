@@ -10,7 +10,7 @@ import { t, type Key } from "../i18n/index.js";
 import { useBackLayer } from "../lib/back.js";
 import { useBatteryTypes } from "../lib/batteryType.js";
 import { ago, batteryPercent, lowCharge, type BatteryType } from "../lib/format.js";
-import { bearingDeg, compass, distanceKm, formatDistance, formatLatLon, hasPosition } from "../lib/geo.js";
+import { bearingDeg, compass, destination, distanceKm, formatDistance, formatLatLon, hasPosition } from "../lib/geo.js";
 import { useHears } from "../lib/hears.js";
 import { legId, useLegVerdicts } from "../lib/legVerdicts.js";
 import type { LinkRadio } from "../lib/los.js";
@@ -32,7 +32,7 @@ import { openCleanUp } from "../lib/cleanUp.js";
 import { isYours, memoryTight, memoryUse } from "../lib/tidy.js";
 import { session, useSelector, useSession } from "../lib/session.js";
 import { act, toast } from "../lib/toast.js";
-import { isComplete, neighbourRows } from "../lib/neighbours.js";
+import { isComplete, neighbourRows, passes } from "../lib/neighbours.js";
 import { closeAllTools, closeTool, dropOnRoute, lineOfSightTo, openLineOfSight, openNeighbourLink, openSurvey, tapInNeighbours, tapInRoute, tapInSpan, whoHearsMe } from "../lib/toolActions.js";
 import { getTextScale, subscribeTextSize } from "../theme/textSize.js";
 import { IconButton } from "../ui/Button.js";
@@ -616,8 +616,8 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
   // The map redraws markers when the filter function changes, so it changes only with what it filters by.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const matches = useCallback(matcher(state, saved, kind, query), [state.logins, state.statusHistory, saved, kind, query]);
-  // A repeater's neighbours shown: only it and those it hears are drawn.
-  const linked = tool?.kind === "neighbours" ? [tool.key, ...neighbourRows(state, tool.key, Date.now()).flatMap((n) => (n.contact ? [n.contact.key] : []))].join(",") : null;
+  // A repeater's neighbours shown: only it and those it hears, as the filter leaves them, are drawn.
+  const linked = tool?.kind === "neighbours" ? [tool.key, ...neighbourRows(state, tool.key, Date.now()).flatMap((n) => (n.contact && passes(n, tool.filter) ? [n.contact.key] : []))].join(",") : null;
   const test = useMemo(() => {
     if (linked === null) return matches;
     const keys = new Set(linked.split(","));
@@ -654,20 +654,31 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
     const key = tool?.kind === "route" ? tool.key : selected;
     if (key) dropOnRoute(key, handle, onto);
   };
-  // A repeater's neighbours are brought into view together: once when they open, and again when the rest of the list is in.
+  // A repeater's neighbours are brought into view together: once when they open, again when the rest of the
+  // list is in, and when the filter asks, as a finger lets go of the distance. A signal slid does not move the map.
   const hub = tool?.kind === "neighbours" ? tool.key : null;
   const whole = hub ? isComplete(state.neighbours[hub]) : false;
+  const sift = tool?.kind === "neighbours" ? (tool.filter ?? null) : null;
+  const siftKey = JSON.stringify(sift);
+  const refit = tool?.kind === "neighbours" ? (tool.refit ?? 0) : 0;
   const fitPoints = useMemo(() => {
     if (!hub) return [];
     const c = state.contacts[hub];
     const points: [number, number][] = c && hasPosition(c.lat, c.lon) ? [[c.lat, c.lon]] : [];
-    for (const n of neighbourRows(state, hub, Date.now())) if (n.placed) points.push([n.contact!.lat, n.contact!.lon]);
+    for (const n of neighbourRows(state, hub, Date.now())) if (n.placed && passes(n, sift)) points.push([n.contact!.lat, n.contact!.lon]);
+    // Up to a distance, the whole ring of it comes into view: the ring says why the lines stop there.
+    if (c && hasPosition(c.lat, c.lon) && sift && sift.toKm !== null) {
+      for (const bearing of [0, 90, 180, 270]) {
+        const edge = destination(c.lat, c.lon, sift.toKm, bearing);
+        points.push([edge.lat, edge.lon]);
+      }
+    }
     return points;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hub, whole, hub ? state.neighbours[hub] : null]);
+  }, [hub, whole, hub ? state.neighbours[hub] : null, siftKey]);
   // A kept survey opened is brought into view whole, once.
   const surveyFit = useMemo(() => (survey && survey.endedAt !== null ? { id: `survey:${survey.id}`, points: survey.points.map((p) => [p.lat, p.lon] as [number, number]) } : null), [survey]);
-  const fit = hub ? { id: `${hub}:${whole ? "all" : "part"}`, points: fitPoints } : surveyFit;
+  const fit = hub ? { id: `${hub}:${whole ? "all" : "part"}:${refit}`, points: fitPoints } : surveyFit;
   const running = tool?.kind === "survey" && tool.view === "run" && surveying && tool.point === null;
   // A new list only when the last point or where its repeaters are changes, so the map is not fitted on every render.
   const followList = running ? followPoints(survey, state) : null;

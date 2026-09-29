@@ -65,6 +65,21 @@ TOWN.forEach(([first, name, lat, lon, route], i) => {
 const TOWN_HASHES = new Set(TOWN.map(([first]) => first));
 
 /**
+ * Repeaters Hill hears from well out of town, and one on the next roof, so
+ * its neighbours run from a few hundred metres to fifty km and a filter by
+ * distance has something to sort (#51). Nobody else hears them.
+ */
+const AFIELD: [number, string, number, number][] = [
+  [0x93, "Кормиловка", 55.0, 74.1],
+  [0xa4, "Azovo-R", 54.7, 73.03],
+  [0xb5, "Lyubino-1", 55.15, 72.7],
+  [0xc6, "Roof-2", 55.054, 73.407],
+];
+AFIELD.forEach(([first, name, lat, lon], i) => {
+  PEOPLE.push({ key: startingWith(first, 40 + i), name, type: 2, hops: 0xff, lat, lon, ago: 900 + i * 613 });
+});
+
+/**
  * Who hears whom in the town: `a>b` is how well b hears a, dB; "me" is this
  * radio. A pair not here does not hear each other at all.
  */
@@ -282,8 +297,8 @@ function through(snr: number): boolean {
 
 /**
  * The repeaters a demo repeater hears direct: prefix, seconds ago, SNR in
- * dB. Hill hears most of the town, one it lost days ago, and two it cannot
- * name; Tower and Ridge hear Hill back, so a link shows both ways; the
+ * dB. Hill hears most of the town, one it lost days ago, two it cannot
+ * name, and four out of town; Tower and Ridge hear Hill back, so a link shows both ways; the
  * town's repeaters hear whom `LINKS` says.
  */
 function neighboursOf(p: Person): [string, number, number][] {
@@ -304,6 +319,10 @@ function neighboursOf(p: Person): [string, number, number][] {
         [town(0xf1), 12720, 0.5],
         [town(0x37), 20400, 4.75],
         [town(0x45), 28800, -10.25],
+        [named("Кормиловка"), 5100, -9.75],
+        [named("Azovo-R"), 2600, 1.5],
+        [named("Lyubino-1"), 9800, -6.25],
+        [named("Roof-2"), 90, 10.5],
       ]),
       ["0d4c7bddeeff", 18300, -14],
       ["9aa3e1102030", 5400, 2.25],

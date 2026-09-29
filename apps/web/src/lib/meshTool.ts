@@ -9,6 +9,7 @@
 
 import { useSyncExternalStore } from "react";
 import type { Screen, Section } from "./nav.js";
+import type { NeighbourFilter } from "./neighbours.js";
 
 /** One end of a line of sight: a node, this radio, or a spot on the map. */
 export interface LosEnd {
@@ -82,7 +83,8 @@ export interface SpanTool {
  * the neighbour whose link is open in the sheet. `returnTo` is where it was
  * opened from, a section with its screens as they stood, put back when it
  * closes; `prev` is another repeater's neighbours, with the link it was
- * opened from, to go back to instead.
+ * opened from, to go back to instead. `filter` is which of them the map and
+ * the list show; `refit` counts the times what is left was asked into view.
  */
 export interface NeighboursTool {
   kind: "neighbours";
@@ -90,6 +92,8 @@ export interface NeighboursTool {
   link: string | null;
   returnTo: { section: Section; stack: Screen[]; focus: string | null } | null;
   prev: NeighboursTool | null;
+  filter?: NeighbourFilter | null;
+  refit?: number;
 }
 
 let tool: MeshTool | null = null;

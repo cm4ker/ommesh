@@ -5729,6 +5729,225 @@ button.hop {
 .nb-off-toggle .grow {
   flex: 1;
 }
+/* The funnel in the neighbours' head, with a dot while a filter is at work and its panel is shut. */
+.nb-filter-button {
+  position: relative;
+}
+.nb-filter-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--bg);
+  border-radius: 50%;
+  background: var(--accent);
+}
+.nb-filter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+}
+.nb-filter-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.nb-filter-head + .slider {
+  margin-bottom: var(--space-2);
+}
+.nb-filter-head b {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.nb-filter-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.nb-filter-switch .grow {
+  flex: 1;
+}
+.nb-filter-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.nb-filter-pills {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.nb-filter-pill-row {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.nb-pill {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* A slider with dots over it for where the things it sorts lie (ui/Slider.tsx). */
+.slider {
+  --slider-thumb: 22px;
+  display: flex;
+  flex-direction: column;
+}
+.slider-marks {
+  position: relative;
+  height: 16px;
+}
+.slider-marks i {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+  transition: opacity 0.15s;
+}
+.slider-marks i.good {
+  background: var(--success);
+}
+.slider-marks i.fair {
+  background: var(--warning);
+}
+.slider-marks i.weak {
+  background: var(--danger);
+}
+.slider-marks i.out {
+  opacity: 0.2;
+}
+.slider-rail {
+  position: relative;
+  height: 28px;
+}
+.slider-track,
+.slider-fill {
+  position: absolute;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+}
+.slider-track {
+  left: calc(var(--slider-thumb) / 2);
+  right: calc(var(--slider-thumb) / 2);
+  background: var(--border-strong);
+}
+.slider-fill {
+  background: var(--accent);
+}
+.slider-tick {
+  position: absolute;
+  top: 50%;
+  width: 1px;
+  height: 10px;
+  margin-top: -5px;
+  background: var(--text-faint);
+}
+/* Native range inputs laid over one rail: only their thumbs take a finger, so two can share it. */
+.slider-rail input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: none;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.slider-rail input::-webkit-slider-runnable-track {
+  height: 100%;
+  border: 0;
+  background: none;
+}
+.slider-rail input::-moz-range-track {
+  border: 0;
+  background: none;
+}
+.slider-rail input::-webkit-slider-thumb {
+  width: var(--slider-thumb);
+  height: var(--slider-thumb);
+  margin-top: calc((28px - var(--slider-thumb)) / 2);
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  pointer-events: auto;
+  cursor: grab;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.slider-rail input::-moz-range-thumb {
+  box-sizing: border-box;
+  width: var(--slider-thumb);
+  height: var(--slider-thumb);
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  pointer-events: auto;
+  cursor: grab;
+}
+.slider-rail input:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.slider-rail input:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.slider-scale {
+  position: relative;
+  height: 16px;
+  color: var(--text-faint);
+  font: var(--text-xs) / 16px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.slider-scale span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+/* The ends are written inside the rail's edges rather than half off them. */
+.slider-scale span:first-child {
+  transform: translateX(calc(var(--slider-thumb) / -2));
+}
+.slider-scale span:last-child {
+  transform: translateX(calc(-100% + var(--slider-thumb) / 2));
+}
 .nb-warn {
   margin: 0;
   color: var(--danger);
@@ -6072,6 +6291,24 @@ button.hop {
 }
 .map-leg.on {
   stroke-width: 6;
+}
+/* How far a filter by distance reaches from a repeater: a dashed circle, the distance on it. */
+.map-ring {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 5;
+  stroke-opacity: 0.85;
+  pointer-events: none;
+}
+.maplibregl-marker.map-ring-label {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font: 600 var(--text-xs) / 1.4 var(--font-mono);
+  white-space: nowrap;
+  pointer-events: none;
 }
 .map-leg-under.on {
   stroke-width: 10;

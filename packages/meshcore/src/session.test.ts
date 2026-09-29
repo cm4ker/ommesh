@@ -1294,6 +1294,47 @@ test("a telemetry answer's battery joins the node's week, once per ten minutes",
   ]);
 });
 
+test("a power monitor's voltage and current join the node's day, and a day old ones go", async () => {
+  let now = 1_700_000_000_000;
+  const radio = new ScriptedRadio();
+  radio.contacts = [contactFrame(BOB, "Bob", 12)];
+  const session = new MeshSession({ now: () => now });
+  await session.connect(radio);
+  // Channel 1 is the battery, kept apart; channel 4 an INA219 with its whole-watt power, which is not kept.
+  const answer = (milliamps: number) =>
+    new ByteWriter()
+      .u8(Push.TelemetryResponse)
+      .u8(0)
+      .bytes(BOB.subarray(0, 6))
+      .bytes(new Uint8Array([1, 0x74, 0x01, 0x9f, 4, 0x74, 0x01, 0x52, 4, 0x75, milliamps >> 8, milliamps & 0xff, 4, 0x80, 0x00, 0x00]))
+      .toBytes();
+  radio.push(answer(119));
+  await tick();
+  now += 5 * 60 * 1000;
+  radio.push(answer(240));
+  await tick();
+  now += 20 * 60 * 1000;
+  radio.push(answer(35));
+  await tick();
+  assert.deepEqual(session.getState().readingHistory[bobKey()], {
+    "4:voltage": [
+      { at: 1_700_000_000_000, value: 3.38 },
+      { at: 1_700_001_500_000, value: 3.38 },
+    ],
+    "4:current": [
+      { at: 1_700_000_000_000, value: 0.24 },
+      { at: 1_700_001_500_000, value: 0.035 },
+    ],
+  });
+  now += 24 * 3600 * 1000 - 60 * 1000;
+  radio.push(answer(50));
+  await tick();
+  assert.deepEqual(session.getState().readingHistory[bobKey()]!["4:current"], [
+    { at: 1_700_001_500_000, value: 0.035 },
+    { at: now, value: 0.05 },
+  ]);
+});
+
 test("a room's status tail is its post counts, not receive air time", async () => {
   const { radio, session } = await nodeSession();
   const status = session.requestStatus(ROOM_KEY);

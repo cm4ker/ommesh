@@ -63,6 +63,7 @@ function initial(messages: MessageRecord[] = [], unread: Record<string, number> 
     telemetry: {},
     statuses: {},
     statusHistory: {},
+    readingHistory: {},
     batteryHistory: {},
     neighbours: {},
     accessLists: {},

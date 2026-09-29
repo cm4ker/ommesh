@@ -8,10 +8,10 @@ const PX = 4;
 const PY = 5;
 
 /**
- * A week of one reading, as a line with its area, the latest point marked.
- * Hovering shows the reading under the pointer in the caption below.
+ * A week of one reading, or a day when `day` says so, as a line with its area, the latest point
+ * marked. Hovering shows the reading under the pointer in the caption below.
  */
-export function Sparkline({ values, times, unit, digits }: { values: number[]; times: number[]; unit: string; digits: number }) {
+export function Sparkline({ values, times, unit, digits, day = false }: { values: number[]; times: number[]; unit: string; digits: number; day?: boolean | undefined }) {
   const [hover, setHover] = useState<number | null>(null);
   if (values.length === 0) return null;
   let min = Math.min(...values);
@@ -28,6 +28,7 @@ export function Sparkline({ values, times, unit, digits }: { values: number[]; t
   const area = `${line}L${x(last).toFixed(1)},${H}L${x(0).toFixed(1)},${H}Z`;
   const low = Math.min(...values);
   const high = Math.max(...values);
+  const text = (v: number) => v.toLocaleString(locale(), { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false });
 
   const onMove = (e: React.PointerEvent<SVGSVGElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
@@ -42,7 +43,7 @@ export function Sparkline({ values, times, unit, digits }: { values: number[]; t
         className="spark"
         viewBox={`0 0 ${W} ${H}`}
         role="img"
-        aria-label={t("node.sparkline.label", { count: values.length, low: low.toFixed(digits), high: high.toFixed(digits), unit })}
+        aria-label={t("node.sparkline.label", { count: values.length, low: text(low), high: text(high), unit })}
         onPointerMove={onMove}
         onPointerLeave={() => setHover(null)}
       >
@@ -60,12 +61,12 @@ export function Sparkline({ values, times, unit, digits }: { values: number[]; t
       <span className="spark-cap">
         {hover !== null ? (
           <>
-            {stamp(times[hover]!)} · <b>{values[hover]!.toFixed(digits)} {unit}</b>
+            {stamp(times[hover]!)} · <b>{text(values[hover]!)} {unit}</b>
           </>
         ) : values.length === 1 ? (
           t("node.sparkline.one")
         ) : (
-          tx("node.sparkline.range", { count: values.length, low: <b>{low.toFixed(digits)}</b>, high: <b>{high.toFixed(digits)}</b>, unit })
+          tx(day ? "node.sparkline.dayRange" : "node.sparkline.range", { count: values.length, low: <b>{text(low)}</b>, high: <b>{text(high)}</b>, unit })
         )}
       </span>
     </>

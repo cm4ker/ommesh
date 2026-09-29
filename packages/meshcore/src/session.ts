@@ -326,6 +326,12 @@ export interface SessionState {
    * One sample per ten minutes at most, oldest first.
    */
   batteryHistory: Record<string, BatterySample[]>;
+  /**
+   * A day of the voltages and currents a node reports off its own channel, a power monitor's
+   * such as an INA219, keyed like `telemetry`, then by channel and type ("4:current"). One
+   * sample per ten minutes at most, oldest first.
+   */
+  readingHistory: Record<string, Record<string, ReadingSample[]>>;
   neighbours: Record<string, NeighbourList>;
   accessLists: Record<string, { entries: AccessRecord[]; at: number }>;
   ownerInfo: Record<string, OwnerInfo>;
@@ -362,6 +368,8 @@ export interface PersistedState {
   statusHistory?: Record<string, StatusSample[]>;
   /** Absent in history saved before battery readings were kept outside a status. */
   batteryHistory?: Record<string, BatterySample[]>;
+  /** Absent in history saved before a power monitor's readings were kept. */
+  readingHistory?: Record<string, Record<string, ReadingSample[]>>;
   /** Absent in history saved before routes could be pinned or timed out. */
   routing?: RoutingSettings;
 }
@@ -459,6 +467,12 @@ export interface NeighbourSearch {
 export interface BatterySample {
   at: number;
   mv: number;
+}
+
+/** One reading kept for a node's day, in the reading's own unit: volts, amperes. */
+export interface ReadingSample {
+  at: number;
+  value: number;
 }
 
 /** What the radio says about itself: its battery and how long it has been up. */
@@ -688,8 +702,8 @@ function guessPathSince(lastMod: number, now: number): number {
 
 /** The part of the state that is kept per radio. */
 function historyOf(state: SessionState): PersistedState {
-  const { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, routing } = state;
-  return { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, routing };
+  const { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing } = state;
+  return { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing };
 }
 
 /** How long a removed contact is kept to be put back. */
@@ -765,6 +779,7 @@ const EMPTY: SessionState = {
   statuses: {},
   statusHistory: {},
   batteryHistory: {},
+  readingHistory: {},
   neighbours: {},
   accessLists: {},
   ownerInfo: {},
@@ -830,7 +845,15 @@ const TELEMETRY_SELF_CHANNEL = 1;
 const HISTORY_MS = 7 * 24 * 3600 * 1000;
 const HISTORY_LIMIT = 600;
 /** Readings closer together than this keep one sample, the latest value at the first one's time. */
-const BATTERY_SPACING_MS = 10 * 60 * 1000;
+const SAMPLE_SPACING_MS = 10 * 60 * 1000;
+/** How far back a power monitor's readings are kept: a day, to show how they swing through it (#55). */
+const READINGS_MS = 24 * 3600 * 1000;
+
+/** A sample onto the end of a series, taking the place of the last one when they are too close. */
+function spaced<T extends { at: number }>(kept: T[], sample: T): T[] {
+  const last = kept.at(-1);
+  return last && sample.at - last.at < SAMPLE_SPACING_MS ? [...kept.slice(0, -1), { ...sample, at: last.at }] : [...kept, sample];
+}
 
 /** The last this many console lines a node are kept. */
 const CONSOLE_LIMIT = 200;
@@ -989,6 +1012,7 @@ export class MeshSession {
       "logins" in patch ||
       "statusHistory" in patch ||
       "batteryHistory" in patch ||
+      "readingHistory" in patch ||
       "routing" in patch
     ) {
       this.scheduleSave();
@@ -1198,6 +1222,7 @@ export class MeshSession {
       logins: persisted?.logins ?? {},
       statusHistory: persisted?.statusHistory ?? {},
       batteryHistory: persisted?.batteryHistory ?? {},
+      readingHistory: persisted?.readingHistory ?? {},
       routing: persisted?.routing ?? EMPTY.routing,
     };
   }
@@ -3123,6 +3148,7 @@ export class MeshSession {
       logins: without(this.state.logins),
       statusHistory: without(this.state.statusHistory),
       batteryHistory: without(this.state.batteryHistory),
+      readingHistory: without(this.state.readingHistory),
       statuses: without(this.state.statuses),
       neighbours: without(this.state.neighbours),
       accessLists: without(this.state.accessLists),
@@ -3301,9 +3327,35 @@ export class MeshSession {
   private noteBattery(key: string, mv: number): Partial<SessionState> {
     const at = this.now();
     const kept = (this.state.batteryHistory[key] ?? []).filter((s) => at - s.at < HISTORY_MS);
-    const last = kept.at(-1);
-    const history = last && at - last.at < BATTERY_SPACING_MS ? [...kept.slice(0, -1), { at: last.at, mv }] : [...kept, { at, mv }];
-    return { batteryHistory: { ...this.state.batteryHistory, [key]: history.slice(-HISTORY_LIMIT) } };
+    return { batteryHistory: { ...this.state.batteryHistory, [key]: spaced(kept, { at, mv }).slice(-HISTORY_LIMIT) } };
+  }
+
+  /**
+   * A telemetry answer's voltages and currents off the node's own channel into its day, spaced
+   * like the battery; the first of each type a channel reports, as the supply it makes. Every
+   * series of the node is trimmed to the day on the way, so one that stopped coming goes.
+   */
+  private noteReadings(key: string, readings: LppReading[]): Partial<SessionState> {
+    const at = this.now();
+    const fresh = new Map<string, number>();
+    for (const r of readings) {
+      if (r.channel === TELEMETRY_SELF_CHANNEL) continue;
+      const value = r.type === "voltage" ? r.volts : r.type === "current" ? r.amps : null;
+      const id = `${r.channel}:${r.type}`;
+      if (value !== null && !fresh.has(id)) fresh.set(id, value);
+    }
+    const before = this.state.readingHistory[key];
+    if (fresh.size === 0 && !before) return {};
+    const series: Record<string, ReadingSample[]> = {};
+    for (const [id, samples] of Object.entries(before ?? {})) {
+      const kept = samples.filter((s) => at - s.at < READINGS_MS);
+      if (kept.length) series[id] = kept;
+    }
+    for (const [id, value] of fresh) series[id] = spaced(series[id] ?? [], { at, value });
+    const readingHistory = { ...this.state.readingHistory };
+    if (Object.keys(series).length) readingHistory[key] = series;
+    else delete readingHistory[key];
+    return { readingHistory };
   }
 
   private noteStatus(key: string, contact: ContactRecord | null, raw: Uint8Array): void {
@@ -3455,6 +3507,7 @@ export class MeshSession {
         this.set({
           telemetry: { ...this.state.telemetry, [key]: { readings: frame.readings, at: this.now() } },
           ...(battery?.type === "voltage" ? this.noteBattery(key, Math.round(battery.volts * 1000)) : {}),
+          ...this.noteReadings(key, frame.readings),
         });
         this.log("telemetry", `${key === "self" ? "this radio" : (contact?.name ?? prefix)}: ${frame.readings.length} reading(s)`);
         if (key !== "self") this.remoteEvent({ kind: "telemetry", prefix, readings: frame.readings });

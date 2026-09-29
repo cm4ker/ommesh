@@ -6243,17 +6243,18 @@ button.hop {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.spark {
+/* The air's own small lines; unscoped, these squashed a reading's line to a strip (#55). */
+.air-tile .spark {
   display: block;
   width: 100%;
   height: 18px;
 }
-.spark-line {
+.air-tile .spark-line {
   fill: none;
   stroke: var(--accent);
   stroke-width: 1.4;
 }
-.spark-area {
+.air-tile .spark-area {
   fill: var(--accent);
   fill-opacity: 0.12;
 }

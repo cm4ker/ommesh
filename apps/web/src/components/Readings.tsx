@@ -1,9 +1,10 @@
-import type { LppReading } from "@meshnet/meshcore";
+import type { LppReading, ReadingSample } from "@meshnet/meshcore";
 import { locale, t, type Key } from "../i18n/index.js";
 import { batteryTypeLabel } from "../lib/batteryType.js";
 import { batteryPercent, powerWatts, type BatteryType } from "../lib/format.js";
 import { bearingDeg, compass, distanceKm, formatDistance, hasPosition } from "../lib/geo.js";
 import { Block, InfoRow } from "../ui/List.js";
+import { Sparkline } from "./node/Sparkline.js";
 
 /** What each kind of reading measures. */
 const LABELS: Record<LppReading["type"], Key> = {
@@ -38,6 +39,8 @@ const LABELS: Record<LppReading["type"], Key> = {
 
 /** The channel the firmware gives the radio itself: its battery, its processor's temperature, its GPS. */
 const SELF_CHANNEL = 1;
+/** How far back a reading's line goes; the session trims what is older only as the next answer comes. */
+const DAY_MS = 24 * 3600 * 1000;
 
 interface Tile {
   id: string;
@@ -46,13 +49,15 @@ interface Tile {
   unit?: string | undefined;
   sub?: React.ReactNode;
   wide?: boolean | undefined;
+  line?: { values: number[]; times: number[]; unit: string; digits: number } | undefined;
 }
 
 /**
  * Cayenne LPP readings, a set of tiles for each channel. The radio's own channel shows its
  * battery as a charge and its processor's temperature as the board's; a channel with voltage
  * and current shows its power first, as their product. `cell` is the battery the radio runs
- * on, when known; someone else's is taken as Li-ion, and its charge said with "≈".
+ * on, when known; someone else's is taken as Li-ion, and its charge said with "≈". A voltage or
+ * a current kept through the day draws its line under the number (#55).
  */
 export function Readings({
   readings,
@@ -60,6 +65,7 @@ export function Readings({
   from,
   onMap,
   onCopy,
+  history,
   skipBattery = false,
   titled: alwaysTitled = false,
 }: {
@@ -75,6 +81,8 @@ export function Readings({
   onMap?: (() => void) | undefined;
   /** The GPS position copied. */
   onCopy?: ((text: string) => void) | undefined;
+  /** The node's day of voltages and currents, by channel and type, as the session keeps it. */
+  history?: Record<string, ReadingSample[]> | undefined;
 }) {
   if (readings.length === 0) return <InfoRow label={t("radio.readings.none")}>—</InfoRow>;
   const channels = new Map<number, LppReading[]>();
@@ -96,13 +104,14 @@ export function Readings({
             </div>
           ) : null}
           <div className="reading-tiles">
-            {tilesOf(channel, list, { cell, from, onMap, onCopy }).map((tile) => (
+            {tilesOf(channel, list, { cell, from, onMap, onCopy, history }).map((tile) => (
               <div key={tile.id} className={["reading-tile", tile.wide ? "wide" : ""].join(" ")}>
                 <span className="reading-label">{tile.label}</span>
                 <span className="reading-value">
                   {tile.value}
                   {tile.unit ? <small>{tile.unit}</small> : null}
                 </span>
+                {tile.line ? <Sparkline {...tile.line} day /> : null}
                 {tile.sub ? <span className="reading-sub">{tile.sub}</span> : null}
               </div>
             ))}
@@ -125,7 +134,13 @@ function setTitle(channel: number, list: LppReading[]): string {
 function tilesOf(
   channel: number,
   list: LppReading[],
-  how: { cell: BatteryType | undefined; from: { lat: number; lon: number } | null | undefined; onMap: (() => void) | undefined; onCopy: ((text: string) => void) | undefined },
+  how: {
+    cell: BatteryType | undefined;
+    from: { lat: number; lon: number } | null | undefined;
+    onMap: (() => void) | undefined;
+    onCopy: ((text: string) => void) | undefined;
+    history: Record<string, ReadingSample[]> | undefined;
+  },
 ): Tile[] {
   const tiles: Tile[] = [];
   const volts = list.find((r) => r.type === "voltage");
@@ -159,9 +174,25 @@ function tilesOf(
       tiles.push({ id, ...gpsTile(r, how), wide: true });
       return;
     }
-    tiles.push({ id, label: t(LABELS[r.type]), ...parts(r) });
+    // The session keeps the first of each type on a channel, the one a supply is made of.
+    const kept = (r.type === "voltage" || r.type === "current") && list.find((x) => x.type === r.type) === r;
+    tiles.push({ id, label: t(LABELS[r.type]), ...parts(r), line: kept ? dayLine(how.history?.[`${channel}:${r.type}`], r.type) : undefined });
   });
   return tiles;
+}
+
+/** A voltage's or a current's day as a line, in milliamperes while every current in it is under an ampere. */
+function dayLine(samples: ReadingSample[] | undefined, type: "voltage" | "current"): Tile["line"] {
+  const since = Date.now() - DAY_MS;
+  const day = (samples ?? []).filter((s) => s.at > since);
+  if (day.length < 2) return undefined;
+  const milli = type === "current" && day.every((s) => Math.abs(s.value) < 1);
+  return {
+    values: day.map((s) => (milli ? Math.round(s.value * 1000) : s.value)),
+    times: day.map((s) => s.at),
+    unit: t(type === "voltage" ? "node.unit.volt" : milli ? "node.unit.milliampere" : "node.unit.ampere"),
+    digits: milli ? 0 : 2,
+  };
 }
 
 function gpsTile(r: Extract<LppReading, { type: "gps" }>, how: { from: { lat: number; lon: number } | null | undefined; onMap: (() => void) | undefined; onCopy: ((text: string) => void) | undefined }): Omit<Tile, "id"> {

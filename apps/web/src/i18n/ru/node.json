@@ -290,6 +290,12 @@
     "many": "{count} показаний: от {low} до {high} {unit}",
     "other": "{count} показания: от {low} до {high} {unit}"
   },
+  "sparkline.dayRange": {
+    "one": "{count} показание за сутки: от {low} до {high} {unit}",
+    "few": "{count} показания за сутки: от {low} до {high} {unit}",
+    "many": "{count} показаний за сутки: от {low} до {high} {unit}",
+    "other": "{count} показания за сутки: от {low} до {high} {unit}"
+  },
 
   "status.alerts": "Тревоги датчика приходят его администраторам сообщениями, в чат с {name}.",
   "status.alertsUnnamed": "Тревоги датчика приходят его администраторам сообщениями, в чат с ним.",

@@ -246,7 +246,7 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
                 </button>
               </div>
             ) : null}
-            <Readings readings={telemetry.readings} skipBattery titled from={state.self} onMap={() => showOnMap(key, true)} />
+            <Readings readings={telemetry.readings} history={state.readingHistory[key]} skipBattery titled from={state.self} onMap={() => showOnMap(key, true)} />
           </>
         ) : statusNode ? (
           <ActionRow label={t("node.readings.more")} hint={t("node.readings.moreHint")} air busy={busy === "more"} disabled={!online || busy !== null} onClick={ask("more", () => session.requestTelemetry(key))} />
@@ -353,7 +353,7 @@ export function OwnReadings() {
             </div>
           </div>
         ) : null}
-        {telemetry ? <Readings readings={telemetry.readings} skipBattery titled onCopy={(text) => void navigator.clipboard?.writeText(text).then(() => toast(t("common.copied")))} /> : null}
+        {telemetry ? <Readings readings={telemetry.readings} history={state.readingHistory["self"]} skipBattery titled onCopy={(text) => void navigator.clipboard?.writeText(text).then(() => toast(t("common.copied")))} /> : null}
         <ActionRow label={t("node.readings.refresh")} disabled={!online} onClick={() => void act(() => Promise.all([session.refreshBattery(), session.requestTelemetry(), session.radioStats().then(setRadio), session.coreStats().then(setCore)]))} />
       </Group>
       <Group>

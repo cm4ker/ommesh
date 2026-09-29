@@ -33,6 +33,7 @@ function state(contacts: ContactRecord[], patch: Partial<SessionState> = {}): Se
     messages: [],
     logins: {},
     statusHistory: {},
+    readingHistory: {},
     device: null,
     contactsFull: false,
     ...patch,

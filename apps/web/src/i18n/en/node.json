@@ -246,6 +246,7 @@
   "sparkline.label": { "one": "{count} reading, from {low} to {high} {unit}", "other": "{count} readings, from {low} to {high} {unit}" },
   "sparkline.one": "one reading so far",
   "sparkline.range": { "one": "{count} reading: {low} to {high} {unit}", "other": "{count} readings: {low} to {high} {unit}" },
+  "sparkline.dayRange": { "one": "{count} reading in 24 h: {low} to {high} {unit}", "other": "{count} readings in 24 h: {low} to {high} {unit}" },
 
   "status.alerts": "Alerts the sensor raises reach its admins as messages, in the chat with {name}.",
   "status.alertsUnnamed": "Alerts the sensor raises reach its admins as messages, in the chat with it.",

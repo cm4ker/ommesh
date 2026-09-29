@@ -13,9 +13,10 @@ import { tx } from "../i18n/rich.js";
  * What is known of how a message travelled, shown under its bubble once it is
  * tapped. `peer` names the other end: the contact, or a channel message's
  * sender. Each thing takes one line: who heard it and how loud, and how far
- * it went; the chains of relays open on a tap.
+ * it went; the chains of relays open on a tap. `clockOff` says the chat shows
+ * when it came, the sender's stamp being off.
  */
-export function MessageDetails({ message, peer }: { message: MessageRecord; peer: string }) {
+export function MessageDetails({ message, peer, clockOff = false }: { message: MessageRecord; peer: string; clockOff?: boolean }) {
   const { contacts } = useSession();
   const [pick, setPick] = useState<string | null>(null);
   const out = message.direction === "out";
@@ -71,7 +72,15 @@ export function MessageDetails({ message, peer }: { message: MessageRecord; peer
         message.roundTripMs ? t("chats.details.ackIn", { seconds: (message.roundTripMs / 1000).toFixed(1) }) : null,
         message.attempt > 0 ? t("chats.details.attempts", { count: message.attempt + 1 }) : null,
       ]
-    : [t("chats.details.sentAt", { time: clock(message.timestamp * 1000) }), t("chats.details.receivedAt", { time: clock(message.receivedAt) }), bytes];
+    : [
+        // A stamp on another day than it came, as a radio that lost its clock gives, carries its date.
+        sameDay(message.timestamp * 1000, message.receivedAt)
+          ? t("chats.details.sentAt", { time: clock(message.timestamp * 1000) })
+          : t("chats.details.sentOnDay", { time: dateAndClock(message.timestamp * 1000) }),
+        t("chats.details.receivedAt", { time: clock(message.receivedAt) }),
+        clockOff ? t("chats.details.clockOff") : null,
+        bytes,
+      ];
 
   const candidates = pick ? candidatesOfHash(pick, contacts) : [];
   return (
@@ -250,6 +259,14 @@ function Unheard({ message }: { message: MessageRecord }) {
 
 function clock(ms: number): string {
   return new Date(ms).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function dateAndClock(ms: number): string {
+  return new Date(ms).toLocaleString(locale(), { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function sameDay(a: number, b: number): boolean {
+  return new Date(a).toDateString() === new Date(b).toDateString();
 }
 
 /** A route as a chain of chips: named relays open their contact, a hash several contacts share lists them. */

@@ -5,7 +5,7 @@
  */
 
 import type { MessageRecord } from "@meshnet/meshcore";
-import { shownAt } from "./conversations.js";
+import { placedAt } from "./conversations.js";
 import { TWINS } from "./lookalikes.js";
 
 /** A shorter query finds too much to be of use; two code units still let one emoji through. */
@@ -51,7 +51,7 @@ function foldedText(m: MessageRecord): string {
 export function findMessages(messages: readonly MessageRecord[], query: string): MessageRecord[] {
   const q = searchTerm(query);
   if (!q) return [];
-  return messages.filter((m) => foldedText(m).includes(q)).sort((a, b) => shownAt(b) - shownAt(a) || b.receivedAt - a.receivedAt);
+  return messages.filter((m) => foldedText(m).includes(q)).sort((a, b) => placedAt(b) - placedAt(a));
 }
 
 /** Where the query stands in a text: start and end of each place, in order, none overlapping. */

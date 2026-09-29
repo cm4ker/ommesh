@@ -216,6 +216,8 @@
   },
   "details.sentAt": "Отправлено в {time} по часам отправителя",
   "details.receivedAt": "получено в {time}",
+  "details.sentOnDay": "Отправлено {time} по часам отправителя",
+  "details.clockOff": "часы отправителя сбиты, в чате — время получения",
   "details.couldBe": {
     "one": "{hash} может быть одним из {count} контакта:",
     "few": "{hash} может быть одним из {count} контактов:",

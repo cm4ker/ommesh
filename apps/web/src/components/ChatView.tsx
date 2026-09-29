@@ -2,7 +2,7 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { AdvType, isConversationType, isDirect, parseConversation, type ContactRecord, type MessageRecord, type SessionState } from "@meshnet/meshcore";
 import { useBackLayer } from "../lib/back.js";
 import { GEO, MENTION } from "../lib/composer.js";
-import { messagesIn, shownAt, titleOf } from "../lib/conversations.js";
+import { messagesIn, shownIn, titleOf, type Shown } from "../lib/conversations.js";
 import { nameOfHash, relaysOf } from "../lib/echoes.js";
 import { getOpenAtUnread, takeUnread } from "../lib/firstUnread.js";
 import { agoPhrase, dayLabel, emojiOnly, timeOfDay } from "../lib/format.js";
@@ -68,6 +68,7 @@ const ABOVE = 10;
 export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversation: string; chrome: Chrome; infoOpen?: boolean | undefined; onInfo?: () => void }) {
   const state = useSession();
   const messages = useMemo(() => messagesIn(state, conversation), [state, conversation]);
+  const shown = useMemo(() => shownIn(messages), [messages]);
   const title = titleOf(state, conversation);
   const target = parseConversation(conversation);
   const contact = target.kind === "contact" ? state.contacts[target.key] : undefined;
@@ -437,17 +438,19 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
           {drawn.map((m, i) => {
             const prev = drawn[i - 1];
             const next = drawn[i + 1];
-            const newDay = !prev || dayLabel(shownAt(prev)) !== dayLabel(shownAt(m));
+            const at = shown.get(m.id)!;
+            const newDay = !prev || at.newDay;
             const opens = m.id === unread?.first;
-            const first = !prev || !sameRun(prev, m) || opens;
-            const last = !next || !sameRun(m, next) || next.id === unread?.first;
+            const first = !prev || !sameRun(prev, m, shown) || opens;
+            const last = !next || !sameRun(m, next, shown) || next.id === unread?.first;
             const voice = many && m.direction === "in";
             return (
               <div key={m.id} data-id={m.id}>
-                {newDay ? <div className="day">{dayLabel(shownAt(m))}</div> : null}
+                {newDay ? <div className="day">{dayLabel(at.at)}</div> : null}
                 {opens && unread ? <div className="unread-line">{t("chats.chat.newMessages", { count: unread.count })}</div> : null}
                 <Message
                   message={m}
+                  at={at.at}
                   lead={many && first && !newDay && !opens}
                   showSender={voice && first}
                   avatar={voice ? (last && m.sender ? "show" : "gap") : null}
@@ -566,8 +569,10 @@ function techOf(message: MessageRecord): string {
 }
 
 /** Whether `b` goes on from `a` without a break: the same side and sender, the same day, within five minutes. */
-function sameRun(a: MessageRecord, b: MessageRecord): boolean {
-  return a.direction === b.direction && a.sender === b.sender && dayLabel(shownAt(a)) === dayLabel(shownAt(b)) && shownAt(b) - shownAt(a) < 300;
+function sameRun(a: MessageRecord, b: MessageRecord, shown: Map<string, Shown>): boolean {
+  const from = shown.get(a.id)!;
+  const to = shown.get(b.id)!;
+  return a.direction === b.direction && a.sender === b.sender && !to.newDay && to.at - from.at < 300;
 }
 
 /** A node among several of one name, told apart by what it is and when it was last heard. */
@@ -578,6 +583,8 @@ function nodeLine(contact: ContactRecord): string {
 
 interface MessageProps {
   message: MessageRecord;
+  /** The time on it, unix seconds, as `shownIn` gives it. */
+  at: number;
   /** The first of a run in a channel or a room: a little room above it sets the voices apart. */
   lead: boolean;
   showSender: boolean;
@@ -600,7 +607,7 @@ interface MessageProps {
  * One bubble. Memoised: a message arriving, or an echo of one, changes one record, and the
  * other bubbles of a long conversation have nothing new to draw.
  */
-const Message = memo(function Message({ message, lead, showSender, avatar, me, onReply: replyTo, onWho, contacts, mark, current, flash }: MessageProps) {
+const Message = memo(function Message({ message, at, lead, showSender, avatar, me, onReply: replyTo, onWho, contacts, mark, current, flash }: MessageProps) {
   const out = message.direction === "out";
   const [busy, setBusy] = useState(false);
   const large = useJumboEmoji();
@@ -702,7 +709,7 @@ const Message = memo(function Message({ message, lead, showSender, avatar, me, o
           <span className="msg-text">{richText(message.text, me, mark)}</span>
           <span className="msg-meta">
             {tech ? <span className="msg-tech">{tech} ·</span> : null}
-            <span>{timeOfDay(shownAt(message))}</span>
+            <span>{timeOfDay(at)}</span>
             {/* A red bubble carries its state in the strip below; a tick beside it would say the opposite. */}
             {out && !bad ? <Status message={message} trying={trying} /> : null}
           </span>

@@ -186,6 +186,8 @@
   },
   "details.sentAt": "Sent {time} by their clock",
   "details.receivedAt": "received {time}",
+  "details.sentOnDay": "Sent {time} by their clock",
+  "details.clockOff": "their clock is off, so the chat shows when it came",
   "details.couldBe": {
     "other": "{hash} could be {count} contacts:"
   },

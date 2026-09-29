@@ -124,9 +124,9 @@ export interface MessageRecord {
   /** On a channel: the name before the colon. On a DM: the contact's name at the time. */
   sender: string | null;
   senderPrefix: string | null;
-  /** Unix seconds, the sender's clock. */
+  /** Unix seconds, the sender's clock, which may be far off: a radio that lost its clock stamps a date years back. */
   timestamp: number;
-  /** Local clock, ms. */
+  /** Local clock, ms: when it came in, or when ours was written. A chat files its messages by this, not by `timestamp`. */
   receivedAt: number;
   snr: number | null;
   hops: number | null;

@@ -17,15 +17,24 @@
 //! Frames arrive on a `Channel` the page hands to `connect`; a drop is
 //! announced by an event. Every operation has a deadline, so a stack that
 //! goes quiet is reported rather than waited on forever.
+//!
+//! A deadline only covers what is waited on here. A plain call into Windows
+//! can block for good too: when a phone took its UART service down and put it
+//! back, Windows' own close of the old service hung in a call to its Bluetooth
+//! service, and the worker's `Close` of the same service waited behind it for
+//! fourteen hours, with every reconnect queued up behind that. So the worker
+//! is watched: one that shows no sign of life for `STALL` is left to its call,
+//! and a new one takes over.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, RecvTimeoutError, Sender};
+use std::cell::OnceCell;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use windows::core::{RuntimeType, GUID};
 use windows::Devices::Bluetooth::Advertisement::{
     BluetoothLEAdvertisementReceivedEventArgs, BluetoothLEAdvertisementWatcher, BluetoothLEScanningMode,
@@ -51,6 +60,12 @@ const RX: GUID = GUID::from_u128(0x6e400002_b5a3_f393_e0a9_e50e24dcca9e);
 const TX: GUID = GUID::from_u128(0x6e400003_b5a3_f393_e0a9_e50e24dcca9e);
 const NAME_PREFIX: &str = "MeshCore-";
 const GATT_DEADLINE: Duration = Duration::from_secs(20);
+/// How long the worker may go without a sign of life before it is given up
+/// on. Every wait pumps, and each pump counts, so only a single call into
+/// Windows that does not return comes near this.
+const STALL: Duration = Duration::from_secs(15);
+/// What the page is told when the worker was given up on.
+const STALLED: &str = "Windows stopped answering a Bluetooth call; the link starts afresh";
 
 /// The event the page listens to for a dropped link.
 pub const CLOSED_EVENT: &str = "winble:closed";
@@ -77,8 +92,41 @@ struct Worker {
 
 type Job = Box<dyn FnOnce(&mut Worker) + Send + 'static>;
 
+/// What a worker shares with those waiting on it.
+#[derive(Default)]
+struct Life {
+    /// Counted up by every pump on the worker's thread: its sign of life.
+    beat: AtomicU64,
+    /// Set once the worker is given up on. Should its call ever return, it
+    /// runs nothing more: the jobs queued behind it are nobody's by then, and
+    /// a late connect or unsubscribe would get in the new worker's way.
+    retired: AtomicBool,
+}
+
+struct Handle {
+    jobs: Sender<Job>,
+    life: Arc<Life>,
+}
+
+thread_local! {
+    /// The worker's own `Life`, for `pump` to count on; unset on other threads.
+    static LIFE: OnceCell<Arc<Life>> = const { OnceCell::new() };
+}
+
+fn spawn_worker() -> Handle {
+    let (jobs, receiver) = mpsc::channel::<Job>();
+    let life = Arc::new(Life::default());
+    let own = life.clone();
+    std::thread::Builder::new()
+        .name("winble".into())
+        .spawn(move || worker_main(receiver, own))
+        .expect("the BLE worker thread");
+    Handle { jobs, life }
+}
+
 pub struct WinBle {
-    jobs: Mutex<Sender<Job>>,
+    worker: Mutex<Handle>,
+    stall: Duration,
     /// Scans run on their own thread, so a scan in progress never holds up a
     /// frame; this is how a scan is told to stop early.
     scanning: Arc<AtomicBool>,
@@ -88,27 +136,104 @@ pub struct WinBle {
 
 impl Default for WinBle {
     fn default() -> Self {
-        let (sender, receiver) = mpsc::channel::<Job>();
-        std::thread::Builder::new()
-            .name("winble".into())
-            .spawn(move || worker_main(receiver))
-            .expect("the BLE worker thread");
+        Self::with_stall(STALL)
+    }
+}
+
+/// The worker went quiet inside a call and was replaced.
+#[derive(Debug)]
+struct Stalled;
+
+impl WinBle {
+    fn with_stall(stall: Duration) -> Self {
         Self {
-            jobs: Mutex::new(sender),
+            worker: Mutex::new(spawn_worker()),
+            stall,
             scanning: Arc::new(AtomicBool::new(false)),
             scan_lock: Arc::new(Mutex::new(())),
         }
     }
+
+    /// Runs `f` on the worker and waits for its answer, blocking the caller.
+    fn run<T, F>(&self, f: F) -> Result<Result<T, String>, Stalled>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut Worker) -> Result<T, String> + Send + 'static,
+    {
+        let (answer, waiting) = mpsc::channel::<Result<T, String>>();
+        let life = {
+            let Ok(worker) = self.worker.lock() else { return Ok(Err("worker lock".into())) };
+            let job: Job = Box::new(move |worker| {
+                let _ = answer.send(f(worker));
+            });
+            if worker.jobs.send(job).is_err() {
+                return Ok(Err("the BLE worker is gone".into()));
+            }
+            worker.life.clone()
+        };
+        match await_answer(&waiting, &life, self.stall) {
+            Ok(Some(answer)) => Ok(answer),
+            Ok(None) => Ok(Err("the BLE worker dropped the job".into())),
+            Err(Stalled) => {
+                self.replace(&life);
+                Err(Stalled)
+            }
+        }
+    }
+
+    /// Leaves the worker `life` belongs to in the call it is stuck in, and starts
+    /// another. Several callers can find the same worker stuck; the first replaces it.
+    fn replace(&self, life: &Arc<Life>) {
+        let Ok(mut worker) = self.worker.lock() else { return };
+        if !Arc::ptr_eq(&worker.life, life) {
+            return;
+        }
+        log::warn!("winble: the worker made no progress in {:?}; starting another", self.stall);
+        life.retired.store(true, Ordering::Relaxed);
+        *worker = spawn_worker();
+    }
 }
 
-fn worker_main(jobs: mpsc::Receiver<Job>) {
+/// The answer to a job, `None` if the worker dropped it, or `Stalled` once the
+/// worker has shown no sign of life for `stall`. Quiet is counted in ticks
+/// spent waiting, not by the clock, so a computer that slept in between does
+/// not count its sleep against a worker that had no chance to run.
+fn await_answer<T>(waiting: &Receiver<T>, life: &Life, stall: Duration) -> Result<Option<T>, Stalled> {
+    let tick = Duration::from_millis(250);
+    let mut last = life.beat.load(Ordering::Relaxed);
+    let mut quiet = Duration::ZERO;
+    loop {
+        match waiting.recv_timeout(tick) {
+            Ok(answer) => return Ok(Some(answer)),
+            Err(RecvTimeoutError::Disconnected) => return Ok(None),
+            Err(RecvTimeoutError::Timeout) => {
+                let beat = life.beat.load(Ordering::Relaxed);
+                if beat != last {
+                    last = beat;
+                    quiet = Duration::ZERO;
+                } else {
+                    quiet += tick;
+                    if quiet >= stall {
+                        return Err(Stalled);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn worker_main(jobs: Receiver<Job>, life: Arc<Life>) {
     // SAFETY: called once, first thing, on a thread this module owns.
     if let Err(error) = unsafe { RoInitialize(RO_INIT_SINGLETHREADED) } {
         log::error!("winble: RoInitialize failed: {error}");
     }
+    LIFE.with(|own| {
+        let _ = own.set(life.clone());
+    });
     let mut worker = Worker::default();
     loop {
         match jobs.recv_timeout(Duration::from_millis(10)) {
+            Ok(_) if life.retired.load(Ordering::Relaxed) => break,
             Ok(job) => job(&mut worker),
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => break,
@@ -119,6 +244,11 @@ fn worker_main(jobs: mpsc::Receiver<Job>) {
 
 /// Delivers whatever the apartment has queued: completions and events for the objects it owns.
 fn pump() {
+    LIFE.with(|own| {
+        if let Some(life) = own.get() {
+            life.beat.fetch_add(1, Ordering::Relaxed);
+        }
+    });
     // SAFETY: plain message-loop calls on the thread that owns the queue.
     unsafe {
         let mut msg = MSG::default();
@@ -129,24 +259,21 @@ fn pump() {
     }
 }
 
-/// Runs `f` on the worker and awaits its answer.
-async fn on_worker<T, F>(state: &WinBle, f: F) -> Result<T, String>
+/// Runs `f` on the worker and awaits its answer. A worker given up on takes
+/// its link with it, and the page is told the link dropped.
+async fn on_worker<T, F>(app: &AppHandle, f: F) -> Result<T, String>
 where
     T: Send + 'static,
     F: FnOnce(&mut Worker) -> Result<T, String> + Send + 'static,
 {
-    let (answer, waiting) = mpsc::channel::<Result<T, String>>();
-    state
-        .jobs
-        .lock()
-        .map_err(|_| "worker lock")?
-        .send(Box::new(move |worker| {
-            let _ = answer.send(f(worker));
-        }))
-        .map_err(|_| "the BLE worker is gone")?;
-    tauri::async_runtime::spawn_blocking(move || waiting.recv().map_err(|_| "the BLE worker dropped the job".to_string())?)
+    let owner = app.clone();
+    let outcome = tauri::async_runtime::spawn_blocking(move || owner.state::<WinBle>().run(f))
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    outcome.unwrap_or_else(|Stalled| {
+        let _ = app.emit(CLOSED_EVENT, STALLED);
+        Err(STALLED.into())
+    })
 }
 
 #[derive(Serialize, Clone)]
@@ -543,9 +670,9 @@ fn pair(mac: u64, pin: &str) -> Result<String, String> {
 
 /// Pairs with a radio by address, with its PIN. Answers with the radio's name.
 #[tauri::command]
-pub async fn winble_pair(state: State<'_, WinBle>, address: String, pin: String) -> Result<String, String> {
+pub async fn winble_pair(app: AppHandle, address: String, pin: String) -> Result<String, String> {
     let mac = parse_address(&address)?;
-    on_worker(&state, move |worker| {
+    on_worker(&app, move |worker| {
         if let Some(old) = worker.link.take() {
             close_link(old);
         }
@@ -556,20 +683,16 @@ pub async fn winble_pair(state: State<'_, WinBle>, address: String, pin: String)
 
 /// Opens the link. Frames the radio sends arrive on `on_frame`; `winble:closed` says when it drops.
 #[tauri::command]
-pub async fn winble_connect(
-    app: AppHandle,
-    state: State<'_, WinBle>,
-    address: String,
-    on_frame: Channel<Vec<u8>>,
-) -> Result<Connected, String> {
+pub async fn winble_connect(app: AppHandle, address: String, on_frame: Channel<Vec<u8>>) -> Result<Connected, String> {
     let mac = parse_address(&address)?;
-    on_worker(&state, move |worker| {
+    let events = app.clone();
+    on_worker(&app, move |worker| {
         if let Some(old) = worker.link.take() {
             close_link(old);
         }
         worker.opened += 1;
         let id = worker.opened;
-        let link = open_link(app, id, mac, &address, on_frame)?;
+        let link = open_link(events, id, mac, &address, on_frame)?;
         let name = link.device.Name().map(|n| n.to_string()).unwrap_or_default();
         worker.link = Some(link);
         Ok(Connected { name, link: id })
@@ -579,8 +702,8 @@ pub async fn winble_connect(
 
 /// One frame, written with response so a refusal is heard rather than dropped.
 #[tauri::command]
-pub async fn winble_send(state: State<'_, WinBle>, data: Vec<u8>) -> Result<(), String> {
-    on_worker(&state, move |worker| {
+pub async fn winble_send(app: AppHandle, data: Vec<u8>) -> Result<(), String> {
+    on_worker(&app, move |worker| {
         let link = worker.link.as_ref().ok_or("not connected")?;
         let writer = DataWriter::new().map_err(|e| err("write", e))?;
         writer.WriteBytes(&data).map_err(|e| err("write", e))?;
@@ -597,8 +720,8 @@ pub async fn winble_send(state: State<'_, WinBle>, data: Vec<u8>) -> Result<(), 
 }
 
 #[tauri::command]
-pub async fn winble_disconnect(state: State<'_, WinBle>, link: Option<u64>) -> Result<(), String> {
-    on_worker(&state, move |worker| {
+pub async fn winble_disconnect(app: AppHandle, link: Option<u64>) -> Result<(), String> {
+    on_worker(&app, move |worker| {
         // A connect given up on can finish after the next one has begun, and
         // its close then waits behind that connect: it must not take the new link down.
         if worker.link.as_ref().is_some_and(|open| link.is_none_or(|id| open.id == id)) {
@@ -670,6 +793,53 @@ mod tests {
         for code in [None, Some(0x01), Some(0x03), Some(0x0E)] {
             assert!(!gatt_failure("subscribe", GattCommunicationStatus::ProtocolError, code).contains("NEEDS_PAIRING"));
         }
+    }
+
+    #[test]
+    fn a_worker_stuck_in_a_call_is_replaced_and_what_queued_behind_it_never_runs() {
+        let ble = Arc::new(WinBle::with_stall(Duration::from_millis(300)));
+        let (release, hold) = mpsc::channel::<()>();
+        let stuck = {
+            let ble = ble.clone();
+            std::thread::spawn(move || {
+                ble.run(move |_| {
+                    let _ = hold.recv();
+                    Ok(())
+                })
+            })
+        };
+        std::thread::sleep(Duration::from_millis(50));
+        let ran = Arc::new(AtomicBool::new(false));
+        let behind = {
+            let (ble, ran) = (ble.clone(), ran.clone());
+            std::thread::spawn(move || {
+                ble.run(move |_| {
+                    ran.store(true, Ordering::Relaxed);
+                    Ok(())
+                })
+            })
+        };
+        assert!(stuck.join().unwrap().is_err());
+        assert!(behind.join().unwrap().is_err());
+
+        assert_eq!(ble.run(|_| Ok(7)).unwrap(), Ok(7));
+        release.send(()).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(!ran.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn a_long_wait_that_keeps_pumping_is_not_given_up_on() {
+        let ble = WinBle::with_stall(Duration::from_millis(300));
+        let answer = ble.run(|_| {
+            let until = Instant::now() + Duration::from_millis(1000);
+            while Instant::now() < until {
+                pump();
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Ok(1)
+        });
+        assert_eq!(answer.unwrap(), Ok(1));
     }
 
     #[test]

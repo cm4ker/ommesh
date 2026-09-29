@@ -227,7 +227,7 @@
   "signIn.relearn": "Renew the way back",
   "signIn.relearnTitle": "The way back from {name}",
   "signIn.relearnHint": "The node answers along its own way to you and may have lost it. The sign-in goes to the whole mesh: the node forgets its old way and learns a new one, and your route to it stays.",
-  "signIn.noReply": "No answer from {name}, though the sign-in went several times. The node is out of reach, or the way to it does not work: check the route.",
+  "signIn.noReply": "No answer from {name}. The node is out of reach, or the way to it does not work: check the route.",
   "signIn.title": "Sign in to {name}",
   "signIn.addNode": "Add a node",
   "signIn.nodes": "Repeaters, rooms and sensors in your contacts",

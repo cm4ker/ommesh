@@ -16,6 +16,7 @@
 - A channel message no repeater was heard passing on stays red and has two buttons along its bottom edge: Send again sends it once more, and Keep trying sends it up to five times over about 20 minutes, stopping as soon as a repeater is heard passing it on. Keep trying used to be only in the menu of a long press.
 
 ### Mesh and the map
+- A power monitor such as an INA219 draws its day on the Voltage and Current tiles, the way the battery draws its week: a line through what the node answered in the last 24 hours, with its lowest and highest under it, such as "144 readings in 24 h: 61 to 457 mA". Touch or point at the line for the reading at that time. The line fills as the readings are asked for; this radio's Readings page asks every half minute while it is open.
 - With Group close nodes off, the map draws nodes at half their size while a whole town is on the screen and grows them back as you zoom in, so the repeaters of a city no longer pile on one another and each one's state can be told apart. The node you picked keeps its full size.
 - A repeater's picture is a tower on two legs with waves around its top, in place of a mast that was hard to make out. It stays apart from the mark on buttons that transmit, which is a mast on one pole.
 - A repeater's Neighbours page fits a phone: one row per neighbour, with its name, key and when it was heard on the left and its SNR over a bar on the right, in place of a table whose last column was cut off. What the bar spans is in the note under the list, and on a phone the order buttons have a line of their own.

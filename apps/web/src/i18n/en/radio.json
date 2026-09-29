@@ -81,6 +81,7 @@
   "advanced.clock": "Clock",
   "advanced.setClock": "Set the radio's clock from this device",
   "advanced.clockSet": "Clock set",
+  "advanced.clockAhead": "The radio's clock runs {seconds} s ahead and cannot go back",
   "advanced.tuning": "Tuning",
   "advanced.multiAcks": "Extra acknowledgements",
   "advanced.multiAcksHint": "Repeats of each ack, for lossy links.",

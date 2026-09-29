@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AdvType, NoReplyError, TelemMode, type BatterySample, type ContactRecord, type CoreStats, type LppReading, type NodeStats, type RadioStats } from "@meshnet/meshcore";
+import { AdvType, ClockAheadError, NoReplyError, NodeCommandError, TelemMode, type BatterySample, type ContactRecord, type CoreStats, type LppReading, type NodeStats, type RadioStats } from "@meshnet/meshcore";
 import { errorText } from "../i18n/errors.js";
 import { locale, t } from "../i18n/index.js";
 import { BATTERY_TYPES, batteryTypeLabel, setBatteryType, useChosenBatteryType } from "../lib/batteryType.js";
@@ -8,6 +8,7 @@ import { openNodePage, push, showOnMap } from "../lib/nav.js";
 import { clockDrift, isAdmin } from "../lib/nodes.js";
 import { session, useSession } from "../lib/session.js";
 import { act, toast } from "../lib/toast.js";
+import { Confirm } from "../ui/Dialog.js";
 import { ActionRow, ChoiceRow, Group, InfoRow, LinkRow } from "../ui/List.js";
 import { Sheet } from "../ui/Sheet.js";
 import { AlertIcon, CheckIcon } from "./Icons.js";
@@ -163,6 +164,9 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
   const [busy, setBusy] = useState<"refresh" | "more" | null>(null);
   const [silent, setSilent] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [clockBusy, setClockBusy] = useState(false);
+  const [ahead, setAhead] = useState(false);
+  const [askReset, setAskReset] = useState(false);
 
   const history: BatterySample[] = statusNode ? (state.statusHistory[key] ?? []).map((s) => ({ at: s.at, mv: s.batteryMv })) : (state.batteryHistory[key] ?? []);
   const mv = stats?.batteryMv ?? selfVolts(telemetry?.readings);
@@ -187,6 +191,37 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
   const answeredAt = statusNode ? status?.at : telemetry?.at;
   const drift = clockDrift(login);
   const admin = isAdmin(login);
+
+  // The node answers `clock sync` whatever it did, so its reply decides what is said. A clock
+  // that runs ahead stays there: the row then offers the reset that brings it back.
+  const syncClock = async () => {
+    setClockBusy(true);
+    try {
+      await session.syncNodeClock(key);
+      setAhead(false);
+      toast(t("node.status.clockSet"));
+    } catch (e) {
+      if (e instanceof ClockAheadError) {
+        setAhead(true);
+        toast(t("node.status.clockAhead", { name }), "error", undefined, t("node.status.clockAheadDetail"));
+      } else toast(e instanceof NodeCommandError ? t("node.nodeSaid", { reply: e.reply }) : errorText(e), "error");
+    } finally {
+      setClockBusy(false);
+    }
+  };
+  const resetClock = async () => {
+    setAskReset(false);
+    setClockBusy(true);
+    try {
+      await session.resetNodeClock(key);
+      setAhead(false);
+      toast(t("node.status.clockReset", { name }), "", undefined, t("node.status.clockResetDetail"));
+    } catch (e) {
+      toast(errorText(e), "error");
+    } finally {
+      setClockBusy(false);
+    }
+  };
 
   return (
     <>
@@ -226,7 +261,13 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
                   {t(drift > 0 ? "node.status.behind" : "node.status.ahead", { seconds: Math.abs(drift) })}
                 </span>
               </InfoRow>
-              {admin ? <ActionRow label={t("node.status.setClock")} air disabled={!online} onClick={() => void act(() => session.runCli(key, "clock sync"), t("node.status.clockSet"))} /> : null}
+              {admin ? (
+                ahead ? (
+                  <ActionRow label={t("node.status.resetClock")} hint={t("node.status.resetClockHint")} air danger busy={clockBusy} disabled={!online} onClick={() => setAskReset(true)} />
+                ) : (
+                  <ActionRow label={t("node.status.setClock")} air busy={clockBusy} disabled={!online} onClick={() => void syncClock()} />
+                )
+              ) : null}
             </>
           ) : (
             <InfoRow label={t("node.status.clock")}>
@@ -241,6 +282,15 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
         <ActionRow label={t("node.readings.refresh")} hint={statusNode ? t("node.readings.refreshStatus") : undefined} air busy={busy === "refresh"} disabled={!online || busy !== null} onClick={refresh} />
       </Group>
       {mv !== null ? <BatterySheet open={picking} onClose={() => setPicking(false)} nodeKey={key} name={name} mv={mv} /> : null}
+      <Confirm
+        open={askReset}
+        title={t("node.status.resetTitle", { name })}
+        body={<p>{t("node.status.resetBody")}</p>}
+        confirmLabel={t("node.status.resetConfirm")}
+        danger
+        onCancel={() => setAskReset(false)}
+        onConfirm={() => void resetClock()}
+      />
     </>
   );
 }

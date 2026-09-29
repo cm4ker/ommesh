@@ -81,6 +81,7 @@
   "advanced.clock": "Часы",
   "advanced.setClock": "Выставить часы радио по этому устройству",
   "advanced.clockSet": "Часы выставлены",
+  "advanced.clockAhead": "Часы радио спешат на {seconds} с, а назад их не перевести",
   "advanced.tuning": "Тонкая настройка",
   "advanced.multiAcks": "Дополнительные подтверждения",
   "advanced.multiAcksHint": "Повторы каждого подтверждения — для ненадёжных связей.",

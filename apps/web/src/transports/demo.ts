@@ -319,6 +319,12 @@ class DemoRadio extends BaseTransport {
   private admins = new Set<Person>();
   /** When each repeater last called its neighbours, local ms. */
   private searched = new Map<Person, number>();
+  /**
+   * How far each node's clock is behind ours, seconds; negative when it runs ahead. The
+   * repeaters run 47 s behind, for the clock card, but Tower runs five minutes ahead, which
+   * only a reset brings back.
+   */
+  private clocks = new Map<Person, number>(PEOPLE.filter((p) => p.type >= 2).map((p) => [p, p.name === "Tower Repeater" ? -300 : p.type === 2 ? 47 : 2]));
   /** The route this radio holds to each contact, as a hop count; 0xff for none. */
   private routes = new Map<Person, number>(PEOPLE.map((p) => [p, p.hops]));
   /** Contacts taken off this radio, and the flags written to the others. */
@@ -510,12 +516,24 @@ class DemoRadio extends BaseTransport {
     const prefs = this.prefs.get(p)!;
     const get = /^get (\S+)$/.exec(command);
     const set = /^set (\S+) (.*)$/.exec(command);
-    const now = new Date();
-    const clock = `${now.toISOString().slice(11, 16)} - ${now.getUTCDate()}/${now.getUTCMonth() + 1}/${now.getUTCFullYear()} UTC`;
+    const clockText = (behind: number) => {
+      const at = new Date(Date.now() - behind * 1000);
+      return `${at.toISOString().slice(11, 16)} - ${at.getUTCDate()}/${at.getUTCMonth() + 1}/${at.getUTCFullYear()} UTC`;
+    };
     if (command === "ver") return "v1.17.1 (Build: 14-Aug-2026)";
     if (command === "board") return "Demo board";
-    if (command === "clock") return clock;
-    if (command === "clock sync") return `OK - clock set: ${clock}`;
+    if (command === "clock") return clockText(this.clocks.get(p) ?? 0);
+    // Like the firmware: the clock only goes forward.
+    if (command === "clock sync") {
+      if ((this.clocks.get(p) ?? 0) < 0) return "ERR: clock cannot go backwards";
+      this.clocks.set(p, 0);
+      return `OK - clock set: ${clockText(0)}`;
+    }
+    // Back to 15 May 2024, and a restart that leaves no time to answer.
+    if (command === "clkreboot") {
+      this.clocks.set(p, Math.floor(Date.now() / 1000) - 1_715_770_351);
+      return null;
+    }
     if (command === "advert") return "OK - Advert sent";
     if (command === "advert.zerohop") return "OK - zerohop advert sent";
     if (command === "clear stats") return "OK";
@@ -761,8 +779,7 @@ class DemoRadio extends BaseTransport {
           const guest = password === "guest";
           if (guest) this.admins.delete(p);
           else this.admins.add(p);
-          // The repeater's clock runs 47 s behind, for the clock card.
-          const drift = p.type === 2 ? 47 : 2;
+          const drift = this.clocks.get(p) ?? 0;
           this.later(
             1400,
             new ByteWriter()

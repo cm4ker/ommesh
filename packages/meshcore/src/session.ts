@@ -202,7 +202,7 @@ export interface NodeLogin {
   ok: boolean;
   /** An `AclRole`, when the node said; a legacy "OK" does not. */
   role: number | null;
-  /** The node's clock at sign-in, unix seconds. */
+  /** The node's clock at sign-in, unix seconds; ours then, once this client set the node's clock. */
   serverTime: number | null;
   firmwareLevel: number | null;
   /** Local clock, ms. */
@@ -650,6 +650,14 @@ export class NodeCommandError extends Error {
   constructor(readonly reply: string) {
     super(reply);
     this.name = "NodeCommandError";
+  }
+}
+
+/** A node refused `clock sync` because its clock runs ahead of ours: it moves its clock only forward. */
+export class ClockAheadError extends NodeCommandError {
+  constructor(reply: string) {
+    super(reply);
+    this.name = "ClockAheadError";
   }
 }
 
@@ -1263,15 +1271,20 @@ export class MeshSession {
     return summary;
   }
 
-  /** The radio's clock is set from ours when it lags; it refuses to go back, so a lead is left. */
-  async syncClock(): Promise<void> {
+  /**
+   * The radio's clock is set from ours when it lags by more than `slack` seconds. It refuses to
+   * go back, so a lead is left, and the lead is what this resolves with, seconds; 0 when the
+   * radio is not ahead.
+   */
+  async syncClock(slack = 30): Promise<number> {
     const client = this.need();
     const radio = await client.getDeviceTime();
     const ours = Math.floor(this.now() / 1000);
-    if (radio < ours - 30) {
+    if (radio < ours - slack) {
       await client.setDeviceTime(ours);
       this.log("clock", `radio clock was ${ours - radio} s behind; set`);
     }
+    return Math.max(0, radio - ours);
   }
 
   // ---- contacts ----
@@ -3048,6 +3061,32 @@ export class MeshSession {
     const stamp = Math.max(Math.floor(this.now() / 1000), (this.cliStamps.get(key) ?? 0) + 1);
     this.cliStamps.set(key, stamp);
     return stamp;
+  }
+
+  /**
+   * Sets a node's clock from ours with `clock sync`. The node moves its clock only forward, so
+   * one that runs ahead answers "ERR: clock cannot go backwards", which throws a
+   * `ClockAheadError`. Once the node takes our time, its sign-in is read as in step with us.
+   */
+  async syncNodeClock(key: string): Promise<void> {
+    const reply = await this.runCli(key, "clock sync");
+    if (/cannot go backwards/i.test(reply)) throw new ClockAheadError(reply);
+    if (isCliError(reply)) throw new NodeCommandError(reply);
+    const login = this.state.logins[key];
+    if (login?.serverTime != null) this.set({ logins: { ...this.state.logins, [key]: { ...login, serverTime: Math.floor(login.at / 1000) } } });
+  }
+
+  /**
+   * `clkreboot`: the node puts its clock back to 15 May 2024 and restarts, the one way back for
+   * a clock that runs ahead. It restarts before it can answer; once it is up, its clock can be
+   * set from ours.
+   */
+  async resetNodeClock(key: string): Promise<void> {
+    try {
+      await this.runCli(key, "clkreboot");
+    } catch (error) {
+      if (!(error instanceof NoReplyError)) throw error;
+    }
   }
 
   /** `get <name>`, or another command whose reply is the value; remembered per node. */

@@ -91,6 +91,9 @@ const PRESETS: Preset[] = [
 
 const BANDWIDTHS = ["7.8", "10.4", "15.6", "20.8", "31.25", "41.7", "62.5", "125", "250", "500"];
 
+/** A lead of the radio's clock past this, seconds, is more than the whole seconds the two clocks are read in. */
+const CLOCK_LEAD_S = 2;
+
 /** The preset the radio is on, or its frequency and spreading factor when it is on none. */
 export function presetName(self: Self): string {
   const p = PRESETS.find((q) => q.frequencyKhz === self.frequencyKhz && q.bandwidthHz === self.bandwidthHz && q.spreadingFactor === self.spreadingFactor && q.codingRate === self.codingRate);
@@ -460,7 +463,18 @@ function AdvancedPage({ self, online }: { self: Self; online: boolean }) {
         <LinkRow label={t("radio.advanced.publicKey")} value={<span className="mono">{self.key.slice(0, 16)}…</span>} trailing={<CopyIcon size={14} className="line-chev" />} onClick={() => void navigator.clipboard?.writeText(self.key).then(() => toast(t("common.copied")))} />
       </Group>
       <Group title={t("radio.advanced.clock")}>
-        <ActionRow label={t("radio.advanced.setClock")} disabled={!online} onClick={() => void act(() => session.syncClock(), t("radio.advanced.clockSet"))} />
+        <ActionRow
+          label={t("radio.advanced.setClock")}
+          disabled={!online}
+          onClick={() =>
+            void act(async () => {
+              // The radio takes no time behind its own, so one that runs ahead is only told about.
+              const ahead = await session.syncClock(0);
+              if (ahead > CLOCK_LEAD_S) toast(t("radio.advanced.clockAhead", { seconds: ahead }), "error");
+              else toast(t("radio.advanced.clockSet"));
+            })
+          }
+        />
       </Group>
       <Group title={t("radio.advanced.tuning")}>
         <SelectRow

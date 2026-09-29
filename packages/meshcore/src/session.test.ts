@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { ByteWriter, fromHex } from "./protocol/bytes.js";
 import { Cmd, Push, Resp, TxtType } from "./protocol/codes.js";
 import { groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
-import { channelConversation, contactConversation, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
+import { channelConversation, ClockAheadError, contactConversation, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
 import { BaseTransport } from "./transport.js";
 import { TimeoutError, TransportClosedError } from "./client.js";
 
@@ -1561,6 +1561,52 @@ test("a console command carries a tag, and its reply goes to the console, not th
     state.consoles[HILL_KEY]?.map((e) => [e.command, e.status, e.reply]),
     [["get tx", "done", "> 22"]],
   );
+});
+
+/** Answers the console command the session sent last with `reply`. */
+function answerCli(radio: ScriptedRadio, reply: string): void {
+  const tag = sentText(radio.sent.filter((f) => f[0] === Cmd.SendTxtMsg).at(-1)!).slice(0, 2);
+  radio.queue.push(cliFrame(HILL, `${tag}|${reply}`));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+}
+
+test("a node that takes our time reads as in step; one whose clock runs ahead says it cannot go back", async () => {
+  const { radio, session } = await nodeSession();
+  // Signed in with the node's clock 47 s behind.
+  const login = session.login(HILL_KEY, "secret");
+  await tick();
+  radio.push(new ByteWriter().u8(Push.LoginSuccess).u8(1).bytes(HILL.subarray(0, 6)).u32(1_699_999_953).u8(3).u8(2).toBytes());
+  await login;
+
+  const sync = session.syncNodeClock(HILL_KEY);
+  await tick();
+  assert.match(sentText(radio.sent.filter((f) => f[0] === Cmd.SendTxtMsg).at(-1)!), /^[0-9a-f]{2}\|clock sync$/);
+  answerCli(radio, "OK - clock set: 22:13 - 14/11/2023 UTC");
+  await sync;
+  const set = session.getState().logins[HILL_KEY]!;
+  assert.equal(Math.round(set.at / 1000 - set.serverTime!), 0);
+
+  const ahead = session.syncNodeClock(HILL_KEY);
+  await tick();
+  answerCli(radio, "ERR: clock cannot go backwards");
+  await assert.rejects(ahead, (error: Error) => error instanceof ClockAheadError && error instanceof NodeCommandError);
+});
+
+test("a clock reset restarts the node, which sends no reply", async () => {
+  const { radio, session } = await nodeSession({ replyWaitMs: () => 20 });
+  await session.resetNodeClock(HILL_KEY);
+  assert.match(sentText(radio.sent.find((f) => f[0] === Cmd.SendTxtMsg)!), /^[0-9a-f]{2}\|clkreboot$/);
+});
+
+test("a radio whose clock runs ahead is left there, and says by how much", async () => {
+  const { radio, session } = await nodeSession();
+  radio.time = 1_700_000_300;
+  const before = radio.sent.length;
+  assert.equal(await session.syncClock(0), 300);
+  assert.ok(!radio.sent.slice(before).some((f) => f[0] === Cmd.SetDeviceTime));
+  radio.time = 1_699_999_990;
+  assert.equal(await session.syncClock(0), 0);
+  assert.ok(radio.sent.slice(before).some((f) => f[0] === Cmd.SetDeviceTime));
 });
 
 test("a console reply that comes after the wait ran out still lands on its command", async () => {

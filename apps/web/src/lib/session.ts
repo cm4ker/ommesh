@@ -10,7 +10,6 @@
 
 import { useSyncExternalStore } from "react";
 import { MeshSession, type SessionState } from "@meshnet/meshcore";
-import { hasSavedPassword, readPassword } from "./secrets.js";
 import { IndexedDbStorage } from "./storage.js";
 import { pushTrace } from "./trace.js";
 
@@ -20,8 +19,6 @@ export const session = new MeshSession({
   appName: "Ommesh",
   storage,
   trace: pushTrace,
-  // A node's kept password lets a request that heard nothing renew the node's way back by itself.
-  passwordFor: async (key) => (hasSavedPassword(key) ? readPassword(key) : null),
 });
 
 /** Parts of the state that change with the traffic on the air and that `useSession` leaves out. */

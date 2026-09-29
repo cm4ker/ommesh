@@ -75,18 +75,9 @@ export function SignIn({
       }
       if (remember && password) await savePassword(key, password);
       else if (!remember) await forgetPassword(key);
-      if (contact.type === AdvType.Repeater && (login.role === null || login.role === 3)) {
-        // Who runs it and what it runs: asked once, while the route is fresh.
-        void session.requestOwnerInfo(key).catch(() => undefined);
-      }
       onSignedIn(key);
     } catch (err) {
-      // Silent along the route: the node may have lost its way back to us. Once in a while, by itself,
-      // the sign-in goes again to the whole mesh, which renews it; otherwise the button offers it.
-      if (err instanceof NoReplyError && !byFlood && session.canRenewWayBack(key)) {
-        setBusy(false);
-        return signIn(true);
-      }
+      // Silent along the route: the node may have lost its way back to us, which the button renews.
       setError(err instanceof NoReplyError ? t("node.signIn.noReply", { name: contact.name || contact.prefix }) : errorText(err));
       setSilent(err instanceof NoReplyError && !byFlood);
     } finally {
@@ -96,8 +87,6 @@ export function SignIn({
 
   const title = relearn && contact ? t("node.signIn.relearnTitle", { name: contact.name || contact.prefix }) : nodeKey && contact ? t("node.signIn.title", { name: contact.name || contact.prefix }) : t("node.signIn.addNode");
   const login = key ? state.logins[key] : undefined;
-  // On a weak route the sign-in goes several times; which try it is shows while it does.
-  const job = busy && key && state.remote.active?.key === key && state.remote.active.label.startsWith("sign in") ? state.remote.active : null;
 
   return (
     <Dialog open={open} title={title} onClose={onClose}>
@@ -146,7 +135,6 @@ export function SignIn({
         </label>
         {login && !login.ok && !error ? <p className="muted small">{t("node.signIn.lastRefused")}</p> : null}
         {login?.ok && login.role !== null && !error ? <p className="muted small">{t("node.signIn.lastRole", { role: roleName(login.role) })}</p> : null}
-        {job && job.attempt > 1 ? <p className="muted small">{t("node.signIn.trying", { n: job.attempt, of: job.attempts })}</p> : null}
         {relearn ? <p className="muted small">{t("node.signIn.relearnHint")}</p> : null}
         {error ? <p className="connect-error">{error}</p> : null}
         {silent ? (

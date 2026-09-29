@@ -28,9 +28,8 @@ export function Console({ contact }: { contact: ContactRecord }) {
   const [asking, setAsking] = useState(false);
   const [relearning, setRelearning] = useState(false);
   const [focused, setFocused] = useState(false);
-  // The last command the node never answered: the node may no longer know its way back to us.
-  const lost = [...entries].reverse().find((e) => e.status === "timeout" && !e.wayBack)?.id ?? null;
-  const lastLost = entries.at(-1)?.id === lost;
+  // The last command went unanswered: the node may no longer know its way back to us.
+  const lost = entries.at(-1)?.status === "timeout";
 
   /** A sign-in by flood with the saved password, or the sheet to type one. */
   const relearn = async () => {
@@ -94,7 +93,7 @@ export function Console({ contact }: { contact: ContactRecord }) {
         {entries.map((entry) => (
           <Entry key={entry.id} entry={entry} onRetry={() => send(entry.command)} />
         ))}
-        {lost && lastLost ? (
+        {lost ? (
           <div className="c-wayback">
             <span className="muted small">{t("node.console.wayBack")}</span>
             <Button size="sm" busy={relearning} disabled={!online || relearning} onClick={() => void relearn()}>
@@ -215,22 +214,11 @@ function Entry({ entry, onRetry }: { entry: ConsoleEntry; onRetry: () => void })
         <div className="c-out c-wait">{t("node.console.queued")}</div>
       ) : entry.status === "waiting" ? (
         <div className="c-out c-wait">
-          <span className="spinner" aria-hidden="true" />{" "}
-          {entry.check === "checking"
-            ? t("node.console.checking", { command: readBack(entry.command) })
-            : entry.wayBack === "renewing"
-              ? t("node.console.renewing")
-              : entry.attempt && entry.attempt > 1 && entry.attempts
-                ? t("node.console.try", { n: entry.attempt, of: entry.attempts })
-                : t("node.console.waiting")}
+          <span className="spinner" aria-hidden="true" /> {t("node.console.waiting")}
         </div>
       ) : entry.status === "timeout" ? (
         <div className="c-out c-err">
-          {entry.wayBack === "unreachable"
-            ? t("node.console.unreachable")
-            : entry.attempt && entry.attempt > 1
-              ? t("node.console.noReplyTries", { count: entry.attempt })
-              : t("node.console.noReply")}
+          {t("node.console.noReply")}
           {/* A masked command cannot be sent again: its text here is not the command. */}
           {entry.command.includes("••") ? null : (
             <>
@@ -242,27 +230,10 @@ function Entry({ entry, onRetry }: { entry: ConsoleEntry; onRetry: () => void })
           )}
         </div>
       ) : entry.status === "failed" ? (
-        <div className="c-out c-err">
-          {entry.check === "differs" ? t("node.console.differs", { command: readBack(entry.command), value: entry.reply ?? "" }) : entry.error}
-        </div>
+        <div className="c-out c-err">{entry.error}</div>
       ) : (
-        <>
-          <div className="c-out">{entry.reply}</div>
-          {entry.check === "applied" ? (
-            <div className="c-note c-good">{t("node.console.applied", { command: readBack(entry.command) })}</div>
-          ) : entry.wayBack === "renewed" ? (
-            <div className="c-note">{t("node.console.afterRenew")}</div>
-          ) : entry.attempt && entry.attempt > 1 ? (
-            <div className="c-note">{t("node.console.answeredOnTry", { n: entry.attempt })}</div>
-          ) : null}
-        </>
+        <div className="c-out">{entry.reply}</div>
       )}
     </div>
   );
-}
-
-/** The `get` a `set` is read back with. */
-function readBack(command: string): string {
-  const name = /^set\s+(\S+)/i.exec(command.trim())?.[1];
-  return name ? `get ${name}` : command;
 }

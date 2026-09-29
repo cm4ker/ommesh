@@ -32,6 +32,7 @@
 - On a repeater's Neighbours page an admin can have the repeater look for its neighbours. Find neighbours has it call the repeaters it hears on the air, waits the few seconds they take to answer and reads the list again, newest first. A line above the list counts down while they answer, then says how many answered and how many of them are new; the new ones are lit for a moment and marked "new".
 - A repeater's or a room's Packets and signal gives received, sent and dropped duplicates a row each: the total, and under it how many went by flood and how many direct. Receive errors have a row of their own with their share of everything the node heard in brackets, such as "950 (24.2%)". The SNR is written the way numbers are in the app's language.
 - A sign-in, a status, neighbours, settings and console commands go to a node once per tap, and the app sends it nothing on its own. Before, a request that heard nothing went up to five times and then to the whole mesh; after that the app signed in to the node through the whole mesh to renew its way back and sent the request again, read a silent `set` back with `get`, and asked a repeater for its firmware and owner after each sign-in. One tap could put a dozen packets on the air, several of them sent on by every repeater, and on 28 September that filled the mesh. Now a command that got no answer has Send again under it, and Renew the way back when it is the last one; a sign-in that heard nothing offers the same, and Ask for firmware and owner is in the profile's menu.
+- A node's Clock row shows how far its clock is off, and an admin can check it again with a tap. The row used to say "in sync" from the sign-in, however long ago that was. A tap asks the node the time once, and the row says "5 min ahead", "3 s behind" or "on time" and when it was checked; any other console command checks the clock too. A clock more than 30 s ahead offers Reset its clock and reboot straight away, and the confirmation says how much longer radios that heard its adverts will skip its new ones. After Set its clock from this radio the row shows what the node answered rather than taking it on trust.
 
 ### Settings
 - On a phone the log puts each entry's time and kind above its text, so the text has the whole width.
@@ -49,7 +50,7 @@
 - A time such as "2 h 32 min" no longer breaks between a number and its unit.
 - With large text, the tiles under On air stay inside the screen and no longer push it sideways.
 - On a desktop, the side rail is wide enough for its labels in Russian.
-- Set its clock from this radio no longer says "Clock set" when the node kept its time. A node's clock only goes forward, so when it runs ahead the app says so, and the row becomes Reset its clock and reboot: the node restarts with its clock at 15 May 2024, and then its clock can be set from the radio. Once the clock is set, the Clock row reads "in sync". Setting the radio's own clock says too when that clock runs ahead.
+- Set its clock from this radio no longer says "Clock set" when the node kept its time. A node's clock only goes forward, so when it runs ahead the app says so, and the row becomes Reset its clock and reboot: the node restarts with its clock at 15 May 2024, and then its clock can be set from the radio. Setting the radio's own clock says too when that clock runs ahead.
 
 ## 0.4.0 — 2026-09-28
 

@@ -26,6 +26,7 @@
 
 ### Notifications and the background
 - Messages that arrive all at once, such as the ones the radio kept while the app was away, ring once rather than once each: the first notice sounds, and the rest bring its count up to date quietly. Messages written seconds apart still ring each.
+- On a phone a notice is its words alone, under the app's icon. The picture of who wrote is gone: a watch showed it in place of the message, and on Android it stood where the app's icon should be.
 
 ### Fixes
 - A phone connects to a radio over Wi-Fi by its address. Before, it waited 45 seconds and said the radio did not answer, whatever the address.

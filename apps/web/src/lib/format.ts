@@ -49,6 +49,20 @@ export function ago(ms: number | null, now = Date.now()): string {
   return dates().day.format(ms);
 }
 
+/** A stretch of time in seconds, either way: "40 s", "5 min", "3 h", "2 d". */
+export function span(seconds: number): string {
+  const s = Math.abs(Math.round(seconds));
+  if (s < 60) return t("common.seconds", { count: s });
+  if (s < 3600) return t("common.minutes", { count: Math.round(s / 60) });
+  if (s < 86_400) return t("common.hours", { count: Math.round(s / 3600) });
+  return t("common.days", { count: Math.round(s / 86_400) });
+}
+
+/** The day with its year, whatever year it is: "15 May 2024". */
+export function fullDate(unixSeconds: number): string {
+  return dates().dayOfYear.format(unixSeconds * 1000);
+}
+
 export function frequency(khz: number): string {
   return t("common.megahertz", { value: (khz / 1000).toFixed(3) });
 }

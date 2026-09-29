@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { LppReading, SeriesSummary } from "@meshnet/meshcore";
-import { batteryPercent, emojiOnly, errorShare, lowCharge, powerSummary, powerWatts, trailingEmoji } from "./format.js";
+import { batteryPercent, emojiOnly, errorShare, lowCharge, powerSummary, powerWatts, span, trailingEmoji } from "./format.js";
 
 test("the emoji a name ends with goes on its circle", () => {
   assert.equal(trailingEmoji("Fox 🦊"), "🦊");
@@ -98,4 +98,12 @@ test("the receive errors are a share of everything heard, the errors included", 
 test("no receive error has no share", () => {
   assert.equal(errorShare(0, 2971), null);
   assert.equal(errorShare(0, 0), null);
+});
+
+test("a stretch of time reads in its largest whole unit, either way", () => {
+  assert.equal(span(47), "47 s");
+  assert.equal(span(-300), "5 min");
+  assert.equal(span(-299.6), "5 min");
+  assert.equal(span(3 * 3600 + 600), "3 h");
+  assert.equal(span(868 * 86_400), "868 d");
 });

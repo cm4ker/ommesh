@@ -523,8 +523,12 @@ class DemoRadio extends BaseTransport {
     return new ByteWriter().u8(Resp.Sent).u8(flood ? 1 : 0).u32(tag).u32(2500).toBytes();
   }
 
-  /** A console reply: queued as a CliData message and announced, after the node's pause. */
+  /**
+   * A console reply: queued as a CliData message and announced, after the node's pause. Like
+   * the firmware, it is stamped with the node's clock as it answers.
+   */
   private cliReply(p: Person, text: string, ms = 1100 + Math.random() * 900): void {
+    const stamp = Math.floor(Date.now() / 1000) - (this.clocks.get(p) ?? 0);
     this.timers.push(
       setTimeout(() => {
         this.queue.push(
@@ -535,7 +539,7 @@ class DemoRadio extends BaseTransport {
             .bytes(p.key.subarray(0, 6))
             .u8(p.hops)
             .u8(TxtType.CliData)
-            .u32(Math.floor(Date.now() / 1000))
+            .u32(stamp)
             .string(text)
             .toBytes(),
         );

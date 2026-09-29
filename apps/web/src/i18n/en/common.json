@@ -38,6 +38,7 @@
   "yesterday": "Yesterday",
   "never": "never",
   "justNow": "just now",
+  "seconds": "{count} s",
   "minutes": "{count} min",
   "hours": "{count} h",
   "days": "{count} d",

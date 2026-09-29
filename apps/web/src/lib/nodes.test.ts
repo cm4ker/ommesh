@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AdvType, type NodeLogin } from "@meshnet/meshcore";
-import { clockDrift, isAdmin, nodeTabs, parseRadio, settingGroups, validate, writeCommand } from "./nodes.js";
+import { isAdmin, nodeClock, nodeTabs, parseRadio, settingGroups, validate, writeCommand } from "./nodes.js";
 
 function login(patch: Partial<NodeLogin>): NodeLogin {
   return { ok: true, role: 3, serverTime: null, firmwareLevel: 2, at: 1_700_000_100_000, ...patch };
@@ -25,9 +25,12 @@ test("admin is the admin role, or a legacy sign-in that named none", () => {
   assert.equal(isAdmin(undefined), false);
 });
 
-test("the node's clock drift is ours at sign-in less its own", () => {
-  assert.equal(clockDrift(login({ serverTime: 1_700_000_053 })), 47);
-  assert.equal(clockDrift(login({ serverTime: null })), null);
+test("the node's clock is ours at sign-in less its own, until a console reply reads it again", () => {
+  assert.deepEqual(nodeClock(login({ serverTime: 1_700_000_053 })), { drift: 47, at: 1_700_000_100_000, from: "login" });
+  assert.equal(nodeClock(login({ serverTime: null })), null);
+  assert.equal(nodeClock(login({ ok: false, serverTime: 1_700_000_053 })), null);
+  assert.deepEqual(nodeClock(login({ serverTime: 1_700_000_053, clock: { drift: -300, at: 1_700_000_200_000 } })), { drift: -300, at: 1_700_000_200_000, from: "reply" });
+  assert.deepEqual(nodeClock(login({ serverTime: null, clock: { drift: 9_000_000, at: 1_700_000_200_000, reset: true } }))?.from, "reset");
 });
 
 test("get radio's answer splits into four fields, numbers trimmed", () => {

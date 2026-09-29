@@ -38,6 +38,7 @@
   "yesterday": "Вчера",
   "never": "никогда",
   "justNow": "только что",
+  "seconds": "{count} с",
   "minutes": "{count} мин",
   "hours": "{count} ч",
   "days": "{count} дн.",

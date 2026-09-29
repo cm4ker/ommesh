@@ -202,12 +202,27 @@ export interface NodeLogin {
   ok: boolean;
   /** An `AclRole`, when the node said; a legacy "OK" does not. */
   role: number | null;
-  /** The node's clock at sign-in, unix seconds; ours then, once this client set the node's clock. */
+  /** The node's clock at sign-in, unix seconds. */
   serverTime: number | null;
   firmwareLevel: number | null;
   /** Local clock, ms. */
   at: number;
+  /** The node's clock as read since the sign-in, from the stamp on a console reply. */
+  clock?: ClockReading;
 }
+
+/** A node's clock against ours at one moment. */
+export interface ClockReading {
+  /** Seconds the node's clock was behind ours; negative when it ran ahead. */
+  drift: number;
+  /** Local clock, ms. */
+  at: number;
+  /** Not read but known: this client sent `clkreboot`, which puts the clock back to `CLOCK_RESET_TIME`. */
+  reset?: true;
+}
+
+/** Where `clkreboot` puts a node's clock: 15 May 2024, as the firmware has it. */
+export const CLOCK_RESET_TIME = 1_715_770_351;
 
 export interface NodeStatus {
   stats: NodeStats | null;
@@ -865,7 +880,7 @@ type RemoteEvent =
   | { kind: "telemetry"; prefix: string; readings: LppReading[] }
   | { kind: "binary"; tag: number; data: Uint8Array }
   | { kind: "path"; prefix: string; outPathLen: number; outPath: string; inPathLen: number; inPath: string }
-  | { kind: "cli"; prefix: string; tag: string | null; text: string };
+  | { kind: "cli"; prefix: string; tag: string | null; text: string; stamp: number };
 
 interface RemoteJob {
   info: RemoteJobInfo;
@@ -1925,7 +1940,7 @@ export class MeshSession {
     if (frame.kind === "contactMessage") {
       const prefix = toHex(frame.senderPrefix);
       if (frame.txtType === TxtType.CliData) {
-        this.receiveCli(prefix, frame.text);
+        this.receiveCli(prefix, frame.text, frame.timestamp);
         return;
       }
       const contact = this.contactByPrefix(prefix);
@@ -3060,6 +3075,7 @@ export class MeshSession {
       error: null,
     };
     this.appendConsole(key, entry);
+    let sentAt = this.now();
     try {
       const event = await this.remoteRequest(
         key,
@@ -3069,10 +3085,15 @@ export class MeshSession {
         {
           // The node holds a console reply back for about half a second.
           extraWaitMs: 1_500,
-          onStart: () => this.patchConsole(key, entry.id, { status: "waiting", at: this.now() }),
+          onStart: () => {
+            sentAt = this.now();
+            this.patchConsole(key, entry.id, { status: "waiting", at: sentAt });
+          },
         },
       );
-      const reply = event.kind === "cli" ? event.text : "";
+      if (event.kind !== "cli") throw new Error("unreachable");
+      this.noteClock(key, sentAt, event.stamp);
+      const reply = event.text;
       this.patchConsole(key, entry.id, { status: "done", reply: options.mask ? maskReply(reply) : reply, repliedAt: this.now() });
       return reply;
     } catch (error) {
@@ -3089,22 +3110,42 @@ export class MeshSession {
   }
 
   /**
+   * A node stamps each console reply with its own clock, to the second, as it answers. That
+   * moment is taken as the middle of the round trip, so the way there and the way back mostly
+   * cancel out and the reading is good to a second or two. It is kept on the sign-in, and only
+   * for a node we are signed in to, since no other answers the console.
+   */
+  private noteClock(key: string, sentAt: number, stamp: number): void {
+    const now = this.now();
+    this.keepClock(key, { drift: Math.round((sentAt + now) / 2000 - stamp), at: now });
+  }
+
+  private keepClock(key: string, clock: ClockReading): void {
+    const login = this.state.logins[key];
+    if (login?.ok) this.set({ logins: { ...this.state.logins, [key]: { ...login, clock } } });
+  }
+
+  /** Reads a node's clock with `clock`: its reply's stamp is the reading, kept on the sign-in. */
+  async checkNodeClock(key: string): Promise<void> {
+    const reply = await this.runCli(key, "clock");
+    if (isCliError(reply)) throw new NodeCommandError(reply);
+  }
+
+  /**
    * Sets a node's clock from ours with `clock sync`. The node moves its clock only forward, so
    * one that runs ahead answers "ERR: clock cannot go backwards", which throws a
-   * `ClockAheadError`. Once the node takes our time, its sign-in is read as in step with us.
+   * `ClockAheadError`. The reply is stamped after the command, so it tells whether the clock took.
    */
   async syncNodeClock(key: string): Promise<void> {
     const reply = await this.runCli(key, "clock sync");
     if (/cannot go backwards/i.test(reply)) throw new ClockAheadError(reply);
     if (isCliError(reply)) throw new NodeCommandError(reply);
-    const login = this.state.logins[key];
-    if (login?.serverTime != null) this.set({ logins: { ...this.state.logins, [key]: { ...login, serverTime: Math.floor(login.at / 1000) } } });
   }
 
   /**
    * `clkreboot`: the node puts its clock back to 15 May 2024 and restarts, the one way back for
    * a clock that runs ahead. It restarts before it can answer; once it is up, its clock can be
-   * set from ours.
+   * set from ours. Until then its clock is where the reset put it.
    */
   async resetNodeClock(key: string): Promise<void> {
     try {
@@ -3112,6 +3153,8 @@ export class MeshSession {
     } catch (error) {
       if (!(error instanceof NoReplyError)) throw error;
     }
+    const now = this.now();
+    this.keepClock(key, { drift: Math.round(now / 1000) - CLOCK_RESET_TIME, at: now, reset: true });
   }
 
   /** `get <name>`, or another command whose reply is the value; remembered per node. */
@@ -3189,11 +3232,11 @@ export class MeshSession {
   }
 
   /** A console reply: to the command waiting for it, to one that gave up on it, or a line of its own. */
-  private receiveCli(prefix: string, text: string): void {
+  private receiveCli(prefix: string, text: string, stamp: number): void {
     const match = /^([0-9a-fA-F]{2})\|/.exec(text);
     const tag = match ? match[1]!.toLowerCase() : null;
     const body = match ? text.slice(3) : text;
-    if (this.remoteEvent({ kind: "cli", prefix, tag, text: body })) return;
+    if (this.remoteEvent({ kind: "cli", prefix, tag, text: body, stamp })) return;
     const contact = this.contactByPrefix(prefix);
     const key = contact?.key ?? prefix;
     const masked = tag !== null && this.maskedTags.has(`${prefix}:${tag}`);

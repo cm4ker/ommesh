@@ -4188,6 +4188,12 @@ button.hop {
 .pill.ok svg {
   color: var(--success);
 }
+.pill .spinner {
+  width: 9px;
+  height: 9px;
+  border-width: 1.5px;
+  vertical-align: 0;
+}
 .pill.you {
   margin-left: var(--space-2);
 }

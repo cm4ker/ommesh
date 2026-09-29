@@ -3,13 +3,13 @@ import { AdvType, ClockAheadError, NoReplyError, NodeCommandError, TelemMode, ty
 import { errorText } from "../i18n/errors.js";
 import { locale, t } from "../i18n/index.js";
 import { BATTERY_TYPES, batteryTypeLabel, setBatteryType, useChosenBatteryType } from "../lib/batteryType.js";
-import { ago, agoPhrase, batteryPercent, errorShare, lowCharge } from "../lib/format.js";
+import { ago, agoPhrase, batteryPercent, errorShare, fullDate, lowCharge, span } from "../lib/format.js";
 import { openNodePage, push, showOnMap } from "../lib/nav.js";
-import { clockDrift, isAdmin } from "../lib/nodes.js";
+import { isAdmin, nodeClock, type NodeClock } from "../lib/nodes.js";
 import { session, useSession } from "../lib/session.js";
 import { act, toast } from "../lib/toast.js";
 import { Confirm } from "../ui/Dialog.js";
-import { ActionRow, ChoiceRow, Group, InfoRow, LinkRow } from "../ui/List.js";
+import { ActionRow, AirMark, ChoiceRow, Group, InfoRow, LinkRow } from "../ui/List.js";
 import { Sheet } from "../ui/Sheet.js";
 import { AlertIcon, CheckIcon } from "./Icons.js";
 import { numberText, Readings } from "./Readings.js";
@@ -145,6 +145,45 @@ function airTiles(stats: NodeStats, noise: { values: number[]; times: number[] }
 }
 
 /**
+ * Where the node's clock stands. The sign-in's word stays "in sync" when close, since it may be
+ * hours old; a reading since gives the seconds. A clock a day or more off says its date instead.
+ */
+function ClockPill({ clock, checking }: { clock: NodeClock; checking: boolean }) {
+  if (checking)
+    return (
+      <span className="pill">
+        <span className="spinner" aria-hidden="true" />
+        {t("node.status.checking")}
+      </span>
+    );
+  const shows = fullDate(clock.at / 1000 - clock.drift);
+  const off = Math.abs(clock.drift) > DRIFT_WORTH_FIXING_S;
+  const text =
+    clock.from === "reset"
+      ? t("node.status.resetTo", { date: shows })
+      : Math.abs(clock.drift) >= 86_400
+        ? t("node.status.shows", { date: shows })
+        : !off && clock.from === "login"
+          ? t("node.status.inSync")
+          : Math.abs(clock.drift) <= 1
+            ? t("node.status.onTime")
+            : t(clock.drift > 0 ? "node.status.behind" : "node.status.ahead", { span: span(clock.drift) });
+  return (
+    <span className={off ? "pill warn" : "pill ok"}>
+      {off ? <AlertIcon size={11} /> : <CheckIcon size={11} />}
+      {text}
+    </span>
+  );
+}
+
+function clockHint(clock: NodeClock, admin: boolean): string {
+  const time = agoPhrase(clock.at);
+  if (clock.from === "reset") return t("node.status.clockResetAgo", { time });
+  if (clock.from === "reply") return t("node.status.clockChecked", { time });
+  return t(admin ? "node.status.clockHintTap" : "node.status.clockHint", { time });
+}
+
+/**
  * How a node is doing, the same for a person, a repeater, a room or a sensor: its battery first,
  * then for a repeater or a room the air it sits on, then its board, its position and whatever is
  * wired to it. "Refresh" asks what the node answers: a repeater or a room its status, anyone else
@@ -164,8 +203,7 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
   const [busy, setBusy] = useState<"refresh" | "more" | null>(null);
   const [silent, setSilent] = useState(false);
   const [picking, setPicking] = useState(false);
-  const [clockBusy, setClockBusy] = useState(false);
-  const [ahead, setAhead] = useState(false);
+  const [clockBusy, setClockBusy] = useState<"check" | "set" | "reset" | null>(null);
   const [askReset, setAskReset] = useState(false);
 
   const history: BatterySample[] = statusNode ? (state.statusHistory[key] ?? []).map((s) => ({ at: s.at, mv: s.batteryMv })) : (state.batteryHistory[key] ?? []);
@@ -189,37 +227,46 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
   };
   const refresh = ask("refresh", () => (statusNode ? session.requestStatus(key) : session.requestTelemetry(key)));
   const answeredAt = statusNode ? status?.at : telemetry?.at;
-  const drift = clockDrift(login);
+  const clock = nodeClock(login);
   const admin = isAdmin(login);
+  const clockOff = clock !== null && Math.abs(clock.drift) > DRIFT_WORTH_FIXING_S;
 
+  // Each clock command is one send on a tap. The node stamps its reply with its clock, which
+  // moves the reading in the session, so the row redraws from there and says nothing more.
+  const checkClock = async () => {
+    setClockBusy("check");
+    try {
+      await session.checkNodeClock(key);
+    } catch (e) {
+      toast(e instanceof NodeCommandError ? t("node.nodeSaid", { reply: e.reply }) : errorText(e), "error");
+    } finally {
+      setClockBusy(null);
+    }
+  };
   // The node answers `clock sync` whatever it did, so its reply decides what is said. A clock
-  // that runs ahead stays there: the row then offers the reset that brings it back.
+  // that runs ahead stays there: its reading then offers the reset that brings it back.
   const syncClock = async () => {
-    setClockBusy(true);
+    setClockBusy("set");
     try {
       await session.syncNodeClock(key);
-      setAhead(false);
       toast(t("node.status.clockSet"));
     } catch (e) {
-      if (e instanceof ClockAheadError) {
-        setAhead(true);
-        toast(t("node.status.clockAhead", { name }), "error", undefined, t("node.status.clockAheadDetail"));
-      } else toast(e instanceof NodeCommandError ? t("node.nodeSaid", { reply: e.reply }) : errorText(e), "error");
+      if (e instanceof ClockAheadError) toast(t("node.status.clockAhead", { name }), "error", undefined, t("node.status.clockAheadDetail"));
+      else toast(e instanceof NodeCommandError ? t("node.nodeSaid", { reply: e.reply }) : errorText(e), "error");
     } finally {
-      setClockBusy(false);
+      setClockBusy(null);
     }
   };
   const resetClock = async () => {
     setAskReset(false);
-    setClockBusy(true);
+    setClockBusy("reset");
     try {
       await session.resetNodeClock(key);
-      setAhead(false);
       toast(t("node.status.clockReset", { name }), "", undefined, t("node.status.clockResetDetail"));
     } catch (e) {
       toast(errorText(e), "error");
     } finally {
-      setClockBusy(false);
+      setClockBusy(null);
     }
   };
 
@@ -252,31 +299,25 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
           <ActionRow label={t("node.readings.more")} hint={t("node.readings.moreHint")} air busy={busy === "more"} disabled={!online || busy !== null} onClick={ask("more", () => session.requestTelemetry(key))} />
         ) : null}
         {stats ? <PacketsAndSignal stats={stats} /> : null}
-        {drift !== null ? (
-          Math.abs(drift) > DRIFT_WORTH_FIXING_S ? (
-            <>
-              <InfoRow label={t("node.status.clock")} hint={t("node.status.clockHint", { time: agoPhrase(login!.at) })}>
-                <span className="pill warn">
-                  <AlertIcon size={11} />
-                  {t(drift > 0 ? "node.status.behind" : "node.status.ahead", { seconds: Math.abs(drift) })}
-                </span>
+        {clock ? (
+          <>
+            {/* An admin reads the clock again with a tap; a guest has no console, so only the sign-in says. */}
+            {admin && online ? (
+              <LinkRow label={t("node.status.clock")} hint={clockHint(clock, admin)} value={<ClockPill clock={clock} checking={clockBusy === "check"} />} trailing={<AirMark />} disabled={clockBusy !== null} onClick={() => void checkClock()} />
+            ) : (
+              <InfoRow label={t("node.status.clock")} hint={clockHint(clock, admin)}>
+                <ClockPill clock={clock} checking={false} />
               </InfoRow>
-              {admin ? (
-                ahead ? (
-                  <ActionRow label={t("node.status.resetClock")} hint={t("node.status.resetClockHint")} air danger busy={clockBusy} disabled={!online} onClick={() => setAskReset(true)} />
-                ) : (
-                  <ActionRow label={t("node.status.setClock")} air busy={clockBusy} disabled={!online} onClick={() => void syncClock()} />
-                )
-              ) : null}
-            </>
-          ) : (
-            <InfoRow label={t("node.status.clock")}>
-              <span className="pill ok">
-                <CheckIcon size={11} />
-                {t("node.status.inSync")}
-              </span>
-            </InfoRow>
-          )
+            )}
+            {admin && clockOff ? (
+              // Behind, our time sets it. Ahead, it will not go back, and only the reset does.
+              clock.drift < 0 ? (
+                <ActionRow label={t("node.status.resetClock")} hint={t("node.status.resetClockHint")} air danger busy={clockBusy === "reset"} disabled={!online || clockBusy !== null} onClick={() => setAskReset(true)} />
+              ) : (
+                <ActionRow label={t("node.status.setClock")} air busy={clockBusy === "set"} disabled={!online || clockBusy !== null} onClick={() => void syncClock()} />
+              )
+            ) : null}
+          </>
         ) : null}
         {contact.type === AdvType.Sensor && login?.ok ? <LinkRow label={t("node.page.history")} value={t("node.readings.historyHint")} onClick={() => openNodePage(key, "history")} /> : null}
         <ActionRow label={t("node.readings.refresh")} hint={statusNode ? t("node.readings.refreshStatus") : undefined} air busy={busy === "refresh"} disabled={!online || busy !== null} onClick={refresh} />
@@ -285,7 +326,13 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
       <Confirm
         open={askReset}
         title={t("node.status.resetTitle", { name })}
-        body={<p>{t("node.status.resetBody")}</p>}
+        body={
+          <>
+            {clock && clock.drift < 0 ? <p>{t("node.status.resetLead", { span: span(clock.drift) })}</p> : null}
+            <p>{t("node.status.resetBody")}</p>
+            {clock && clock.drift < 0 ? <p>{t("node.status.resetAdverts", { span: span(clock.drift) })}</p> : null}
+          </>
+        }
         confirmLabel={t("node.status.resetConfirm")}
         danger
         onCancel={() => setAskReset(false)}

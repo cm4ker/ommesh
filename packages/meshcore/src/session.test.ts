@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { ByteWriter, fromHex } from "./protocol/bytes.js";
 import { Cmd, Push, Resp, TxtType } from "./protocol/codes.js";
 import { groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
-import { channelConversation, ClockAheadError, contactConversation, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
+import { channelConversation, CLOCK_RESET_TIME, ClockAheadError, contactConversation, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
 import { BaseTransport } from "./transport.js";
 import { TimeoutError, TransportClosedError } from "./client.js";
 
@@ -1214,7 +1214,8 @@ function statusBody(tail: Uint8Array): Uint8Array {
     .toBytes();
 }
 
-function cliFrame(from: Uint8Array, text: string): Uint8Array {
+/** A console reply, stamped with the node's clock. */
+function cliFrame(from: Uint8Array, text: string, stamp = 1_700_000_070): Uint8Array {
   return new ByteWriter()
     .u8(Resp.ContactMsgRecvV3)
     .i8(20)
@@ -1222,7 +1223,7 @@ function cliFrame(from: Uint8Array, text: string): Uint8Array {
     .bytes(from.subarray(0, 6))
     .u8(0)
     .u8(TxtType.CliData)
-    .u32(1_700_000_070)
+    .u32(stamp)
     .string(text)
     .toBytes();
 }
@@ -1604,39 +1605,70 @@ test("a console command carries a tag, and its reply goes to the console, not th
   );
 });
 
-/** Answers the console command the session sent last with `reply`. */
-function answerCli(radio: ScriptedRadio, reply: string): void {
+/** Answers the console command the session sent last with `reply`, stamped with the node's clock. */
+function answerCli(radio: ScriptedRadio, reply: string, stamp?: number): void {
   const tag = sentText(radio.sent.filter((f) => f[0] === Cmd.SendTxtMsg).at(-1)!).slice(0, 2);
-  radio.queue.push(cliFrame(HILL, `${tag}|${reply}`));
+  radio.queue.push(cliFrame(HILL, `${tag}|${reply}`, stamp));
   radio.push(new Uint8Array([Push.MsgWaiting]));
 }
 
-test("a node that takes our time reads as in step; one whose clock runs ahead says it cannot go back", async () => {
-  const { radio, session } = await nodeSession();
-  // Signed in with the node's clock 47 s behind.
+/** A session signed in to Hill as admin at 1_700_000_000, the node's clock then `behind` seconds behind ours. */
+async function signedIn(behind: number, options: NonNullable<ConstructorParameters<typeof MeshSession>[0]> = {}) {
+  const { radio, session } = await nodeSession(options);
   const login = session.login(HILL_KEY, "secret");
   await tick();
-  radio.push(new ByteWriter().u8(Push.LoginSuccess).u8(1).bytes(HILL.subarray(0, 6)).u32(1_699_999_953).u8(3).u8(2).toBytes());
+  radio.push(new ByteWriter().u8(Push.LoginSuccess).u8(1).bytes(HILL.subarray(0, 6)).u32(1_700_000_000 - behind).u8(3).u8(2).toBytes());
   await login;
+  return { radio, session };
+}
+
+test("a console reply reads the node's clock from its stamp, set against the middle of the round trip", async () => {
+  let now = 1_700_000_000_000;
+  const { radio, session } = await signedIn(0, { now: () => now });
+  assert.equal(session.getState().logins[HILL_KEY]!.clock, undefined);
+
+  const check = session.checkNodeClock(HILL_KEY);
+  await tick();
+  assert.match(sentText(radio.sent.filter((f) => f[0] === Cmd.SendTxtMsg).at(-1)!), /^[0-9a-f]{2}\|clock$/);
+  // Sent at :00 and answered at :04, so the node's stamp stands for :02.
+  now += 4_000;
+  answerCli(radio, "22:18 - 14/11/2023 UTC", 1_700_000_302);
+  await check;
+  assert.deepEqual(session.getState().logins[HILL_KEY]!.clock, { drift: -300, at: now });
+
+  // Any console reply reads it again.
+  const read = session.readNodeSetting(HILL_KEY, "tx");
+  await tick();
+  answerCli(radio, "> 22", 1_700_000_004);
+  await read;
+  assert.equal(session.getState().logins[HILL_KEY]!.clock!.drift, 0);
+});
+
+test("a node that takes our time reads as in step by its reply; one whose clock runs ahead says it cannot go back", async () => {
+  const { radio, session } = await signedIn(47);
 
   const sync = session.syncNodeClock(HILL_KEY);
   await tick();
   assert.match(sentText(radio.sent.filter((f) => f[0] === Cmd.SendTxtMsg).at(-1)!), /^[0-9a-f]{2}\|clock sync$/);
-  answerCli(radio, "OK - clock set: 22:13 - 14/11/2023 UTC");
+  answerCli(radio, "OK - clock set: 22:13 - 14/11/2023 UTC", 1_700_000_000);
   await sync;
-  const set = session.getState().logins[HILL_KEY]!;
-  assert.equal(Math.round(set.at / 1000 - set.serverTime!), 0);
+  const login = session.getState().logins[HILL_KEY]!;
+  assert.equal(login.clock!.drift, 0);
+  // The sign-in keeps what the node said then.
+  assert.equal(login.serverTime, 1_699_999_953);
 
   const ahead = session.syncNodeClock(HILL_KEY);
   await tick();
-  answerCli(radio, "ERR: clock cannot go backwards");
+  answerCli(radio, "ERR: clock cannot go backwards", 1_700_000_300);
   await assert.rejects(ahead, (error: Error) => error instanceof ClockAheadError && error instanceof NodeCommandError);
+  assert.equal(session.getState().logins[HILL_KEY]!.clock!.drift, -300);
 });
 
-test("a clock reset restarts the node, which sends no reply", async () => {
-  const { radio, session } = await nodeSession({ replyWaitMs: () => 20 });
+test("a clock reset restarts the node, which sends no reply, and leaves its clock at the reset date", async () => {
+  const { radio, session } = await signedIn(-300, { replyWaitMs: () => 20 });
   await session.resetNodeClock(HILL_KEY);
-  assert.match(sentText(radio.sent.find((f) => f[0] === Cmd.SendTxtMsg)!), /^[0-9a-f]{2}\|clkreboot$/);
+  assert.match(sentText(radio.sent.filter((f) => f[0] === Cmd.SendTxtMsg).at(-1)!), /^[0-9a-f]{2}\|clkreboot$/);
+  assert.deepEqual(session.getState().logins[HILL_KEY]!.clock, { drift: 1_700_000_000 - CLOCK_RESET_TIME, at: 1_700_000_000_000, reset: true });
 });
 
 test("a radio whose clock runs ahead is left there, and says by how much", async () => {

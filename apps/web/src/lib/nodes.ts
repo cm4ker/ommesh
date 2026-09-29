@@ -82,13 +82,21 @@ export function addableNodes(state: SessionState, saved: readonly string[]): Con
     .sort((a, b) => (a.name || a.prefix).localeCompare(b.name || b.prefix));
 }
 
-/**
- * How far the node's clock was behind ours when we signed in, seconds;
- * negative when it ran ahead. Null without a clock in the sign-in reply.
- */
-export function clockDrift(login: NodeLogin | undefined): number | null {
-  if (!login?.ok || login.serverTime === null) return null;
-  return Math.round(login.at / 1000 - login.serverTime);
+/** The node's clock as last known, and how it came to be known: from the sign-in, a console reply, or our own reset. */
+export interface NodeClock {
+  /** Seconds the node's clock was behind ours; negative when it ran ahead. */
+  drift: number;
+  /** Local clock, ms. */
+  at: number;
+  from: "login" | "reply" | "reset";
+}
+
+/** The latest of the sign-in's clock and any read since. Null without either. */
+export function nodeClock(login: NodeLogin | undefined): NodeClock | null {
+  if (!login?.ok) return null;
+  if (login.clock) return { drift: login.clock.drift, at: login.clock.at, from: login.clock.reset ? "reset" : "reply" };
+  if (login.serverTime === null) return null;
+  return { drift: Math.round(login.at / 1000 - login.serverTime), at: login.at, from: "login" };
 }
 
 // ---- settings ----

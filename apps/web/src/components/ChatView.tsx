@@ -2,6 +2,7 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { AdvType, isConversationType, isDirect, parseConversation, type ContactRecord, type MessageRecord, type SessionState } from "@meshnet/meshcore";
 import { useBackLayer } from "../lib/back.js";
 import { GEO, MENTION } from "../lib/composer.js";
+import { LINK, linkOf, openLink } from "../lib/webLinks.js";
 import { messagesIn, shownIn, titleOf, type Shown } from "../lib/conversations.js";
 import { nameOfHash, relaysOf } from "../lib/echoes.js";
 import { getOpenAtUnread, takeUnread } from "../lib/firstUnread.js";
@@ -526,22 +527,50 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
 }
 
 /**
- * A message's text, with mentions and positions picked out; a mention of this radio stands out
- * more. Searched, the words found are marked in the text between them.
+ * A message's text, with mentions, positions and web addresses picked out; a mention of this radio
+ * stands out more, and an address opens in the browser. Searched, the words found are marked in
+ * the text between them and in the addresses.
  */
 function richText(text: string, me: string | null, mark: string | undefined): ReactNode {
-  const pattern = new RegExp(`${MENTION.source}|${GEO.source}`, "g");
+  const pattern = new RegExp(`${MENTION.source}|${GEO.source}|(${LINK.source})`, "g");
   const out: ReactNode[] = [];
   let at = 0;
   for (const m of text.matchAll(pattern)) {
     const start = m.index ?? 0;
     if (start > at) out.push(marked(text.slice(at, start), mark));
+    let length = m[0].length;
     if (m[1] !== undefined) {
       out.push(
         <span key={start} className={m[1] === me ? "mention me" : "mention"}>
           @{m[1]}
         </span>,
       );
+    } else if (m[4] !== undefined) {
+      const link = linkOf(m[4]);
+      if (link) {
+        length = link.text.length;
+        out.push(
+          <a
+            key={start}
+            className="msg-link"
+            href={link.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            draggable={false}
+            // The bubble opens the message's details on a tap and on Enter; this opens the address alone.
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              openLink(link.href);
+            }}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            {marked(link.text, mark)}
+          </a>,
+        );
+      } else {
+        out.push(marked(m[0], mark));
+      }
     } else {
       out.push(
         <span key={start} className="geo" title={m[0]}>
@@ -550,7 +579,7 @@ function richText(text: string, me: string | null, mark: string | undefined): Re
         </span>,
       );
     }
-    at = start + m[0].length;
+    at = start + length;
   }
   if (at === 0) return marked(text, mark);
   if (at < text.length) out.push(marked(text.slice(at), mark));

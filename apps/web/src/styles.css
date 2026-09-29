@@ -3825,6 +3825,13 @@ button.hop {
   border-radius: 4px;
   background: var(--accent-subtle);
 }
+/* A web address. No callout on a long press: that is the message's menu. */
+.msg-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  -webkit-touch-callout: none;
+}
 .geo {
   display: inline-flex;
   align-items: center;

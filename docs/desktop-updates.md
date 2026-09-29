@@ -2,7 +2,7 @@
 
 Windows x64 and ARM64 use the [official Tauri updater](https://v2.tauri.app/plugin/updater/). Open **App updates** on the connection screen, **Update** in the desktop sidebar, or **Radio → About**. A radio connection is not required. Browser and mobile builds do not show this control; macOS/Linux packages currently need a manual upgrade.
 
-The app checks at startup and every six hours while running, including when returning to the foreground after that interval. Automatic checking can be disabled. Checking never opens a modal or downloads a package. **Download update** shows progress; **Install and restart** becomes available only after signature verification. Closing the dialog keeps the download running. A downloaded update is kept for the current app session.
+The app checks at startup and every six hours while running, including when returning to the foreground after that interval. Automatic checking can be disabled. Checking never opens a modal or downloads a package. An update already found is looked for again on the same schedule, so the version shown stays the newest. **Download update** reads the feed once more and downloads its newest build, or the one found when the feed does not answer, and shows progress; **Install and restart** becomes available only after signature verification. Closing the dialog keeps the download running. A downloaded update is kept for the current app session.
 
 Before installation, the app waits up to 45 seconds for message acknowledgements, synchronization and queued remote requests, flushes drafts, disconnects the radio and waits for history to commit to IndexedDB. A failed save prevents installation. If the installer cannot be started, Ommesh attempts to restore the radio connection. The installer preserves the app's data directory and preferences. Reconnecting after a successful restart follows **Reconnect at launch**.
 
@@ -29,7 +29,7 @@ The workflow builds every Windows architecture and its `.exe.sig` sidecar, then 
 
 For a stable release, update the root version, commit it, and push its matching `vX.Y.Z` tag. The workflow publishes it as GitHub's latest stable release. Keep stable tags increasing. No extra update server is required.
 
-If publication fails, inspect the Actions log and the draft before retrying. A full Dev rerun gets a new attempt version. A stable draft can be removed and the run repeated only if it was never published. Never replace the installers of an already published release: clients may already hold its signed manifest. GitHub replaces the rolling `latest.json` asset by deleting and uploading it, so checks can briefly fail during promotion or until a failed promotion is retried. An update found on the Dev feed stays downloadable until two newer builds are published.
+If publication fails, inspect the Actions log and the draft before retrying. A full Dev rerun gets a new attempt version. A stable draft can be removed and the run repeated only if it was never published. Never replace the installers of an already published release: clients may already hold its signed manifest. GitHub replaces the rolling `latest.json` asset by deleting and uploading it, so checks can briefly fail during promotion or until a failed promotion is retried. An update found on the Dev feed stays downloadable until two newer builds are published; Download update reads the feed again, so a client that found one hours ago downloads the newest instead.
 
 ## Verification and first rollout
 

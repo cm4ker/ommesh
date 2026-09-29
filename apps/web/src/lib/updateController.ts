@@ -66,8 +66,25 @@ export class UpdateController {
   async download(): Promise<void> {
     if (!this.handle || this.state.phase !== "available") return;
     this.set({ phase: "downloading", downloaded: 0, total: null, error: null });
+    // A Dev build's release is deleted once newer builds come out, so an update
+    // found hours ago may be gone (#56). The feed is read again first and its
+    // newest build is downloaded; when it does not answer, the one found is tried.
+    let update = this.handle;
     try {
-      await this.handle.download((event) => {
+      const next = await this.checkNative(this.state.channel);
+      this.handle = next;
+      this.set({ version: next?.version ?? null, notes: next?.body ?? "", checkedAt: Date.now() });
+      if (update !== next) await update.close().catch(() => undefined);
+      if (!next) {
+        this.set({ phase: "current" });
+        return;
+      }
+      update = next;
+    } catch {
+      // The feed is briefly missing while CI replaces it, or the network is down.
+    }
+    try {
+      await update.download((event) => {
         if (event.event === "Started") this.set({ total: event.data.contentLength ?? null });
         else if (event.event === "Progress") this.set({ downloaded: this.state.downloaded + event.data.chunkLength });
         // Finished means all bytes arrived. The promise must resolve (signature verified) before install is offered.

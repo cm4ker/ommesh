@@ -8,6 +8,8 @@ function deferred<T>() {
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
+/** Lets the feed be read again before a download starts. */
+const settle = () => new Promise((resolve) => setImmediate(resolve));
 function handle(overrides: Partial<UpdateHandle> = {}): UpdateHandle {
   return { version: "0.3.0", body: "Release notes", download: async () => {}, install: async () => {}, close: async () => {}, ...overrides };
 }
@@ -40,6 +42,7 @@ test("download completion alone cannot enable install before signature verificat
   await controller.check();
   const downloading = controller.download();
   await controller.download();
+  await settle();
   assert.equal(downloads, 1);
   assert.equal(controller.setChannel("stable"), false);
   progress({ event: "Started", data: { contentLength: 100 } });
@@ -65,10 +68,12 @@ test("retry downloads and channel changes discard the old native resource", asyn
   await controller.download();
   await controller.download();
   assert.equal(controller.getState().phase, "ready");
+  // Each download read the feed again and let go of the update it replaced.
+  assert.equal(closed, 2);
   await controller.check();
-  assert.equal(closed, 0);
+  assert.equal(closed, 2);
   assert.equal(controller.setChannel("dev"), true);
-  assert.equal(closed, 1);
+  assert.equal(closed, 3);
   assert.equal(controller.getState().phase, "idle");
   assert.equal(controller.getState().version, null);
 });
@@ -81,6 +86,39 @@ test("a failed check preserves an already discovered update", async () => {
   assert.equal(controller.getState().version, "0.3.0");
   await controller.download();
   assert.equal(controller.getState().phase, "ready");
+});
+
+test("download takes the feed's newest build, not the one found hours before (#56)", async () => {
+  let feed = "0.4.0-dev.122.1";
+  const downloaded: string[] = [];
+  const closed: string[] = [];
+  const controller = new UpdateController(async () => {
+    const version = feed;
+    return handle({
+      version,
+      download: async () => { if (version === "0.4.0-dev.122.1") throw new Error("404 Not Found"); downloaded.push(version); },
+      close: async () => { closed.push(version); },
+    });
+  }, "dev");
+  await controller.check();
+  feed = "0.4.0-dev.124.1";
+  await controller.download();
+  assert.deepEqual(downloaded, ["0.4.0-dev.124.1"]);
+  assert.deepEqual(closed, ["0.4.0-dev.122.1"]);
+  assert.equal(controller.getState().phase, "ready");
+  assert.equal(controller.getState().version, "0.4.0-dev.124.1");
+  assert.equal(controller.getState().error, null);
+});
+
+test("download says the app is up to date once the feed offers nothing newer", async () => {
+  let downloads = 0;
+  let calls = 0;
+  const controller = new UpdateController(async () => calls++ ? null : handle({ download: async () => { downloads++; } }), "stable");
+  await controller.check();
+  await controller.download();
+  assert.equal(downloads, 0);
+  assert.equal(controller.getState().phase, "current");
+  assert.equal(controller.getState().version, null);
 });
 
 test("failed persistence prevents install; failed install restores the radio", async () => {

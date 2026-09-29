@@ -44,7 +44,8 @@ let lastAttempt = 0;
 let initializing: Promise<void> | null = null;
 async function automaticCheck(): Promise<void> {
   if (!info.supported || !info.auto || Date.now() - lastAttempt < PERIOD) return;
-  if (!["idle", "current"].includes(updates.getState().phase)) return;
+  // A found update is looked for again too, so the version on show stays the feed's newest.
+  if (!["idle", "current", "available"].includes(updates.getState().phase)) return;
   lastAttempt = Date.now();
   await updates.check();
 }

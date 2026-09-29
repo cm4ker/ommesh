@@ -14,6 +14,7 @@
 - A channel message no repeater was heard passing on stays red and has two buttons along its bottom edge: Send again sends it once more, and Keep trying sends it up to five times over about 20 minutes, stopping as soon as a repeater is heard passing it on. Keep trying used to be only in the menu of a long press.
 
 ### Mesh and the map
+- With Group close nodes off, the map draws nodes at half their size while a whole town is on the screen and grows them back as you zoom in, so the repeaters of a city no longer pile on one another and each one's state can be told apart. The node you picked keeps its full size.
 - A repeater's picture is a tower on two legs with waves around its top, in place of a mast that was hard to make out. It stays apart from the mark on buttons that transmit, which is a mast on one pole.
 - A repeater's Neighbours page fits a phone: one row per neighbour, with its name, key and when it was heard on the left and its SNR over a bar on the right, in place of a table whose last column was cut off. What the bar spans is in the note under the list, and on a phone the order buttons have a line of their own.
 - On a node's Access page, a phone puts each client's role and Remove under its name, and the role is no longer cut short.

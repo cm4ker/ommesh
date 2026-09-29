@@ -7,7 +7,6 @@
 
 import { AdvType, contactRoute, type SessionState } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
-import { askWhoHears } from "./hears.js";
 import { relayOf, selfEnd, type MapHandle } from "./mapOverlay.js";
 import { getMeshTool, setMeshTool, type LosEnd, type NeighboursTool, type RouteTool, type SurveyTool } from "./meshTool.js";
 import { fetchAllNeighbours } from "./neighbourFetch.js";
@@ -15,7 +14,7 @@ import { isFiltering, neighbourRows, passes, type NeighbourFilter } from "./neig
 import { focusOnMap, getNav, goSection, setStack, showOnMap } from "./nav.js";
 import { clearPing, getPing, spanKey, stopPing } from "./ping.js";
 import { session } from "./session.js";
-import { startSurvey, stopSurvey } from "./survey.js";
+import { discardSurvey, getSurveys, noteSurveyHold, startSurvey, stopSurvey } from "./survey.js";
 import { toast } from "./toast.js";
 
 /** The route to a contact, in its sheet over the map; opened from a profile over the map, it closes back to the profile. */
@@ -209,10 +208,10 @@ function leaveNeighbours(tool: NeighboursTool): void {
   else showOnMap(root.key);
 }
 
+/** The "who hears me" sheet, with the last answers; nothing goes on the air until it is asked there. */
 export function whoHearsMe(): void {
   focusOnMap(null);
   setMeshTool({ kind: "hears" });
-  void askWhoHears();
 }
 
 /** A coverage survey's sheet over the map: the one running, the list, or one of those kept. */
@@ -227,11 +226,33 @@ export async function beginSurvey(): Promise<void> {
   if (id) openSurvey("run", id);
 }
 
-/** Stops the survey running and opens what it found. */
+/**
+ * A hold on ≋ on the map: a survey at once. The toast that says so takes it
+ * back whole, for a hold that was a mistake.
+ */
+export async function surveyAtOnce(): Promise<void> {
+  const id = await startSurvey();
+  if (!id) return;
+  noteSurveyHold();
+  openSurvey("run", id);
+  toast(t("tools.survey.started"), "", { label: t("common.undo"), run: () => discardSurvey(id) }, t("tools.survey.startedDetail"));
+}
+
+/** Stops the survey running and opens what it found; one with no point is not kept, and says why. */
 export function endSurvey(): void {
+  const phase = getSurveys().run?.phase;
   const id = stopSurvey();
-  if (id) openSurvey("summary", id);
-  else setMeshTool(null);
+  if (id) return openSurvey("summary", id);
+  setMeshTool(null);
+  toast(t("tools.survey.empty"), "", undefined, phase === "gps" ? t("tools.survey.emptyGps") : phase === "offline" ? t("tools.survey.emptyOffline") : undefined);
+}
+
+/** Back to the survey running from anywhere, as its strip over the screens does. */
+export function openRunningSurvey(): void {
+  const run = getSurveys().run;
+  if (!run) return;
+  goSection("mesh");
+  openSurvey("run", run.id);
 }
 
 /**
@@ -243,11 +264,17 @@ export function endSurvey(): void {
  */
 export function closeTool(): void {
   const tool = getMeshTool();
-  // A survey steps back: a point to the survey, its files to the survey; the one running goes on without its sheet.
+  // A survey steps down its ladder: a point or the files to the survey, a survey to the list of them, the list
+  // to "who hears me". The one running goes on without its sheet, under the strip that leads back to it.
   if (tool?.kind === "survey" && (tool.point !== null || tool.view === "export")) {
     setMeshTool(tool.point !== null ? { ...tool, point: null } : { ...tool, view: "summary" });
     return;
   }
+  if (tool?.kind === "survey" && tool.view === "summary") {
+    setMeshTool({ ...tool, view: "list", only: null });
+    return;
+  }
+  if (tool?.kind === "survey" && tool.view === "list") return whoHearsMe();
   if (tool?.kind === "los" && tool.prev) {
     if (tool.prev.kind === "neighbours") showOnMap(tool.prev.key);
     setMeshTool(tool.prev);

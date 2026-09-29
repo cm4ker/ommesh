@@ -220,6 +220,11 @@
   "hears.cost": "Один короткий пакет от вас · каждый репитер отвечает до 4 раз за 2 минуты",
   "hears.survey": "Замерять в пути",
   "hears.surveys": "Прошлые замеры",
+  "hears.askedAgo": "Спрашивали {time} · ответов: {count}",
+  "hears.notAsked": "Ещё не спрашивали",
+  "hears.askNow": "Спросить сейчас",
+  "hears.surveyAsks": "Замер спрашивает сам раз в 30 с",
+  "hears.holdHint": "Удерживайте ≋ на карте, чтобы сразу начать замер",
   "survey.title": "Замер покрытия",
   "survey.needRadio": "Подключите радио, чтобы начать замер",
   "survey.running": "{time} · {points}",
@@ -277,5 +282,14 @@
   "survey.agreeSend": "Отправить на {host}",
   "survey.sentTo": "Отправлено на {map}",
   "survey.sentDetail": "принято {taken}, уже было {known}, новых клеток {cells}",
-  "survey.sendFailed": "Не отправилось на {map}"
+  "survey.sendFailed": "Не отправилось на {map}",
+  "survey.nowTitle": "Идёт замер",
+  "survey.strip": "Идёт замер · {time} · {points}",
+  "survey.collapse": "Свернуть",
+  "survey.holdWord": "Держите, чтобы начать замер",
+  "survey.started": "Замер начат",
+  "survey.startedDetail": "Точка раз в 30 с, пока вы едете",
+  "survey.empty": "Замер без точек не сохранён",
+  "survey.emptyGps": "GPS так и не поймался",
+  "survey.emptyOffline": "Радио было не на связи"
 }

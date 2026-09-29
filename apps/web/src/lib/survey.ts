@@ -17,6 +17,7 @@ import { hasPosition } from "./geo.js";
 import { askWhoHears, asksLeft, hearsListening } from "./hears.js";
 import { getPhoneState, holdPhone, locateOnce, locateText, LocateError } from "./phonePosition.js";
 import { session, storage } from "./session.js";
+import { readSetting, writeSetting } from "./storage.js";
 import { surveyStep, type Survey, type SurveyPoint } from "./surveyData.js";
 import { toast } from "./toast.js";
 
@@ -66,6 +67,11 @@ export function useSurveys(): SurveysState {
     if (radio) void loadSurveys(radio);
   }, [radio]);
   return useSyncExternalStore(subscribe, getSurveys);
+}
+
+/** Whether a survey runs, for what only needs that: it changes twice a survey rather than with every point. */
+export function useSurveying(): boolean {
+  return useSyncExternalStore(subscribe, () => state.run !== null);
 }
 
 export function surveyById(id: string | null): Survey | null {
@@ -264,6 +270,24 @@ export function stopSurvey(): string | null {
   replaceSurvey({ ...survey, endedAt: Date.now() });
   persist();
   return survey.id;
+}
+
+/** Ends the survey running and keeps nothing of it, as when a hold started it by mistake. */
+export function discardSurvey(id: string): void {
+  if (state.run?.id !== id) return;
+  stopSurvey();
+  deleteSurvey(id);
+}
+
+const HOLD_KEY = "survey.holdUsed";
+
+/** Whether a survey was ever started by holding ≋; until then its sheet says it can be. */
+export function surveyHoldUsed(): boolean {
+  return readSetting(HOLD_KEY, false);
+}
+
+export function noteSurveyHold(): void {
+  writeSetting(HOLD_KEY, true);
 }
 
 /** Takes a kept survey off the device; the survey, so an Undo can put it back. */

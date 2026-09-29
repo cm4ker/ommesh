@@ -33,7 +33,7 @@ import { isYours, memoryTight, memoryUse } from "../lib/tidy.js";
 import { session, useSelector, useSession } from "../lib/session.js";
 import { act, toast } from "../lib/toast.js";
 import { isComplete, neighbourRows, passes } from "../lib/neighbours.js";
-import { closeAllTools, closeTool, dropOnRoute, lineOfSightTo, openLineOfSight, openNeighbourLink, openSurvey, tapInNeighbours, tapInRoute, tapInSpan, whoHearsMe } from "../lib/toolActions.js";
+import { closeAllTools, closeTool, dropOnRoute, lineOfSightTo, openLineOfSight, openNeighbourLink, surveyAtOnce, tapInNeighbours, tapInRoute, tapInSpan, whoHearsMe } from "../lib/toolActions.js";
 import { getTextScale, subscribeTextSize } from "../theme/textSize.js";
 import { IconButton } from "../ui/Button.js";
 import { SearchField } from "../ui/Field.js";
@@ -685,12 +685,13 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
   const followKey = followList ? JSON.stringify(followList) : null;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const follow = useMemo(() => followList, [followKey]);
-  // The map's button: "who hears me", or back to the survey running; with either open, it puts it away.
+  // The map's button opens "who hears me", and with it or a survey's sheet open, puts that away. Held, it starts a survey.
   const hearsOpen = tool?.kind === "hears" || tool?.kind === "survey";
-  const onHears = hearsOpen ? closeAllTools : surveying ? () => openSurvey("run", surveys.run!.id) : whoHearsMe;
+  const onHears = hearsOpen ? closeAllTools : whoHearsMe;
+  const onHearsHold = state.status === "ready" && !surveying ? () => void surveyAtOnce() : undefined;
   return (
     <Suspense fallback={<div className="empty muted">{t("mesh.map.loading")}</div>}>
-      <MapView selected={selected} onSelect={pick} onGroup={onGroup} filter={test} coverTop={coverTop} coverBottom={coverBottom} zoomButtons={zoomButtons} overlay={overlay} onLeg={leg} onHold={openSpotMenu} onHandleDrop={drop} onHears={onHears} hearsOn={hearsOpen} fit={fit} phone={phone} putHere={putHere} onLocate={onLocate} dots={dots} pickedDot={tool?.kind === "survey" ? tool.point : null} onDot={onDot} follow={follow} recording={surveying} />
+      <MapView selected={selected} onSelect={pick} onGroup={onGroup} filter={test} coverTop={coverTop} coverBottom={coverBottom} zoomButtons={zoomButtons} overlay={overlay} onLeg={leg} onHold={openSpotMenu} onHandleDrop={drop} onHears={onHears} hearsOn={hearsOpen} onHearsHold={onHearsHold} fit={fit} phone={phone} putHere={putHere} onLocate={onLocate} dots={dots} pickedDot={tool?.kind === "survey" ? tool.point : null} onDot={onDot} follow={follow} recording={surveying} />
     </Suspense>
   );
 }

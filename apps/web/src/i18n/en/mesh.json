@@ -4,6 +4,7 @@
   "fetched": "Contacts fetched from the radio",
   "find": "Find a node",
   "whoHearsMe": "Who hears me",
+  "whoHearsMeHold": "Who hears me · hold to start a survey",
   "whereFrom": "{distance} {direction}",
   "message": "Message",
   "you": "You",

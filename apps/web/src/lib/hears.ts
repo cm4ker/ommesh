@@ -18,12 +18,14 @@ const WINDOW_MS = 120_000;
 export interface Hears {
   listening: boolean;
   startedAt: number | null;
+  /** When the last ask went out, so its answers can be shown with their age; null before the first. */
+  at: number | null;
   replies: DiscoverReply[];
   asks: number[];
   error: string | null;
 }
 
-let state: Hears = { listening: false, startedAt: null, replies: [], asks: [], error: null };
+let state: Hears = { listening: false, startedAt: null, at: null, replies: [], asks: [], error: null };
 const listeners = new Set<() => void>();
 
 function set(patch: Partial<Hears>): void {
@@ -56,7 +58,7 @@ export function hearsListening(): boolean {
 export async function askWhoHears(): Promise<DiscoverReply[] | null> {
   if (state.listening || asksLeft().left <= 0) return null;
   const now = Date.now();
-  set({ listening: true, startedAt: now, replies: [], asks: [...state.asks.filter((t) => now - t < WINDOW_MS), now], error: null });
+  set({ listening: true, startedAt: now, at: now, replies: [], asks: [...state.asks.filter((t) => now - t < WINDOW_MS), now], error: null });
   try {
     const replies = await session.discoverRepeaters(LISTEN_MS, (reply) => {
       noteHeardUs(reply.key, reply.heardUs, reply.heardThem);

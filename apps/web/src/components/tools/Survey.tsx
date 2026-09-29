@@ -23,10 +23,10 @@ import { deleteSurvey, markSurveySent, restoreSurvey, surveyNodeName, useSurveys
 import { FIX_M, MOVE_M, PING_EVERY_MS, pointTone, repeaterRows, replyScore, surveyStats, type Survey, type SurveyPoint } from "../../lib/surveyData.js";
 import { FORMAT_TYPE, surveyFile, surveyFileName, type SurveyFormat } from "../../lib/surveyFiles.js";
 import { toast } from "../../lib/toast.js";
-import { closeAllTools, closeTool, endSurvey, openSurvey } from "../../lib/toolActions.js";
+import { closeAllTools, closeTool, endSurvey, openRunningSurvey, openSurvey } from "../../lib/toolActions.js";
 import { dayLabel, timeOfDay } from "../../lib/format.js";
 import { Button, IconButton } from "../../ui/Button.js";
-import { ChevronRightIcon, CloseIcon, FileIcon, LinkOffIcon, LocateIcon, PauseIcon, RadioIcon, ShareIcon, StopIcon, SurveyIcon, TrashIcon } from "../Icons.js";
+import { BackIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, FileIcon, LinkOffIcon, LocateIcon, PauseIcon, RadioIcon, ShareIcon, StopIcon, SurveyIcon, TrashIcon } from "../Icons.js";
 import { QualityChip } from "./RouteSheet.js";
 
 export function SurveySheet({ tool }: { tool: SurveyTool }) {
@@ -54,7 +54,7 @@ function duration(ms: number): string {
 }
 
 /** "08:30" of a survey running, minutes and seconds. */
-function clock(ms: number): string {
+export function clock(ms: number): string {
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
   return `${m < 10 ? "0" : ""}${m}:${s % 60 < 10 ? "0" : ""}${s % 60}`;
@@ -77,6 +77,29 @@ function useNow(): number {
 }
 
 // ---- running ----
+
+/**
+ * A survey running, over whatever is on screen but its own card: how long
+ * and how many points, and a tap back to it. It keeps the screen on and
+ * sends a packet every half minute, so it is never out of sight.
+ */
+export function SurveyStrip() {
+  const surveys = useSurveys();
+  const survey = surveys.run ? (surveys.list?.find((s) => s.id === surveys.run!.id) ?? null) : null;
+  return survey ? <RunningStrip survey={survey} /> : null;
+}
+
+/** The strip itself, ticking only while there is a survey to tick for. */
+function RunningStrip({ survey }: { survey: Survey }) {
+  const now = useNow();
+  return (
+    <button type="button" className="survey-strip" onClick={openRunningSurvey}>
+      <span className="survey-rec" aria-hidden="true" />
+      <span className="survey-strip-text">{t("tools.survey.strip", { time: clock(surveyStats(survey, now).ms), points: t("tools.survey.points", { count: survey.points.length }) })}</span>
+      <ChevronRightIcon size={16} />
+    </button>
+  );
+}
 
 function RunView({ survey, run }: { survey: Survey; run: SurveyRun }) {
   const now = useNow();
@@ -129,6 +152,10 @@ function RunView({ survey, run }: { survey: Survey; run: SurveyRun }) {
           <StopIcon size={14} />
           {t("tools.survey.stop")}
         </Button>
+        {/* Put away, not closed: it goes on under the strip that leads back to it. */}
+        <IconButton label={t("tools.survey.collapse")} onClick={closeTool}>
+          <ChevronDownIcon size={18} />
+        </IconButton>
         <span className="survey-line muted">{line}</span>
       </div>
       {run.phase === "listening" && hears.startedAt ? (
@@ -164,6 +191,9 @@ function SummaryView({ tool, survey }: { tool: SurveyTool; survey: Survey }) {
   return (
     <div className="tool">
       <div className="tool-head">
+        <IconButton label={t("common.back")} onClick={closeTool}>
+          <BackIcon size={18} />
+        </IconButton>
         <span className="row-main">
           <span className="row-title">{t("tools.survey.title")}</span>
           <span className="row-sub muted">{when(survey)}</span>
@@ -235,6 +265,9 @@ function SurveyList({ list, run }: { list: Survey[]; run: SurveyRun | null }) {
   return (
     <div className="tool">
       <div className="tool-head">
+        <IconButton label={t("common.back")} onClick={closeTool}>
+          <BackIcon size={18} />
+        </IconButton>
         <span className="row-main">
           <span className="row-title">{t("tools.survey.list")}</span>
           <span className="row-sub muted">{t("tools.survey.count", { count: list.length })}</span>
@@ -276,6 +309,9 @@ function PointView({ survey, point }: { survey: Survey; point: SurveyPoint }) {
   return (
     <div className="tool">
       <div className="tool-head">
+        <IconButton label={t("common.back")} onClick={closeTool}>
+          <BackIcon size={18} />
+        </IconButton>
         <span className="row-main">
           <span className="row-title">{t("tools.survey.point", { time: new Date(point.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) })}</span>
           <span className="row-sub muted">
@@ -283,7 +319,7 @@ function PointView({ survey, point }: { survey: Survey; point: SurveyPoint }) {
             {t("tools.survey.pointSub", { m: Math.round(point.accuracy) })}
           </span>
         </span>
-        <IconButton label={t("common.close")} onClick={closeTool}>
+        <IconButton label={t("common.close")} onClick={closeAllTools}>
           <CloseIcon size={18} />
         </IconButton>
       </div>
@@ -332,13 +368,16 @@ function ExportView({ survey }: { survey: Survey }) {
   return (
     <div className="tool">
       <div className="tool-head">
+        <IconButton label={t("common.back")} onClick={closeTool}>
+          <BackIcon size={18} />
+        </IconButton>
         <span className="row-main">
           <span className="row-title">{t("tools.survey.exportTitle")}</span>
           <span className="row-sub muted">
             {t("tools.survey.points", { count: survey.points.length })} · {when(survey)}
           </span>
         </span>
-        <IconButton label={t("common.close")} onClick={closeTool}>
+        <IconButton label={t("common.close")} onClick={closeAllTools}>
           <CloseIcon size={18} />
         </IconButton>
       </div>

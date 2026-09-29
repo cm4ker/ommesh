@@ -1142,6 +1142,15 @@ textarea.input {
 .tab-dot.bad {
   background: var(--danger);
 }
+/* A survey running, on the Mesh tab while another is open. */
+.tab-dot.rec {
+  background: var(--danger);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .tab-dot.rec {
+    animation: map-rec 2s ease-in-out infinite;
+  }
+}
 
 .tabbar {
   display: grid;
@@ -5385,7 +5394,7 @@ button.hop {
 /* A coverage survey running: one card with how it goes, its next ask on a ring, and Stop. */
 .survey-bar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   align-items: center;
   column-gap: var(--space-3);
   row-gap: 2px;
@@ -5416,7 +5425,13 @@ button.hop {
 }
 .survey-bar > .button {
   grid-row: 1;
-  grid-column: -2 / -1;
+  grid-column: 4;
+}
+/* Put away: the survey goes on under its strip. */
+.survey-bar > .icon-button {
+  grid-row: 1;
+  grid-column: 5;
+  margin-right: calc(-1 * var(--space-2));
 }
 .survey-line {
   grid-row: 2;
@@ -6237,6 +6252,136 @@ button.hop {
   50% {
     opacity: 0.35;
   }
+}
+/* "Who hears me" held: a red ring runs round it, and a word beside it says what the hold does. */
+.map-controls .map-hears {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.map-hold {
+  position: absolute;
+  inset: -6px;
+  width: calc(100% + 12px);
+  height: calc(100% + 12px);
+  transform: rotate(-90deg);
+  pointer-events: none;
+  opacity: 0;
+}
+.map-hold circle {
+  fill: none;
+  stroke: var(--danger);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 138.3;
+  stroke-dashoffset: 138.3;
+}
+.map-hears.holding .map-hold {
+  opacity: 1;
+}
+.map-hears.holding .map-hold circle {
+  animation: map-hold 0.7s linear forwards;
+}
+@keyframes map-hold {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.map-hold-word {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 12px);
+  transform: translateY(-50%);
+  padding: 6px 10px;
+  border-radius: var(--radius-lg);
+  /* Dressed as the toast, the one dark card the app has. */
+  background: rgb(28 31 36 / 0.94);
+  color: #f1f3f6;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.3);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* A survey running, over every screen but its own card: a tap goes back to it. */
+.survey-strip {
+  flex: none;
+  order: -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 6px var(--space-3);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--danger-subtle);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+}
+.survey-strip-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.survey-strip svg {
+  flex: none;
+  color: var(--text-faint);
+}
+.app.narrow .survey-strip {
+  padding-top: calc(6px + var(--safe-top));
+}
+.app.narrow .offline ~ .survey-strip {
+  padding-top: 6px;
+}
+.survey-strip ~ .mesh-phone {
+  --mesh-top: 0px;
+}
+.app.narrow .survey-strip ~ .layer > .screen > .screen-head,
+.app.narrow .survey-strip ~ .layer > .list-pane > .list-head {
+  padding-top: 0;
+  min-height: 48px;
+}
+.survey-rec {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .survey-rec {
+    animation: map-rec 2s ease-in-out infinite;
+  }
+}
+.survey-live .row-title {
+  color: var(--danger);
+}
+/* Said in the sheet until a survey has once been started by holding the button. */
+.survey-teach {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.survey-teach-ring {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px dashed var(--danger);
+  border-radius: 50%;
 }
 .map-leg-under {
   stroke: var(--bg);

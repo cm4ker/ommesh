@@ -273,9 +273,11 @@ export interface MapProps {
   onHold?: ((lat: number, lon: number, at: MenuAt) => void) | undefined;
   /** A point of a route dragged onto a node: its key, or "self" for this radio. */
   onHandleDrop?: ((handle: MapHandle, onto: string) => void) | undefined;
-  /** "Who hears me" asked from its button over the map, and whether its answers are on the map now. */
+  /** The "who hears me" button over the map tapped, and whether its sheet is open now. */
   onHears?: (() => void) | undefined;
   hearsOn?: boolean | undefined;
+  /** The same button held until its ring closes: a survey starts. Absent when one cannot. */
+  onHearsHold?: (() => void) | undefined;
   /** Points to bring into view together, once for each `id`: a repeater and its neighbours. */
   fit?: { id: string; points: [number, number][] } | null | undefined;
   /** The phone, when it is shown: a ring over a circle of how sure the fix is. */
@@ -296,6 +298,72 @@ export interface MapProps {
   follow?: [number, number][] | null | undefined;
   /** A survey running: a red dot on the "who hears me" button. */
   recording?: boolean | undefined;
+}
+
+/** How long a press on ≋ waits before it is a hold and the ring shows, and how long the ring then takes to close. */
+const HEARS_WAIT_MS = 250;
+const HEARS_HOLD_MS = 700;
+
+/**
+ * The "who hears me" button. A tap opens its sheet, which sends nothing by
+ * itself. Held, when a survey can start, a red ring runs round it with a
+ * word beside it, and a survey starts as the ring closes; let go sooner, it
+ * was a tap. The sheet tells of the hold until it has been used once.
+ */
+function HearsButton({ on, recording, onTap, onHoldDone }: { on: boolean; recording: boolean; onTap: () => void; onHoldDone: (() => void) | undefined }) {
+  const [holding, setHolding] = useState(false);
+  const timers = useRef<number[]>([]);
+  const fired = useRef(false);
+  const done = useRef(onHoldDone);
+  done.current = onHoldDone;
+  const stop = () => {
+    for (const id of timers.current) clearTimeout(id);
+    timers.current = [];
+    setHolding(false);
+  };
+  useEffect(() => stop, []);
+  return (
+    <IconButton
+      label={onHoldDone ? t("mesh.whoHearsMeHold") : t("mesh.whoHearsMe")}
+      className={["map-hears", on ? "on" : "", holding ? "holding" : ""].join(" ")}
+      aria-pressed={on}
+      onPointerDown={(e) => {
+        fired.current = false;
+        if (!done.current || e.button !== 0) return;
+        timers.current = [
+          window.setTimeout(() => setHolding(true), HEARS_WAIT_MS),
+          window.setTimeout(() => {
+            fired.current = true;
+            stop();
+            done.current?.();
+          }, HEARS_WAIT_MS + HEARS_HOLD_MS),
+        ];
+      }}
+      onPointerUp={stop}
+      onPointerLeave={stop}
+      onPointerCancel={stop}
+      // A long press would otherwise bring the phone's own menu over the button.
+      onContextMenu={(e) => e.preventDefault()}
+      onClick={() => {
+        if (fired.current) {
+          fired.current = false;
+          return;
+        }
+        onTap();
+      }}
+    >
+      <WavesIcon size={18} />
+      {recording ? <span className="map-rec" aria-hidden="true" /> : null}
+      <svg className="map-hold" viewBox="0 0 48 48" aria-hidden="true">
+        <circle cx="24" cy="24" r="22" />
+      </svg>
+      {holding ? (
+        <span className="map-hold-word" aria-hidden="true">
+          {t("tools.survey.holdWord")}
+        </span>
+      ) : null}
+    </IconButton>
+  );
 }
 
 /** How near a node, in pixels, a dragged point lets go onto it. */
@@ -325,7 +393,7 @@ function groupingWanted(): boolean {
 /** Where the map was left, so coming back to it, from a profile or another section, finds it there, turned as it was. */
 let lastView: { center: [number, number]; zoom: number; bearing: number } | null = null;
 
-export default function MapView({ selected, onSelect, onGroup, filter, coverBottom = 0, coverTop = 0, zoomButtons = false, overlay = EMPTY_OVERLAY, onLeg, onHold, onHandleDrop, onHears, hearsOn = false, fit = null, phone = null, putHere = null, onLocate, dots = null, pickedDot = null, onDot, follow = null, recording = false }: MapProps) {
+export default function MapView({ selected, onSelect, onGroup, filter, coverBottom = 0, coverTop = 0, zoomButtons = false, overlay = EMPTY_OVERLAY, onLeg, onHold, onHandleDrop, onHears, hearsOn = false, onHearsHold, fit = null, phone = null, putHere = null, onLocate, dots = null, pickedDot = null, onDot, follow = null, recording = false }: MapProps) {
   const state = useSession();
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibre | null>(null);
@@ -944,12 +1012,7 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
         >
           <GroupIcon size={18} />
         </IconButton>
-        {onHears ? (
-          <IconButton label={recording ? t("tools.survey.title") : t("mesh.whoHearsMe")} className={hearsOn ? "on" : ""} aria-pressed={hearsOn} disabled={state.status !== "ready" && !hearsOn && !recording} onClick={onHears}>
-            <WavesIcon size={18} />
-            {recording ? <span className="map-rec" aria-hidden="true" /> : null}
-          </IconButton>
-        ) : null}
+        {onHears ? <HearsButton on={hearsOn} recording={recording} onTap={onHears} onHoldDone={onHearsHold} /> : null}
         <IconButton label={t("mesh.map.showAll")} onClick={fitAll}>
           <FitIcon size={18} />
         </IconButton>

@@ -220,6 +220,11 @@
   "hears.cost": "One short packet from you · each repeater answers up to 4 times in 2 minutes",
   "hears.survey": "Survey on the move",
   "hears.surveys": "Past surveys",
+  "hears.askedAgo": "Asked {time} · {count} answered",
+  "hears.notAsked": "Not asked yet",
+  "hears.askNow": "Ask now",
+  "hears.surveyAsks": "The survey asks by itself every 30 s",
+  "hears.holdHint": "Hold ≋ on the map to start a survey at once",
   "survey.title": "Coverage survey",
   "survey.needRadio": "Connect the radio to start a survey",
   "survey.running": "{time} · {points}",
@@ -277,5 +282,14 @@
   "survey.agreeSend": "Send to {host}",
   "survey.sentTo": "Sent to {map}",
   "survey.sentDetail": "{taken} taken, {known} were there already, {cells} new cells",
-  "survey.sendFailed": "Not sent to {map}"
+  "survey.sendFailed": "Not sent to {map}",
+  "survey.nowTitle": "Survey running",
+  "survey.strip": "Survey running · {time} · {points}",
+  "survey.collapse": "Put away",
+  "survey.holdWord": "Keep holding to start a survey",
+  "survey.started": "Survey started",
+  "survey.startedDetail": "A point every 30 s while you move",
+  "survey.empty": "A survey with no points is not kept",
+  "survey.emptyGps": "The phone never got a GPS fix",
+  "survey.emptyOffline": "The radio was not connected"
 }

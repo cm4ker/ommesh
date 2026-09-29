@@ -7,9 +7,10 @@ import { batteryPercent, lowCharge } from "../lib/format.js";
 import { pairLink, reconnectNow, useLink } from "../lib/link.js";
 import { useWide } from "../lib/layout.js";
 import { back, focusOnMap, getNav, goSection, openConversation, setStack, shownConversation, topOf, useNav, type Nav, type Screen, type Section } from "../lib/nav.js";
-import { useMeshTool } from "../lib/meshTool.js";
+import { useMeshTool, type MeshTool } from "../lib/meshTool.js";
 import { isTauri } from "../lib/platform.js";
 import { useSelector, useSession } from "../lib/session.js";
+import { useSurveying } from "../lib/survey.js";
 import { closeTool } from "../lib/toolActions.js";
 import { toast } from "../lib/toast.js";
 import { MenuHost, ToastHost } from "../ui/Menu.js";
@@ -29,6 +30,7 @@ import { Profile } from "./Profile.js";
 import { RadioHome } from "./RadioHome.js";
 import { RADIO_PARENTS, RadioPageView } from "./RadioPages.js";
 import { CleanUpHost } from "./CleanUp.js";
+import { SurveyStrip } from "./tools/Survey.js";
 import { ToolPanel } from "./tools/ToolPanel.js";
 import { UpdateButton } from "./Updates.js";
 import type { Chrome } from "./ScreenHead.js";
@@ -144,7 +146,12 @@ function useBadges() {
   // Values rather than the state, so the phone's frame, and the screen in it, re-render only when a badge changes.
   const unread = useSelector(totalUnread);
   const offline = useSelector((state) => state.status !== "ready");
-  return { unread, attention: useMeshAttention(), offline };
+  return { unread, attention: useMeshAttention(), offline, surveying: useSurveying() };
+}
+
+/** Whether the card of the survey running is what the map shows, so the strip that leads to it would only repeat it. */
+function surveyCardShown(tool: MeshTool | null): boolean {
+  return tool?.kind === "survey" && tool.view === "run" && tool.point === null;
 }
 
 // ---- the phone: one screen at a time, the tabs below ----
@@ -152,6 +159,7 @@ function useBadges() {
 function Phone() {
   const nav = useNav();
   const badges = useBadges();
+  const tool = useMeshTool();
   const stack = nav.stacks[nav.section];
   const top = stack.at(-1) ?? null;
   // How a message travelled is a sheet over its conversation, not a screen of its own.
@@ -192,7 +200,7 @@ function Phone() {
         <button key={s.id} type="button" className={nav.section === s.id ? "on" : ""} aria-current={nav.section === s.id ? "page" : undefined} onClick={() => goSection(s.id, nav.section === s.id)}>
           {s.icon}
           <span className="tab-label">{t(s.label)}</span>
-          <Badge section={s.id} badges={badges} />
+          <Badge section={s.id} badges={badges} away={nav.section !== s.id} />
         </button>
       ))}
     </nav>
@@ -201,6 +209,7 @@ function Phone() {
     <div className={["app", "narrow", tabs ? "" : "detail"].join(" ")}>
       <main className="content" ref={content}>
         <Offline />
+        {nav.section === "mesh" && shown === null && surveyCardShown(tool) ? null : <SurveyStrip />}
         {/* The map stays under a node's profile, and behind the other tabs once opened, so it comes back as it was left: same place, same list, no tiles to fetch again, no 86 rows to mount. */}
         {meshOpened ? (
           <ScreenBoundary>
@@ -226,8 +235,10 @@ function Phone() {
   );
 }
 
-function Badge({ section, badges }: { section: Section; badges: ReturnType<typeof useBadges> }) {
+function Badge({ section, badges, away }: { section: Section; badges: ReturnType<typeof useBadges>; away: boolean }) {
   if (section === "chats" && badges.unread > 0) return <span className="tab-badge">{badges.unread}</span>;
+  // A survey running, from any other section: the map is where it is.
+  if (section === "mesh" && badges.surveying && away) return <span className="tab-dot rec" title={t("tools.survey.nowTitle")} />;
   if (section === "mesh" && badges.attention) return <span className="tab-dot warn" title={t("connect.badge.attention")} />;
   if (section === "radio" && badges.offline) return <span className="tab-dot bad" title={t("connect.badge.offline")} />;
   return null;
@@ -470,7 +481,7 @@ function Desktop() {
           <button key={s.id} type="button" className={nav.section === s.id ? "on" : ""} aria-current={nav.section === s.id ? "page" : undefined} title={`${t(s.label)} · ${isTauri() ? "Ctrl" : "Alt"}+${i + 1}`} onClick={() => goSection(s.id)}>
             {s.icon}
             <span className="tab-label">{t(s.label)}</span>
-            <Badge section={s.id} badges={{ ...badges, offline: false }} />
+            <Badge section={s.id} badges={{ ...badges, offline: false }} away={nav.section !== s.id} />
           </button>
         ))}
         <span className="grow" />
@@ -491,6 +502,7 @@ function Desktop() {
       <aside className="pane">{list}</aside>
       <main className="content">
         <Offline />
+        {toolPanel && surveyCardShown(toolPanel) ? null : <SurveyStrip />}
         <ScreenBoundary key={`${nav.section}:${JSON.stringify(full ?? chat)}`}>{main}</ScreenBoundary>
       </main>
       {toolPanel ? (

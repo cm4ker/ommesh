@@ -14,6 +14,7 @@
 
 ### Chats
 - A channel message no repeater was heard passing on stays red and has two buttons along its bottom edge: Send again sends it once more, and Keep trying sends it up to five times over about 20 minutes, stopping as soon as a repeater is heard passing it on. Keep trying used to be only in the menu of a long press.
+- A message stands in its chat in the order it came in, not by the time the sender's radio put on it. A radio that has lost its clock stamps its messages with a date years back, and such a message used to go up into the history, while the chat list showed it as the latest. Now it comes in at the bottom with the time it arrived, and How it travelled has its sender's date and time and says their clock is off. Messages the radio kept while the app was away still show when they were sent.
 
 ### Mesh and the map
 - The ≋ button on the map no longer sends anything when tapped. It opens Who hears me with the answers to the last ask and how long ago that was; the packet goes out only from Ask now. Held until the red ring round it closes, the button starts a coverage survey at once, with "Survey started" and Undo, which drops it whole. The sheet tells of the hold until a survey has been started that way once.

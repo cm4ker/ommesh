@@ -162,15 +162,8 @@ number it has already seen, and that count only grows.
 - Bluetooth needs no capability on the App ID. The usage strings and the
   `bluetooth-central` background mode, which keeps a connection alive while
   another app is in front, are in `Info.plist`.
-- A message's notice can show who wrote it with their picture in place of the
-  app's icon (a communication notice, `MeshWatch.show`). That needs the
-  Communication Notifications capability, and the App Store Connect API
-  refuses to switch it on (`USERNOTIFICATIONS_COMMUNICATION` is not one of its
-  capability types). Tick it for the App ID in the developer portal, then add
-  `App/App.entitlements` with `com.apple.developer.usernotifications.communication`,
-  point `CODE_SIGN_ENTITLEMENTS` at it and set `MeshnetCommunicationNotices` in
-  `Info.plist`; the next `ios.sh` makes a profile that carries it. Until then
-  the writer's circle is the notice's picture, at its right.
+- A notice is words alone, with no picture of who wrote it (`MeshWatch.show`):
+  a watch the phone passes it on to showed the picture in place of the words.
 - `ITSAppUsesNonExemptEncryption` is false. The radio encrypts what goes on the
   air. The client only uses WebCrypto (the system's AES and SHA-256) to recognise
   its own channel messages when a repeater sends them back.

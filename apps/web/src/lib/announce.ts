@@ -49,13 +49,6 @@ export interface Face {
   channel?: boolean;
 }
 
-/** One message of a conversation's notice: who wrote it, what, and when (ms). */
-export interface NoticeLine {
-  sender: string;
-  text: string;
-  at: number;
-}
-
 export interface Notice {
   title: string;
   body: string;
@@ -64,12 +57,6 @@ export interface Notice {
   kind: NoticeKind;
   /** Whose circle it shows; none for the notice about several chats, which shows the app's. */
   face?: Face;
-  /**
-   * The conversation, for a system that draws one as such (Android's
-   * conversations, iOS's communication notices): its name and circle, whether
-   * several people speak in it, and the unread messages shown, oldest first.
-   */
-  thread?: { title: string; group: boolean; face: Face; lines: NoticeLine[] };
   /** Shown without the signal: a burst of news rings with its first notice only. */
   silent?: boolean;
 }
@@ -133,15 +120,8 @@ export function conversationNotice(state: SessionState, conversation: string, ke
   const direct = isDirect(state, conversation);
   const kind = direct ? "direct" : "chats";
   const face = chatFace(state, conversation, title);
-  // In a channel or a room each message is someone's; in a person's chat all are theirs.
-  const speaker = (m: MessageRecord): string => (!direct && m.sender ? m.sender : title);
-  const thread = {
-    title,
-    group: !direct,
-    face,
-    lines: unread.slice(-LINES).map((m) => ({ sender: speaker(m), text: m.text, at: m.receivedAt })),
-  };
-  if (count === 1) return { title: heading(state, last, title), body: last.text, tag, kind, face: direct ? face : { name: speaker(last) }, thread };
+  // In a channel or a room one message shows its writer's circle; in a person's chat it is theirs.
+  if (count === 1) return { title: heading(state, last, title), body: last.text, tag, kind, face: direct ? face : { name: last.sender || title } };
   const mentioned = unread.some((m) => mentionsMe(state, m));
   return {
     title: t(mentioned ? "notices.chatNewMentioned" : "notices.chatNew", { chat: title, count }),
@@ -149,7 +129,6 @@ export function conversationNotice(state: SessionState, conversation: string, ke
     tag,
     kind,
     face,
-    thread,
   };
 }
 

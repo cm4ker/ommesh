@@ -42,16 +42,6 @@
 	<!-- The location plugin's library can report in the background, so Apple wants this string too; Ommesh never asks for Always, and iOS never shows it. -->
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Ommesh shows where you are on the map and, when you ask, puts your radio there.</string>
-	<!-- A message's notice is a communication notice (MeshWatch.show), made from the message as an intent.
-	     Only with the Communication Notifications capability, which the App ID must have ticked in the
-	     developer portal (the App Store Connect API cannot) and App.entitlements must ask for; until then
-	     MeshnetCommunicationNotices is false and the writer's circle is the notice's picture instead. -->
-	<key>MeshnetCommunicationNotices</key>
-	<false/>
-	<key>NSUserActivityTypes</key>
-	<array>
-		<string>INSendMessageIntent</string>
-	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

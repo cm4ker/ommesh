@@ -7,8 +7,9 @@
  *   a browser tab with the Web Notification API; the desktop shell natively
  *   (`announce.rs`), since WebView2 draws none; the phone app natively too
  *   (`MeshWatch.swift`, `NoticesPlugin.java`), since neither WKWebView nor
- *   Android's WebView has a `Notification`, and the system notice should say
- *   who wrote, with their circle, which Capacitor's plugin cannot draw;
+ *   Android's WebView has a `Notification`, and Capacitor's plugin cannot
+ *   ring with the app's signal. A phone's notice is words alone, with no
+ *   circle: the phone passes it on to a watch, where a picture crowds them;
  * - or the app itself: on a computer, cards in a corner of the screen from
  *   the desktop shell's own window, the main one open or in the tray; on a
  *   phone or in a tab a banner at the top, only while the app is on screen,
@@ -190,7 +191,7 @@ async function system(notice: Notice, prefs: NoticePrefs): Promise<void> {
       return;
     }
     case "capacitor": {
-      const native = await nativeNotice(notice, prefs);
+      const native = nativeNotice(notice, prefs);
       try {
         await withWatch((w) => w.post(native));
         await withNotices((n) => n.post(native));
@@ -224,17 +225,8 @@ async function system(notice: Notice, prefs: NoticePrefs): Promise<void> {
   }
 }
 
-/** A notice as the phone's native side draws it: with circles for who wrote and where. */
-async function nativeNotice(notice: Notice, prefs: NoticePrefs): Promise<NativeNotice> {
-  const thread = notice.thread;
-  let native: NativeNotice["thread"] = null;
-  if (thread) {
-    const names = [...new Set(thread.lines.map((l) => l.sender))];
-    // A person's chat is theirs, circle and all; in a channel a writer who shares its name is still a person.
-    const faces = await Promise.all(names.map((name) => avatarPng(!thread.group && name === thread.title ? thread.face : { name })));
-    const people = Object.fromEntries(names.map((name, i) => [name, faces[i] ?? null]));
-    native = { title: thread.title, group: thread.group, avatar: await avatarPng(thread.face), lines: thread.lines, people };
-  }
+/** A notice as the phone's native side draws it. */
+function nativeNotice(notice: Notice, prefs: NoticePrefs): NativeNotice {
   return {
     id: noticeId(notice.tag),
     tag: notice.tag,
@@ -243,8 +235,6 @@ async function nativeNotice(notice: Notice, prefs: NoticePrefs): Promise<NativeN
     kind: notice.kind,
     sound: signalFile(prefs.signal),
     silent: notice.silent ?? false,
-    avatar: notice.face ? await avatarPng(notice.face) : null,
-    thread: native,
   };
 }
 

@@ -5,13 +5,6 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
-import android.graphics.Paint;
-import android.graphics.PorterDuff;
-import android.graphics.PorterDuffXfermode;
-import android.graphics.Rect;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.Ringtone;
@@ -21,33 +14,29 @@ import android.os.Build;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.provider.Settings;
-import android.util.Base64;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
-import androidx.core.app.Person;
 import androidx.core.content.pm.ShortcutInfoCompat;
 import androidx.core.content.pm.ShortcutManagerCompat;
-import androidx.core.graphics.drawable.IconCompat;
-import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
-import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
  * The web client's notices on Android ({@code lib/notify.ts}), drawn here rather than by
- * Capacitor's LocalNotifications, which can say neither who wrote nor ring with the app's own
- * signal:
+ * Capacitor's LocalNotifications, which cannot ring with the app's own signal:
  *
  * <ul>
- *   <li>a conversation's notice is a {@link NotificationCompat.MessagingStyle}, each message by its
- *       writer with their circle, and a long-lived shortcut for the chat, so Android files it
- *       under Conversations with the chat's circle and the app's icon as a badge;
+ *   <li>a notice is words alone under the app's icon. A circle of who wrote stood in for the
+ *       app's icon in the shade (gh #49) and crowded the words on a watch the phone passes
+ *       notices on to;
  *   <li>the channels (direct messages, channels and rooms, new nodes) ring with the signal the
  *       reader picked, a raw resource ({@code res/raw/signal_*.wav}). A channel's sound is fixed
  *       once it is made, so a new signal makes the three anew under new ids and deletes the old;
@@ -82,6 +71,20 @@ public class NoticesPlugin extends Plugin {
 
     private static final int COLOR = 0xFF74ADE8;
 
+    @Override
+    public void load() {
+        // Earlier builds made each chat a conversation with a shortcut of its own, which the
+        // launcher went on offering; a notice needs none now.
+        Context context = getContext();
+        try {
+            List<String> ids = new ArrayList<>();
+            for (ShortcutInfoCompat shortcut : ShortcutManagerCompat.getDynamicShortcuts(context)) ids.add(shortcut.getId());
+            if (!ids.isEmpty()) ShortcutManagerCompat.removeLongLivedShortcuts(context, ids);
+        } catch (RuntimeException refused) {
+            // A launcher that keeps no shortcuts has none to forget.
+        }
+    }
+
     @PluginMethod
     public void openSettings(PluginCall call) {
         Intent intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
@@ -111,18 +114,6 @@ public class NoticesPlugin extends Plugin {
             builder(context, id, tag, call.getString("kind", "chats"), call.getString("title", ""), call.getString("body", ""), call.getString("sound"));
         // A burst of news rings with its first notice; the rest keep the channel and drop the sound.
         if (Boolean.TRUE.equals(call.getBoolean("silent", false))) builder.setSilent(true);
-
-        JSObject thread = call.getObject("thread");
-        try {
-            if (thread != null) converse(builder, tag, thread);
-            else {
-                Bitmap face = bitmap(call.getString("avatar"));
-                if (face != null) builder.setLargeIcon(round(face));
-            }
-        } catch (JSONException error) {
-            // Drawn as a plain notice: what it says is still worth showing.
-        }
-
         try {
             NotificationManagerCompat.from(context).notify(id, builder.build());
             call.resolve();
@@ -132,12 +123,11 @@ public class NoticesPlugin extends Plugin {
     }
 
     /**
-     * A plain notice of the radio core's, on the page's channel for its kind, under the page's id for its tag;
+     * A notice of the radio core's, on the page's channel for its kind, under the page's id for its tag;
      * {@code silent} for one after the first of a burst of news.
      */
     static void show(Context context, int id, String tag, String kind, String title, String body, String sound, boolean silent) {
-        NotificationCompat.Builder builder = builder(context, id, tag, kind, title, body, sound)
-            .setStyle(new NotificationCompat.BigTextStyle().bigText(body));
+        NotificationCompat.Builder builder = builder(context, id, tag, kind, title, body, sound);
         if (silent) builder.setSilent(true);
         try {
             NotificationManagerCompat.from(context).notify(id, builder.build());
@@ -146,7 +136,10 @@ public class NoticesPlugin extends Plugin {
         }
     }
 
-    /** What every notice has: its channel and sound, its words, and the tap that opens its chat. */
+    /**
+     * A notice: its channel and sound, its words, whole once opened out, and the tap that opens its
+     * chat. A message's is filed as one, which Do not disturb's exceptions for messages go by.
+     */
     private static NotificationCompat.Builder builder(Context context, int id, String tag, String kind, String title, String body, String sound) {
         channels(context, sound);
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, channelId(kind, sound))
@@ -154,9 +147,11 @@ public class NoticesPlugin extends Plugin {
             .setColor(COLOR)
             .setContentTitle(title)
             .setContentText(body)
+            .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(opener(context, id, tag));
+        if (!"nodes".equals(kind)) builder.setCategory(NotificationCompat.CATEGORY_MESSAGE);
         // Before Android 8 a notice carries its own sound; after, its channel does.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             Uri uri = soundUri(context, sound);
@@ -204,50 +199,6 @@ public class NoticesPlugin extends Plugin {
             }
         }
         call.resolve();
-    }
-
-    /** A conversation's notice: its messages by their writers, and the chat's shortcut. */
-    private void converse(NotificationCompat.Builder builder, String tag, JSObject thread) throws JSONException {
-        Context context = getContext();
-        String title = thread.getString("title", "");
-        boolean group = thread.getBool("group") != null && thread.getBool("group");
-        JSONObject people = thread.getJSObject("people", new JSObject());
-        Bitmap chat = bitmap(thread.getString("avatar"));
-
-        Person me = new Person.Builder().setName("You").setKey("me").build();
-        NotificationCompat.MessagingStyle style = new NotificationCompat.MessagingStyle(me);
-        if (group) {
-            style.setConversationTitle(title);
-            style.setGroupConversation(true);
-        }
-        Person last = null;
-        JSONArray lines = thread.optJSONArray("lines");
-        for (int i = 0; lines != null && i < lines.length(); i++) {
-            JSONObject line = lines.getJSONObject(i);
-            String sender = line.optString("sender", title);
-            Person.Builder who = new Person.Builder().setName(sender).setKey(sender);
-            Bitmap face = people.isNull(sender) ? null : bitmap(people.optString(sender));
-            if (face != null) who.setIcon(IconCompat.createWithBitmap(face));
-            last = who.build();
-            style.addMessage(line.optString("text", ""), line.optLong("at", System.currentTimeMillis()), last);
-        }
-        builder.setStyle(style).setCategory(NotificationCompat.CATEGORY_MESSAGE);
-
-        // A long-lived shortcut makes it a conversation: Android draws the chat's circle with the
-        // app's badge and lists it under Conversations. Launched from the app's icon, it opens the
-        // chat the way a tap on the notice does.
-        ShortcutInfoCompat.Builder shortcut = new ShortcutInfoCompat.Builder(context, tag)
-            .setShortLabel(title.isEmpty() ? "Chat" : title)
-            .setLongLived(true)
-            .setIntent(openIntent(context, 0, tag));
-        if (chat != null) shortcut.setIcon(IconCompat.createWithBitmap(chat));
-        if (!group && last != null) shortcut.setPerson(last);
-        try {
-            ShortcutManagerCompat.pushDynamicShortcut(context, shortcut.build());
-            builder.setShortcutId(tag);
-        } catch (RuntimeException refused) {
-            // Too many shortcuts or a launcher that keeps none: the notice is still a message one.
-        }
     }
 
     /** The three channels ringing with this sound, and none of ours ringing with another. */
@@ -331,27 +282,5 @@ public class NoticesPlugin extends Plugin {
             .putExtra(ID_KEY, id)
             .putExtra(ACTION_KEY, "tap")
             .putExtra(OBJECT_KEY, object);
-    }
-
-    private static Bitmap bitmap(String base64) {
-        if (base64 == null || base64.isEmpty()) return null;
-        try {
-            byte[] bytes = Base64.decode(base64, Base64.DEFAULT);
-            return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
-        } catch (IllegalArgumentException broken) {
-            return null;
-        }
-    }
-
-    /** A large icon is drawn as given, so a circle is cut here, as the page's avatars are. */
-    private static Bitmap round(Bitmap square) {
-        int side = Math.min(square.getWidth(), square.getHeight());
-        Bitmap out = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(out);
-        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        canvas.drawCircle(side / 2f, side / 2f, side / 2f, paint);
-        paint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SRC_IN));
-        canvas.drawBitmap(square, new Rect(0, 0, side, side), new Rect(0, 0, side, side), paint);
-        return out;
     }
 }

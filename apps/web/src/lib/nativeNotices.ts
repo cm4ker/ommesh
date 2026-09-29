@@ -11,17 +11,10 @@
 
 import { nativePlatform, shell } from "./platform.js";
 
-/** A conversation, for a system that draws notices as one. */
-export interface NativeThread {
-  title: string;
-  group: boolean;
-  /** The conversation's own circle, base64 PNG. */
-  avatar: string | null;
-  lines: { sender: string; text: string; at: number }[];
-  /** Each writer's circle by name, base64 PNG. */
-  people: Record<string, string | null>;
-}
-
+/**
+ * A phone's notice is words alone, under the app's icon: a picture of who
+ * wrote crowds the small screen of a watch the notice is passed on to.
+ */
 export interface NativeNotice {
   id: number;
   tag: string;
@@ -37,15 +30,12 @@ export interface NativeNotice {
    * fixed, and `sound` picks the channel.
    */
   silent: boolean;
-  /** Whose circle it shows, base64 PNG; none shows the app's icon. */
-  avatar: string | null;
-  thread: NativeThread | null;
 }
 
 /**
  * The iPhone's native notices (`MeshWatch.swift`): the page's own, drawn there
- * so they can show who wrote. What arrives while the page sleeps is the radio
- * core's to announce (`lib/relay.ts`).
+ * with the app's signal and under the ids of the radio core's, which announces
+ * what arrives while the page sleeps (`lib/relay.ts`).
  */
 export interface MeshWatchPlugin {
   /** Opens the system's notification settings for the app. */

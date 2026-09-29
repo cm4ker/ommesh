@@ -41,7 +41,6 @@ const channelMessage: Notice = {
   tag: "c:ch:1",
   kind: "chats",
   face: { name: "Alice" },
-  thread: { title: "Field team", group: true, face: { name: "Field team", channel: true }, lines: [{ sender: "Alice", text: "New message", at: 1 }] },
 };
 
 /** Lets calls the page does not wait for (the pref subscription's, the banner's signal) reach the native side. */
@@ -69,19 +68,20 @@ after(() => {
   else Reflect.deleteProperty(globalThis, "document");
 });
 
-test("an iOS message goes to the native side with the app's signal and its thread", async () => {
+test("an iOS message goes to the native side with the app's signal, in words alone", async () => {
   await notify(channelMessage);
   assert.equal(calls[0]?.plugin, "MeshWatch");
   assert.equal(calls[0]?.method, "post");
-  const native = calls[0]?.options as NativeNotice;
-  assert.equal(native.sound, "signal_chirp.wav");
-  assert.equal(native.tag, "c:ch:1");
-  assert.equal(native.id, noticeId("c:ch:1"));
-  assert.equal(native.thread?.title, "Field team");
-  assert.equal(native.thread?.group, true);
-  assert.deepEqual(native.thread?.lines.map((l) => l.sender), ["Alice"]);
-  // No canvas under the tests: the circles are left out, not made up.
-  assert.equal(native.avatar, null);
+  // The writer's circle stays behind: a watch the phone passes the notice to has no room for it.
+  assert.deepEqual(calls[0]?.options, {
+    id: noticeId("c:ch:1"),
+    tag: "c:ch:1",
+    title: "Alice in Field team",
+    body: "New message",
+    kind: "chats",
+    sound: "signal_chirp.wav",
+    silent: false,
+  } satisfies NativeNotice);
 });
 
 test("an iOS notice the page shows tells the radio core, after it is posted, that it needs no stand-in", async () => {

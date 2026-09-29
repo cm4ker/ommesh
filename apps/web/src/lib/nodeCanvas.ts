@@ -10,8 +10,8 @@
  * It takes no pointer events: the map hands taps and hovers to `hit()`.
  * Nodes too close to tell apart are gathered by lib/cluster.ts when grouping
  * is on, again whenever the zoom has moved on; with it off every node is
- * drawn, and names that would run over a pin or another name are left out
- * until a zoom makes room.
+ * drawn, smaller the further out the map is, and names that would run over a
+ * pin or another name are left out until a zoom makes room.
  */
 
 import type { Map as MapLibre } from "maplibre-gl";
@@ -220,6 +220,15 @@ function groupSize(n: number): number {
   return n < 10 ? 32 : n < 100 ? 38 : 44;
 }
 
+/**
+ * How much of its size a pin keeps at a zoom when nothing gathers the pins:
+ * half with a whole town on the screen, where whole pins pile on each other,
+ * and all of it from a district in.
+ */
+function pinScale(zoom: number): number {
+  return Math.min(1, Math.max(0.5, 0.5 + (zoom - 10) / 6));
+}
+
 export class NodeCanvas {
   private data: NodeData = { nodes: [], selected: null, numbers: {}, grouping: true, self: null };
   private placed: NodeGroup[] = [];
@@ -359,13 +368,15 @@ export class NodeCanvas {
     const justNow = t("common.justNow");
     const now = t("mesh.map.now");
 
-    // Only what falls on the canvas, with room for a name reaching in from the left.
+    // Only what falls on the canvas, with room for a name reaching in from the left. The pick keeps its
+    // whole size, so it can still be found among the small ones.
+    const pinR = PIN * (this.data.grouping ? 1 : pinScale(zoom));
     const drawn: Drawn[] = [];
     for (const group of this.placed) {
       const { x, y } = map.project([group.at.lon, group.at.lat]);
       if (x < -240 || x > width + 30 || y < -30 || y > height + 30) continue;
       const n = group.members.length;
-      drawn.push({ group, x, y, r: n === 1 ? PIN : groupSize(n) / 2 });
+      drawn.push({ group, x, y, r: n > 1 ? groupSize(n) / 2 : group.members[0]!.key === selected ? PIN : pinR });
     }
     // South over north, as markers stack; the pick on top of everything.
     const holdsPick = (d: Drawn) => selected !== null && d.group.members.some((c) => c.key === selected);
@@ -395,7 +406,7 @@ export class NodeCanvas {
       const name = c.name || c.prefix;
       const heard = Number.isFinite(age) ? ago(c.lastAdvert * 1000) : "";
       const when = heard ? ` · ${heard === justNow ? now : heard}` : "";
-      const left = d.x + (numbers[c.key] ? 19 : 15);
+      const left = d.x + (numbers[c.key] ? 19 : d.r + 4);
       const box = { x0: left, y0: d.y - 8, x1: left + this.width(ctx, name) + this.width(ctx, when), y1: d.y + 8 };
       if (c.key !== selected && taken.hits(box)) continue;
       taken.add(box);
@@ -437,20 +448,25 @@ export class NodeCanvas {
     const repeater = c.type === AdvType.Repeater;
     const { fill, ink } = swatch(c.name || c.prefix);
     const body = repeater ? pal.text : fill;
+    // Drawn whole around its spot and shrunk to the size this zoom gives it, rims and dot along with it.
+    const scale = d.r / PIN;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
 
     if (selected) {
       ctx.beginPath();
-      ctx.arc(x, y, PIN + (repeater ? 5 : 4), 0, 2 * Math.PI);
+      ctx.arc(0, 0, PIN + (repeater ? 5 : 4), 0, 2 * Math.PI);
       ctx.lineWidth = 2;
       ctx.strokeStyle = pal.accent;
       ctx.stroke();
     }
     ctx.globalAlpha = state === "aging" ? 0.6 : 1;
     // The drop shadow the DOM pin had, as a darker copy one pixel down.
-    shape(ctx, c.type, x, y + 1, 0.5);
+    shape(ctx, c.type, 0, 1, 0.5);
     ctx.fillStyle = "rgba(0,0,0,0.22)";
     ctx.fill();
-    shape(ctx, c.type, x, y, 0);
+    shape(ctx, c.type, 0, 0, 0);
     if (c.type === AdvType.Sensor) {
       ctx.fillStyle = stale ? pal.bg : body;
       ctx.fill();
@@ -462,31 +478,32 @@ export class NodeCanvas {
     } else {
       ctx.fillStyle = pal.bg;
       ctx.fill();
-      shape(ctx, c.type, x, y, -2);
+      shape(ctx, c.type, 0, 0, -2);
       ctx.fillStyle = stale ? pal.bg : body;
       ctx.fill();
       if (stale) {
         ctx.lineWidth = 2;
         ctx.strokeStyle = body;
-        shape(ctx, c.type, x, y, -1);
+        shape(ctx, c.type, 0, 0, -1);
         ctx.stroke();
       }
     }
     if (repeater && !stale) {
       ctx.beginPath();
-      ctx.arc(x, y, 2.5, 0, 2 * Math.PI);
+      ctx.arc(0, 0, 2.5, 0, 2 * Math.PI);
       ctx.fillStyle = pal.bg;
       ctx.fill();
     }
     const g = glyph(c);
-    if (g.text) {
+    // A letter shrunk much below its size is only a smudge on the pin.
+    if (g.text && scale >= 0.75) {
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = g.emoji ? `13px ${pal.font}` : `600 10px ${pal.font}`;
       ctx.fillStyle = stale ? fill : ink;
-      ctx.fillText(g.text, x, y + (g.emoji ? 1 : 0.5));
+      ctx.fillText(g.text, 0, g.emoji ? 1 : 0.5);
     }
-    ctx.globalAlpha = 1;
+    ctx.restore();
 
     const number = this.data.numbers[c.key];
     if (number) {

@@ -38,6 +38,7 @@
 - A time such as "2 h 32 min" no longer breaks between a number and its unit.
 - With large text, the tiles under On air stay inside the screen and no longer push it sideways.
 - On a desktop, the side rail is wide enough for its labels in Russian.
+- Set its clock from this radio no longer says "Clock set" when the node kept its time. A node's clock only goes forward, so when it runs ahead the app says so, and the row becomes Reset its clock and reboot: the node restarts with its clock at 15 May 2024, and then its clock can be set from the radio. Once the clock is set, the Clock row reads "in sync". Setting the radio's own clock says too when that clock runs ahead.
 
 ## 0.4.0 — 2026-09-28
 

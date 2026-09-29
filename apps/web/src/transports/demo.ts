@@ -803,7 +803,7 @@ class DemoRadio extends BaseTransport {
           .u16(88)
           .u16(9412);
         if (room) w.u16(184).u16(1203);
-        else w.u32(111_600).u32(12);
+        else w.u32(111_600).u32(1_480);
         this.later(1500, w.toBytes());
         return [this.sent(this.acks++)];
       }

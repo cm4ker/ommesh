@@ -3,7 +3,7 @@ import { AdvType, NoReplyError, TelemMode, type BatterySample, type ContactRecor
 import { errorText } from "../i18n/errors.js";
 import { locale, t } from "../i18n/index.js";
 import { BATTERY_TYPES, batteryTypeLabel, setBatteryType, useChosenBatteryType } from "../lib/batteryType.js";
-import { ago, agoPhrase, batteryPercent, lowCharge } from "../lib/format.js";
+import { ago, agoPhrase, batteryPercent, errorShare, lowCharge } from "../lib/format.js";
 import { openNodePage, push, showOnMap } from "../lib/nav.js";
 import { clockDrift, isAdmin } from "../lib/nodes.js";
 import { session, useSession } from "../lib/session.js";
@@ -327,32 +327,60 @@ function telemetryModes(): { value: number; label: string }[] {
   ];
 }
 
+/**
+ * A node's counters since it last started, by direction: what it received, what it heard but
+ * could not make out, what it sent and what it dropped as heard before, each total over its split
+ * by flood and direct. Receive errors carry their share of everything heard, a figure people ask
+ * for when they judge a repeater's spot.
+ */
 function PacketsAndSignal({ stats }: { stats: NodeStats }) {
+  const split = (flood: number, direct: number) => t("node.status.floodDirectSplit", { flood: n(flood), direct: n(direct) });
   return (
     <details className="more reading-more">
       <summary>{t("node.status.packetsAndSignal")}</summary>
       <div className="kv-grid">
-        <Kv label={t("node.status.lastSignal")}>{t("node.status.signal", { rssi: stats.lastRssi, snr: stats.lastSnr.toFixed(2) })}</Kv>
-        <Kv label={t("node.status.packets")}>
-          {stats.recvErrors !== null
-            ? t("node.status.inOutErrors", { in: n(stats.packetsRecv), out: n(stats.packetsSent), errors: n(stats.recvErrors) })
-            : t("node.status.inOut", { in: n(stats.packetsRecv), out: n(stats.packetsSent) })}
+        <Kv label={t("node.status.received")} sub={split(stats.recvFlood, stats.recvDirect)}>
+          {n(stats.packetsRecv)}
         </Kv>
-        <Kv label={t("node.status.floodDirect")}>
-          {t("node.status.floodDirectValue", { inFlood: n(stats.recvFlood), inDirect: n(stats.recvDirect), outFlood: n(stats.sentFlood), outDirect: n(stats.sentDirect) })}
+        {stats.recvErrors !== null ? (
+          <Kv label={t("node.status.recvErrors")} sub={stats.recvErrors > 0 ? t("node.status.heard", { total: n(stats.packetsRecv + stats.recvErrors) }) : undefined}>
+            {errorsText(stats.recvErrors, stats.packetsRecv)}
+          </Kv>
+        ) : null}
+        <Kv label={t("node.status.sent")} sub={split(stats.sentFlood, stats.sentDirect)}>
+          {n(stats.packetsSent)}
         </Kv>
-        <Kv label={t("node.status.duplicates")}>{t("node.status.duplicatesValue", { flood: n(stats.floodDups), direct: n(stats.directDups) })}</Kv>
+        <Kv label={t("node.status.duplicates")} sub={split(stats.floodDups, stats.directDups)}>
+          {n(stats.floodDups + stats.directDups)}
+        </Kv>
+        <Kv label={t("node.status.lastSignal")}>{t("node.status.signal", { rssi: stats.lastRssi, snr: numberText(stats.lastSnr, 2) })}</Kv>
         <Kv label={t("node.status.sendQueue")}>{stats.txQueueLen === 0 ? t("node.status.empty") : t("node.status.queuePackets", { count: stats.txQueueLen })}</Kv>
       </div>
     </details>
   );
 }
 
-function Kv({ label, children }: { label: string; children: React.ReactNode }) {
+/** The errors with their share in brackets; a share under a tenth of a percent reads "< 0.1". */
+function errorsText(errors: number, received: number): string {
+  const share = errorShare(errors, received);
+  if (share === null) return n(errors);
+  return t("node.status.errorsShare", { errors: n(errors), share: share < 0.1 ? `< ${numberText(0.1, 1)}` : numberText(share, 1) });
+}
+
+function Kv({ label, sub, children }: { label: string; sub?: string | undefined; children: React.ReactNode }) {
   return (
     <div className="kv">
       <span className="kv-label">{label}</span>
-      <span className="kv-value">{children}</span>
+      <span className="kv-value">
+        {sub ? (
+          <span className="kv-stack">
+            <span>{children}</span>
+            <span className="kv-sub">{sub}</span>
+          </span>
+        ) : (
+          children
+        )}
+      </span>
     </div>
   );
 }

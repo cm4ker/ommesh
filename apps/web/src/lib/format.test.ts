@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { LppReading, SeriesSummary } from "@meshnet/meshcore";
-import { batteryPercent, emojiOnly, lowCharge, powerSummary, powerWatts, trailingEmoji } from "./format.js";
+import { batteryPercent, emojiOnly, errorShare, lowCharge, powerSummary, powerWatts, trailingEmoji } from "./format.js";
 
 test("the emoji a name ends with goes on its circle", () => {
   assert.equal(trailingEmoji("Fox 🦊"), "🦊");
@@ -87,4 +87,15 @@ test("a power series comes from the channel's voltage and current series", () =>
   const power = powerSummary(series[2]!, series);
   assert.deepEqual([mw(power.min), mw(power.avg), mw(power.max)], [330, 402, 442]);
   assert.deepEqual(powerSummary(series[3]!, series), series[3]);
+});
+
+test("the receive errors are a share of everything heard, the errors included", () => {
+  assert.equal(errorShare(950, 2971)!.toFixed(1), "24.2");
+  assert.equal(errorShare(2, 2971)!.toFixed(3), "0.067");
+  assert.equal(errorShare(5, 0), 100);
+});
+
+test("no receive error has no share", () => {
+  assert.equal(errorShare(0, 2971), null);
+  assert.equal(errorShare(0, 0), null);
 });

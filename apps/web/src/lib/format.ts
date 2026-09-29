@@ -157,6 +157,14 @@ export function lowCharge(mv: number, type: BatteryType = "liion"): boolean {
   return mv > 0 && batteryPercent(mv, type) <= LOW_CHARGE_PERCENT;
 }
 
+/**
+ * The share of what a radio heard that it could not make out, in percent: its receive errors
+ * over everything it heard, the errors included. None when it has no error to speak of.
+ */
+export function errorShare(errors: number, received: number): number | null {
+  return errors > 0 ? (errors / (errors + received)) * 100 : null;
+}
+
 export function utf8Length(text: string): number {
   return new TextEncoder().encode(text).length;
 }

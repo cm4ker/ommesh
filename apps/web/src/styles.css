@@ -6929,3 +6929,15 @@ button.reading-tile.tap {
 .reading-more {
   padding: 0 var(--space-3) var(--space-2);
 }
+/* A counter over its split, both at the row's right edge. */
+.kv-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+  padding-block: 3px;
+}
+.kv-sub {
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+}

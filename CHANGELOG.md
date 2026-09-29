@@ -10,6 +10,7 @@
 
 ### Connecting
 - With Bluetooth off, Android puts up its own prompt to turn it on: at launch, when the connect screen starts its search, and when a radio is picked. Turned down, the search and the line at the top say "Bluetooth is off" instead of finding nothing or trying for a long time; Try now asks again, and the radio is back a moment after Bluetooth is turned on. An iPhone says "Bluetooth is off" too.
+- A PC that uses the radio through a phone (Share with a computer) gets the link back by itself when the phone takes the sharing down and puts it back. Windows could hang while closing the phone's old link, and the app then showed "Reconnecting" for hours, until it was restarted. Now it leaves that call behind after 15 seconds and connects again.
 
 ### Chats
 - A channel message no repeater was heard passing on stays red and has two buttons along its bottom edge: Send again sends it once more, and Keep trying sends it up to five times over about 20 minutes, stopping as soon as a repeater is heard passing it on. Keep trying used to be only in the menu of a long press.

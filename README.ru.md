@@ -3,22 +3,55 @@
   <h1>Ommesh</h1>
   <p><strong>Ваша mesh-сеть — в одном приложении.</strong></p>
   <p>Общайтесь, находите узлы рядом и управляйте устройствами MeshCore.<br />На компьютере, в браузере и на телефоне.</p>
+  <p>
+    <a href="https://play.google.com/store/apps/details?id=dev.cm4ker.meshnet"><img src="docs/badges/google-play-ru.png" height="56" alt="Скачать из Google Play" /></a>
+    &nbsp;
+    <a href="https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-setup-x64.exe"><img src="docs/badges/windows-ru.svg" height="56" alt="Скачать для Windows" /></a>
+  </p>
+  <p><sub>Windows на <a href="https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-setup-arm64.exe">ARM</a> · <a href="https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-setup-x86.exe">32-битная Windows</a> · <a href="#установка">другие способы</a> · iPhone: скоро в App Store</sub></p>
   <p><a href="README.md">English</a> · <strong>Русский</strong></p>
   <p>
     <a href="https://github.com/cm4ker/ommesh/actions/workflows/build.yml"><img src="https://github.com/cm4ker/ommesh/actions/workflows/build.yml/badge.svg" alt="Статус сборки" /></a>
     <a href="https://github.com/meshcore-dev/MeshCore"><img src="https://img.shields.io/badge/MeshCore-companion-74ade8" alt="Клиент MeshCore" /></a>
-    <a href="https://github.com/cm4ker/ommesh/releases/tag/dev"><img src="https://img.shields.io/badge/download-dev_build-a1c181" alt="Скачать сборку для тестирования" /></a>
   </p>
-  <p><a href="#возможности">Возможности</a> · <a href="#скриншоты">Скриншоты</a> · <a href="#как-начать">Как начать</a> · <a href="#разработка">Разработка</a></p>
+  <p><a href="#установка">Установка</a> · <a href="#возможности">Возможности</a> · <a href="#скриншоты">Скриншоты</a> · <a href="#разработка">Разработка</a></p>
 </div>
 
 ![Ommesh на компьютере: карта сети, список узлов и состояние ретранслятора](docs/screenshots/desktop-mesh.png)
 
 **Ommesh** — приложение для LoRa-радиоустройств с [MeshCore](https://github.com/meshcore-dev/MeshCore). Подключите совместимое устройство по **Bluetooth, USB или Wi-Fi** и обменивайтесь сообщениями через mesh-сеть без интернета. Переписка хранится на вашем компьютере или телефоне, а радио передаёт сообщения в эфир.
 
+## Установка
+
+| Устройство | Где взять |
+| :--- | :--- |
+| **Android** | [Google Play](https://play.google.com/store/apps/details?id=dev.cm4ker.meshnet). Обновления приходят через магазин. |
+| **Windows 10 и 11** | Установщик для [x64](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-setup-x64.exe), [ARM](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-setup-arm64.exe) или [32-bit](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-setup-x86.exe). Каждую новую сборку приложение предложит само. |
+| **iPhone** | Скоро в App Store. |
+| **macOS и Linux** | Соберите приложение из исходников, см. [Разработку](#разработка). |
+| **Браузер** | Chrome и Edge подключаются к радио по Bluetooth и USB. Запустите веб-клиент из исходников, см. [Разработку](#разработка). |
+
+Установщики для Windows — это свежая Dev-сборка: она выходит после каждого изменения, и приложение само предлагает следующую (**Настройки → О приложении** или **Обновления приложения** на экране подключения). Компьютеру без WebView2 и без интернета (Windows 10 LTSC, чистый образ) нужен офлайн-установщик со [страницы Dev-релиза](https://github.com/cm4ker/ommesh/releases/tag/dev): в нём есть WebView2, и он больше примерно на 190 МБ. В Windows 11 WebView2 уже есть. Тестировщики могут поставить и [Dev APK для Android](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh_android-debug.apk); он подписан другим ключом, поэтому сначала удалите версию из Google Play. Подробнее — в [каналах обновлений и подписи](docs/desktop-updates.md).
+
+### Подключение радио
+
+1. На радио стоит **прошивка MeshCore companion**. Для USB на платах nRF52 (T-Echo, RAK4631, Heltec T114) нужна сборка `_usb`.
+2. Откройте Ommesh, выберите **Bluetooth**, **USB** или **Wi-Fi** и найдите радио. Для Bluetooth введите PIN с экрана радио или `123456`, если экрана нет. Радио с Wi-Fi слушает TCP-порт `5000`.
+3. Ommesh прочитает контакты, каналы и ждущие сообщения. **Чаты** — для переписки, **Сеть** — карта и узлы, **Настройки** — радио и приложение.
+
+| | Bluetooth | USB | Wi-Fi |
+| :--- | :---: | :---: | :---: |
+| Windows, macOS, Linux | ✓ | ✓ | ✓ |
+| Android, iPhone | ✓ | — | ✓ |
+| Браузер | ✓¹ | ✓¹ | — |
+
+¹ Chrome или Edge, если система поддерживает Web Bluetooth и Web Serial. Сначала подключите радио в настройках Bluetooth системы.
+
+**Радио пока нет?** На телефоне выберите **Демо** на экране подключения. В браузере запустите веб-клиент и откройте [localhost:5180/?demo](http://localhost:5180/?demo).
+
 ## Возможности
 
-| Чаты · Chats | Сеть · Mesh | Радио · Radio |
+| Чаты · Chats | Сеть · Mesh | Настройки · Settings |
 | :--- | :--- | :--- |
 | Личные сообщения, каналы и комнаты | Люди, ретрансляторы и датчики на карте | Подключение, настройки радио и приложения |
 | Статусы доставки и маршруты сообщений | Профили узлов, телеметрия и удалённое управление | Пресеты частот, уведомления и диагностика |
@@ -81,30 +114,6 @@
     <td align="center"><strong>Настройки радио</strong></td>
   </tr>
 </table>
-
-## Как начать
-
-Скачайте [актуальную сборку для тестирования](https://github.com/cm4ker/ommesh/releases/tag/dev) или откройте [все релизы](https://github.com/cm4ker/ommesh/releases).
-
-| Платформа | Bluetooth LE | USB serial | Wi-Fi / TCP | Доступные сборки |
-| :--- | :---: | :---: | :---: | :--- |
-| Windows | ✓ | ✓ | ✓ | Установщики x64, x86 (32 бита) и ARM64 из CI, каждый ещё и офлайн, с WebView2 внутри |
-| macOS / Linux | ✓ | ✓ | ✓ | Сборка оболочки Tauri из исходников |
-| Android | ✓ | — | ✓ | Отладочный APK из CI |
-| iOS | ✓ | — | ✓ | Сборка в Xcode на Mac; [мобильная документация](apps/mobile/README.md) |
-| Браузер | Web Bluetooth¹ | Web Serial¹ | — | Готовый веб-клиент или локальный сервер разработки |
-
-¹ Доступность браузерных подключений зависит от браузера и ОС. Используйте Chrome или Edge с поддержкой нужного API. Для Wi-Fi требуется companion-прошивка с поддержкой Wi-Fi; TCP-порт по умолчанию — `5000`.
-
-1. Подготовьте радио с **companion-прошивкой MeshCore**.
-2. Выберите доступный способ подключения и подключитесь. При Bluetooth-сопряжении введите PIN устройства, если появится запрос. В Windows, если запрос не появился и подключение не проходит, сопрягите радио через системные настройки Bluetooth (см. «Bluetooth-сопряжение» ниже).
-3. Ommesh загрузит контакты и каналы, затем прочитает очередь сообщений. **Chats** — для общения, **Mesh** — для обзора сети, **Radio** — для настройки устройства.
-
-**Пока нет радио?** Запустите веб-клиент по инструкции ниже, откройте [localhost:5180/?demo](http://localhost:5180/?demo), выберите **Demo** и подключитесь к **MeshCore-demo**.
-
-Страница `dev` ссылается на последний успешный Dev-релиз с установщиками Windows, отладочным Android APK и веб-клиентом. Компьютеру без WebView2 и без интернета (Windows 10 LTSC, чистый образ) нужен установщик `…-offline-setup.exe`: в нём офлайн-установщик WebView2, он больше примерно на 190 МБ. В Windows 11 WebView2 уже есть, и обычному установщику интернет там не нужен. Каждый билд хранится отдельно; теги `vX.Y.Z`, совпадающие с версией в корневом `package.json`, создают стабильные релизы. Сборки pull request доступны в артефактах workflow. Сборка iOS и загрузка в TestFlight выполняются отдельно.
-
-В Windows откройте **App updates** на экране подключения, **Update** в боковой панели или **Radio → About**. Проверка выполняется при запуске и раз в шесть часов; скачивание и установка — по кнопке. Для перехода со старой версии без обновлятора потребуется одна ручная установка. [Каналы, подписи и выпуск обновлений](docs/desktop-updates.md).
 
 ## Разработка
 

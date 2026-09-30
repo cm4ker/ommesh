@@ -21,7 +21,7 @@ import { QueuePill } from "./node/QueuePill.js";
 import { SignIn } from "./node/SignIn.js";
 import { NotOnRadio } from "./ContactsPages.js";
 import { Gone, ScreenHead, type Chrome } from "./ScreenHead.js";
-import { RouteLink } from "./tools/RouteSheet.js";
+import { ForgetRouteRow, RouteLink } from "./tools/RouteSheet.js";
 
 const PAGES: Record<NodePage, { label: Key; icon: React.ReactNode; admin: boolean }> = {
   neighbours: { label: "mesh.tab.neighbours", icon: <UsersIcon size={17} />, admin: false },
@@ -207,6 +207,7 @@ export function Profile({ contactKey, chrome }: { contactKey: string; chrome: Ch
 
         <Group>
           <RouteLink contactKey={key} />
+          <ForgetRouteRow contactKey={key} />
         </Group>
 
         {isConversationType(contact.type) ? <ChatNotices conversation={contactConversation(key)} direct={contact.type !== AdvType.Room} /> : null}

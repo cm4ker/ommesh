@@ -216,12 +216,12 @@ Ommesh is made by the people who write its code and the people who take it out o
 <!-- people:start -->
 <table>
   <tr>
-    <td align="center" valign="top" width="120"><a href="https://github.com/cm4ker"><img src="https://avatars.githubusercontent.com/u/5909124?v=4&s=128" width="64" height="64" alt="" /><br /><b>cm4ker</b></a><br /><sub>maintainer</sub><br /><sub>17 reports</sub></td>
-    <td align="center" valign="top" width="120"><a href="https://github.com/DyGygg"><img src="https://avatars.githubusercontent.com/u/149152329?v=4&s=128" width="64" height="64" alt="" /><br /><b>DyGygg</b></a><br /><sub>code</sub><br /><sub>31 reports</sub></td>
-    <td align="center" valign="top" width="120"><a href="https://github.com/Wandering79"><img src="https://avatars.githubusercontent.com/u/320853239?v=4&s=128" width="64" height="64" alt="" /><br /><b>Wandering79</b></a><br /><sub>9 reports</sub></td>
-    <td align="center" valign="top" width="120"><a href="https://github.com/Alksndr55"><img src="https://avatars.githubusercontent.com/u/333634127?v=4&s=128" width="64" height="64" alt="" /><br /><b>Alksndr55</b></a><br /><sub>2 reports</sub></td>
-    <td align="center" valign="top" width="120"><a href="https://github.com/deNoi5e"><img src="https://avatars.githubusercontent.com/u/9005584?v=4&s=128" width="64" height="64" alt="" /><br /><b>deNoi5e</b></a><br /><sub>2 reports</sub></td>
-    <td align="center" valign="top" width="120"><a href="https://github.com/LekSPS"><img src="https://avatars.githubusercontent.com/u/119757495?v=4&s=128" width="64" height="64" alt="" /><br /><b>LekSPS</b></a><br /><sub>1 report</sub></td>
+    <td align="center" valign="top" width="120"><img src="https://avatars.githubusercontent.com/u/5909124?v=4&s=128" width="64" height="64" alt="" /><br /><b>cm4ker</b></td>
+    <td align="center" valign="top" width="120"><img src="https://avatars.githubusercontent.com/u/149152329?v=4&s=128" width="64" height="64" alt="" /><br /><b>DyGygg</b></td>
+    <td align="center" valign="top" width="120"><img src="https://avatars.githubusercontent.com/u/320853239?v=4&s=128" width="64" height="64" alt="" /><br /><b>Wandering79</b></td>
+    <td align="center" valign="top" width="120"><img src="https://avatars.githubusercontent.com/u/333634127?v=4&s=128" width="64" height="64" alt="" /><br /><b>Alksndr55</b></td>
+    <td align="center" valign="top" width="120"><img src="https://avatars.githubusercontent.com/u/9005584?v=4&s=128" width="64" height="64" alt="" /><br /><b>deNoi5e</b></td>
+    <td align="center" valign="top" width="120"><img src="https://avatars.githubusercontent.com/u/119757495?v=4&s=128" width="64" height="64" alt="" /><br /><b>LekSPS</b></td>
   </tr>
 </table>
 <!-- people:end -->

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { WatchHandlers, WatchOptions } from "tauri-plugin-serialplugin-api";
-import { portDevice, TauriSerialTransport } from "./tauriSerial.js";
+import { portDevice, raisesDtr, TauriSerialTransport } from "./tauriSerial.js";
 
 class FakePort {
   handlers: WatchHandlers | null = null;
@@ -11,7 +11,6 @@ class FakePort {
   lines: string[] = [];
   async open() { return "COM6"; }
   async writeDataTerminalReady(level: boolean) { this.lines.push(`dtr:${level}`); }
-  async writeRequestToSend(level: boolean) { this.lines.push(`rts:${level}`); }
   async watch(handlers: WatchHandlers, options?: WatchOptions) {
     if (this.watchError) throw this.watchError;
     this.handlers = handlers;
@@ -28,8 +27,9 @@ test("USB watch preserves binary bytes and reassembles split replies", async () 
   const received: Uint8Array[] = [];
   transport.onFrame((frame) => received.push(frame));
   await transport.open();
-  // A TinyUSB radio answers only once the host raises DTR.
-  assert.deepEqual(port.lines, ["dtr:true", "rts:true"]);
+  // A TinyUSB radio answers only once the host raises DTR. RTS beside it would send an ESP32 on
+  // its own USB into its loader when the port closes.
+  assert.deepEqual(port.lines, ["dtr:true"]);
   assert.equal(port.options?.decode, false);
   assert.equal(port.options?.routeUrc, false);
   port.handlers!.onData(new Uint8Array([0x3e, 3]));
@@ -60,6 +60,16 @@ test("USB errors release the native port and report the first failure once", asy
   assert.equal(failures.length, 1);
   assert.equal(failures[0]?.message, "read failed");
   await assert.rejects(transport.send(new Uint8Array([10])), /port closed/);
+});
+
+test("a port behind a USB-to-UART chip is opened with its lines left alone", async () => {
+  const info = (vid: number, type = "USB") => ({ path: "COM7", type, vid: String(vid), pid: "1", product: "Unknown", manufacturer: "Unknown", serial_number: "Unknown" });
+  // CP210x, CH340, FTDI and Prolific; then a Xiao's own USB, a T-Echo, and ports that say nothing.
+  assert.deepEqual([0x10c4, 0x1a86, 0x0403, 0x067b].map((vid) => raisesDtr(info(vid))), [false, false, false, false]);
+  assert.deepEqual([raisesDtr(info(0x303a)), raisesDtr(info(0x239a)), raisesDtr(info(0, "Unknown")), raisesDtr(undefined)], [true, true, true, true]);
+  const port = new FakePort();
+  await new TauriSerialTransport(port, "COM7", false).open();
+  assert.deepEqual(port.lines, []);
 });
 
 test("a USB port is offered as a radio by its product; the board's and Bluetooth's ports are set apart", () => {

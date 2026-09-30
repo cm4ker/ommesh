@@ -2,7 +2,8 @@
  * Writes the People section at the end of both READMEs from GitHub: everyone
  * whose commits are on master and everyone who opened an issue. The section
  * sits between the `people:start` and `people:end` comments; the rest of each
- * README is left as it is. Run `pnpm people` when someone new turns up.
+ * README is left as it is. The People workflow runs it on every new issue
+ * and push to master and commits the result; `pnpm people` runs it by hand.
  * GH_TOKEN or GITHUB_TOKEN is used when set; the public API is enough without.
  */
 
@@ -14,6 +15,19 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const repository = "cm4ker/ommesh";
 const perRow = 6;
 
+/**
+ * Whether a GitHub user can stand in the list. The People workflow runs this on
+ * every new issue, so anyone can put a name here: only a well-formed login and
+ * a GitHub-hosted picture reach the README's HTML. "ghost" stands for deleted accounts.
+ */
+function listable(user) {
+  return user?.type === "User" && user.login !== "ghost" && /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(user.login)
+    && typeof user.avatar_url === "string" && user.avatar_url.startsWith("https://avatars.githubusercontent.com/");
+}
+
+/** An issue labelled this way does not put its author in the list. */
+const skipLabel = "spam";
+
 /** One entry per person: the owner first, then by commits, then by issues opened. */
 export function people({ owner, contributors, issues }) {
   const byLogin = new Map();
@@ -21,9 +35,12 @@ export function people({ owner, contributors, issues }) {
     if (!byLogin.has(user.login)) byLogin.set(user.login, { login: user.login, avatar: user.avatar_url, commits: 0, reports: 0, maintainer: user.login === owner });
     return byLogin.get(user.login);
   };
-  for (const user of contributors) if (user.type === "User") person(user).commits = user.contributions;
+  for (const user of contributors) if (listable(user)) person(user).commits = user.contributions;
   // The issues list carries pull requests too; those are already counted as commits.
-  for (const issue of issues) if (issue.user?.type === "User" && !issue.pull_request) person(issue.user).reports++;
+  for (const issue of issues) {
+    if (issue.pull_request || !listable(issue.user) || issue.labels?.some((label) => label.name === skipLabel)) continue;
+    person(issue.user).reports++;
+  }
   return [...byLogin.values()].sort((a, b) =>
     Number(b.maintainer) - Number(a.maintainer) || b.commits - a.commits || b.reports - a.reports || a.login.localeCompare(b.login));
 }

@@ -14,6 +14,21 @@ test("the owner leads, then code, then reports; pull requests and bots are not r
   assert.deepEqual(list.map((p) => [p.login, p.commits, p.reports]), [["cm4ker", 264, 1], ["DyGygg", 1, 2], ["Wandering79", 0, 3], ["Alksndr55", 0, 2]]);
 });
 
+test("spam, deleted accounts and anything that is not a plain login stay out", () => {
+  const list = people({
+    owner: "cm4ker",
+    contributors: [],
+    issues: [
+      { ...issue("Spammer"), labels: [{ name: "spam" }] },
+      { ...issue("Reporter"), labels: [{ name: "bug" }] },
+      issue("ghost"),
+      issue('x"><script>'),
+      { user: { ...user("Elsewhere"), avatar_url: "https://example.com/a.png" } },
+    ],
+  });
+  assert.deepEqual(list.map((p) => p.login), ["Reporter"]);
+});
+
 test("six people to a row, a picture and a name each, no links", () => {
   const list = Array.from({ length: 7 }, (_, i) => ({ login: `p${i}`, avatar: "https://avatars.githubusercontent.com/u/1?v=4", commits: 0, reports: 1 }));
   const html = renderPeople(list);

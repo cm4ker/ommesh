@@ -226,4 +226,4 @@ Ommesh is made by the people who write its code and the people who take it out o
 </table>
 <!-- people:end -->
 
-<sub>The list is written by `pnpm people` from the repository's commits and issues. Opened an issue or sent a change? You are in it.</sub>
+<sub>The list follows the repository's commits and issues by itself. Opened an issue or sent a change? You are in it.</sub>

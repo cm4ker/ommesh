@@ -438,11 +438,7 @@ function FrequencyPage({ self, online }: { self: Self; online: boolean }) {
  * percent it would give now, so the one that looks right is plain to see.
  */
 function AdvancedPage({ self, online }: { self: Self; online: boolean }) {
-  const state = useSession();
-  const device = state.device;
-  useEffect(() => {
-    if (online && !state.tuning) void session.refreshTuning().catch(() => undefined);
-  }, [online, state.tuning]);
+  const device = useSession().device;
   return (
     <>
       <Group title={t("radio.advanced.device")}>
@@ -474,34 +470,6 @@ function AdvancedPage({ self, online }: { self: Self; online: boolean }) {
               else toast(t("radio.advanced.clockSet"));
             })
           }
-        />
-      </Group>
-      <Group title={t("radio.advanced.tuning")}>
-        <SelectRow
-          label={t("radio.advanced.multiAcks")}
-          hint={t("radio.advanced.multiAcksHint")}
-          value={String(self.multiAcks)}
-          disabled={!online}
-          options={[0, 1, 2, 3].map((n) => ({ value: String(n), label: String(n) }))}
-          onChange={(v) => void saveOther(self, { multiAcks: Number(v) })}
-        />
-        <CommitField
-          label={t("radio.advanced.rxDelay")}
-          hint={t("radio.advanced.rxDelayHint")}
-          value={String(state.tuning?.rxDelayBase ?? 0)}
-          inputMode="decimal"
-          disabled={!online || !state.tuning}
-          check={number(0, 20, "radio.check.delayBase")}
-          onCommit={(text) => session.setTuning(Number(text), state.tuning?.airtimeFactor ?? 0)}
-        />
-        <CommitField
-          label={t("radio.advanced.airtimeFactor")}
-          hint={t("radio.advanced.airtimeFactorHint")}
-          value={String(state.tuning?.airtimeFactor ?? 0)}
-          inputMode="decimal"
-          disabled={!online || !state.tuning}
-          check={number(0, 9, "radio.check.airtimeFactor")}
-          onCommit={(text) => session.setTuning(state.tuning?.rxDelayBase ?? 0, Number(text))}
         />
       </Group>
     </>

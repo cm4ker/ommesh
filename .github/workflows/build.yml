@@ -182,6 +182,9 @@ jobs:
           cp artifacts/meshnet-windows-x64/*.exe* out/
           cp artifacts/meshnet-windows-arm64/*.exe* out/
           cp artifacts/meshnet-windows-x86/*.exe* out/
+          # The README links these names, which stay the same from build to build.
+          # They do not end in `_<arch>-setup.exe`, so the update feed never picks them.
+          for arch in x64 arm64 x86; do cp out/Ommesh_*_${arch}-setup.exe out/Ommesh-setup-${arch}.exe; done
           cp artifacts/meshnet-android/app-debug.apk out/Ommesh_android-debug.apk
           (cd artifacts/meshnet-web && zip -qr ../../out/Ommesh_web.zip .)
           ls -l out

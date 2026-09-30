@@ -26,6 +26,10 @@ test("the unsigned offline installers with WebView2 inside stay out of the feed"
   const offline = ["x64", "arm64", "x86"].map((arch) => `Ommesh_0.2.0_${arch}-offline-setup.exe`);
   assert.deepEqual(makeManifest({ ...options, files: [...offline, ...files] }), makeManifest(options));
 });
+test("the README's fixed-name download copies stay out of the feed", () => {
+  const copies = ["x64", "arm64", "x86"].map((arch) => `Ommesh-setup-${arch}.exe`);
+  assert.deepEqual(makeManifest({ ...options, files: [...copies, ...files] }), makeManifest(options));
+});
 test("never publish a partial or mismatched update", () => {
   assert.throws(() => makeManifest({ ...options, files: files.slice(0, 2) }), /arm64/);
   assert.throws(() => makeManifest({ ...options, files: files.slice(0, 4) }), /x86/);

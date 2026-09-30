@@ -73,8 +73,12 @@ export function RadioCard({ connector, device, radioName, last, signal = null }:
   const phase =
     link.phase === "connected" ? "done" : link.phase === "connecting" ? "busy" : link.phase === "failed" ? (link.pair ? "pin" : "failed") : "idle";
   const name = answered ?? radioName ?? (device ? nameOf(device, connector) : t("connect.card.chosen"));
-  const [headline, ...rest] = (link.error ?? "").split(/(?<=[.!?])\s+/);
-  const more = rest.join(" ");
+  // The error's first sentence heads the card, the rest waits behind a tap. Cut without a lookbehind:
+  // Safari before 16.4 cannot read one, and the app did not start at all there.
+  const error = link.error ?? "";
+  const cut = error.search(/[.!?]\s/);
+  const headline = cut < 0 ? error : error.slice(0, cut + 1);
+  const more = cut < 0 ? "" : error.slice(cut + 1).trim();
 
   let line;
   if (phase === "busy") {

@@ -87,6 +87,10 @@
  * is not inherited, and the room for the home bar changes once, at the start.
  * A box's lift is the rise less that room, which the keyboard covers first:
  * the room goes as the box starts to rise, and what sits in it stays put.
+ *
+ * Safari before 16.4 registers no property, so this one has no value of its
+ * own there: every use names 0px to fall back on, or the app's height was void
+ * and the page grew past the screen.
  */
 @property --keyboard-rise {
   syntax: "<length>";
@@ -105,8 +109,8 @@ body,
   height: 100dvh;
 }
 #root {
-  height: calc(100% - max(var(--keyboard-rise), var(--home-bar)) + var(--safe-bottom));
-  height: calc(100dvh - max(var(--keyboard-rise), var(--home-bar)) + var(--safe-bottom));
+  height: calc(100% - max(var(--keyboard-rise, 0px), var(--home-bar)) + var(--safe-bottom));
+  height: calc(100dvh - max(var(--keyboard-rise, 0px), var(--home-bar)) + var(--safe-bottom));
 }
 
 body {
@@ -2138,7 +2142,7 @@ details.more .kv-grid {
 
 .sheet-layer {
   position: fixed;
-  inset: 0 0 calc(max(var(--keyboard-rise), var(--home-bar)) - var(--safe-bottom));
+  inset: 0 0 calc(max(var(--keyboard-rise, 0px), var(--home-bar)) - var(--safe-bottom));
   z-index: 1000;
   display: flex;
   flex-direction: column;
@@ -2544,7 +2548,7 @@ html.notices-window #root {
   position: fixed;
   left: 12px;
   right: 12px;
-  bottom: calc(var(--tabbar-height) + max(var(--keyboard-rise), var(--home-bar)) + var(--space-3));
+  bottom: calc(var(--tabbar-height) + max(var(--keyboard-rise, 0px), var(--home-bar)) + var(--space-3));
   z-index: 1200;
   display: flex;
   align-items: center;
@@ -2631,7 +2635,7 @@ html.notices-window #root {
 
 .palette-layer {
   position: fixed;
-  inset: 0 0 calc(max(var(--keyboard-rise), var(--home-bar)) - var(--safe-bottom));
+  inset: 0 0 calc(max(var(--keyboard-rise, 0px), var(--home-bar)) - var(--safe-bottom));
   z-index: 1050;
   display: flex;
   justify-content: center;
@@ -2885,7 +2889,7 @@ html.notices-window #root {
   --chat-room: max(0px, calc(var(--home-bar) - var(--space-2)));
 }
 :root.keyboard-follows .screen.chat > :not(.screen-head) {
-  transform: translateY(min(0px, calc(var(--chat-room) - var(--chat-keyboard))));
+  transform: translateY(min(0px, calc(var(--chat-room) - var(--chat-keyboard, 0px))));
   transition: transform 0.25s cubic-bezier(0.38, 0.7, 0.125, 1);
 }
 :root.keyboard-follows .screen.chat > .screen-head {
@@ -2894,7 +2898,7 @@ html.notices-window #root {
   background-color: var(--bg);
 }
 :root.keyboard-follows .screen.chat > .chat-scroll {
-  padding-top: calc(var(--space-3) + max(0px, calc(var(--chat-keyboard) - var(--chat-room))));
+  padding-top: calc(var(--space-3) + max(0px, calc(var(--chat-keyboard, 0px) - var(--chat-room))));
 }
 /* The message being answered rises by less, and the list's inside glides to it (ChatView). */
 :root.keyboard-follows .screen.chat .chat-inner {

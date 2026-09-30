@@ -22,7 +22,9 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(process.env["MESHNET_VERSION"] ?? version),
   },
   build: {
-    target: "es2022",
+    // The oldest web view the client runs in is Safari 15, the iOS app's lowest version
+    // (IPHONEOS_DEPLOYMENT_TARGET): newer syntax is written the old way for it.
+    target: ["es2022", "safari15"],
     outDir: "dist",
     rollupOptions: {
       // The app, and the desktop shell's corner window for its own notices (notices.rs).

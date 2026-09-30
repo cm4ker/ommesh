@@ -550,6 +550,13 @@ textarea.input {
   color: oklch(20% 0.03 var(--hue));
   letter-spacing: 0.02em;
 }
+/* A person's picture fills their swatch; the swatch shows while it loads. */
+.avatar > img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
 
 /* ---- the connect screen ---- */
 
@@ -1813,10 +1820,12 @@ mark {
   font-size: calc(14px * var(--text-scale));
   text-align: left;
 }
+/* A row that opens a dialog keeps the closed dialog right after it; the row after that still takes its rule. */
 .line + .line,
 .line + .line-block,
 .line-block + .line,
-.line-block + .line-block {
+.line-block + .line-block,
+.line + dialog + .line {
   box-shadow: inset 0 1px 0 var(--border);
 }
 button.line,
@@ -1877,6 +1886,41 @@ button.line:disabled,
   flex: none;
   color: var(--text-faint);
 }
+
+/* ---- People: About's row and its page ---- */
+
+.faces {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.faces-stack {
+  display: inline-flex;
+}
+/* Each face overlaps the one before it, ringed in the row's own ground. */
+.faces-stack .avatar {
+  box-shadow: 0 0 0 2px var(--panel);
+}
+.app.wide .pane .faces-stack .avatar,
+.sheet .faces-stack .avatar {
+  box-shadow: 0 0 0 2px var(--bg);
+}
+.faces-stack .avatar + .avatar {
+  margin-left: -6px;
+}
+/* Shipped with the app, cut down by scripts/people.mjs to the thanks line's letters in every language. */
+@font-face {
+  font-family: "Caveat Thanks";
+  font-weight: 500;
+  font-display: swap;
+  src: url("./fonts/caveat-thanks.woff2") format("woff2");
+}
+.people-thanks {
+  margin: var(--space-5) var(--space-3) var(--space-4);
+  text-align: center;
+  color: var(--text-muted);
+  font: 500 calc(30px * var(--text-scale)) / 1.2 "Caveat Thanks", cursive;
+}
 .line-choice .line-value {
   font-variant-numeric: tabular-nums;
 }
@@ -1916,6 +1960,9 @@ button.line:disabled,
 .line-action.danger,
 .line-link.danger {
   color: var(--danger);
+}
+.line-link.accent {
+  color: var(--accent);
 }
 .line-action.danger .line-icon,
 .line-link.danger .line-icon {

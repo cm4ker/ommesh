@@ -120,4 +120,6 @@ export const TextIcon = icon('<path d="M5 6h14M12 6v13M8 19h8"/>');
 export const TerminalIcon = icon('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10l3 2-3 2M12 15h5"/>');
 export const GaugeIcon = icon('<path d="M4.5 16.5a7.5 7.5 0 1 1 15 0"/><path d="M12 16.5l3.5-4.5"/>');
 export const ChartIcon = icon('<path d="M4 19h16"/><path d="M6 15l4-5 3 3 5-7"/>');
+/** An address that opens outside the app, in the system's browser. */
+export const ExternalIcon = icon('<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5.5H4.5V6H10"/>');
 export const UsersIcon = icon('<circle cx="9" cy="8" r="3.5"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7"/><path d="M17.5 14.5c2 .8 3.5 2.8 3.5 5.5"/>');

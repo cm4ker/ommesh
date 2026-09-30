@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { people, renderPeople, replaceSection } from "./people.mjs";
+import { people, pictureName, renderPeople, replaceSection, thanksLetters } from "./people.mjs";
 
 const user = (login, type = "User") => ({ login, type, avatar_url: `https://avatars.githubusercontent.com/u/${login.length}?v=4` });
 const issue = (login, pull = false) => ({ user: user(login), ...(pull ? { pull_request: {} } : {}) });
@@ -44,4 +44,15 @@ test("only the text between the markers changes", () => {
   assert.equal(replaceSection(text.replace(/\n/g, "\r\n"), "a\nb"), "# Title\r\n\r\n<!-- people:start -->\r\na\r\nb\r\n<!-- people:end -->\r\n\r\nAfter.\r\n");
   assert.equal(replaceSection("<!-- people:start -->\n<!-- people:end -->", "new"), "<!-- people:start -->\nnew\n<!-- people:end -->");
   assert.throws(() => replaceSection("# No markers\n", "new"), /markers/);
+});
+
+test("a picture is named by its login and the kind of image GitHub sent", () => {
+  assert.equal(pictureName("DyGygg", "image/jpeg"), "DyGygg.jpg");
+  assert.equal(pictureName("LekSPS", "image/png; charset=binary"), "LekSPS.png");
+  assert.throws(() => pictureName("x", "text/html"), /sent text\/html/);
+});
+
+test("the thanks font asks for each letter once, in the same order every time", () => {
+  assert.equal(thanksLetters(["Thank you!", "Спасибо!"]), thanksLetters(["Спасибо!", "Thank you!"]));
+  assert.equal(thanksLetters(["aba", "b!"]), "!ab");
 });

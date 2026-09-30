@@ -35,6 +35,7 @@ import { HistoryPage } from "./HistoryPage.js";
 import { ScreenHead, type Chrome } from "./ScreenHead.js";
 import { UpdateButton } from "./Updates.js";
 import { useDesktopUpdateInfo } from "../lib/updates.js";
+import { PeoplePage, PeopleRow, ReportRow } from "./People.js";
 import { PrivacyButton } from "./Privacy.js";
 import { NewBuildRow } from "./NewBuild.js";
 import { getLanguagePreference, languageName, languages, setLanguagePreference, subscribeLanguage, systemLanguage, t, type Key } from "../i18n/index.js";
@@ -43,7 +44,7 @@ import { errorText } from "../i18n/errors.js";
 type Self = NonNullable<SessionState["self"]>;
 
 /** Pages opened from another page rather than from the Radio list: the list keeps the parent picked. */
-export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = { removed: "contacts", sound: "notifications" };
+export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = { removed: "contacts", sound: "notifications", people: "about" };
 
 /** Each page's title as a key; `radioTitle` says it. */
 export const RADIO_TITLES: Record<RadioPage, Key> = {
@@ -64,6 +65,7 @@ export const RADIO_TITLES: Record<RadioPage, Key> = {
   log: "radio.titles.log",
   power: "radio.titles.power",
   about: "radio.titles.about",
+  people: "radio.titles.people",
 };
 
 /** A Radio page's title in the reader's language. */
@@ -238,6 +240,8 @@ function PageBody({ page }: { page: RadioPage }) {
       return <PowerPage />;
     case "about":
       return <AboutPage />;
+    case "people":
+      return <PeoplePage />;
     default:
       return null;
   }
@@ -802,6 +806,10 @@ function AboutPage() {
       <NewBuildRow />
       <InfoRow label={t("radio.about.runningIn")}>{shell() === "tauri" ? t("radio.about.desktop") : shell() === "capacitor" ? t("radio.about.phone") : t("radio.about.browser")}</InfoRow>
       <PrivacyButton row />
+      <ReportRow />
+    </Group>
+    <Group>
+      <PeopleRow />
     </Group>
     {stops.length > 0 ? (
       <Group title={t("radio.about.stopped")} note={t("radio.about.stoppedNote")}>

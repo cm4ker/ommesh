@@ -1,7 +1,8 @@
-• Coverage survey on the move: see which repeaters hear you along the way, then export it or send it to the MeshCoreTel map.
-• Find messages in every chat, or within one.
-• Opens on your chats in about a second and reconnects faster.
-• The map shows where you are, and the radio can follow the phone.
-• One Readings block for every node; the battery as a charge.
-• Managing a repeater keeps working over a weak route.
-• Large emoji, the radio's signal on its card, smoother long chats.
+• A channel message no repeater passed on has Send again and Keep trying on it.
+• Messages keep the order they came in, even from a radio with a wrong clock.
+• Web addresses in messages open with a tap.
+• Hold ≋ on the map to start a coverage survey.
+• Filter a repeater's neighbours on the map by signal and distance.
+• Repeaters: clock check, a day of power readings, Find neighbours.
+• Managing a node sends one packet per tap.
+• Android asks to turn Bluetooth on; Wi-Fi connect fixed.

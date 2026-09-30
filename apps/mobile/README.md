@@ -102,6 +102,27 @@ contacts and four channels. This is a device-specific workaround, not a fix
 for the vendor service; a later return of its unresponsive GATT service can
 cause the timeout again.
 
+### Sharing a radio with Windows: `subscribe: … ATT 0x01`
+
+Android hands out GATT handles in the order apps publish their services, so
+the relay's handles change when the phone's Bluetooth restarts and the vendor
+services come up in another order. The phone does not tell a bonded computer,
+and Windows keeps writing to the handles it cached: on 2026-09-30 it had the
+UART service at 302 while the realme had it at 265
+(`adb shell dumpsys bluetooth_manager`, under "GATT Handle Map"), and the
+notification subscription was answered with ATT 0x01, invalid handle.
+
+The desktop now takes ATT 0x01, 0x03, 0x06 and 0x0A as "the service has
+moved": it tries every UART service Windows lists, then asks the phone with
+`Uncached` and looks in the cache again. That last look matters: on the realme
+the uncached query by UUID came back with no service, and the cache then held
+both the stale one and the new one.
+
+On a phone with `com.heytap.accessory` that question starts the full discovery
+described above. Windows then connects, stalls for 30 s on the vendor service,
+drops the link and connects again, with no app asking, until the package is
+switched off for one connection.
+
 ## iOS
 
 As on Android, the page reaches a Bluetooth radio through `MeshRelay.swift`,

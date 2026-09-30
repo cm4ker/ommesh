@@ -319,6 +319,35 @@ fn gatt_failure(what: &str, status: GattCommunicationStatus, protocol_error: Opt
     format!("{what}: {status:?}{att}{hint}")
 }
 
+/// Why a service Windows listed gave no link.
+#[derive(Debug)]
+enum Refusal {
+    /// The device no longer keeps the service where Windows remembers it, so
+    /// another listing of the same service may still answer.
+    Moved(String),
+    /// Anything else, which a second listing would meet as well.
+    Failed(String),
+}
+
+impl From<String> for Refusal {
+    fn from(error: String) -> Self {
+        Refusal::Failed(error)
+    }
+}
+
+/// A GATT failure, told apart by whether the handle was the trouble. Invalid
+/// handle and attribute not found say nothing is there; write not permitted
+/// and request not supported say that what is there is not the attribute
+/// Windows took it for. A service in its place answers none of the four.
+fn gatt_refusal(what: &str, status: GattCommunicationStatus, protocol_error: Option<u8>) -> Refusal {
+    let error = gatt_failure(what, status, protocol_error);
+    if status == GattCommunicationStatus::ProtocolError && matches!(protocol_error, Some(0x01 | 0x03 | 0x06 | 0x0A)) {
+        Refusal::Moved(error)
+    } else {
+        Refusal::Failed(error)
+    }
+}
+
 /// Waits for a WinRT operation on the worker, pumping the apartment meanwhile,
 /// but not past the deadline: a stack that never completes is cancelled and
 /// reported, with how long it took to give up.
@@ -440,49 +469,94 @@ pub async fn winble_stop_scan(state: State<'_, WinBle>) -> Result<(), String> {
     Ok(())
 }
 
-/// Looks up the UART service in Windows' cache first, then queries the device
-/// if the cached list has no UART service. A UUID filter limits the results,
-/// but does not stop Windows from discovering other apps' services on an Android phone. An
-/// unresponsive vendor service can stall that discovery, so do not force it
-/// again on every connection once Windows has found the UART service.
-fn find_service(device: &BluetoothLEDevice) -> Result<GattDeviceService, String> {
-    find_service_with(|mode| {
-        let result = wait(
-            device
-                .GetGattServicesForUuidWithCacheModeAsync(SERVICE, mode)
-                .map_err(|e| err("services", e))?,
-            "service discovery",
-        )?;
-        let status = result.Status().map_err(|e| err("services", e))?;
-        if status != GattCommunicationStatus::Success {
-            return Err(format!("service discovery: {status:?}"));
-        }
-        let list = result.Services().map_err(|e| err("services", e))?;
-        Ok(list.into_iter().next())
-    })
+/// Every UART service Windows lists for the device in this cache mode, each
+/// with its handle. A UUID filter limits the results, but does not stop
+/// Windows from discovering other apps' services on an Android phone.
+fn uart_services(device: &BluetoothLEDevice, mode: BluetoothCacheMode) -> Result<Vec<(u16, GattDeviceService)>, String> {
+    let result = wait(
+        device
+            .GetGattServicesForUuidWithCacheModeAsync(SERVICE, mode)
+            .map_err(|e| err("services", e))?,
+        "service discovery",
+    )?;
+    let status = result.Status().map_err(|e| err("services", e))?;
+    if status != GattCommunicationStatus::Success {
+        return Err(format!("service discovery: {status:?}"));
+    }
+    let list = result.Services().map_err(|e| err("services", e))?;
+    Ok(list.into_iter().filter_map(|service| Some((service.AttributeHandle().ok()?, service))).collect())
 }
 
-fn find_service_with<T>(mut query: impl FnMut(BluetoothCacheMode) -> Result<Option<T>, String>) -> Result<T, String> {
-    if let Some(service) = query(BluetoothCacheMode::Cached)? {
-        return Ok(service);
+/// Goes through the UART services Windows lists until one gives a link.
+///
+/// Windows' cache is asked first, and the device only when the cache has no
+/// service, or none that still answers. An unresponsive vendor service on an
+/// Android phone can stall a discovery on the device, so it is not forced on
+/// every connection once Windows has found the UART service.
+///
+/// A phone hands its services out anew when its Bluetooth restarts, at other
+/// handles, and does not tell a computer it is bonded with. Windows goes on
+/// writing to the handles it remembers, and the phone answers that nothing is
+/// there. Asked again, Windows lists the service a second time, where it is
+/// now, beside the one that is gone: so every listing is tried, and one whose
+/// characteristics Windows remembers before one it has to ask the device about.
+fn link_through<S, L>(
+    mut services: impl FnMut(BluetoothCacheMode) -> Result<Vec<(u16, S)>, String>,
+    mut open: impl FnMut(&S, BluetoothCacheMode) -> Result<Option<L>, Refusal>,
+) -> Result<L, String> {
+    let mut seen: Vec<u16> = Vec::new();
+    let mut moved: Option<String> = None;
+    for mode in [BluetoothCacheMode::Cached, BluetoothCacheMode::Uncached] {
+        let mut listed = services(mode)?;
+        if mode == BluetoothCacheMode::Uncached {
+            // Windows may have cached the phone before its app published the
+            // UART service, so an empty cached list is not proof of absence.
+            // And the answer to this question can itself come back empty and
+            // still leave the service in the cache, which is where to look.
+            log::debug!("winble: no UART service in the cache that answers; asked the device");
+            listed.extend(services(BluetoothCacheMode::Cached)?);
+        }
+        let mut fresh: Vec<(u16, S)> = Vec::new();
+        for (handle, service) in listed {
+            if !seen.contains(&handle) {
+                seen.push(handle);
+                fresh.push((handle, service));
+            }
+        }
+        let mut gone: Vec<u16> = Vec::new();
+        for characteristics in [BluetoothCacheMode::Cached, BluetoothCacheMode::Uncached] {
+            for (handle, service) in &fresh {
+                if gone.contains(handle) {
+                    continue;
+                }
+                match open(service, characteristics) {
+                    Ok(Some(link)) => return Ok(link),
+                    // Nothing cached for it; asked anew once the others have had their turn.
+                    Ok(None) => {}
+                    Err(Refusal::Moved(error)) => {
+                        log::debug!("winble: the service at handle {handle} is no longer there: {error}");
+                        gone.push(*handle);
+                        moved = Some(error);
+                    }
+                    Err(Refusal::Failed(error)) => return Err(error),
+                }
+            }
+        }
     }
-    // Windows may have cached the phone before its app published the UART
-    // service. A successful but empty cached result is not proof of absence.
-    log::debug!("winble: UART absent from cached services; discovering on the device");
-    query(BluetoothCacheMode::Uncached)?.ok_or_else(|| "this device has no MeshCore UART service".into())
+    Err(moved.unwrap_or_else(|| "this device has no MeshCore UART service".into()))
 }
 
 fn characteristics_in(
     service: &GattDeviceService,
     mode: BluetoothCacheMode,
-) -> Result<(Option<GattCharacteristic>, Option<GattCharacteristic>), String> {
+) -> Result<(Option<GattCharacteristic>, Option<GattCharacteristic>), Refusal> {
     let result = wait(
         service.GetCharacteristicsWithCacheModeAsync(mode).map_err(|e| err("characteristics", e))?,
         "characteristic discovery",
     )?;
     let status = result.Status().map_err(|e| err("characteristics", e))?;
     if status != GattCommunicationStatus::Success {
-        return Err(gatt_failure("characteristic discovery", status, result.ProtocolError().and_then(|e| e.Value()).ok()));
+        return Err(gatt_refusal("characteristic discovery", status, result.ProtocolError().and_then(|e| e.Value()).ok()));
     }
     let mut rx = None;
     let mut tx = None;
@@ -497,7 +571,16 @@ fn characteristics_in(
     Ok((rx, tx))
 }
 
-/// The UART characteristics, from Windows' cache of the service first.
+/// A service with its UART characteristics, notifying: all of a link but the watch on the device.
+struct Subscribed {
+    service: GattDeviceService,
+    rx: GattCharacteristic,
+    tx: GattCharacteristic,
+    value_token: i64,
+}
+
+/// Subscribes to the service's UART characteristics as this cache mode lists
+/// them; `None` when the cache has none.
 ///
 /// Asking the radio itself (`Uncached`) for the characteristics of a service
 /// that demands encryption never returns on this stack once the device is
@@ -505,25 +588,61 @@ fn characteristics_in(
 /// finished — while the cache Windows filled at pairing answers at once and
 /// the subscribe that follows raises the link without trouble. The radio is
 /// only asked when the cache has nothing, which is the case before a bond.
-fn find_characteristics(service: &GattDeviceService) -> Result<(GattCharacteristic, GattCharacteristic), String> {
+fn subscribe_in(service: &GattDeviceService, mode: BluetoothCacheMode, on_frame: &Channel<Vec<u8>>) -> Result<Option<Subscribed>, Refusal> {
     // A cached service still needs access in this process. Open it for shared
     // use before enumerating its characteristics, and retain it in Link.
     let access = wait(service.RequestAccessAsync().map_err(|e| err("service access", e))?, "service access")?;
     if access != DeviceAccessStatus::Allowed {
-        return Err(format!("service access: {access:?}"));
+        return Err(format!("service access: {access:?}").into());
     }
     let opened = wait(service.OpenAsync(GattSharingMode::SharedReadAndWrite).map_err(|e| err("service open", e))?, "service open")?;
     if opened != GattOpenStatus::Success && opened != GattOpenStatus::AlreadyOpened {
-        return Err(format!("service open: {opened:?}"));
+        return Err(format!("service open: {opened:?}").into());
     }
-    if let (Some(rx), Some(tx)) = characteristics_in(service, BluetoothCacheMode::Cached)? {
-        log::debug!("winble: characteristics from the cache");
-        return Ok((rx, tx));
+    let (rx, tx) = match characteristics_in(service, mode)? {
+        (Some(rx), Some(tx)) => (rx, tx),
+        _ if mode == BluetoothCacheMode::Cached => return Ok(None),
+        // A service that has moved has nothing left under its old handle either.
+        _ => return Err(Refusal::Moved("the UART service is missing its RX or TX characteristic".into())),
+    };
+    log::debug!("winble: characteristics found, {mode:?}");
+
+    let sink = on_frame.clone();
+    let value_token = tx
+        .ValueChanged(&TypedEventHandler::new(
+            move |_: windows::core::Ref<GattCharacteristic>, args: windows::core::Ref<GattValueChangedEventArgs>| {
+                let Some(args) = args.as_ref() else { return Ok(()) };
+                let buffer = args.CharacteristicValue()?;
+                let len = buffer.Length()? as usize;
+                let reader = DataReader::FromBuffer(&buffer)?;
+                let mut bytes = vec![0u8; len];
+                reader.ReadBytes(&mut bytes)?;
+                log::trace!("winble: <- {len} bytes");
+                let _ = sink.send(bytes);
+                Ok(())
+            },
+        ))
+        .map_err(|e| err("notify", e))?;
+
+    let subscription = wait(
+        tx.WriteClientCharacteristicConfigurationDescriptorWithResultAsync(GattClientCharacteristicConfigurationDescriptorValue::Notify)
+            .map_err(|e| err("subscribe", e))?,
+        "subscribe",
+    )
+    .map_err(Refusal::Failed)
+    .and_then(|result| {
+        let status = result.Status().map_err(|e| err("subscribe", e))?;
+        if status == GattCommunicationStatus::Success {
+            Ok(())
+        } else {
+            Err(gatt_refusal("subscribe", status, result.ProtocolError().and_then(|e| e.Value()).ok()))
+        }
+    });
+    if let Err(refusal) = subscription {
+        let _ = tx.RemoveValueChanged(value_token);
+        return Err(refusal);
     }
-    match characteristics_in(service, BluetoothCacheMode::Uncached)? {
-        (Some(rx), Some(tx)) => Ok((rx, tx)),
-        _ => Err("the UART service is missing its RX or TX characteristic".into()),
-    }
+    Ok(Some(Subscribed { service: service.clone(), rx, tx, value_token }))
 }
 
 fn close_link(link: Link) {
@@ -557,44 +676,8 @@ fn open_link(app: AppHandle, id: u64, mac: u64, address: &str, on_frame: Channel
     let paired = device.DeviceInformation().and_then(|i| i.Pairing()).and_then(|p| p.IsPaired()).unwrap_or(true);
     let unpaired = |e: String| if paired || e.contains("NEEDS_PAIRING") { e } else { format!("{e}. NEEDS_PAIRING") };
 
-    let service = find_service(&device).map_err(unpaired)?;
-    let (rx, tx) = find_characteristics(&service).map_err(unpaired)?;
-    log::debug!("winble: characteristics found");
-
-    let sink = on_frame;
-    let value_token = tx
-        .ValueChanged(&TypedEventHandler::new(
-            move |_: windows::core::Ref<GattCharacteristic>, args: windows::core::Ref<GattValueChangedEventArgs>| {
-                let Some(args) = args.as_ref() else { return Ok(()) };
-                let buffer = args.CharacteristicValue()?;
-                let len = buffer.Length()? as usize;
-                let reader = DataReader::FromBuffer(&buffer)?;
-                let mut bytes = vec![0u8; len];
-                reader.ReadBytes(&mut bytes)?;
-                log::trace!("winble: <- {len} bytes");
-                let _ = sink.send(bytes);
-                Ok(())
-            },
-        ))
-        .map_err(|e| err("notify", e))?;
-
-    let subscription = wait(
-        tx.WriteClientCharacteristicConfigurationDescriptorWithResultAsync(GattClientCharacteristicConfigurationDescriptorValue::Notify)
-            .map_err(|e| err("subscribe", e))?,
-        "subscribe",
-    )
-    .and_then(|result| {
-        let status = result.Status().map_err(|e| err("subscribe", e))?;
-        if status == GattCommunicationStatus::Success {
-            Ok(())
-        } else {
-            Err(gatt_failure("subscribe", status, result.ProtocolError().and_then(|e| e.Value()).ok()))
-        }
-    });
-    if let Err(error) = subscription {
-        let _ = tx.RemoveValueChanged(value_token);
-        return Err(unpaired(error));
-    }
+    let Subscribed { service, rx, tx, value_token } =
+        link_through(|mode| uart_services(&device, mode), |service, mode| subscribe_in(service, mode, &on_frame)).map_err(unpaired)?;
 
     let status_token = device
         .ConnectionStatusChanged(&TypedEventHandler::new(
@@ -738,51 +821,158 @@ pub async fn winble_disconnect(app: AppHandle, link: Option<u64>) -> Result<(), 
 mod tests {
     use super::*;
 
+    const CACHED: BluetoothCacheMode = BluetoothCacheMode::Cached;
+    const UNCACHED: BluetoothCacheMode = BluetoothCacheMode::Uncached;
+
+    fn stale() -> Refusal {
+        gatt_refusal("subscribe", GattCommunicationStatus::ProtocolError, Some(0x01))
+    }
+
     #[test]
     fn a_cached_uart_does_not_query_the_device_again() {
-        let service = find_service_with(|mode| {
-            assert_eq!(mode, BluetoothCacheMode::Cached);
-            Ok(Some("Android UART"))
-        })
+        let link = link_through(
+            |mode| {
+                assert_eq!(mode, CACHED);
+                Ok(vec![(265, "Android UART")])
+            },
+            |service, _| Ok(Some(*service)),
+        )
         .unwrap();
-        assert_eq!(service, "Android UART");
+        assert_eq!(link, "Android UART");
     }
 
     #[test]
     fn a_uart_published_after_the_cached_list_is_discovered_on_the_device() {
         let mut modes = Vec::new();
-        let service = find_service_with(|mode| {
-            modes.push(mode);
-            Ok(if mode == BluetoothCacheMode::Uncached { Some("iPhone UART") } else { None })
-        })
+        let link = link_through(
+            |mode| {
+                modes.push(mode);
+                Ok(if mode == UNCACHED { vec![(40, "iPhone UART")] } else { vec![] })
+            },
+            |service, _| Ok(Some(*service)),
+        )
         .unwrap();
-        assert_eq!(service, "iPhone UART");
-        assert_eq!(modes, [BluetoothCacheMode::Cached, BluetoothCacheMode::Uncached]);
+        assert_eq!(link, "iPhone UART");
+        assert_eq!(modes, [CACHED, UNCACHED, CACHED]);
     }
 
     #[test]
     fn a_missing_uart_is_reported_only_after_uncached_discovery() {
         let mut modes = Vec::new();
-        let result = find_service_with::<()>(|mode| {
-            modes.push(mode);
-            Ok(None)
-        });
+        let result = link_through::<(), ()>(
+            |mode| {
+                modes.push(mode);
+                Ok(vec![])
+            },
+            |_, _| unreachable!(),
+        );
         assert_eq!(result.unwrap_err(), "this device has no MeshCore UART service");
-        assert_eq!(modes, [BluetoothCacheMode::Cached, BluetoothCacheMode::Uncached]);
+        assert_eq!(modes, [CACHED, UNCACHED, CACHED]);
     }
 
     #[test]
     fn discovery_errors_are_preserved_without_an_extra_query() {
-        for fail_at in [BluetoothCacheMode::Cached, BluetoothCacheMode::Uncached] {
+        for fail_at in [CACHED, UNCACHED] {
             let mut modes = Vec::new();
-            let result = find_service_with::<()>(|mode| {
-                modes.push(mode);
-                if mode == fail_at { Err("service discovery: unavailable".into()) } else { Ok(None) }
-            });
+            let result = link_through::<(), ()>(
+                |mode| {
+                    modes.push(mode);
+                    if mode == fail_at { Err("service discovery: unavailable".into()) } else { Ok(vec![]) }
+                },
+                |_, _| unreachable!(),
+            );
             assert_eq!(result.unwrap_err(), "service discovery: unavailable");
-            let expected = if fail_at == BluetoothCacheMode::Cached { 1 } else { 2 };
+            let expected = if fail_at == CACHED { 1 } else { 2 };
             assert_eq!(modes.len(), expected);
         }
+    }
+
+    #[test]
+    fn a_service_the_phone_moved_is_found_where_it_is_now() {
+        // What a realme did: Windows remembered the service at 302, the phone
+        // had it at 265, and asking the phone came back empty but left both in the cache.
+        let mut asked = 0;
+        let mut opened = Vec::new();
+        let link = link_through(
+            |mode| {
+                asked += 1;
+                Ok(if mode == UNCACHED {
+                    vec![]
+                } else if asked == 1 {
+                    vec![(302, "old")]
+                } else {
+                    vec![(265, "new"), (302, "old")]
+                })
+            },
+            |service, mode| {
+                opened.push((*service, mode));
+                if *service == "old" { Err(stale()) } else { Ok(Some(*service)) }
+            },
+        )
+        .unwrap();
+        assert_eq!(link, "new");
+        assert_eq!(opened, [("old", CACHED), ("new", CACHED)]);
+    }
+
+    #[test]
+    fn a_listing_windows_remembers_in_full_goes_before_one_it_must_ask_about() {
+        let mut opened = Vec::new();
+        let link = link_through(
+            |_| Ok(vec![(302, "old"), (265, "new")]),
+            |service, mode| {
+                opened.push((*service, mode));
+                Ok(if *service == "new" { Some(*service) } else { None })
+            },
+        )
+        .unwrap();
+        assert_eq!(link, "new");
+        assert_eq!(opened, [("old", CACHED), ("new", CACHED)]);
+    }
+
+    #[test]
+    fn a_service_with_nothing_cached_is_asked_about_on_the_device() {
+        let mut opened = Vec::new();
+        let link = link_through(
+            |_| Ok(vec![(14, "radio")]),
+            |service, mode| {
+                opened.push(mode);
+                Ok(if mode == UNCACHED { Some(*service) } else { None })
+            },
+        )
+        .unwrap();
+        assert_eq!(link, "radio");
+        assert_eq!(opened, [CACHED, UNCACHED]);
+    }
+
+    #[test]
+    fn a_refusal_that_is_not_about_the_handle_ends_the_search() {
+        let mut modes = Vec::new();
+        let result = link_through::<_, ()>(
+            |mode| {
+                modes.push(mode);
+                Ok(vec![(265, "phone"), (302, "phone")])
+            },
+            |_, _| Err(gatt_refusal("subscribe", GattCommunicationStatus::ProtocolError, Some(0x05))),
+        );
+        assert!(result.unwrap_err().contains("NEEDS_PAIRING"));
+        assert_eq!(modes, [CACHED]);
+    }
+
+    #[test]
+    fn a_service_gone_for_good_is_reported_as_the_phone_answered() {
+        let result = link_through::<_, ()>(|_| Ok(vec![(302, "old")]), |_, _| Err(stale()));
+        assert!(result.unwrap_err().contains("ATT 0x01"));
+    }
+
+    #[test]
+    fn only_answers_about_the_handle_send_the_search_on() {
+        for code in [0x01, 0x03, 0x06, 0x0A] {
+            assert!(matches!(gatt_refusal("subscribe", GattCommunicationStatus::ProtocolError, Some(code)), Refusal::Moved(_)));
+        }
+        for code in [None, Some(0x05), Some(0x08), Some(0x0E), Some(0x0F)] {
+            assert!(matches!(gatt_refusal("subscribe", GattCommunicationStatus::ProtocolError, code), Refusal::Failed(_)));
+        }
+        assert!(matches!(gatt_refusal("subscribe", GattCommunicationStatus::Unreachable, Some(0x01)), Refusal::Failed(_)));
     }
 
     #[test]

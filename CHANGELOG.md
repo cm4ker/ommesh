@@ -23,6 +23,10 @@
 - While a survey runs, the repeaters that answered at the last point have their names in bold on the map and the other names step back, and a scale in the corner says how far the map reaches.
 - A repeater's or a sensor's page has Forget the route under its Route row, so a route that has stopped working is dropped with one tap. It used to take four: the route's sheet, ⋯, Forget the route now, and back. The row is there while the radio holds a route to the node. The note that follows has Undo for eight seconds, which writes the route back; nothing goes on the air either way. Forget the route now in the route's menu has the same Undo.
 
+### Settings
+- Advanced no longer has Tuning: extra acknowledgements, the receive delay base and the airtime factor. They took numbers only the firmware's makers know how to pick, and a wrong one could slow the mesh down for everyone. A radio keeps what was set there before.
+- The log no longer lists every packet the radio hears as a line of hex. One came every few seconds, and within minutes they pushed out the events worth reading: connecting, errors, new nodes, routes. The packets are in On the air, with who sent them, what they are and how they came.
+
 ## 0.5.0 — 2026-09-30
 
 ### Updates

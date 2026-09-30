@@ -10,7 +10,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { locale, t } from "../../i18n/index.js";
 import { errorText } from "../../i18n/errors.js";
 import { formatDistance } from "../../lib/geo.js";
-import { LISTEN_MS, useHears } from "../../lib/hears.js";
+import { LISTEN_MS } from "../../lib/hears.js";
 import { formatSnr } from "../../lib/los.js";
 import { setMeshTool, type SurveyTool } from "../../lib/meshTool.js";
 import { usePhone } from "../../lib/phonePosition.js";
@@ -80,8 +80,9 @@ function useNow(): number {
 
 /**
  * A survey running, over whatever is on screen but its own card: how long
- * and how many points, and a tap back to it. It keeps the screen on and
- * sends a packet every half minute, so it is never out of sight.
+ * and how many points, and a tap back to it. It keeps the screen on, or goes
+ * on with the phone locked, and sends a packet every half minute, so it is
+ * never out of sight.
  */
 export function SurveyStrip() {
   const surveys = useSurveys();
@@ -103,7 +104,6 @@ function RunningStrip({ survey }: { survey: Survey }) {
 
 function RunView({ survey, run }: { survey: Survey; run: SurveyRun }) {
   const now = useNow();
-  const hears = useHears();
   const phone = usePhone(false);
   const stats = surveyStats(survey, now);
   const last = survey.points.at(-1) ?? null;
@@ -158,9 +158,9 @@ function RunView({ survey, run }: { survey: Survey; run: SurveyRun }) {
         </IconButton>
         <span className="survey-line muted">{line}</span>
       </div>
-      {run.phase === "listening" && hears.startedAt ? (
+      {run.phase === "listening" && run.lastPingAt !== null ? (
         <div className="listen" aria-hidden="true">
-          <i style={{ animationDuration: `${LISTEN_MS}ms`, animationDelay: `-${now - hears.startedAt}ms` }} />
+          <i style={{ animationDuration: `${LISTEN_MS}ms`, animationDelay: `-${now - run.lastPingAt}ms` }} />
         </div>
       ) : null}
       {stats.points ? (
@@ -170,7 +170,7 @@ function RunView({ survey, run }: { survey: Survey; run: SurveyRun }) {
       ) : null}
       <div className="check-cost">
         <SurveyIcon size={13} />
-        {t("tools.survey.cost")}
+        {run.unattended ? t("tools.survey.costLocked") : t("tools.survey.cost")}
       </div>
     </div>
   );

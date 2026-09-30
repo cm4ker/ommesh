@@ -24,6 +24,11 @@ import com.getcapacitor.annotation.PermissionCallback;
  * the page's notice settings and names, {@code announced({ tag })} what the page announced itself,
  * and {@code exits()} why the app or its page stopped lately.
  *
+ * <p>A coverage survey is run by the core, so it goes on while the page sleeps:
+ * {@code surveyStart({ json })}, {@code surveyStop()} and {@code survey()} answer
+ * {@code { json, running }} with the survey and all its points ({@code json} null when there is
+ * none), and a {@code survey} event {@code { json }} tells each step with its last point.
+ *
  * <p>Advertising to a computer takes Bluetooth's "nearby devices" permission for advertising on
  * Android 12 and later, asked the first time sharing is turned on.
  */
@@ -53,6 +58,13 @@ public class MeshRelayPlugin extends Plugin {
                 JSObject event = new JSObject();
                 event.put("data", Base64.encodeToString(frame, Base64.NO_WRAP));
                 notifyListeners("frame", event);
+            }
+
+            @Override
+            public void survey(String json) {
+                JSObject event = new JSObject();
+                event.put("json", json);
+                notifyListeners("survey", event);
             }
         };
         relay().setListener(listener);
@@ -192,6 +204,36 @@ public class MeshRelayPlugin extends Plugin {
             relay().configure(json, sound);
             call.resolve();
         });
+    }
+
+    private static JSObject answer(String json, boolean running) {
+        JSObject result = new JSObject();
+        result.put("json", json == null ? JSObject.NULL : json);
+        result.put("running", running);
+        return result;
+    }
+
+    @PluginMethod
+    public void surveyStart(PluginCall call) {
+        String json = call.getString("json");
+        if (json == null) {
+            call.reject("surveyStart needs json");
+            return;
+        }
+        getActivity().runOnUiThread(() -> {
+            String now = relay().surveyStart(json);
+            call.resolve(answer(now, relay().isSurveying()));
+        });
+    }
+
+    @PluginMethod
+    public void surveyStop(PluginCall call) {
+        getActivity().runOnUiThread(() -> call.resolve(answer(relay().surveyStop(), false)));
+    }
+
+    @PluginMethod
+    public void survey(PluginCall call) {
+        getActivity().runOnUiThread(() -> call.resolve(answer(relay().survey(), relay().isSurveying())));
     }
 
     /** Why the app or its page stopped lately ({@link AppExits}), for Settings › About. */

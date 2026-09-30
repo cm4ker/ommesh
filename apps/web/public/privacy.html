@@ -15,7 +15,7 @@
 </head>
 <body>
   <h1>Ommesh privacy policy</h1>
-  <p>Updated September 28, 2026.</p>
+  <p>Updated September 30, 2026.</p>
   <p>Ommesh is a companion for MeshCore radios maintained by
     <a href="https://github.com/cm4ker/ommesh" target="_blank" rel="noopener noreferrer">cm4ker and the Ommesh project</a>.
     This policy describes the data handled by the app. No Ommesh account is required.</p>
@@ -52,7 +52,9 @@
 
   <h2>Coverage surveys</h2>
   <p>A coverage survey, which you start from "Who hears me" on the map, reads the phone's precise
-    position while it runs and the app is open. At each point it records the time, the position and
+    position while it runs. On a phone connected to its radio over Bluetooth it goes on with the phone
+    locked or the app out of sight, until you stop it; the phone shows its own sign that the position
+    is being read. Elsewhere it runs only while the app is open. At each point it records the time, the position and
     the repeaters that answered, with their signal. Surveys stay on your device until you delete them,
     or export them to a file whose destination you choose.</p>
   <p>If you choose to send a survey to a community coverage map, the app asks each time, then sends its
@@ -69,7 +71,8 @@
     <li>Location: on Android 11 and earlier, required by Android for Bluetooth scanning. The phone's
       position is read only for something you turn on: "Where am I" on the map, using the device's
       position for a radio, following the phone with a radio, or a coverage survey. It is read while
-      the app is open, never in the background. Radio positions may also be received from the mesh
+      the app is open; only a coverage survey you started goes on reading it in the background, until
+      you stop it. Radio positions may also be received from the mesh
       or entered manually.</li>
     <li>Notifications: optional local notices for messages and discovered nodes. A notice
       can show a contact name and message preview on your lock screen, subject to your device settings.</li>

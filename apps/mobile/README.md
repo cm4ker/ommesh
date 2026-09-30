@@ -44,6 +44,16 @@ which runs the core: it keeps reading the radio while Android has the page's
 scripts stopped in the background, kept alive by a connected-device foreground
 service ("Connected to …"), and posts what arrives meanwhile as notices.
 
+A coverage survey runs in the core too, so it goes on with the phone locked:
+`MeshRelay.java` reads the phone's position itself (`LocationManager`, not the
+location plugin, whose watch is the page's) and hands each fix to the core,
+which asks "who hears me" through the mux. Android gives an app out of sight
+the position only through a foreground service of the `location` kind started
+from the screen, so the link's service takes that kind while a survey runs
+(`MeshRelayService.locating`), and the app asks for no background-location
+permission. Google Play wants that kind declared (App content › Foreground
+service permissions) with a short video of the survey.
+
 CI builds a debug APK on every push (`.github/workflows/build.yml`).
 
 ### Sharing a radio with Windows: realme service discovery timeout
@@ -99,6 +109,13 @@ which runs the radio core: iOS suspends the page's scripts soon after the app
 leaves the screen, while the `bluetooth-central` background mode keeps the link
 up and wakes the core for every frame, and the core reads the radio's queue and
 posts what arrives as notices.
+
+A coverage survey runs in the core too: `MeshRelay.swift` follows the phone
+with its own `CLLocationManager` and hands each fix to the core. The `location`
+background mode lets that go on with the phone locked for an app that began on
+screen, on the "While Using" permission the page already asked for, with iOS's
+own sign in the status bar. App Review asks what the mode is for: the coverage
+survey, "Survey on the move" under "Who hears me" on the map.
 
 It needs a Mac with Xcode. The Mac here is `server.lan`, the same one the Sovabox
 phone app is built on, and the same Apple team (8CNDTQVA32). The build keeps its

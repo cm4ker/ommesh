@@ -1,5 +1,6 @@
 package dev.cm4ker.meshnet;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -22,6 +23,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.location.Location;
+import android.location.LocationManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -30,6 +34,10 @@ import android.os.SystemClock;
 import android.util.Base64;
 import android.util.Log;
 import androidx.core.app.NotificationManagerCompat;
+import androidx.core.content.ContextCompat;
+import androidx.core.location.LocationListenerCompat;
+import androidx.core.location.LocationManagerCompat;
+import androidx.core.location.LocationRequestCompat;
 import dev.cm4ker.meshnet.core.Client;
 import dev.cm4ker.meshnet.core.Effect;
 import dev.cm4ker.meshnet.core.Inbox;
@@ -57,6 +65,9 @@ import org.json.JSONObject;
  * screen. While linked, {@link MeshRelayService} keeps the app running in the background, so
  * the messages keep coming, and their notices with them.
  *
+ * <p>A coverage survey runs in the core too, on the phone's position read here, so it goes on
+ * with the phone locked or the app out of sight (see {@link #surveyStart}).
+ *
  * <p>Shared with a computer, the phone serves the same UART service the radio does (Nordic UART,
  * {@code 6E400001…}), so a computer connects to the phone as if it were the radio, with the
  * client it already has, and the core takes turns between the two. The framing is BLE's own, one
@@ -73,7 +84,7 @@ import org.json.JSONObject;
  *
  * <p>Everything runs on the main thread; the Bluetooth callbacks hop there first.
  */
-@SuppressLint("MissingPermission") // The plugin asks for Bluetooth before start().
+@SuppressLint("MissingPermission") // The plugin asks for Bluetooth before start(), and the page for the position before a survey.
 final class MeshRelay {
     private static final String TAG = "MeshRelay";
     private static final UUID SERVICE = UUID.fromString("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
@@ -85,12 +96,19 @@ final class MeshRelay {
     /** The page's notice settings and names for the core, and the signal its notices ring with. */
     private static final String WATCH_KEY = "watch";
     private static final String SOUND_KEY = "sound";
+    /** The survey running, points and all, as the core gives it: what is left of it if the app stops under it. */
+    private static final String SURVEY_KEY = "survey";
+    /** How often a survey wants to know where the phone is. */
+    private static final long FIX_MS = 2000;
 
     interface Listener {
         /** Every change: whether a radio is linked and up, whether it is shared, and whether a computer is connected. */
         void changed();
 
         void pageFrame(byte[] frame);
+
+        /** The survey running moved on: what it is doing, and its last point. */
+        void survey(String json);
     }
 
     @SuppressLint("StaticFieldLeak") // The application context, which lives as long as the process.
@@ -194,6 +212,14 @@ final class MeshRelay {
 
     private boolean watchingAdapter = false;
 
+    /** The app is out of sight: the page sleeps, and is told nothing it would only find stale. */
+    private boolean background = false;
+    private boolean surveying = false;
+    /** The survey's points kept so far. */
+    private int surveyKept = 0;
+    /** Hears where the phone is while a survey runs. */
+    private LocationListenerCompat fixes;
+
     private MeshRelay(Context context) {
         this.context = context;
         core = new Radio(loadInboxes());
@@ -243,7 +269,7 @@ final class MeshRelay {
     }
 
     private MeshRelayService.State state() {
-        return new MeshRelayService.State(radioName, radioUp(), isSharing(), hasComputer());
+        return new MeshRelayService.State(radioName, radioUp(), isSharing(), hasComputer(), surveying);
     }
 
     // The core asks; this does.
@@ -273,6 +299,8 @@ final class MeshRelay {
                     prefs().getString(SOUND_KEY, null), notice.getSilent());
             } else if (effect instanceof Effect.Withdraw) {
                 NotificationManagerCompat.from(context).cancel(((Effect.Withdraw) effect).getId());
+            } else if (effect instanceof Effect.SurveyChanged) {
+                surveyChanged();
             } else if (effect instanceof Effect.Log) {
                 Log.w(TAG, ((Effect.Log) effect).getLine());
             }
@@ -424,6 +452,7 @@ final class MeshRelay {
 
     /** The app left the screen, or came back to it: the core announces what the page misses meanwhile. */
     void setBackground(boolean background) {
+        this.background = background;
         // The app on screen asks the radio for something soon; the link takes a second or two to quicken.
         if (!background && radioSubscribed) quicken();
         run(core.setBackground(background));
@@ -432,6 +461,108 @@ final class MeshRelay {
     /** The page announced this tag itself. */
     void announced(String tag) {
         run(core.announced(tag));
+    }
+
+    // The coverage survey
+
+    boolean isSurveying() {
+        return surveying;
+    }
+
+    /**
+     * Starts the coverage survey the page describes ({@code survey.rs} reads the JSON). The core
+     * runs it from here on, on the phone's position as it comes, the app on screen or not: the
+     * page sleeps out of sight, and a survey is a drive with the phone in a pocket. Returns the
+     * survey as it stands; null if it did not start.
+     */
+    String surveyStart(String json) {
+        prefs().edit().remove(SURVEY_KEY).apply();
+        surveyKept = 0;
+        run(core.surveyStart(json, System.currentTimeMillis()));
+        String now = core.survey(true);
+        if (now == null) return null;
+        surveying = true;
+        followPhone();
+        // Started again from the screen, the service may read the position once the app is off it.
+        if (isOn()) MeshRelayService.start(context, state());
+        return now;
+    }
+
+    /** Ends the survey. Returns it as it ended, or the one the app stopped under, which is then kept no more. */
+    String surveyStop() {
+        String last = survey();
+        boolean was = surveying;
+        surveying = false;
+        leavePhone();
+        run(core.surveyStop());
+        prefs().edit().remove(SURVEY_KEY).apply();
+        if (was && isOn()) MeshRelayService.start(context, state());
+        return last;
+    }
+
+    /** The survey running, points and all; with none running, the one the app stopped under, if its points were kept. */
+    String survey() {
+        String now = core.survey(true);
+        return now != null ? now : prefs().getString(SURVEY_KEY, null);
+    }
+
+    /** The page hears how the survey moved on, and a new point is kept for a page that comes later. */
+    private void surveyChanged() {
+        String now = core.survey(false);
+        if (now == null) return;
+        try {
+            int count = new JSONObject(now).optInt("count");
+            if (count != surveyKept) {
+                surveyKept = count;
+                prefs().edit().putString(SURVEY_KEY, core.survey(true)).apply();
+            }
+        } catch (JSONException e) {
+            Log.w(TAG, "the survey could not be read", e);
+        }
+        // A page out of sight reads the whole survey when it is back.
+        if (listener != null && !background) listener.survey(now);
+    }
+
+    /** Asks the phone where it is every couple of seconds, from the satellites: a point has to be right to the street. */
+    private void followPhone() {
+        if (fixes != null) return;
+        LocationManager locations = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
+        boolean allowed = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            || ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+        if (locations == null || !allowed) {
+            Log.w(TAG, "a survey with no leave to read the phone's position");
+            return;
+        }
+        // The phone's own blend of satellites and networks where it has one; the satellites alone elsewhere.
+        String provider = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && locations.hasProvider(LocationManager.FUSED_PROVIDER)
+            ? LocationManager.FUSED_PROVIDER
+            : LocationManager.GPS_PROVIDER;
+        LocationRequestCompat request = new LocationRequestCompat.Builder(FIX_MS)
+            .setQuality(LocationRequestCompat.QUALITY_HIGH_ACCURACY)
+            .setMinUpdateIntervalMillis(FIX_MS / 2)
+            .build();
+        LocationListenerCompat listener = this::fix;
+        try {
+            LocationManagerCompat.requestLocationUpdates(locations, provider, request, listener, Looper.getMainLooper());
+            fixes = listener;
+        } catch (SecurityException | IllegalArgumentException e) {
+            Log.w(TAG, "the phone's position is not to be had", e);
+        }
+    }
+
+    private void leavePhone() {
+        if (fixes == null) return;
+        LocationManager locations = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
+        if (locations != null) LocationManagerCompat.removeUpdates(locations, fixes);
+        fixes = null;
+    }
+
+    private void fix(Location location) {
+        if (!surveying || !location.hasAccuracy()) return;
+        long now = System.currentTimeMillis();
+        // Its age by the phone's running clock: a fix's own time is the satellites', which the phone's clock may be off.
+        long age = Math.max(0, (SystemClock.elapsedRealtimeNanos() - location.getElapsedRealtimeNanos()) / 1_000_000);
+        run(core.surveyFix(location.getLatitude(), location.getLongitude(), location.getAccuracy(), now - age, now));
     }
 
     // The computer's side

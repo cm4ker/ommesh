@@ -46,6 +46,7 @@ function words() {
     relayWaitingComputer: t("notices.android.relayWaitingComputer"),
     relayConnected: template("notices.android.relayConnected"),
     relayAppClosed: t("notices.android.relayAppClosed"),
+    relaySurvey: t("notices.android.relaySurvey"),
     channelDirect: t("notices.android.channelDirect"),
     channelDirectHint: t("notices.android.channelDirectHint"),
     channelChats: t("notices.android.channelChats"),

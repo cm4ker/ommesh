@@ -54,6 +54,7 @@
   "android.relayWaitingComputer": "Ждём компьютер",
   "android.relayConnected": "Подключено к {name}",
   "android.relayAppClosed": "Сообщения приходят и при закрытом приложении",
+  "android.relaySurvey": "Идёт замер покрытия",
   "android.channelDirect": "Личные сообщения",
   "android.channelDirectHint": "Сообщение от человека вам.",
   "android.channelChats": "Каналы и комнаты",

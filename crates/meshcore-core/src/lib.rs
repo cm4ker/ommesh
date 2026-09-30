@@ -9,7 +9,8 @@
 //!   through the phone). The core reads the radio's message queue itself and
 //!   keeps every message for each client until it asks.
 //! - [`watch`]: notices for what the page leaves unread while it sleeps.
-//! - [`frames`]: the few frames the two read.
+//! - [`survey`]: a coverage survey, asking who hears the radio as the phone moves.
+//! - [`frames`]: the few frames they read.
 //!
 //! No Bluetooth, no clock, no threads. The owner (a shell's native code) hands
 //! frames and events in, carries out the [`Effect`]s each call returns, runs
@@ -21,6 +22,7 @@ pub mod codes;
 mod ffi;
 pub mod frames;
 pub mod mux;
+pub mod survey;
 pub mod watch;
 
 pub use ffi::Radio;
@@ -30,6 +32,7 @@ pub use watch::{
 };
 
 use mux::{Event, Mux};
+use survey::{Fix, Survey};
 use watch::Watch;
 
 uniffi::setup_scaffolding!();
@@ -72,6 +75,8 @@ pub enum Timer {
     Grace { generation: i32 },
     /// The wait for news to stop coming, which ends a burst of it (`watch::QUIET_MS`).
     Quiet { generation: i32 },
+    /// The time a survey's ask is listened for (`survey::LISTEN_MS`).
+    Listen { generation: i32 },
 }
 
 /// What the core asks its owner to do.
@@ -106,6 +111,8 @@ pub enum Effect {
         tag: String,
         id: i32,
     },
+    /// The survey moved on: hand [`Core::survey`] to the page, and keep it, so its points outlive the app.
+    SurveyChanged,
     Log {
         line: String,
     },
@@ -121,6 +128,7 @@ pub struct Inbox {
 pub struct Core {
     mux: Mux,
     watch: Watch,
+    survey: Survey,
 }
 
 impl Core {
@@ -129,6 +137,7 @@ impl Core {
         Core {
             mux: Mux::new(inboxes.into_iter().map(|i| (i.client, i.frames)).collect()),
             watch: Watch::new(),
+            survey: Survey::new(),
         }
     }
 
@@ -169,17 +178,21 @@ impl Core {
 
     pub fn radio_up(&mut self) -> Vec<Effect> {
         self.mux.radio_up();
+        self.survey.radio(true);
         self.settle()
     }
 
     pub fn radio_down(&mut self) -> Vec<Effect> {
         self.mux.radio_down();
+        self.survey.radio(false);
         self.settle()
     }
 
     pub fn from_radio(&mut self, frame: Vec<u8>) -> Vec<Effect> {
-        if frame.first() == Some(&codes::PUSH_NEW_ADVERT) {
-            self.watch.heard(&frame);
+        match frame.first() {
+            Some(&codes::PUSH_NEW_ADVERT) => self.watch.heard(&frame),
+            Some(&codes::PUSH_CONTROL_DATA) => self.survey.heard(&frame),
+            _ => {}
         }
         self.mux.from_radio(&frame);
         self.settle()
@@ -190,6 +203,7 @@ impl Core {
             Timer::Command { flight } => self.mux.timeout(flight),
             Timer::Grace { generation } => self.watch.timeout(generation),
             Timer::Quiet { generation } => self.watch.quiet(generation),
+            Timer::Listen { generation } => self.survey.timeout(generation),
         }
         self.settle()
     }
@@ -213,17 +227,78 @@ impl Core {
         self.settle()
     }
 
-    /// Everything the last call asked for, the watch's part after the mux's.
+    // The coverage survey
+
+    /// Starts the survey the page describes in `json` (its `id`, and the `radio`, `startedAt`
+    /// and `asks` it has); `now` is the owner's clock, ms, as in every fix after it.
+    pub fn survey_start(&mut self, json: String, now: i64) -> Vec<Effect> {
+        self.survey.radio(self.mux.is_up());
+        if let Err(error) = self.survey.start(&json, now) {
+            return vec![Effect::Log {
+                line: format!("the page's survey could not be read: {error}"),
+            }];
+        }
+        self.settle()
+    }
+
+    /// Where the phone is, from its location service, as often as it says while a survey runs:
+    /// degrees, metres either way, when the fix was taken and the time now, both ms.
+    pub fn survey_fix(
+        &mut self,
+        lat: f64,
+        lon: f64,
+        accuracy: f64,
+        at: i64,
+        now: i64,
+    ) -> Vec<Effect> {
+        let fix = Fix {
+            lat,
+            lon,
+            accuracy,
+            at,
+        };
+        self.survey.fix(fix, now);
+        self.settle()
+    }
+
+    pub fn survey_stop(&mut self) -> Vec<Effect> {
+        self.survey.stop();
+        self.settle()
+    }
+
+    /// The survey running, as JSON for the page: what it is doing and its points, all of them
+    /// when `full` and only the last otherwise. None when none runs.
+    pub fn survey(&self, full: bool) -> Option<String> {
+        self.survey.status(full)
+    }
+
+    /// Everything the last call asked for: the mux's part, then the watch's and the survey's.
     fn settle(&mut self) -> Vec<Effect> {
-        let (mut effects, events) = self.mux.take();
-        for event in events {
-            match event {
-                Event::Kept(frame) => self.watch.received(&frame),
-                Event::Taken(Client::Page, frame) => self.watch.taken(&frame),
-                Event::Taken(..) => {}
+        let mut effects = Vec::new();
+        loop {
+            let (out, events) = self.mux.take();
+            effects.extend(out);
+            for event in events {
+                match event {
+                    Event::Kept(frame) => self.watch.received(&frame),
+                    Event::Taken(Client::Page, frame) => self.watch.taken(&frame),
+                    Event::Taken(..) => {}
+                    Event::Asked(frame) => self.survey.asked(&frame),
+                    Event::Answered(frame) => self.survey.answered(&frame),
+                    Event::Unanswered => self.survey.unanswered(),
+                }
+            }
+            // A survey's ask goes through the mux, which may have more to say for it.
+            let asks = self.survey.take_frames();
+            if asks.is_empty() {
+                break;
+            }
+            for ask in asks {
+                self.mux.send_own(ask);
             }
         }
         effects.extend(self.watch.take());
+        effects.extend(self.survey.take());
         effects
     }
 }

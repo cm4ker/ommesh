@@ -1,5 +1,6 @@
 import Capacitor
 import CoreBluetooth
+import CoreLocation
 import Foundation
 import MeshcoreCore
 import UIKit
@@ -30,6 +31,9 @@ import UserNotifications
 ///
 /// Both characteristics demand an encrypted link, so a computer has to be
 /// paired with the phone first: iOS asks on its own screen.
+///
+/// A coverage survey runs in the core too, on the phone's position read here,
+/// so it goes on with the phone locked or the app out of sight (`surveyStart`).
 final class MeshRelay: NSObject {
     static let shared = MeshRelay()
 
@@ -40,11 +44,15 @@ final class MeshRelay: NSObject {
     /// The page's notice settings and names for the core, and the signal its notices ring with.
     private static let watchKey = "meshnet.relay.watch"
     private static let soundKey = "meshnet.relay.sound"
+    /// The survey running, points and all, as the core gives it: what is left of it if the app stops under it.
+    private static let surveyKey = "meshnet.relay.survey"
 
     /// Told of every change: `{ linked, on, computer }` (`on`: shared).
     var onChange: (([String: Any]) -> Void)?
     /// Frames for the page.
     var onPageFrame: ((Data) -> Void)?
+    /// The survey running moved on: what it is doing, and its last point, as the core's JSON.
+    var onSurvey: ((String) -> Void)?
 
     private let core: Radio
     /// The page's writes waiting to hear they went, by the number the core knows them by.
@@ -68,6 +76,12 @@ final class MeshRelay: NSObject {
     private var computer: CBCentral?
     /// Notifications iOS had no room for; sent when it says it is ready again.
     private var backlog: [Data] = []
+
+    private(set) var isSurveying = false
+    /// The survey's points kept so far.
+    private var surveyKept = 0
+    /// Says where the phone is while a survey runs.
+    private var locator: CLLocationManager?
 
     /// Linked to a radio for the page.
     var isOn: Bool { radioId != nil }
@@ -133,6 +147,8 @@ final class MeshRelay: NSObject {
                 let center = UNUserNotificationCenter.current()
                 center.removePendingNotificationRequests(withIdentifiers: [String(id)])
                 center.removeDeliveredNotifications(withIdentifiers: [String(id)])
+            case .surveyChanged:
+                surveyChanged()
             case let .log(line):
                 NSLog("MeshRelay: %@", line)
             }
@@ -250,6 +266,73 @@ final class MeshRelay: NSObject {
     /// The page announced this tag itself.
     func announced(_ tag: String) {
         run(core.announced(tag: tag))
+    }
+
+    // MARK: the coverage survey
+
+    /// The phone's clock, ms, which is the core's for a survey.
+    private static func now() -> Int64 {
+        Int64(Date().timeIntervalSince1970 * 1000)
+    }
+
+    /// Starts the coverage survey the page describes (`survey.rs` reads the JSON). The core
+    /// runs it from here on, on the phone's position as it comes, the app on screen or not:
+    /// the page sleeps out of sight, and a survey is a drive with the phone in a pocket.
+    /// Returns the survey as it stands; nil if it did not start.
+    func surveyStart(json: String) -> String? {
+        UserDefaults.standard.removeObject(forKey: MeshRelay.surveyKey)
+        surveyKept = 0
+        run(core.surveyStart(json: json, now: MeshRelay.now()))
+        guard let now = core.survey(full: true) else { return nil }
+        isSurveying = true
+        followPhone()
+        return now
+    }
+
+    /// Ends the survey. Returns it as it ended, or the one the app stopped under, which is then kept no more.
+    func surveyStop() -> String? {
+        let last = survey()
+        isSurveying = false
+        locator?.stopUpdatingLocation()
+        run(core.surveyStop())
+        UserDefaults.standard.removeObject(forKey: MeshRelay.surveyKey)
+        return last
+    }
+
+    /// The survey running, points and all; with none running, the one the app stopped under, if its points were kept.
+    func survey() -> String? {
+        core.survey(full: true) ?? UserDefaults.standard.string(forKey: MeshRelay.surveyKey)
+    }
+
+    /// The page hears how the survey moved on, and a new point is kept for a page that comes later.
+    private func surveyChanged() {
+        guard let now = core.survey(full: false) else { return }
+        if let data = now.data(using: .utf8),
+           let status = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let count = status["count"] as? Int, count != surveyKept {
+            surveyKept = count
+            UserDefaults.standard.set(core.survey(full: true), forKey: MeshRelay.surveyKey)
+        }
+        // A page out of sight reads the whole survey when it is back.
+        if UIApplication.shared.applicationState != .background { onSurvey?(now) }
+    }
+
+    /// Follows the phone as closely as it can say, a point has to be right to the street, and
+    /// goes on out of sight: the `location` background mode allows that to an app that began
+    /// while on screen, the page having asked for the position first, and iOS shows its sign
+    /// in the status bar meanwhile.
+    private func followPhone() {
+        let locator = self.locator ?? CLLocationManager()
+        self.locator = locator
+        locator.delegate = self
+        locator.desiredAccuracy = kCLLocationAccuracyBest
+        locator.distanceFilter = kCLDistanceFilterNone
+        locator.activityType = .otherNavigation
+        // A stop at a light is part of the drive.
+        locator.pausesLocationUpdatesAutomatically = false
+        locator.allowsBackgroundLocationUpdates = true
+        locator.showsBackgroundLocationIndicator = true
+        locator.startUpdatingLocation()
     }
 
     // MARK: the computer's side
@@ -409,6 +492,24 @@ extension MeshRelay: CBPeripheralManagerDelegate {
     }
 }
 
+extension MeshRelay: CLLocationManagerDelegate {
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        // A fix with no accuracy to it is no fix.
+        guard isSurveying, let fix = locations.last, fix.horizontalAccuracy >= 0 else { return }
+        run(core.surveyFix(
+            lat: fix.coordinate.latitude,
+            lon: fix.coordinate.longitude,
+            accuracy: fix.horizontalAccuracy,
+            at: Int64(fix.timestamp.timeIntervalSince1970 * 1000),
+            now: MeshRelay.now()
+        ))
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        NSLog("MeshRelay: the phone's position did not come: %@", error.localizedDescription)
+    }
+}
+
 extension MeshRelay: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         if central.state == .poweredOn { attachRadio() }
@@ -480,6 +581,12 @@ extension MeshRelay: CBPeripheralDelegate {
 /// and `frame` events `{ data }`. `configure({ json, sound })` hands the radio
 /// core the page's notice settings and names, `announced({ tag })` what the
 /// page announced itself.
+///
+/// A coverage survey is run by the core, so it goes on while the page sleeps:
+/// `surveyStart({ json })`, `surveyStop()` and `survey()` answer
+/// `{ json, running }` with the survey and all its points (`json` null when
+/// there is none), and a `survey` event `{ json }` tells each step with its
+/// last point.
 @objc(MeshRelayPlugin)
 final class MeshRelayPlugin: CAPPlugin, CAPBridgedPlugin {
     let identifier = "MeshRelayPlugin"
@@ -494,6 +601,9 @@ final class MeshRelayPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "send", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "configure", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "announced", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "surveyStart", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "surveyStop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "survey", returnType: CAPPluginReturnPromise),
     ]
 
     override func load() {
@@ -502,6 +612,36 @@ final class MeshRelayPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         MeshRelay.shared.onPageFrame = { [weak self] frame in
             self?.notifyListeners("frame", data: ["data": frame.base64EncodedString()])
+        }
+        MeshRelay.shared.onSurvey = { [weak self] json in
+            self?.notifyListeners("survey", data: ["json": json])
+        }
+    }
+
+    private static func answer(_ json: String?, running: Bool) -> [String: Any] {
+        ["json": json as Any? ?? NSNull(), "running": running]
+    }
+
+    @objc func surveyStart(_ call: CAPPluginCall) {
+        guard let json = call.getString("json") else {
+            call.reject("surveyStart needs json")
+            return
+        }
+        DispatchQueue.main.async {
+            let now = MeshRelay.shared.surveyStart(json: json)
+            call.resolve(MeshRelayPlugin.answer(now, running: MeshRelay.shared.isSurveying))
+        }
+    }
+
+    @objc func surveyStop(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            call.resolve(MeshRelayPlugin.answer(MeshRelay.shared.surveyStop(), running: false))
+        }
+    }
+
+    @objc func survey(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            call.resolve(MeshRelayPlugin.answer(MeshRelay.shared.survey(), running: MeshRelay.shared.isSurveying))
         }
     }
 

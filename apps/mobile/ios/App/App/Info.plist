@@ -38,14 +38,16 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Ommesh talks to a MeshCore radio on your Wi-Fi network.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Ommesh shows where you are on the map and, when you ask, puts your radio there.</string>
+	<string>Ommesh shows where you are on the map, puts your radio there when you ask, and marks the points of a coverage survey you start.</string>
 	<!-- The location plugin's library can report in the background, so Apple wants this string too; Ommesh never asks for Always, and iOS never shows it. -->
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Ommesh shows where you are on the map and, when you ask, puts your radio there.</string>
+	<string>Ommesh shows where you are on the map, puts your radio there when you ask, and marks the points of a coverage survey you start.</string>
+	<!-- location: a coverage survey, started on screen, goes on with the phone locked (MeshRelay.followPhone). -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>
 		<string>bluetooth-peripheral</string>
+		<string>location</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

@@ -52,7 +52,7 @@ Open `http://localhost:5180/?demo`, choose **Demo**, connect to **MeshCore-demo*
 
 **`apps/mobile`** is the Capacitor 8 shell. Phones put the page's JavaScript to sleep in the background while the Bluetooth link stays up, so native code (`MeshRelay` on Android and iOS, an Android foreground service) holds the link. Read `apps/mobile/README.md` before touching it.
 
-**`crates/meshcore-core`** is the Rust core the phone shells run through UniFFI while the page sleeps. `mux` shares one radio between several clients and keeps each client's messages; `watch` raises notices for what stays unread. It is pure logic (no Bluetooth, clock or threads); the native owner performs the `Effect`s each call returns, so its rules are covered by `cargo test`. Its `codes.rs` and `frames.rs` repeat the opcodes and frames of `packages/meshcore/src/protocol/`: change both together.
+**`crates/meshcore-core`** is the Rust core the phone shells run through UniFFI while the page sleeps. `mux` shares one radio between several clients and keeps each client's messages; `watch` raises notices for what stays unread; `survey` runs a coverage survey on the positions the phone's native code hands in, with the rule of `apps/web/src/lib/surveyData.ts` (change both together). It is pure logic (no Bluetooth, clock or threads); the native owner performs the `Effect`s each call returns, so its rules are covered by `cargo test`. Its `codes.rs` and `frames.rs` repeat the opcodes and frames of `packages/meshcore/src/protocol/`: change both together.
 
 ## Protocol source of truth
 

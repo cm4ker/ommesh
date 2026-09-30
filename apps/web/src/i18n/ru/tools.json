@@ -241,6 +241,7 @@
   "survey.stop": "Стоп",
   "survey.answered": "с ответом {answered} из {count}",
   "survey.cost": "Один короткий пакет раз в 30 с, пока вы едете · экран не гаснет",
+  "survey.costLocked": "Один короткий пакет раз в 30 с, пока вы едете · идёт и на заблокированном телефоне",
   "survey.now": "Идёт",
   "survey.stat.minutes": "мин в пути",
   "survey.stat.km": "км",

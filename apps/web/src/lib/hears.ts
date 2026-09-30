@@ -49,6 +49,17 @@ export function asksLeft(now = Date.now()): { left: number; nextAt: number | nul
   return { left: LIMIT - recent.length, nextAt: recent.length >= LIMIT ? recent[0]! + WINDOW_MS : null };
 }
 
+/** When the asks of the last two minutes went out, for another hand to count them with its own. */
+export function recentAsks(now = Date.now()): number[] {
+  return state.asks.filter((t) => now - t < WINDOW_MS);
+}
+
+/** An ask that went out by another hand, as a phone's radio core asks for a survey: counted with the button's. */
+export function noteAsk(at: number): void {
+  if (state.asks.includes(at)) return;
+  set({ asks: [...recentAsks(), at].sort((a, b) => a - b) });
+}
+
 /** Whether an ask is out and its answers still coming. */
 export function hearsListening(): boolean {
   return state.listening;

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FIX_AGE_MS, PING_EVERY_MS, bestReply, onMap, pointTone, repeaterRows, surveyStats, surveyStep, toneFor, type Survey, type SurveyPoint } from "./surveyData.js";
+import { FIX_AGE_MS, PING_EVERY_MS, bestReply, onMap, pointTone, pointsToAdd, repeaterRows, surveyStats, surveyStep, toneFor, type Survey, type SurveyPoint } from "./surveyData.js";
 
 const reply = (key: string, us: number, them: number) => ({ key, us, them, rssi: -90 });
 const point = (at: number, lat: number, lon: number, replies = [reply("aa", 2, 3)]): SurveyPoint => ({ at, lat, lon, accuracy: 5, replies });
@@ -47,6 +47,20 @@ test("a drive adds up its time, distance, points and answers, and its repeaters 
   assert.equal(rows[0]!.best.us, 1);
   assert.equal(toneFor(survey.points[1]!, "bb"), "good");
   assert.equal(toneFor(survey.points[2]!, "bb"), "off");
+});
+
+test("the points the radio core kept while the page slept are added once each", () => {
+  const p = [point(1, 55, 73), point(2, 55, 73), point(3, 55, 73), point(4, 55, 73)];
+  // Each step tells the last point: the next one in turn is added, one already here is not.
+  assert.deepEqual(pointsToAdd(2, 3, [p[2]!]), [p[2]]);
+  assert.deepEqual(pointsToAdd(3, 3, [p[2]!]), []);
+  assert.deepEqual(pointsToAdd(0, 0, []), []);
+  // Steps were missed while the page slept: the whole list has to be read.
+  assert.equal(pointsToAdd(1, 4, [p[3]!]), null);
+  // The whole list gives what is missing, whatever is here.
+  assert.deepEqual(pointsToAdd(1, 4, p), p.slice(1));
+  assert.deepEqual(pointsToAdd(0, 4, p), p);
+  assert.deepEqual(pointsToAdd(4, 4, p), []);
 });
 
 test("a survey is on a map once it has been sent to one", () => {

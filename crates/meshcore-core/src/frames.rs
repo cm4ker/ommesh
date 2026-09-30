@@ -1,6 +1,7 @@
 //! The few frames the core reads for itself: messages from the radio's queue,
-//! and a node heard for the first time. Laid out as
-//! `packages/meshcore/src/protocol/frames.ts` reads them.
+//! a node heard for the first time, and the answers to "who hears me". Laid
+//! out as `packages/meshcore/src/protocol/frames.ts` reads them, and the one
+//! it writes as `commands.ts` does.
 
 use crate::codes::*;
 
@@ -91,6 +92,72 @@ pub fn read_new_advert(frame: &[u8]) -> Option<Heard> {
     r.take(2 + MAX_PATH_SIZE)?; // flags, path length, path
     let name = text(r.take(32)?);
     Some(Heard { key, kind, name })
+}
+
+/// A node in direct range answering "who hears me" (`CONTROL_DATA` with a node-discover response).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Answer {
+    /// The ask it answers.
+    pub tag: u32,
+    /// Its advert type.
+    pub kind: u8,
+    /// Its key, or the first eight bytes of it when the ask wanted prefixes.
+    pub key: Vec<u8>,
+    /// How well it heard the ask, in quarters of a dB.
+    pub heard_us: i8,
+    /// How well this radio heard the answer, in quarters of a dB, and its strength, dBm.
+    pub snr: i8,
+    pub rssi: i8,
+}
+
+/// The command that asks the repeaters in direct range "who hears me": a zero-hop
+/// control packet of type, filter (a bit per advert type), tag, and a "changed since" of none.
+pub fn discover_ask(tag: u32) -> Vec<u8> {
+    let mut frame = vec![
+        CMD_SEND_CONTROL_DATA,
+        CTL_TYPE_NODE_DISCOVER_REQ,
+        1 << ADV_TYPE_REPEATER,
+    ];
+    frame.extend(tag.to_le_bytes());
+    frame.extend(0u32.to_le_bytes());
+    frame
+}
+
+/// Whether a client's command is a "who hears me" of its own.
+pub fn is_discover_ask(frame: &[u8]) -> bool {
+    frame.len() >= 2
+        && frame[0] == CMD_SEND_CONTROL_DATA
+        && frame[1] & 0xf0 == CTL_TYPE_NODE_DISCOVER_REQ
+}
+
+/// Reads a `CONTROL_DATA` push that carries a node-discover response: code, SNR, RSSI, path
+/// length, then the packet's payload of type, the SNR the node heard, the tag and the key.
+pub fn read_discover_answer(frame: &[u8]) -> Option<Answer> {
+    let (&code, rest) = frame.split_first()?;
+    if code != PUSH_CONTROL_DATA {
+        return None;
+    }
+    let mut r = Reader(rest);
+    let snr = r.u8()? as i8;
+    let rssi = r.u8()? as i8;
+    r.take(1)?;
+    let kind = r.u8()?;
+    if kind & 0xf0 != CTL_TYPE_NODE_DISCOVER_RESP {
+        return None;
+    }
+    let heard_us = r.u8()? as i8;
+    let tag = r.u32()?;
+    if r.0.len() < 8 {
+        return None;
+    }
+    Some(Answer {
+        tag,
+        kind: kind & 0x0f,
+        key: r.0.to_vec(),
+        heard_us,
+        snr,
+        rssi,
+    })
 }
 
 /// Text up to the first zero byte, as the firmware pads its fields.
@@ -229,6 +296,28 @@ mod tests {
         assert_eq!(heard.kind, ADV_TYPE_REPEATER);
         assert_eq!(heard.name, "Albtrs");
         assert_eq!(read_new_advert(&f[..120]), None);
+    }
+
+    #[test]
+    fn asks_who_hears_and_reads_an_answer() {
+        let ask = discover_ask(0x0403_0201);
+        assert_eq!(ask, vec![55, 0x80, 4, 1, 2, 3, 4, 0, 0, 0, 0]);
+        assert!(is_discover_ask(&ask));
+        assert!(!is_discover_ask(&[55, 0x90, 4]), "an answer is not an ask");
+        assert!(!is_discover_ask(&[55]));
+
+        // Heard at 5.25 dB and −90 dBm; the repeater heard the ask at −3.5 dB.
+        let mut f = vec![PUSH_CONTROL_DATA, 21, (-90i8) as u8, 0];
+        f.extend([0x92, (-14i8) as u8, 1, 2, 3, 4]);
+        f.extend((1..=32).collect::<Vec<u8>>());
+        let answer = read_discover_answer(&f).unwrap();
+        assert_eq!(answer.tag, 0x0403_0201);
+        assert_eq!(answer.kind, ADV_TYPE_REPEATER);
+        assert_eq!(answer.key.len(), 32);
+        assert_eq!((answer.heard_us, answer.snr, answer.rssi), (-14, 21, -90));
+        assert_eq!(read_discover_answer(&f[..17]), None, "a key too short");
+        f[4] = 0x80;
+        assert_eq!(read_discover_answer(&f), None, "another node's ask");
     }
 
     #[test]

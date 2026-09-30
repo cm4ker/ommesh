@@ -2,5 +2,5 @@
 "NSBluetoothAlwaysUsageDescription" = "Ommesh связывается с вашим радио MeshCore по Bluetooth.";
 "NSBluetoothPeripheralUsageDescription" = "Ommesh связывается с вашим радио MeshCore по Bluetooth.";
 "NSLocalNetworkUsageDescription" = "Ommesh связывается с радио MeshCore в вашей сети Wi-Fi.";
-"NSLocationWhenInUseUsageDescription" = "Ommesh показывает на карте, где вы, и по вашей просьбе ставит туда радио.";
-"NSLocationAlwaysAndWhenInUseUsageDescription" = "Ommesh показывает на карте, где вы, и по вашей просьбе ставит туда радио.";
+"NSLocationWhenInUseUsageDescription" = "Ommesh показывает на карте, где вы, по вашей просьбе ставит туда радио и отмечает точки замера покрытия, который вы начали.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "Ommesh показывает на карте, где вы, по вашей просьбе ставит туда радио и отмечает точки замера покрытия, который вы начали.";

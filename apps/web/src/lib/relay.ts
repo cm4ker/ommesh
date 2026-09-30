@@ -9,7 +9,9 @@
  * the `bluetooth-central` background mode on iOS. Its radio core
  * (`crates/meshcore-core`) keeps every message for the page and announces
  * what arrives while the page sleeps, from the settings and names
- * `configureCore` hands it (`coreWatch.ts`).
+ * `configureCore` hands it (`coreWatch.ts`). It runs a coverage survey too,
+ * on the phone's position read natively, so the survey goes on with the
+ * phone locked (`survey.ts`).
  *
  * Shared, the phone serves the radio's own Bluetooth service, so a computer
  * nearby connects to the phone as if it were the radio, and uses it through
@@ -43,6 +45,13 @@ interface RelayState {
   up?: boolean;
 }
 
+/** A coverage survey as the radio core has it: its JSON (`survey.rs`), and whether it runs. */
+export interface CoreSurveyAnswer {
+  /** Null when the core has none, running or kept from before the app last stopped. */
+  json: string | null;
+  running: boolean;
+}
+
 interface MeshRelayPlugin {
   start(options: { deviceId: string; name: string; share: boolean }): Promise<RelayState>;
   /** Shares the linked radio, or stops sharing it; the link stays. */
@@ -58,8 +67,15 @@ interface MeshRelayPlugin {
   attach(): Promise<void>;
   detach(): Promise<void>;
   send(options: { data: string }): Promise<void>;
+  /** Starts the survey the JSON describes in the radio core; the survey as it stands. */
+  surveyStart(options: { json: string }): Promise<CoreSurveyAnswer>;
+  /** Ends it; the survey as it ended, all its points with it. */
+  surveyStop(): Promise<CoreSurveyAnswer>;
+  survey(): Promise<CoreSurveyAnswer>;
   addListener(event: "state", listener: (state: RelayState) => void): Promise<PluginListenerHandle>;
   addListener(event: "frame", listener: (event: { data: string }) => void): Promise<PluginListenerHandle>;
+  /** Each step of the survey running, with its last point. */
+  addListener(event: "survey", listener: (event: { json: string }) => void): Promise<PluginListenerHandle>;
 }
 
 const WANTED_KEY = "meshnet.relay.on";
@@ -216,6 +232,32 @@ export async function openRelay(deviceId: string, name: string, onFrame: Route["
       if (!state.on) await withRelay((api) => api.stop().then(set)).catch(() => undefined);
     },
   };
+}
+
+/** Whether the page talks to its radio through the phone's link now, so the radio core is there to run a survey. */
+export function relayCarries(): boolean {
+  return route !== null;
+}
+
+/** Hands the radio core a coverage survey to run, as the JSON `survey.rs` reads. */
+export function coreSurveyStart(json: string): Promise<CoreSurveyAnswer> {
+  return withRelay((api) => api.surveyStart({ json }));
+}
+
+export function coreSurveyStop(): Promise<CoreSurveyAnswer> {
+  return withRelay((api) => api.surveyStop());
+}
+
+/** The survey the radio core runs, or the one it kept when the app last stopped under it; none off a phone. */
+export async function coreSurvey(): Promise<CoreSurveyAnswer> {
+  if (!relayAvailable()) return { json: null, running: false };
+  return withRelay((api) => api.survey());
+}
+
+/** `listener` hears each step of the survey the radio core runs, until the returned function is called. */
+export async function onCoreSurvey(listener: (json: string) => void): Promise<() => void> {
+  const handle = await withRelay((api) => api.addListener("survey", (event) => listener(event.json)));
+  return () => void handle.remove().catch(() => undefined);
 }
 
 /** Shares the linked radio with a computer, or stops, with no new connection. */

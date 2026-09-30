@@ -241,6 +241,7 @@
   "survey.stop": "Stop",
   "survey.answered": "{answered} of {count} answered",
   "survey.cost": "One short packet every 30 s while you move · the screen stays on",
+  "survey.costLocked": "One short packet every 30 s while you move · goes on with the phone locked",
   "survey.now": "Running",
   "survey.stat.minutes": "min",
   "survey.stat.km": "km",

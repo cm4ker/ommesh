@@ -53,6 +53,8 @@ export function onMap(survey: Survey): boolean {
 
 /** An ask every half minute at most: a repeater answers four in two minutes, whoever asks. */
 export const PING_EVERY_MS = 30_000;
+// The rule in these four, and `surveyStep` below, is also the phone's radio core's
+// (`crates/meshcore-core/src/survey.rs`), which runs a survey while the page sleeps: change both together.
 /** Standing still adds nothing to the map, so the next ask waits until the phone has moved this far. */
 export const MOVE_M = 50;
 /** A fix vaguer than this would put the point in the wrong street. */
@@ -98,6 +100,19 @@ export function surveyStep(now: number, fix: Fixish | null, lastPingAt: number |
   if (lastPingAt !== null && now - lastPingAt < PING_EVERY_MS) return "wait";
   if (last && distanceKm(last.lat, last.lon, fix.lat, fix.lon) * 1000 < MOVE_M) return "still";
   return "ping";
+}
+
+/**
+ * The points another hand has kept that are not here yet. A phone's radio core
+ * runs a survey while the page sleeps, and tells of each step with how many
+ * points it has (`count`) and the last of them (`tail`), or all of them when
+ * asked. Null when the tail starts past the `have` points here: some were
+ * missed, and all of them have to be asked for.
+ */
+export function pointsToAdd(have: number, count: number, tail: SurveyPoint[]): SurveyPoint[] | null {
+  const from = count - tail.length;
+  if (from > have) return null;
+  return tail.slice(Math.max(0, have - from));
 }
 
 export interface SurveyStats {

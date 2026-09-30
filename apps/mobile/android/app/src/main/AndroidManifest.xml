@@ -40,11 +40,12 @@
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
 
-        <!-- Keeps the app linked to its radio in the background, shared with a computer or not (MeshRelay). -->
+        <!-- Keeps the app linked to its radio in the background, shared with a computer or not (MeshRelay).
+             Of the location kind as well while a coverage survey runs, which reads the phone's position out of sight. -->
         <service
             android:name=".MeshRelayService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice|location" />
     </application>
 
     <!-- Permissions -->
@@ -65,10 +66,13 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" tools:targetApi="s" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <!-- Where the phone is, asked only when a button needs it: the map's "where am I", putting the radio
-         where the phone is, or following the phone while the app is open. Never in the background. -->
+         where the phone is, following the phone while the app is open, or a coverage survey. Only a survey
+         reads it with the app out of sight, through the service above, started from the screen; so the app
+         never asks for the background location permission. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Notifications are delivered immediately; the app never schedules exact alarms. -->

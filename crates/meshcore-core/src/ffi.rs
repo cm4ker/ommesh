@@ -73,6 +73,25 @@ impl Radio {
     pub fn announced(&self, tag: String) -> Vec<Effect> {
         self.core().announced(tag)
     }
+
+    /// Starts the coverage survey the page describes in `json`; `now` is the phone's clock, ms.
+    pub fn survey_start(&self, json: String, now: i64) -> Vec<Effect> {
+        self.core().survey_start(json, now)
+    }
+
+    /// A fix from the phone's location service while a survey runs.
+    pub fn survey_fix(&self, lat: f64, lon: f64, accuracy: f64, at: i64, now: i64) -> Vec<Effect> {
+        self.core().survey_fix(lat, lon, accuracy, at, now)
+    }
+
+    pub fn survey_stop(&self) -> Vec<Effect> {
+        self.core().survey_stop()
+    }
+
+    /// The survey running, as JSON for the page, with all its points or only the last.
+    pub fn survey(&self, full: bool) -> Option<String> {
+        self.core().survey(full)
+    }
 }
 
 impl Radio {

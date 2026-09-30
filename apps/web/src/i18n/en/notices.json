@@ -46,6 +46,7 @@
   "android.relayWaitingComputer": "Waiting for a computer",
   "android.relayConnected": "Connected to {name}",
   "android.relayAppClosed": "Messages arrive with the app closed",
+  "android.relaySurvey": "Coverage survey running",
   "android.channelDirect": "Direct messages",
   "android.channelDirectHint": "A message from a person to you.",
   "android.channelChats": "Channels and rooms",

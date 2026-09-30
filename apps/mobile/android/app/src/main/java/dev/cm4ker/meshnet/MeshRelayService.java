@@ -20,6 +20,10 @@ import androidx.core.content.ContextCompat;
  * Android requires for one. Without it Android may stop or freeze the app soon after it leaves
  * the screen, and the radio's messages would wait unread. It holds nothing itself; the link
  * lives in the process.
+ *
+ * <p>While a coverage survey runs it is of the location kind as well: Android hands the phone's
+ * position to an app out of sight only through such a service, and only one started while the
+ * app was on screen, as a survey is.
  */
 public class MeshRelayService extends Service {
     private static final String TAG = "MeshRelay";
@@ -31,6 +35,7 @@ public class MeshRelayService extends Service {
     private static final String EXTRA_UP = "up";
     private static final String EXTRA_SHARING = "sharing";
     private static final String EXTRA_COMPUTER = "computer";
+    private static final String EXTRA_SURVEY = "survey";
 
     /** What the notice says: which radio, and how it is. */
     static final class State {
@@ -38,12 +43,15 @@ public class MeshRelayService extends Service {
         final boolean up;
         final boolean sharing;
         final boolean computer;
+        /** A coverage survey runs. */
+        final boolean survey;
 
-        State(String name, boolean up, boolean sharing, boolean computer) {
+        State(String name, boolean up, boolean sharing, boolean computer, boolean survey) {
             this.name = name;
             this.up = up;
             this.sharing = sharing;
             this.computer = computer;
+            this.survey = survey;
         }
     }
 
@@ -52,7 +60,8 @@ public class MeshRelayService extends Service {
             .putExtra(EXTRA_NAME, state.name)
             .putExtra(EXTRA_UP, state.up)
             .putExtra(EXTRA_SHARING, state.sharing)
-            .putExtra(EXTRA_COMPUTER, state.computer);
+            .putExtra(EXTRA_COMPUTER, state.computer)
+            .putExtra(EXTRA_SURVEY, state.survey);
         try {
             ContextCompat.startForegroundService(context, intent);
         } catch (RuntimeException e) {
@@ -74,17 +83,18 @@ public class MeshRelayService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         State state = intent == null
-            ? new State(null, false, false, false)
+            ? new State(null, false, false, false, false)
             : new State(
                 intent.getStringExtra(EXTRA_NAME),
                 intent.getBooleanExtra(EXTRA_UP, false),
                 intent.getBooleanExtra(EXTRA_SHARING, false),
-                intent.getBooleanExtra(EXTRA_COMPUTER, false)
+                intent.getBooleanExtra(EXTRA_COMPUTER, false),
+                intent.getBooleanExtra(EXTRA_SURVEY, false)
             );
         Notification notice = notice(this, state);
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTICE_ID, notice, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
+                if (!state.survey || !locating(notice)) startForeground(NOTICE_ID, notice, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
             } else {
                 startForeground(NOTICE_ID, notice);
             }
@@ -95,6 +105,22 @@ public class MeshRelayService extends Service {
         }
         // Not restarted by Android after the process dies: the link went with it.
         return START_NOT_STICKY;
+    }
+
+    /**
+     * Takes the location kind beside the connected-device one, for a survey. Android refuses it
+     * without leave to read the position, or when the service was not started from the screen;
+     * the survey then only runs while the app is open, and the link stays as it was.
+     */
+    private boolean locating(Notification notice) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false;
+        try {
+            startForeground(NOTICE_ID, notice, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE | ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+            return true;
+        } catch (RuntimeException e) {
+            Log.w(TAG, "the background service may not read the phone's position", e);
+            return false;
+        }
     }
 
     @Override
@@ -123,6 +149,9 @@ public class MeshRelayService extends Service {
         } else if (state.sharing) {
             title = Words.get(context, "relaySharing", "Sharing {name}", name);
             text = state.computer ? Words.get(context, "relayComputer", "A computer is connected") : Words.get(context, "relayWaitingComputer", "Waiting for a computer");
+        } else if (state.survey) {
+            title = Words.get(context, "relayConnected", "Connected to {name}", name);
+            text = Words.get(context, "relaySurvey", "Coverage survey running");
         } else {
             title = Words.get(context, "relayConnected", "Connected to {name}", name);
             text = Words.get(context, "relayAppClosed", "Messages arrive with the app closed");

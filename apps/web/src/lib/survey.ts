@@ -1,24 +1,31 @@
 /**
  * The coverage survey in progress, and the ones kept with this radio. While
  * a survey runs, the phone's position keeps coming, the screen stays on, and
- * once a second the survey decides whether to ask "who hears me" (the rule is
- * in surveyData.ts). The asks go through the same count as the button's, so
+ * the survey decides whether to ask "who hears me" (the rule is in
+ * surveyData.ts). The asks go through the same count as the button's, so
  * the two never spend answers the repeaters will not give.
  *
- * It runs while the page is in front. A phone puts a hidden page to sleep,
- * and the position stops coming, so a survey left in the background stands
- * still and says for how long when it comes back.
+ * Who runs it depends on where the page is. A phone puts a hidden page to
+ * sleep, so on a phone linked to its radio over Bluetooth the radio core
+ * behind the link runs the survey (`survey.rs` in `crates/meshcore-core`,
+ * with the same rule) on the position the phone's own code reads, locked or
+ * not, and this file shows what the core says and keeps its points. Anywhere
+ * else the page runs it once a second while it is in front, and a survey
+ * left in the background stands still and says for how long when it comes
+ * back.
  */
 
 import { useEffect, useSyncExternalStore } from "react";
 import { AdvType } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
 import { hasPosition } from "./geo.js";
-import { askWhoHears, asksLeft, hearsListening } from "./hears.js";
+import { askWhoHears, asksLeft, hearsListening, noteAsk, recentAsks } from "./hears.js";
+import { noteHeardUs } from "./links.js";
 import { getPhoneState, holdPhone, locateOnce, locateText, LocateError } from "./phonePosition.js";
+import { coreSurvey, coreSurveyStart, coreSurveyStop, onCoreSurvey, relayCarries, type CoreSurveyAnswer } from "./relay.js";
 import { session, storage } from "./session.js";
 import { readSetting, writeSetting } from "./storage.js";
-import { surveyStep, type Survey, type SurveyPoint } from "./surveyData.js";
+import { pointsToAdd, surveyStep, type Survey, type SurveyPoint } from "./surveyData.js";
 import { toast } from "./toast.js";
 
 export type SurveyPhase = "gps" | "listening" | "wait" | "still" | "offline";
@@ -29,6 +36,8 @@ export interface SurveyRun {
   lastPingAt: number | null;
   /** How long the page was away, told for a while after it came back. */
   paused: { ms: number; until: number } | null;
+  /** The phone's radio core runs it, so it goes on with the phone locked or the app out of sight. */
+  unattended: boolean;
 }
 
 export interface SurveysState {
@@ -84,8 +93,20 @@ export function runningSurvey(): Survey | null {
 
 const storeKey = (radio: string) => `surveys:${radio}`;
 
-async function loadSurveys(radio: string): Promise<void> {
-  if (state.radio === radio && state.list) return;
+let loading: { radio: string; done: Promise<void> } | null = null;
+
+/** Reads the radio's surveys once, however many ask at the same time. */
+function loadSurveys(radio: string): Promise<void> {
+  if (state.radio === radio && state.list) return Promise.resolve();
+  if (loading?.radio === radio) return loading.done;
+  const done = readSurveys(radio).finally(() => {
+    if (loading?.done === done) loading = null;
+  });
+  loading = { radio, done };
+  return done;
+}
+
+async function readSurveys(radio: string): Promise<void> {
   let list: Survey[] = [];
   try {
     const raw = await storage.loadExtra(storeKey(radio));
@@ -94,11 +115,31 @@ async function loadSurveys(radio: string): Promise<void> {
     // Unreadable, the list starts empty; nothing is written over it until a survey is made.
   }
   const running = runningSurvey();
+  list = list.filter((s) => s.id !== running?.id);
+  // A page made anew finds what the phone's radio core has: a survey it went on with,
+  // or the points it kept of one the app stopped under.
+  const answer = running ? null : await coreSurvey().catch(() => null);
+  const core = readCore(answer?.json);
+  const here = core?.radio === radio;
+  let taken: CoreSurvey | null = null;
+  let added = false;
+  if (answer && core && here) {
+    const mine: Survey = list.find((s) => s.id === core.id) ?? { id: core.id, radio, startedAt: core.startedAt, endedAt: null, points: [], nodes: {} };
+    const fresh = pointsToAdd(mine.points.length, core.count, core.points) ?? [];
+    const next = withPoints(mine, fresh.map(ofContacts));
+    if (answer.running && !state.run) taken = core;
+    added = fresh.length > 0;
+    list = list.filter((s) => s.id !== core.id);
+    if (next.points.length > 0 || taken) list = [next, ...list].sort((a, b) => b.startedAt - a.startedAt);
+  }
+  // With its points here, the core's copy is no more use, and one it runs for another radio is
+  // nobody's. One only kept for another radio waits for that radio.
+  if (answer && core && !taken && (here || answer.running)) void coreSurveyStop().catch(() => undefined);
   // One the app was closed during has ended where its last point is.
-  list = list
-    .filter((s) => s.id !== running?.id)
-    .map((s) => (s.endedAt === null ? { ...s, endedAt: s.points.at(-1)?.at ?? s.startedAt } : s));
+  list = list.map((s) => (s.endedAt === null && s.id !== taken?.id ? { ...s, endedAt: s.points.at(-1)?.at ?? s.startedAt } : s));
   set({ radio, list: running && running.radio === radio ? [running, ...list] : list });
+  if (added) persist();
+  if (taken) takeUp(taken);
 }
 
 let saving = Promise.resolve();
@@ -112,6 +153,21 @@ function persist(): void {
 
 function replaceSurvey(next: Survey): void {
   set({ list: (state.list ?? []).map((s) => (s.id === next.id ? next : s)) });
+}
+
+/** The survey with these points added, each repeater that answered named as its contact is now, so a file or the list can name it later. */
+function withPoints(survey: Survey, points: SurveyPoint[]): Survey {
+  if (points.length === 0) return survey;
+  const contacts = session.getState().contacts;
+  const nodes = { ...survey.nodes };
+  for (const point of points) {
+    for (const r of point.replies) {
+      const c = contacts[r.key];
+      if (c) nodes[r.key] = { name: c.name || c.prefix, lat: hasPosition(c.lat, c.lon) ? c.lat : null, lon: hasPosition(c.lat, c.lon) ? c.lon : null };
+      else nodes[r.key] ??= { name: "", lat: null, lon: null };
+    }
+  }
+  return { ...survey, points: [...survey.points, ...points], nodes };
 }
 
 // ---- running one ----
@@ -146,8 +202,17 @@ function onVisibility(): void {
   }
   const away = hiddenAt === null ? 0 : Date.now() - hiddenAt;
   hiddenAt = null;
-  if (away > 60_000) setRun({ paused: { ms: away, until: Date.now() + 20_000 } });
+  // The core went on meanwhile, and the page heard none of it.
+  if (state.run.unattended) void readFromCore();
+  else if (away > 60_000) setRun({ paused: { ms: away, until: Date.now() + 20_000 } });
   void keepAwake();
+}
+
+/** What every survey running has, whoever runs it: the screen kept on, and a look once a second. */
+function watchRun(): void {
+  document.addEventListener("visibilitychange", onVisibility);
+  void keepAwake();
+  timer = window.setInterval(tick, 1000);
 }
 
 /** Starts a survey on the radio connected; says why when it cannot. Resolves to its id. */
@@ -160,22 +225,24 @@ export async function startSurvey(): Promise<string | null> {
     return null;
   }
   await loadSurveys(radio);
+  // A page made anew finds the one the radio core runs while it reads the list, and has taken it up.
+  const taken = getSurveys().run;
+  if (taken) return taken.id;
   const now = Date.now();
   const survey: Survey = { id: now.toString(36), radio, startedAt: now, endedAt: null, points: [], nodes: {} };
-  set({ list: [survey, ...(state.list ?? [])], run: { id: survey.id, phase: "gps", lastPingAt: null, paused: null } });
-  document.addEventListener("visibilitychange", onVisibility);
-  void keepAwake();
-  timer = window.setInterval(tick, 1000);
-  void follow(survey.id);
+  set({ list: [survey, ...(state.list ?? [])], run: { id: survey.id, phase: "gps", lastPingAt: null, paused: null, unattended: relayCarries() } });
+  watchRun();
+  void follow(survey);
   return survey.id;
 }
 
 /**
  * The phone's position for the survey: leave asked first, so the watch after
- * it runs on leave given. A phone with no fix yet keeps waiting; one whose
- * location is refused or off ends the survey.
+ * it, and the radio core's own, run on leave given. A phone with no fix yet
+ * keeps waiting; one whose location is refused or off ends the survey.
  */
-async function follow(id: string): Promise<void> {
+async function follow(survey: Survey): Promise<void> {
+  const id = survey.id;
   try {
     await locateOnce();
   } catch (error) {
@@ -188,13 +255,15 @@ async function follow(id: string): Promise<void> {
   }
   if (state.run?.id !== id) return;
   releasePhone = holdPhone(true);
+  // A core that will not take it leaves it to the page, as anywhere else.
+  if (state.run.unattended && !(await handToCore(survey))) setRun({ unattended: false });
   tick();
 }
 
 function tick(): void {
   const run = state.run;
   const survey = runningSurvey();
-  if (!run || !survey || run.phase === "listening") return;
+  if (!run || !survey || (run.phase === "listening" && !run.unattended)) return;
   const now = Date.now();
   const s = session.getState();
   // Another radio connected: this one's survey is over.
@@ -202,6 +271,8 @@ function tick(): void {
     stopSurvey();
     return;
   }
+  // The radio core decides when to ask, and says what it is doing.
+  if (run.unattended) return;
   const paused = run.paused && run.paused.until < now ? null : run.paused;
   let phase: SurveyPhase;
   if (s.status !== "ready") phase = "offline";
@@ -229,8 +300,6 @@ async function ping(id: string, at: { lat: number; lon: number; accuracy: number
     setRun({ phase: session.getState().status === "ready" ? "wait" : "offline" });
     return;
   }
-  const contacts = session.getState().contacts;
-  const nodes = { ...survey.nodes };
   const point: SurveyPoint = {
     at: sentAt,
     lat: at.lat,
@@ -238,13 +307,113 @@ async function ping(id: string, at: { lat: number; lon: number; accuracy: number
     accuracy: at.accuracy,
     replies: replies.filter((r) => r.type === AdvType.Repeater).map((r) => ({ key: r.key, us: r.heardUs, them: r.heardThem, rssi: r.rssi })),
   };
-  for (const r of point.replies) {
-    const c = contacts[r.key];
-    if (c) nodes[r.key] = { name: c.name || c.prefix, lat: hasPosition(c.lat, c.lon) ? c.lat : null, lon: hasPosition(c.lat, c.lon) ? c.lon : null };
-    else nodes[r.key] ??= { name: "", lat: null, lon: null };
-  }
-  replaceSurvey({ ...survey, points: [...survey.points, point], nodes });
+  replaceSurvey(withPoints(survey, [point]));
   setRun({ phase: "wait" });
+  persist();
+}
+
+// ---- run by the phone's radio core ----
+
+/** The survey as the radio core tells it (`Status` in `survey.rs`). */
+interface CoreSurvey {
+  id: string;
+  radio: string;
+  startedAt: number;
+  phase: SurveyPhase;
+  lastPingAt: number | null;
+  /** How many points it has; `points` holds the last of them, or all. */
+  count: number;
+  points: SurveyPoint[];
+}
+
+function readCore(json: string | null | undefined): CoreSurvey | null {
+  if (!json) return null;
+  try {
+    const core = JSON.parse(json) as CoreSurvey;
+    return typeof core.id === "string" && Array.isArray(core.points) ? core : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A point of the core's with each repeater under its contact's key: an answer may carry only the start of one. */
+function ofContacts(point: SurveyPoint): SurveyPoint {
+  const contacts = Object.values(session.getState().contacts);
+  return { ...point, replies: point.replies.map((r) => ({ ...r, key: contacts.find((c) => c.key.startsWith(r.key))?.key ?? r.key })) };
+}
+
+/** What the core says of the survey running: its new points are kept, and the card shows what it is doing. */
+function applyCore(core: CoreSurvey): void {
+  const run = state.run;
+  const survey = runningSurvey();
+  if (!run?.unattended || !survey || core.id !== run.id) return;
+  const fresh = pointsToAdd(survey.points.length, core.count, core.points);
+  // A step was missed: the whole of it is read.
+  if (fresh === null) return void readFromCore();
+  if (fresh.length > 0) {
+    const points = fresh.map(ofContacts);
+    replaceSurvey(withPoints(survey, points));
+    persist();
+    for (const point of points) for (const r of point.replies) noteHeardUs(r.key, r.us, r.them);
+  }
+  // The core's asks count with the button's.
+  if (core.lastPingAt !== null) noteAsk(core.lastPingAt);
+  if (core.phase !== run.phase || core.lastPingAt !== run.lastPingAt) setRun({ phase: core.phase, lastPingAt: core.lastPingAt });
+}
+
+/** The whole survey from the core: after the page was away, or when a step of it was missed. */
+async function readFromCore(): Promise<void> {
+  const answer = await coreSurvey().catch(() => null);
+  const core = readCore(answer?.json);
+  if (answer?.running && core) applyCore(core);
+}
+
+let unhear: (() => void) | null = null;
+
+async function hearCore(): Promise<void> {
+  const stop = await onCoreSurvey((json) => {
+    const core = readCore(json);
+    if (core) applyCore(core);
+  });
+  unhear?.();
+  unhear = stop;
+}
+
+/** Hands the survey to the phone's radio core to run; false when it would not take it. */
+async function handToCore(survey: Survey): Promise<boolean> {
+  try {
+    await hearCore();
+    const answer = await coreSurveyStart(JSON.stringify({ id: survey.id, radio: survey.radio, startedAt: survey.startedAt, asks: recentAsks() }));
+    const core = readCore(answer.json);
+    if (!answer.running || !core) throw new Error("the radio core started no survey");
+    // Stopped while the core was taking it.
+    if (state.run?.id !== survey.id) void coreSurveyStop().catch(() => undefined);
+    else applyCore(core);
+    return true;
+  } catch (error) {
+    console.warn("The radio core did not take the survey; it runs while the app is open", error);
+    unhear?.();
+    unhear = null;
+    return false;
+  }
+}
+
+/** A survey the radio core went on with while the page was gone (a phone lets a page out of sight go when memory is short), taken up where it is. */
+function takeUp(core: CoreSurvey): void {
+  set({ run: { id: core.id, phase: core.phase, lastPingAt: core.lastPingAt, paused: null, unattended: true } });
+  watchRun();
+  releasePhone = holdPhone(true);
+  void hearCore().then(() => (state.run?.id === core.id ? readFromCore() : undefined), () => undefined);
+}
+
+/** The points the core kept that the page had not heard of when the survey was stopped. */
+function addLate(answer: CoreSurveyAnswer): void {
+  const core = readCore(answer.json);
+  const survey = core && surveyById(core.id);
+  if (!core || !survey || state.run?.id === core.id) return;
+  const fresh = pointsToAdd(survey.points.length, core.count, core.points);
+  if (!fresh?.length) return;
+  replaceSurvey(withPoints(survey, fresh.map(ofContacts)));
   persist();
 }
 
@@ -259,6 +428,11 @@ export function stopSurvey(): string | null {
   document.removeEventListener("visibilitychange", onVisibility);
   hiddenAt = null;
   letSleep();
+  if (run.unattended) {
+    unhear?.();
+    unhear = null;
+    void coreSurveyStop().then(addLate, () => undefined);
+  }
   const survey = surveyById(run.id);
   set({ run: null });
   if (!survey) return null;

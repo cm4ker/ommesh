@@ -12,6 +12,7 @@ pub const CMD_SYNC_NEXT_MESSAGE: u8 = 10;
 pub const CMD_REBOOT: u8 = 19;
 pub const CMD_SEND_TELEMETRY_REQ: u8 = 39;
 pub const CMD_FACTORY_RESET: u8 = 51;
+pub const CMD_SEND_CONTROL_DATA: u8 = 55;
 
 // Radio → app, in answer to a command. Always below 0x80.
 pub const RESP_OK: u8 = 0;
@@ -28,9 +29,17 @@ pub const RESP_CHANNEL_DATA_RECV: u8 = 27;
 // Radio → app, unprompted. Always 0x80 and above, which is how they are told apart.
 pub const PUSH_MSG_WAITING: u8 = 0x83;
 pub const PUSH_NEW_ADVERT: u8 = 0x8a;
+pub const PUSH_CONTROL_DATA: u8 = 0x8e;
 /// Not the firmware's: what the other client sharing the radio sent, as
 /// `0xf0`, the command's length, the command, then the radio's answer.
 pub const PUSH_MIRROR: u8 = 0xf0;
+
+// Control packets, by the first byte of their payload (`onControlDataRecv` in
+// `examples/simple_repeater/MyMesh.cpp`).
+/// "Who hears me"; the low bit asks for key prefixes only.
+pub const CTL_TYPE_NODE_DISCOVER_REQ: u8 = 0x80;
+/// The answer; the low four bits are the node's advert type.
+pub const CTL_TYPE_NODE_DISCOVER_RESP: u8 = 0x90;
 
 // Text types.
 pub const TXT_TYPE_CLI_DATA: u8 = 1;

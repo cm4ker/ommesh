@@ -29,12 +29,27 @@ pub(crate) enum Event {
     Kept(Vec<u8>),
     /// A client took this message from its inbox.
     Taken(Client, Vec<u8>),
+    /// A client's command went on the queue for the radio.
+    Asked(Vec<u8>),
+    /// The radio's answer to a command of the core's own ([`Mux::send_own`]).
+    Answered(Vec<u8>),
+    /// A command of the core's own got no answer.
+    Unanswered,
 }
 
-/// A client's command, or the mux's own reading of the message queue (`source` none).
+/// Whose command it is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Source {
+    Client(Client),
+    /// The mux's own reading of the message queue.
+    Queue,
+    /// The core's own, as a survey's ask: its answer goes to no client.
+    Core,
+}
+
 #[derive(Clone, Debug)]
 struct Command {
-    source: Option<Client>,
+    source: Source,
     frame: Vec<u8>,
     /// Told (`Effect::Written`) once the command is written to the radio, or dropped.
     write: Option<i64>,
@@ -112,7 +127,7 @@ impl Mux {
         let (dropped, kept): (VecDeque<Command>, VecDeque<Command>) =
             std::mem::take(&mut self.queue)
                 .into_iter()
-                .partition(|c| c.source == Some(client));
+                .partition(|c| c.source == Source::Client(client));
         self.queue = kept;
         for command in dropped {
             if let Some(write) = command.write {
@@ -133,12 +148,27 @@ impl Mux {
             }
             return;
         }
+        self.events.push(Event::Asked(frame.clone()));
         self.queue.push_back(Command {
-            source: Some(client),
+            source: Source::Client(client),
             frame,
             write,
         });
         self.pump();
+    }
+
+    /// A command of the core's own, in its turn like a client's; [`Event::Answered`] brings its answer.
+    pub fn send_own(&mut self, frame: Vec<u8>) {
+        self.queue.push_back(Command {
+            source: Source::Core,
+            frame,
+            write: None,
+        });
+        self.pump();
+    }
+
+    pub fn is_up(&self) -> bool {
+        self.radio_ready
     }
 
     /// Mirrors kept for it go out as pushes first; then the next message is the answer.
@@ -176,11 +206,17 @@ impl Mux {
     }
 
     /// A command in flight is lost with the link; its sender times out on its own.
+    /// The core's own do not wait for the radio's return: what they asked is stale by then.
     pub fn radio_down(&mut self) {
         self.radio_ready = false;
-        if self.in_flight.as_ref().is_some_and(|c| c.source.is_none()) {
+        if self
+            .in_flight
+            .as_ref()
+            .is_some_and(|c| c.source == Source::Queue)
+        {
             self.draining = false;
         }
+        self.queue.retain(|c| c.source != Source::Core);
         self.in_flight = None;
         self.flight = self.flight.wrapping_add(1);
     }
@@ -204,11 +240,11 @@ impl Mux {
             return;
         };
         match command.source {
-            None => {
+            Source::Queue => {
                 if is_message(code) {
                     self.keep(frame);
                     self.queue.push_back(Command {
-                        source: None,
+                        source: Source::Queue,
                         frame: vec![CMD_SYNC_NEXT_MESSAGE],
                         write: None,
                     });
@@ -220,12 +256,13 @@ impl Mux {
                     }
                 }
             }
-            Some(source) => {
+            Source::Client(source) => {
                 if self.is_attached(source) {
                     self.tell(source, frame.to_vec());
                 }
                 self.mirror(&command.frame, frame, source);
             }
+            Source::Core => self.events.push(Event::Answered(frame.to_vec())),
         }
         if is_complete(&command.frame, code) {
             self.finish();
@@ -242,8 +279,10 @@ impl Mux {
         let Some(command) = &self.in_flight else {
             return;
         };
-        if command.source.is_none() {
-            self.draining = false;
+        match command.source {
+            Source::Queue => self.draining = false,
+            Source::Core => self.events.push(Event::Unanswered),
+            Source::Client(_) => {}
         }
         let (_, silent) = patience(&command.frame);
         if !silent {
@@ -263,7 +302,7 @@ impl Mux {
         }
         self.draining = true;
         self.queue.push_back(Command {
-            source: None,
+            source: Source::Queue,
             frame: vec![CMD_SYNC_NEXT_MESSAGE],
             write: None,
         });

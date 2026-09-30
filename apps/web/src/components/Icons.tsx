@@ -101,6 +101,9 @@ export const CloudUpIcon = icon('<path d="M4 14.9A7 7 0 1 1 15.7 8h1.8a4.5 4.5 0
 /** A survey that is on a coverage map. */
 export const CloudCheckIcon = icon('<path d="M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 1 1 0 9z"/><path d="M8.6 13.2l2.2 2.2 3.8-4"/>');
 export const PauseIcon = icon('<path d="M9 6.5v11M15 6.5v11"/>');
+/** A survey's cue after each ask, on and off. */
+export const SoundIcon = icon('<path d="M4 9.5v5h3.5l4.5 4v-13l-4.5 4z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6"/><path d="M18 6.5a7.8 7.8 0 0 1 0 11"/>');
+export const SoundOffIcon = icon('<path d="M4 9.5v5h3.5l4.5 4v-13l-4.5 4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>');
 /** Marks an action that transmits: it costs airtime, and happens only when asked. */
 export const AirIcon = icon('<path d="M12 21v-8.5"/><circle cx="12" cy="10.5" r="1.6"/><path d="M8.3 7a5.2 5.2 0 0 0 0 7M15.7 7a5.2 5.2 0 0 1 0 7"/><path d="M5.6 4.4a9 9 0 0 0 0 12.2M18.4 4.4a9 9 0 0 1 0 12.2"/>');
 export const SearchIcon = icon('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>');

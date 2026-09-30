@@ -43,6 +43,8 @@ export interface NodeData {
   selected: string | null;
   /** Places in a route being changed, by key. */
   numbers: Record<string, number>;
+  /** The repeaters that answered at a survey's point: named before the rest and in bold, the rest's names faint. */
+  heard: ReadonlySet<string>;
   grouping: boolean;
   self: LatLon | null;
 }
@@ -230,7 +232,7 @@ function pinScale(zoom: number): number {
 }
 
 export class NodeCanvas {
-  private data: NodeData = { nodes: [], selected: null, numbers: {}, grouping: true, self: null };
+  private data: NodeData = { nodes: [], selected: null, numbers: {}, heard: new Set(), grouping: true, self: null };
   private placed: NodeGroup[] = [];
   private placedZoom: number | null = null;
   private drawn: Drawn[] = [];
@@ -360,10 +362,11 @@ export class NodeCanvas {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 
-    const { selected, numbers, self: me } = this.data;
+    const { selected, numbers, heard: answers, self: me } = this.data;
     const pal = palette();
     const nowSec = Date.now() / 1000;
     const nameFont = `500 11px ${pal.font}`;
+    const heardFont = `700 12px ${pal.font}`;
     // Read once a paint, in the language of the moment: a change of language paints anew, and no label outlives it.
     const justNow = t("common.justNow");
     const now = t("mesh.map.now");
@@ -383,7 +386,7 @@ export class NodeCanvas {
     drawn.sort((a, b) => Number(holdsPick(a)) - Number(holdsPick(b)) || a.y - b.y);
     this.drawn = drawn;
 
-    // Which names fit: the pick's first, then a route's numbered relays, then the most recently heard.
+    // Which names fit: the pick's first, then a route's numbered relays and a survey's answers, then the most recently heard.
     ctx.font = nameFont;
     const taken = new Boxes();
     for (const d of drawn) taken.add({ x0: d.x - d.r, y0: d.y - d.r, x1: d.x + d.r, y1: d.y + d.r });
@@ -391,9 +394,9 @@ export class NodeCanvas {
       const { x, y } = map.project([me.lon, me.lat]);
       taken.add({ x0: x - PIN, y0: y - PIN, x1: x + PIN, y1: y + PIN });
     }
-    const labels: { d: Drawn; c: ContactRecord; name: string; when: string; state: string; left: number }[] = [];
+    const labels: { d: Drawn; c: ContactRecord; name: string; when: string; state: string; left: number; width: number }[] = [];
     const singles = drawn.filter((d) => d.group.members.length === 1);
-    const rank = (c: ContactRecord) => (c.key === selected ? 2 : numbers[c.key] ? 1 : 0);
+    const rank = (c: ContactRecord) => (c.key === selected ? 2 : numbers[c.key] || answers.has(c.key) ? 1 : 0);
     singles.sort((a, b) => {
       const ca = a.group.members[0]!;
       const cb = b.group.members[0]!;
@@ -407,10 +410,17 @@ export class NodeCanvas {
       const heard = Number.isFinite(age) ? ago(c.lastAdvert * 1000) : "";
       const when = heard ? ` · ${heard === justNow ? now : heard}` : "";
       const left = d.x + (numbers[c.key] ? 19 : d.r + 4);
-      const box = { x0: left, y0: d.y - 8, x1: left + this.width(ctx, name) + this.width(ctx, when), y1: d.y + 8 };
+      let width = this.width(ctx, name);
+      if (answers.has(c.key)) {
+        // Measured apart from the rest, which share the cache of one font.
+        ctx.font = heardFont;
+        width = ctx.measureText(name).width;
+        ctx.font = nameFont;
+      }
+      const box = { x0: left, y0: d.y - 8, x1: left + width + this.width(ctx, when), y1: d.y + 8 };
       if (c.key !== selected && taken.hits(box)) continue;
       taken.add(box);
-      labels.push({ d, c, name, when, state, left });
+      labels.push({ d, c, name, when, state, left, width });
     }
 
     for (const d of drawn) {
@@ -426,10 +436,15 @@ export class NodeCanvas {
     ctx.strokeStyle = pal.bg;
     for (const l of labels) {
       const y = l.d.y + 0.5;
-      const w = this.width(ctx, l.name);
+      const w = l.width;
+      const answered = answers.has(l.c.key);
+      // With a survey's answers on the map, the names of those who did not answer step back.
+      const aside = answers.size > 0 && !answered && l.c.key !== selected;
+      ctx.font = answered ? heardFont : nameFont;
       ctx.strokeText(l.name, l.left, y);
-      ctx.fillStyle = l.state === "stale" ? pal.muted : pal.text;
+      ctx.fillStyle = answered ? pal.text : aside ? pal.faint : l.state === "stale" ? pal.muted : pal.text;
       ctx.fillText(l.name, l.left, y);
+      ctx.font = nameFont;
       if (l.when) {
         ctx.strokeText(l.when, l.left + w, y);
         ctx.fillStyle = pal.faint;

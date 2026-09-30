@@ -70,6 +70,19 @@ export function formatRoundDistance(km: number): string {
   return t("common.kilometers", { value: km < 10 ? Math.round(km * 10) / 10 : Math.round(km) });
 }
 
+/** How much ground a pixel of the map covers at a latitude and a zoom, in metres; the map's world is 512 pixels wide at zoom 0. */
+export function metresPerPixel(lat: number, zoom: number): number {
+  return (2 * Math.PI * EARTH_KM * 1000 * Math.cos(rad(lat))) / (512 * 2 ** zoom);
+}
+
+/** The longest round length (1, 2 or 5 times a power of ten) a map's scale of `maxPx` can show, and how long it is drawn. */
+export function scaleBar(metresPerPx: number, maxPx: number): { metres: number; px: number } {
+  const most = metresPerPx * maxPx;
+  const ten = 10 ** Math.floor(Math.log10(most));
+  const metres = ten * (most >= 5 * ten ? 5 : most >= 2 * ten ? 2 : 1);
+  return { metres, px: Math.round(metres / metresPerPx) };
+}
+
 export type Freshness = "fresh" | "aging" | "stale";
 
 /**

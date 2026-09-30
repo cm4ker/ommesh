@@ -14,7 +14,7 @@ import { isFiltering, neighbourRows, passes, type NeighbourFilter } from "./neig
 import { focusOnMap, getNav, goSection, setStack, showOnMap } from "./nav.js";
 import { clearPing, getPing, spanKey, stopPing } from "./ping.js";
 import { session } from "./session.js";
-import { discardSurvey, getSurveys, noteSurveyHold, startSurvey, stopSurvey } from "./survey.js";
+import { discardSurvey, getSurveys, noteSurveyHold, startSurvey, stopSurvey, surveyById } from "./survey.js";
 import { toast } from "./toast.js";
 
 /** The route to a contact, in its sheet over the map; opened from a profile over the map, it closes back to the profile. */
@@ -253,6 +253,15 @@ export function openRunningSurvey(): void {
   if (!run) return;
   goSection("mesh");
   openSurvey("run", run.id);
+}
+
+/** A tap on the running survey's number over the map: who answered at its last point, or its card while it has none. */
+export function openLastAnswers(): void {
+  const run = getSurveys().run;
+  if (!run) return;
+  const points = surveyById(run.id)?.points.length ?? 0;
+  focusOnMap(null);
+  setMeshTool({ kind: "survey", view: "run", id: run.id, point: points ? points - 1 : null, only: null });
 }
 
 /**

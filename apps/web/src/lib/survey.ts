@@ -13,6 +13,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { AdvType } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
+import { cue } from "./chime.js";
 import { hasPosition } from "./geo.js";
 import { askWhoHears, asksLeft, hearsListening } from "./hears.js";
 import { getPhoneState, holdPhone, locateOnce, locateText, LocateError } from "./phonePosition.js";
@@ -246,6 +247,8 @@ async function ping(id: string, at: { lat: number; lon: number; accuracy: number
   replaceSurvey({ ...survey, points: [...survey.points, point], nodes });
   setRun({ phase: "wait" });
   persist();
+  // Said aloud for a reader whose eyes are on the road.
+  if (surveySound()) void cue(point.replies.length ? "heard" : "unheard");
 }
 
 /** Ends the survey running; its id, or null when it had no points and was let go. */
@@ -277,6 +280,28 @@ export function discardSurvey(id: string): void {
   if (state.run?.id !== id) return;
   stopSurvey();
   deleteSurvey(id);
+}
+
+const SOUND_KEY = "survey.sound";
+const soundListeners = new Set<() => void>();
+
+/** Whether a point made says so aloud: two notes up for an answer, two down for none. On until turned off. */
+export function surveySound(): boolean {
+  return readSetting(SOUND_KEY, true);
+}
+
+export function setSurveySound(on: boolean): void {
+  writeSetting(SOUND_KEY, on);
+  for (const listener of soundListeners) listener();
+}
+
+function subscribeSound(listener: () => void): () => void {
+  soundListeners.add(listener);
+  return () => soundListeners.delete(listener);
+}
+
+export function useSurveySound(): boolean {
+  return useSyncExternalStore(subscribeSound, surveySound);
 }
 
 const HOLD_KEY = "survey.holdUsed";

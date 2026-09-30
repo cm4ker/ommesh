@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FIX_AGE_MS, PING_EVERY_MS, bestReply, onMap, pointTone, repeaterRows, surveyStats, surveyStep, toneFor, type Survey, type SurveyPoint } from "./surveyData.js";
+import { FIX_AGE_MS, MOVE_M, PING_EVERY_MS, bestReply, metresToGo, onMap, pointTone, repeaterRows, surveyStats, surveyStep, toneFor, type Survey, type SurveyPoint } from "./surveyData.js";
 
 const reply = (key: string, us: number, them: number) => ({ key, us, them, rssi: -90 });
 const point = (at: number, lat: number, lon: number, replies = [reply("aa", 2, 3)]): SurveyPoint => ({ at, lat, lon, accuracy: 5, replies });
@@ -26,6 +26,17 @@ test("the survey waits for a good fix, the half minute and a move, then asks", (
   assert.equal(surveyStep(now, fix, now - PING_EVERY_MS, last), "still");
   // About 110 m north.
   assert.equal(surveyStep(now, { ...fix, lat: 55.001 }, now - PING_EVERY_MS, last), "ping");
+});
+
+test("standing still, the way left to the next ask is what is missing to the move", () => {
+  const fix = { lat: 55, lon: 73, accuracy: 8, at: 0 };
+  const last = point(0, 55, 73);
+  assert.equal(metresToGo(fix, last), MOVE_M);
+  // About 22 m north.
+  assert.equal(metresToGo({ ...fix, lat: 55.0002 }, last), MOVE_M - 22);
+  assert.equal(metresToGo({ ...fix, lat: 55.001 }, last), 0);
+  assert.equal(metresToGo(null, last), null);
+  assert.equal(metresToGo(fix, null), null);
 });
 
 test("a drive adds up its time, distance, points and answers, and its repeaters by points", () => {

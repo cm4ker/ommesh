@@ -5,7 +5,7 @@
  * start. A tool opened from another section goes back there when it closes.
  */
 
-import { AdvType, contactRoute, type SessionState } from "@meshnet/meshcore";
+import { AdvType, contactRoute, isConversationType, type SessionState } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
 import { relayOf, selfEnd, type MapHandle } from "./mapOverlay.js";
 import { getMeshTool, setMeshTool, type LosEnd, type NeighboursTool, type RouteTool, type SurveyTool } from "./meshTool.js";
@@ -15,7 +15,7 @@ import { focusOnMap, getNav, goSection, setStack, showOnMap } from "./nav.js";
 import { clearPing, getPing, spanKey, stopPing } from "./ping.js";
 import { session } from "./session.js";
 import { discardSurvey, getSurveys, noteSurveyHold, startSurvey, stopSurvey, surveyById } from "./survey.js";
-import { toast } from "./toast.js";
+import { act, toast } from "./toast.js";
 
 /** The route to a contact, in its sheet over the map; opened from a profile over the map, it closes back to the profile. */
 export function openRoute(key: string): void {
@@ -75,6 +75,25 @@ export function lineOfSightTo(lat: number, lon: number): void {
   const tool = getMeshTool();
   const back = tool?.kind === "los" ? tool.back : getNav().meshFocus;
   openLineOfSight(from, { lat, lon, name: t("tools.thisSpot"), key: null }, back);
+}
+
+/**
+ * Forgets the route the radio holds for a contact, from its page or its route's menu. Nothing goes
+ * on the air, so Undo writes the route back as it was learned. The next message to a chat or a
+ * room floods, and so does the next request to a repeater or a sensor.
+ */
+export async function forgetRoute(key: string): Promise<void> {
+  const contact = session.getState().contacts[key];
+  const relays = contact ? contactRoute(contact) : null;
+  if (!contact || relays === null) return;
+  const since = contact.pathSince;
+  if (!(await act(() => session.resetPath(key)))) return;
+  toast(
+    t("tools.route.forgot"),
+    "",
+    { label: t("common.undo"), run: () => void act(() => session.setRoute(key, relays, { learnedAt: since }), t("tools.route.putBack")) },
+    t(isConversationType(contact.type) ? "tools.route.forgotMessage" : "tools.route.forgotRequest"),
+  );
 }
 
 /** The relays of the route the radio holds for a contact, as contact keys where a hash names one for sure. */

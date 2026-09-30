@@ -24,9 +24,9 @@ import { keepLooking, measuredLegs, ping, ROUNDS, settlePing, stopPing, undoFoun
 import { inMinutes, limitLabel, ROUTE_LIMITS, routeStatus, useNow } from "../../lib/routes.js";
 import { session, useSession } from "../../lib/session.js";
 import { act, toast } from "../../lib/toast.js";
-import { cancelRouteEdit, openLineOfSight, openRoute, openSpan } from "../../lib/toolActions.js";
+import { cancelRouteEdit, forgetRoute, openLineOfSight, openRoute, openSpan } from "../../lib/toolActions.js";
 import { Button, IconButton } from "../../ui/Button.js";
-import { glue, LinkRow } from "../../ui/List.js";
+import { ActionRow, glue, LinkRow } from "../../ui/List.js";
 import { showMenu, type MenuItem } from "../../ui/Menu.js";
 import { AlertIcon, BackIcon, CheckIcon, ChevronRightIcon, MoreIcon } from "../Icons.js";
 import { SignIn } from "../node/SignIn.js";
@@ -50,6 +50,18 @@ export function RouteLink({ contactKey }: { contactKey: string }) {
   if (!contact) return null;
   const status = routeStatus(contact, p, d);
   return <LinkRow label={t("tools.route.title")} value={<span className={`route-${status.tone}`}>{glue(status.text)}</span>} onClick={() => openRoute(contactKey)} />;
+}
+
+/**
+ * Forgets the route, under the row that stands for it on a node's page. Only a repeater or a
+ * sensor has it: a route to a chat or a room is forgotten by the app once it is old, and theirs
+ * is kept until someone drops it. Where the radio holds no route there is nothing to forget.
+ */
+export function ForgetRouteRow({ contactKey }: { contactKey: string }) {
+  const state = useSession();
+  const contact = state.contacts[contactKey];
+  if (!contact || isConversationType(contact.type) || contactRoute(contact) === null) return null;
+  return <ActionRow label={t("tools.route.forget")} danger disabled={state.status !== "ready"} onClick={() => void forgetRoute(contactKey)} />;
 }
 
 /** The relays a ping went through, and the contact when it passes nothing on. */
@@ -240,7 +252,7 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
         items.push({ label: t("tools.route.forgetAfterValue", { value: own === undefined ? t("tools.route.default") : limitLabel(own).toLowerCase() }), onSelect: () => forgetAfter(key, own, state.routing.resetAfterMin) });
       }
     }
-    items.push({ label: t("tools.route.forgetNow"), danger: true, disabled: !online || held === null || flooding, onSelect: () => void act(() => session.resetPath(key), t("tools.route.forgottenToast")) });
+    items.push({ label: t("tools.route.forgetNow"), danger: true, disabled: !online || held === null || flooding, onSelect: () => void forgetRoute(key) });
     showMenu(items, { title: t("tools.route.to", { name }) });
   };
 

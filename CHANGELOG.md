@@ -2,6 +2,12 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
+## Unreleased
+
+### Mesh and the map
+- A survey's export sheet starts with the coverage map: one large Send to MeshCoreTel button, with the files under it. The map used to be under the four files, below the edge of a phone's sheet. Once a survey is sent, the button's place says so, with when it went and how many points, and Send again beside it. The words asked before every send are the same.
+- Past surveys show which of them are on the coverage map: a green cloud with a tick at the end of the row, and the count at the top, such as "5 surveys · 2 on the map". A survey's summary says "on the map" beside its time. Surveys sent before this build are marked too.
+
 ## 0.5.0 — 2026-09-30
 
 ### Updates

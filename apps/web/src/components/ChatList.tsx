@@ -20,6 +20,7 @@ import { BellOffIcon, CheckIcon, ChevronDownIcon, HashIcon, PersonIcon, PlusIcon
 import { marked } from "./Marked.js";
 import { NewBuildStrip } from "./NewBuild.js";
 import { NewChat } from "./NewChat.js";
+import { RadioTag } from "./RadioTag.js";
 import { t } from "../i18n/index.js";
 
 /** Asks the chat list to open its New chat sheet, from a shortcut or the palette. */
@@ -64,6 +65,7 @@ export function ChatList({ selected }: { selected: string | null }) {
     <div className="list-pane">
       <header className="list-head">
         <h1>{t("chats.list.title")}</h1>
+        <RadioTag />
         <IconButton label={t("chats.newChat.title")} onClick={() => setAdding(true)}>
           <PlusIcon size={20} />
         </IconButton>

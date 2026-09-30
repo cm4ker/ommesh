@@ -42,6 +42,7 @@ import { showMenu } from "../ui/Menu.js";
 import { Sheet } from "../ui/Sheet.js";
 import { Avatar } from "./Avatar.js";
 import { AlertIcon, ChartIcon, CloseIcon, CopyIcon, LocationIcon, SlidersIcon, StarFilledIcon } from "./Icons.js";
+import { RadioTag } from "./RadioTag.js";
 import { ToolPanel } from "./tools/ToolPanel.js";
 
 // MapLibre and its styles load with the map, not with the app.
@@ -151,6 +152,7 @@ export function MeshListHead() {
   return (
     <header className="list-head">
       <h1>{t("mesh.title")}</h1>
+      <RadioTag />
     </header>
   );
 }

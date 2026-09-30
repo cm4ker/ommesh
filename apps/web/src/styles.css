@@ -1097,22 +1097,6 @@ textarea.input {
   height: calc(36px * var(--box-scale));
   margin-bottom: var(--space-2);
 }
-.rail .rail-radio {
-  height: calc(58px * var(--box-scale));
-}
-.rail-radio .dot {
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  width: 7px;
-  height: 7px;
-}
-.rail-radio .tab-label.low {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  color: var(--warning);
-}
 .tab-badge {
   position: absolute;
   top: 4px;
@@ -1425,14 +1409,59 @@ textarea.input {
   min-height: 52px;
   padding-top: 0;
 }
+/* The title keeps its own width and pushes the rest to the end, so the radio's name beside it has all the room left. */
 .list-head h1 {
-  flex: 1;
+  flex: none;
+  margin-right: auto;
   font-size: calc(22px * var(--text-scale));
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 .app.wide .list-head h1 {
   font-size: var(--text-xl);
+}
+/* This radio's name and charge, at the end of a list's head (#10). */
+.radio-tag {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: var(--control-h);
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .radio-tag:hover {
+    background: var(--hover);
+  }
+}
+.radio-tag-name {
+  min-width: 0;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.radio-tag.off .radio-tag-name {
+  color: var(--text-muted);
+}
+.radio-tag-charge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.radio-tag-charge.low {
+  color: var(--warning);
 }
 
 .search {
@@ -7197,7 +7226,7 @@ button.hop {
 :root[data-look="classic"] .app.narrow .offline ~ .layer > :is(.screen > .screen-head, .list-pane > .list-head) {
   background-size: 100% 100%;
 }
-:root[data-look="classic"] :is(.screen-head, .list-head) :is(.icon-button:hover:not(:disabled), .icon-button.on) {
+:root[data-look="classic"] :is(.screen-head, .list-head) :is(.icon-button:hover:not(:disabled), .icon-button.on, .radio-tag:hover) {
   background: color-mix(in oklab, var(--accent-contrast) 22%, transparent);
   color: var(--accent-contrast);
 }

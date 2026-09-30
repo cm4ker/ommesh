@@ -10,6 +10,10 @@
 ### Mesh and the map
 - A survey's export sheet starts with the coverage map: one large Send to MeshCoreTel button, with the files under it. The map used to be under the four files, below the edge of a phone's sheet. Once a survey is sent, the button's place says so, with when it went and how many points, and Send again beside it. The words asked before every send are the same.
 - Past surveys show which of them are on the coverage map: a green cloud with a tick at the end of the row, and the count at the top, such as "5 surveys · 2 on the map". A survey's summary says "on the map" beside its time. Surveys sent before this build are marked too.
+- While a coverage survey runs, a large number stands at the top of the map: how many repeaters answered at the last point, on a disc in the point's colour, to be read at a glance from behind the wheel. The ring round it fills until the next ask: by the half minute, and once the phone stands still, by the metres left to go, written under it ("24 m to go"). A tap on the number opens who answered. The number stays on the map with the survey's card put away, and the strip over the other screens carries it too. The small ring in the card is gone.
+- A survey says aloud what each ask brought: two notes up when a repeater answered, two notes down when nobody did. The speaker button in the survey's card turns the sound off, and the choice is kept. A phone plays it the way it plays the message signal, so its silent mode quiets this too.
+- The map no longer closes in and out with every point of a survey. It keeps in view the phone and every repeater that has answered in this survey: it moves out when a farther one answers and never back in by itself. Move or scale the map by hand and the scale stays yours: the map then only goes along with the phone while the phone is on screen, and Where am I brings the whole view back. It used to return to its own view 20 seconds after a finger moved it.
+- While a survey runs, the repeaters that answered at the last point have their names in bold on the map and the other names step back, and a scale in the corner says how far the map reaches.
 
 ## 0.5.0 — 2026-09-30
 

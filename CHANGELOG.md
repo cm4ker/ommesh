@@ -31,6 +31,9 @@
 - On a tablet the app turns with the screen. Held sideways, it is laid out as on a computer: the sections down the side, the list, and the chat or the map beside it. An Android tablet used to keep the app upright between two bars, and an iPad showed the iPhone app in a phone-sized window. Held upright, a tablet shows the phone's layout. A phone stays upright as before.
 - On a tablet held sideways, pull the conversation to the left to see each message's signal and hops, as on a phone.
 
+### Fixes
+- On an iPhone or iPad with iOS 15 or 16 before 16.4, the app opens again. Since 0.4.0 it showed only a grey screen there.
+
 ## 0.5.0 — 2026-09-30
 
 ### Updates

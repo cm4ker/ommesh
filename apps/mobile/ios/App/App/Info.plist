@@ -35,6 +35,9 @@
 	<string>Ommesh talks to your MeshCore radio over Bluetooth.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>Ommesh talks to your MeshCore radio over Bluetooth.</string>
+	<!-- A running coverage survey on the locked screen and in the Dynamic Island (SurveyGlance, the SurveyActivity extension). -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Ommesh talks to a MeshCore radio on your Wi-Fi network.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

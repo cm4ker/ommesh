@@ -17,6 +17,8 @@
 	<dict>
 		<key>dev.cm4ker.meshnet</key>
 		<string>Meshnet App Store</string>
+		<key>dev.cm4ker.meshnet.SurveyActivity</key>
+		<string>Meshnet Survey App Store</string>
 	</dict>
 	<key>uploadSymbols</key>
 	<true/>

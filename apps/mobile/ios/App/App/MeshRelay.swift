@@ -100,6 +100,8 @@ final class MeshRelay: NSObject {
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(wentToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         center.addObserver(self, selector: #selector(cameToFront), name: UIApplication.willEnterForegroundNotification, object: nil)
+        // A survey the app stopped under is still on the locked screen, with nothing behind it.
+        SurveyGlance.end()
     }
 
     /// Where a client's inbox is saved, as before the core: `page` and `computer`.
@@ -286,6 +288,7 @@ final class MeshRelay: NSObject {
         guard let now = core.survey(full: true) else { return nil }
         isSurveying = true
         followPhone()
+        SurveyGlance.show(status: now)
         return now
     }
 
@@ -294,6 +297,7 @@ final class MeshRelay: NSObject {
         let last = survey()
         isSurveying = false
         locator?.stopUpdatingLocation()
+        SurveyGlance.end()
         run(core.surveyStop())
         UserDefaults.standard.removeObject(forKey: MeshRelay.surveyKey)
         return last
@@ -304,9 +308,10 @@ final class MeshRelay: NSObject {
         core.survey(full: true) ?? UserDefaults.standard.string(forKey: MeshRelay.surveyKey)
     }
 
-    /// The page hears how the survey moved on, and a new point is kept for a page that comes later.
+    /// The page hears how the survey moved on, the locked screen shows it, and a new point is kept for a page that comes later.
     private func surveyChanged() {
         guard let now = core.survey(full: false) else { return }
+        if isSurveying { SurveyGlance.show(status: now) }
         if let data = now.data(using: .utf8),
            let status = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let count = status["count"] as? Int, count != surveyKept {

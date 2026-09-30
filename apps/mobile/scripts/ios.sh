@@ -85,6 +85,9 @@ case "$mode" in
     say "the App ID and its profile"
     node "$here/scripts/apple.mjs" bundle "$bundle" Meshnet
     node "$here/scripts/apple.mjs" profile "$bundle" "Meshnet App Store"
+    # The extension that draws a running survey on the locked screen is signed as an app of its own.
+    node "$here/scripts/apple.mjs" bundle "$bundle.SurveyActivity" "Meshnet Survey"
+    node "$here/scripts/apple.mjs" profile "$bundle.SurveyActivity" "Meshnet Survey App Store"
     if [ "$mode" = testflight ]; then
       node "$here/scripts/apple.mjs" app "$bundle"
     fi

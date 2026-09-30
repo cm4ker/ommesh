@@ -117,6 +117,20 @@ screen, on the "While Using" permission the page already asked for, with iOS's
 own sign in the status bar. App Review asks what the mode is for: the coverage
 survey, "Survey on the move" under "Who hears me" on the map.
 
+A running survey shows on the locked screen and in the Dynamic Island as a Live
+Activity, where Android has its ongoing notice: how many points, the time
+counting up, and who heard the last point. `SurveyGlance.swift` begins it when
+the survey starts, which iOS allows only on screen, and brings it up to date
+at every step with the core's own words (`title` and `line` of its survey
+status). It is drawn by a second target, the widget extension `SurveyActivity`
+(`ios/App/SurveyActivity`, bundle ID `dev.cm4ker.meshnet.SurveyActivity`),
+which the app embeds; `SurveyAttributes.swift` is in both targets. The
+extension is signed as an app of its own: `ios.sh` registers its App ID and
+makes its profile, "Meshnet Survey App Store", beside the app's. Its version
+and build number must be the app's: `MARKETING_VERSION` is written in
+`project.pbxproj` once per target, so change both. Live Activities need iOS
+16.2; the app still runs on 15, without them.
+
 It needs a Mac with Xcode. The Mac here is `server.lan`, the same one the Sovabox
 phone app is built on, and the same Apple team (8CNDTQVA32). The build keeps its
 derived data under `~/Library/Caches/meshnet-ios` and the tree under

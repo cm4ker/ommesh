@@ -4,6 +4,9 @@
 
 ## Unreleased
 
+### Chats
+- The radio's name and charge stand at the top of Chats, beside the title, so which radio the app is on shows without a trip to Settings. A long name takes the room the title leaves and is cut only past that; the charge is never cut. At 20% and below the charge turns yellow with a warning mark. While the radio is not connected the name dims behind a red dot. A tap opens Settings, where the radio's card is. On a PC the name is at the top of Mesh too, and the radio's button at the bottom of the column of sections is gone: the name says the same, and Settings carries the red dot while the radio is not connected.
+
 ### Mesh and the map
 - A survey's export sheet starts with the coverage map: one large Send to MeshCoreTel button, with the files under it. The map used to be under the four files, below the edge of a phone's sheet. Once a survey is sent, the button's place says so, with when it went and how many points, and Send again beside it. The words asked before every send are the same.
 - Past surveys show which of them are on the coverage map: a green cloud with a tick at the end of the row, and the count at the top, such as "5 surveys · 2 on the map". A survey's summary says "on the map" beside its time. Surveys sent before this build are marked too.

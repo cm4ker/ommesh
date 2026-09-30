@@ -2,7 +2,7 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
-## Unreleased
+## 0.5.0 — 2026-09-30
 
 ### Updates
 - An Android phone on a Dev build from GitHub hears of newer ones. A strip over the chats says "A newer build is out" with its version and Download, which opens the newest APK in the phone's browser. The cross hides the strip for a day. About has the newest build too. The app checks when it opens and when it comes back on screen, at most every six hours. Builds from Google Play keep updating through Play.

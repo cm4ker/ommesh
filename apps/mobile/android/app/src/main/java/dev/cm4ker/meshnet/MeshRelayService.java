@@ -23,11 +23,18 @@ import androidx.core.content.ContextCompat;
  *
  * <p>While a coverage survey runs it is of the location kind as well: Android hands the phone's
  * position to an app out of sight only through such a service, and only one started while the
- * app was on screen, as a survey is.
+ * app was on screen, as a survey is. Its notice then says how the survey goes, since it is what a
+ * locked phone shows of it: how long, how many points, and who heard the last one.
  */
 public class MeshRelayService extends Service {
     private static final String TAG = "MeshRelay";
     private static final String CHANNEL = "link";
+    /**
+     * The notice's channel while a survey runs. The link's own is a quiet one, which Android keeps
+     * under every other notice and a phone may leave off the locked screen; a survey's notice is
+     * what the reader glances at there, so it goes with the ones that show, though it makes no sound.
+     */
+    private static final String SURVEY_CHANNEL = "survey";
     /** The channel of the notice from when it only showed while the radio was shared. */
     private static final String OLD_CHANNEL = "relay";
     private static final int NOTICE_ID = 0x4d52;
@@ -36,6 +43,25 @@ public class MeshRelayService extends Service {
     private static final String EXTRA_SHARING = "sharing";
     private static final String EXTRA_COMPUTER = "computer";
     private static final String EXTRA_SURVEY = "survey";
+    private static final String EXTRA_SURVEY_TITLE = "surveyTitle";
+    private static final String EXTRA_SURVEY_TEXT = "surveyText";
+    private static final String EXTRA_SURVEY_SINCE = "surveySince";
+    private static final String EXTRA_SURVEY_POINTS = "surveyPoints";
+
+    /** A coverage survey running, as its notice says it: the radio core's title and line, and when it began (ms). */
+    static final class Survey {
+        final String title;
+        final String text;
+        final long since;
+        final int points;
+
+        Survey(String title, String text, long since, int points) {
+            this.title = title;
+            this.text = text;
+            this.since = since;
+            this.points = points;
+        }
+    }
 
     /** What the notice says: which radio, and how it is. */
     static final class State {
@@ -43,10 +69,10 @@ public class MeshRelayService extends Service {
         final boolean up;
         final boolean sharing;
         final boolean computer;
-        /** A coverage survey runs. */
-        final boolean survey;
+        /** The coverage survey running; null when none is. */
+        final Survey survey;
 
-        State(String name, boolean up, boolean sharing, boolean computer, boolean survey) {
+        State(String name, boolean up, boolean sharing, boolean computer, Survey survey) {
             this.name = name;
             this.up = up;
             this.sharing = sharing;
@@ -61,7 +87,10 @@ public class MeshRelayService extends Service {
             .putExtra(EXTRA_UP, state.up)
             .putExtra(EXTRA_SHARING, state.sharing)
             .putExtra(EXTRA_COMPUTER, state.computer)
-            .putExtra(EXTRA_SURVEY, state.survey);
+            .putExtra(EXTRA_SURVEY, state.survey != null);
+        if (state.survey != null) {
+            intent.putExtra(EXTRA_SURVEY_TITLE, state.survey.title).putExtra(EXTRA_SURVEY_TEXT, state.survey.text).putExtra(EXTRA_SURVEY_SINCE, state.survey.since).putExtra(EXTRA_SURVEY_POINTS, state.survey.points);
+        }
         try {
             ContextCompat.startForegroundService(context, intent);
         } catch (RuntimeException e) {
@@ -83,18 +112,20 @@ public class MeshRelayService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         State state = intent == null
-            ? new State(null, false, false, false, false)
+            ? new State(null, false, false, false, null)
             : new State(
                 intent.getStringExtra(EXTRA_NAME),
                 intent.getBooleanExtra(EXTRA_UP, false),
                 intent.getBooleanExtra(EXTRA_SHARING, false),
                 intent.getBooleanExtra(EXTRA_COMPUTER, false),
                 intent.getBooleanExtra(EXTRA_SURVEY, false)
+                    ? new Survey(intent.getStringExtra(EXTRA_SURVEY_TITLE), intent.getStringExtra(EXTRA_SURVEY_TEXT), intent.getLongExtra(EXTRA_SURVEY_SINCE, 0), intent.getIntExtra(EXTRA_SURVEY_POINTS, 0))
+                    : null
             );
         Notification notice = notice(this, state);
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                if (!state.survey || !locating(notice)) startForeground(NOTICE_ID, notice, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
+                if (state.survey == null || !locating(notice)) startForeground(NOTICE_ID, notice, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
             } else {
                 startForeground(NOTICE_ID, notice);
             }
@@ -139,33 +170,54 @@ public class MeshRelayService extends Service {
             channel.setDescription(Words.get(context, "relayChannelHint", "Shown while the app keeps the radio connected in the background."));
             channel.setShowBadge(false);
             notices.createNotificationChannel(channel);
+            NotificationChannel survey = new NotificationChannel(SURVEY_CHANNEL, Words.get(context, "channelSurvey", "Coverage survey"), NotificationManager.IMPORTANCE_DEFAULT);
+            survey.setDescription(Words.get(context, "channelSurveyHint", "Shown while a coverage survey runs: its time, its points and who heard the last one."));
+            survey.setShowBadge(false);
+            survey.setSound(null, null);
+            survey.enableVibration(false);
+            // Nothing in it is private: a point count and a repeater's name.
+            survey.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+            notices.createNotificationChannel(survey);
         }
         String name = state.name == null || state.name.isEmpty() ? Words.get(context, "relayTheRadio", "the radio") : state.name;
         String title;
         String text;
-        if (!state.up) {
+        if (state.survey != null) {
+            // The survey is what the reader looks at the locked phone for; its own line says when the radio is away.
+            boolean said = state.survey.title != null && !state.survey.title.isEmpty();
+            title = said ? state.survey.title : Words.get(context, "relaySurvey", "Coverage survey running");
+            text = state.survey.text == null ? "" : state.survey.text;
+        } else if (!state.up) {
             title = Words.get(context, "relayReconnecting", "Reconnecting to {name}", name);
             text = Words.get(context, "relayWaitingRadio", "Waiting for the radio");
         } else if (state.sharing) {
             title = Words.get(context, "relaySharing", "Sharing {name}", name);
             text = state.computer ? Words.get(context, "relayComputer", "A computer is connected") : Words.get(context, "relayWaitingComputer", "Waiting for a computer");
-        } else if (state.survey) {
-            title = Words.get(context, "relayConnected", "Connected to {name}", name);
-            text = Words.get(context, "relaySurvey", "Coverage survey running");
         } else {
             title = Words.get(context, "relayConnected", "Connected to {name}", name);
             text = Words.get(context, "relayAppClosed", "Messages arrive with the app closed");
         }
+        boolean timed = state.survey != null && state.survey.since > 0;
         Intent open = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
         PendingIntent tap = open == null ? null : PendingIntent.getActivity(context, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        return new NotificationCompat.Builder(context, CHANNEL)
+        return new NotificationCompat.Builder(context, state.survey != null ? SURVEY_CHANNEL : CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_meshnet)
+            .setVisibility(state.survey != null ? NotificationCompat.VISIBILITY_PUBLIC : NotificationCompat.VISIBILITY_PRIVATE)
+            .setOnlyAlertOnce(true)
+            // A group of its own: left to Android, it is folded into one card with the chats' notices, a line each.
+            .setGroup(state.survey != null ? SURVEY_CHANNEL : null)
+            // Android 16 shows such a notice apart from the rest, on the locked screen too, with the count in the status bar.
+            .setRequestPromotedOngoing(state.survey != null)
+            .setShortCriticalText(state.survey != null && state.survey.points > 0 ? String.valueOf(state.survey.points) : null)
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(tap)
             .setOngoing(true)
             .setSilent(true)
-            .setShowWhen(false)
+            // A survey's notice counts its time up by itself, which costs the app nothing.
+            .setShowWhen(timed)
+            .setUsesChronometer(timed)
+            .setWhen(timed ? state.survey.since : 0)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build();

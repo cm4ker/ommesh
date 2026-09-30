@@ -269,7 +269,7 @@ impl Core {
     /// The survey running, as JSON for the page: what it is doing and its points, all of them
     /// when `full` and only the last otherwise. None when none runs.
     pub fn survey(&self, full: bool) -> Option<String> {
-        self.survey.status(full)
+        self.survey.status(full, self.watch.config())
     }
 
     /// Everything the last call asked for: the mux's part, then the watch's and the survey's.

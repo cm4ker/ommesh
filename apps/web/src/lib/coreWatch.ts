@@ -35,6 +35,15 @@ function words() {
     allChats: template("notices.allChats"),
     newMessages: forms("notices.newMessages"),
     inChats: forms("notices.inChats"),
+    surveyTitle: template("notices.survey.title"),
+    surveyPoints: forms("tools.survey.points"),
+    surveyHeard: forms("tools.survey.heard"),
+    surveyNobody: t("notices.survey.nobody"),
+    surveyStill: t("notices.survey.still"),
+    surveyGps: t("tools.survey.gps"),
+    surveyListening: t("tools.survey.listening"),
+    surveyOffline: t("notices.survey.offline"),
+    repeater: template("tools.hears.repeater"),
     plurals: pluralTable(),
     relayChannel: t("notices.android.relayChannel"),
     relayChannelHint: t("notices.android.relayChannelHint"),
@@ -53,6 +62,8 @@ function words() {
     channelChatsHint: t("notices.android.channelChatsHint"),
     channelNodes: t("notices.android.channelNodes"),
     channelNodesHint: t("notices.android.channelNodesHint"),
+    channelSurvey: t("notices.android.channelSurvey"),
+    channelSurveyHint: t("notices.android.channelSurveyHint"),
   };
 }
 

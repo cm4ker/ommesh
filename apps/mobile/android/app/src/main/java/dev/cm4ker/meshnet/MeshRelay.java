@@ -217,6 +217,11 @@ final class MeshRelay {
     private boolean surveying = false;
     /** The survey's points kept so far. */
     private int surveyKept = 0;
+    /** What the ongoing notice says of the survey, in the core's words, and when it began. */
+    private String surveyTitle;
+    private String surveyText;
+    private long surveySince = 0;
+    private int surveyPoints = 0;
     /** Hears where the phone is while a survey runs. */
     private LocationListenerCompat fixes;
 
@@ -269,7 +274,7 @@ final class MeshRelay {
     }
 
     private MeshRelayService.State state() {
-        return new MeshRelayService.State(radioName, radioUp(), isSharing(), hasComputer(), surveying);
+        return new MeshRelayService.State(radioName, radioUp(), isSharing(), hasComputer(), surveying ? new MeshRelayService.Survey(surveyTitle, surveyText, surveySince, surveyPoints) : null);
     }
 
     // The core asks; this does.
@@ -482,6 +487,7 @@ final class MeshRelay {
         String now = core.survey(true);
         if (now == null) return null;
         surveying = true;
+        surveySaid(now);
         followPhone();
         // Started again from the screen, the service may read the position once the app is off it.
         if (isOn()) MeshRelayService.start(context, state());
@@ -506,10 +512,29 @@ final class MeshRelay {
         return now != null ? now : prefs().getString(SURVEY_KEY, null);
     }
 
-    /** The page hears how the survey moved on, and a new point is kept for a page that comes later. */
+    /** What the core says the notice should say now; whether that is news. */
+    private boolean surveySaid(String status) {
+        try {
+            JSONObject said = new JSONObject(status);
+            String title = said.optString("title");
+            String text = said.optString("line");
+            long since = said.optLong("startedAt");
+            boolean news = !title.equals(surveyTitle) || !text.equals(surveyText) || since != surveySince;
+            surveyTitle = title;
+            surveyText = text;
+            surveySince = since;
+            surveyPoints = said.optInt("count");
+            return news;
+        } catch (JSONException e) {
+            return false;
+        }
+    }
+
+    /** The page hears how the survey moved on, its notice says it, and a new point is kept for a page that comes later. */
     private void surveyChanged() {
         String now = core.survey(false);
         if (now == null) return;
+        if (surveying && surveySaid(now) && isOn()) MeshRelayService.update(context, state());
         try {
             int count = new JSONObject(now).optInt("count");
             if (count != surveyKept) {

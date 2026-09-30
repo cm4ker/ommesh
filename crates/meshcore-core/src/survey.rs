@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::codes::*;
 use crate::frames::{discover_ask, hex, is_discover_ask, read_discover_answer};
-use crate::{Effect, Timer};
+use crate::watch::fill;
+use crate::{Effect, Timer, WatchConfig};
 
 /// An ask every half minute at most: a repeater answers four in two minutes, whoever asks.
 pub const PING_EVERY_MS: i64 = 30_000;
@@ -101,6 +102,10 @@ struct Status<'a> {
     /// How many points there are; `points` holds the last of them, or all.
     count: usize,
     points: &'a [Point],
+    /// What a notice that stays up while the survey runs says, in the page's words: how many
+    /// points, and the last of them or why none is being made.
+    title: String,
+    line: String,
 }
 
 /// An ask on its way or out: the point it will make, and the answers so far.
@@ -188,9 +193,11 @@ impl Survey {
         self.run = None;
     }
 
-    /// The survey as JSON for the page, with its last point only or with all of them; none when none runs.
-    pub fn status(&self, full: bool) -> Option<String> {
+    /// The survey as JSON for the page, with its last point only or with all of them; none when
+    /// none runs. `config` has the words and names its notice is said in.
+    pub fn status(&self, full: bool, config: &WatchConfig) -> Option<String> {
         let run = self.run.as_ref()?;
+        let (title, line) = said(run, config);
         let from = if full {
             0
         } else {
@@ -204,6 +211,8 @@ impl Survey {
             last_ping_at: run.last_ping_at,
             count: run.points.len(),
             points: &run.points[from..],
+            title,
+            line,
         })
         .ok()
     }
@@ -368,6 +377,69 @@ impl Survey {
             self.effects.push(Effect::SurveyChanged);
         }
     }
+}
+
+/// The survey's notice: its title, and the line under it.
+fn said(run: &Run, config: &WatchConfig) -> (String, String) {
+    let words = &config.words;
+    let points = words.counted(&words.survey_points, run.points.len());
+    let title = fill(&words.survey_title, &[("points", &points)]);
+    let line = match (run.phase, run.points.last()) {
+        (Phase::Offline, _) => words.survey_offline.clone(),
+        (Phase::Gps, _) => words.survey_gps.clone(),
+        (Phase::Still, _) => words.survey_still.clone(),
+        (Phase::Listening, None) => words.survey_listening.clone(),
+        (Phase::Wait, None) => words.survey_gps.clone(),
+        (_, Some(point)) => match best(point) {
+            None => words.survey_nobody.clone(),
+            Some(reply) => {
+                let name = config
+                    .contacts
+                    .iter()
+                    .find(|c| c.key.starts_with(&reply.key) && !c.name.is_empty())
+                    .map(|c| c.name.clone())
+                    .unwrap_or_else(|| {
+                        let id = reply.key.get(..8).unwrap_or(&reply.key);
+                        fill(&words.repeater, &[("id", id)])
+                    });
+                fill(
+                    &words.counted(&words.survey_heard, point.replies.len()),
+                    &[("name", &name), ("snr", &signed(score(reply)))],
+                )
+            }
+        },
+    };
+    (title, line)
+}
+
+/// How well a repeater and the radio hear each other: the worse of the two ways.
+fn score(reply: &Reply) -> f64 {
+    reply.us.min(reply.them)
+}
+
+/// The answer that makes the point: the repeater that both hears us and is heard best.
+fn best(point: &Point) -> Option<&Reply> {
+    point.replies.iter().reduce(|best, reply| {
+        if score(reply) > score(best) {
+            reply
+        } else {
+            best
+        }
+    })
+}
+
+/// A signal-to-noise ratio as the page writes it (`formatSnr`): its sign, and no second zero.
+fn signed(snr: f64) -> String {
+    let text = format!("{:.2}", snr.abs());
+    let text = text.strip_suffix('0').unwrap_or(&text);
+    let sign = if snr > 0.0 {
+        "+"
+    } else if snr < 0.0 {
+        "−"
+    } else {
+        ""
+    };
+    format!("{sign}{text}")
 }
 
 enum Step {
@@ -748,6 +820,83 @@ mod tests {
         );
         rig.radio_says(OK);
         assert_eq!(rig.listens.len(), 1);
+    }
+
+    #[test]
+    fn the_notice_says_how_it_goes_in_the_pages_words() {
+        let mut rig = Rig::new();
+        let said = |rig: &Rig| {
+            let status = rig.status(false);
+            let text = |key: &str| status[key].as_str().unwrap().to_string();
+            (text("title"), text("line"))
+        };
+        assert_eq!(
+            said(&rig),
+            ("Survey running · 0 points".into(), "Waiting for GPS".into()),
+            "English until the page has said"
+        );
+
+        let words = r#"{"surveyTitle":"Идёт замер · {points}",
+            "surveyPoints":{"one":"{count} точка","few":"{count} точки","many":"{count} точек","other":"{count} точки"},
+            "surveyHeard":{"one":"Слышит {count} · лучший {name} {snr} дБ","other":"Слышат {count} · лучший {name} {snr} дБ"},
+            "surveyNobody":"Никто не ответил","surveyStill":"Стоим на месте","surveyGps":"Ждём GPS",
+            "surveyListening":"Слушаем ответы…","surveyOffline":"Радио не на связи","repeater":"Репитер {id}",
+            "plurals":["many","one","few","few","few","many"]}"#;
+        let known = "aa".repeat(32);
+        let config = format!(
+            r#"{{"contacts":[{{"key":"{known}","name":"PKIO","type":2}}],"words":{words}}}"#
+        );
+        rig.core.configure(serde_json::from_str(&config).unwrap());
+        assert_eq!(
+            said(&rig),
+            ("Идёт замер · 0 точек".into(), "Ждём GPS".into())
+        );
+
+        rig.fix(HERE, 1000);
+        assert_eq!(said(&rig).1, "Слушаем ответы…");
+        let tag = rig.tag();
+        rig.radio_says(OK);
+        rig.answer(tag, 0xaa, 50, 46);
+        rig.answer(tag, 0xbb, 60, -8);
+        rig.listened();
+        assert_eq!(
+            said(&rig),
+            (
+                "Идёт замер · 1 точка".into(),
+                "Слышат 2 · лучший PKIO +11.5 дБ".into()
+            ),
+            "the best by the worse of its two ways, by its contact's name"
+        );
+
+        rig.fix(HERE, 40_000);
+        assert_eq!(said(&rig).1, "Стоим на месте");
+        rig.fix(THERE, 41_000);
+        let tag = rig.tag();
+        rig.radio_says(OK);
+        assert_eq!(
+            said(&rig).1,
+            "Слышат 2 · лучший PKIO +11.5 дБ",
+            "the last point stands while the next is listened for"
+        );
+        rig.answer(tag, 0xcc, -14, 4);
+        rig.listened();
+        assert_eq!(
+            said(&rig),
+            (
+                "Идёт замер · 2 точки".into(),
+                "Слышит 1 · лучший Репитер cccccccc −3.5 дБ".into()
+            ),
+            "a repeater that is no contact goes by the start of its key"
+        );
+
+        rig.point(HERE, 80_000);
+        assert_eq!(said(&rig).1, "Никто не ответил");
+        let effects = rig.core.radio_down();
+        rig.run(effects);
+        assert_eq!(
+            said(&rig),
+            ("Идёт замер · 3 точки".into(), "Радио не на связи".into())
+        );
     }
 
     #[test]

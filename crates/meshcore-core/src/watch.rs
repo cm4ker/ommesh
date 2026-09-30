@@ -135,6 +135,18 @@ pub struct Words {
     pub all_chats: String,
     pub new_messages: Forms,
     pub in_chats: Forms,
+    /// A survey's ongoing notice (`survey.rs`): its title with how many points, and what its
+    /// second line says of the last point, or of why none is being made.
+    pub survey_title: String,
+    pub survey_points: Forms,
+    pub survey_heard: Forms,
+    pub survey_nobody: String,
+    pub survey_still: String,
+    pub survey_gps: String,
+    pub survey_listening: String,
+    pub survey_offline: String,
+    /// A repeater that is not among the contacts, by the start of its key.
+    pub repeater: String,
     /// The plural category of each count from 0 to 199 in the page's language; a larger count
     /// is taken as the one with its last two digits, past 100. Empty: English's.
     pub plurals: Vec<String>,
@@ -168,6 +180,18 @@ impl Default for Words {
             all_chats: "{messages} in {chats}".into(),
             new_messages: forms("{count} new message", "{count} new messages"),
             in_chats: forms("{count} chat", "{count} chats"),
+            survey_title: "Survey running · {points}".into(),
+            survey_points: forms("{count} point", "{count} points"),
+            survey_heard: forms(
+                "{count} hears you · best {name} {snr} dB",
+                "{count} hear you · best {name} {snr} dB",
+            ),
+            survey_nobody: "Nobody answered".into(),
+            survey_still: "Standing still".into(),
+            survey_gps: "Waiting for GPS".into(),
+            survey_listening: "Listening for answers…".into(),
+            survey_offline: "Radio not connected".into(),
+            repeater: "Repeater {id}".into(),
             plurals: Vec::new(),
         }
     }
@@ -188,7 +212,7 @@ impl Words {
     }
 
     /// The form for `count`, with `{count}` filled.
-    fn counted(&self, forms: &Forms, count: usize) -> String {
+    pub(crate) fn counted(&self, forms: &Forms, count: usize) -> String {
         let form = forms
             .get(self.category(count))
             .or_else(|| forms.get("other"))
@@ -199,7 +223,7 @@ impl Words {
 }
 
 /// A phrase with its `{placeholders}` filled.
-fn fill(phrase: &str, values: &[(&str, &str)]) -> String {
+pub(crate) fn fill(phrase: &str, values: &[(&str, &str)]) -> String {
     let mut text = phrase.to_string();
     for (name, value) in values {
         text = text.replace(&format!("{{{name}}}"), value);
@@ -322,6 +346,11 @@ impl Watch {
 
     pub fn take(&mut self) -> Vec<Effect> {
         std::mem::take(&mut self.effects)
+    }
+
+    /// The page's words and names, for what else speaks in them.
+    pub fn config(&self) -> &WatchConfig {
+        &self.config
     }
 
     pub fn configure(&mut self, config: WatchConfig) {

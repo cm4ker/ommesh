@@ -1,6 +1,7 @@
-# Keeps the People list at the end of both READMEs in step with GitHub: whoever
-# opens an issue or lands a commit on master is in it within minutes, and an
-# issue labelled `spam` takes its author out again. The list is committed
+# Keeps the People list (the end of both READMEs, and the app's list with its
+# pictures and thanks font) in step with GitHub: whoever opens an issue or
+# lands a commit on master is in it within minutes, and an issue labelled
+# `spam` takes its author out again. The list is committed
 # straight to master with GITHUB_TOKEN. GitHub starts no workflow for a push
 # made with that token, so the list sets off no Dev build of its own; it goes
 # out with the next one.
@@ -38,6 +39,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          files="README.md README.ru.md apps/web/src/lib/people.json apps/web/public/people apps/web/src/fonts/caveat-thanks.woff2"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # A push to master between the checkout and ours would be refused; write the list again on top of it.
@@ -45,11 +47,12 @@ jobs:
             git fetch -q origin master
             git reset -q --hard origin/master
             node scripts/people.mjs
-            if git diff --quiet -- README.md README.ru.md; then
+            if [ -z "$(git status --porcelain -- $files)" ]; then
               echo "The list is up to date."
               exit 0
             fi
-            git commit -q -m "docs(readme): Update the People list" -- README.md README.ru.md
+            git add -A -- $files
+            git commit -q -m "docs(people): Update the People list"
             if git push -q origin HEAD:master; then exit 0; fi
             echo "master moved on; writing the list again."
           done

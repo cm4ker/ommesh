@@ -20,6 +20,7 @@
 - A survey says aloud what each ask brought: two notes up when a repeater answered, two notes down when nobody did. The speaker button in the survey's card turns the sound off, and the choice is kept. A phone plays it the way it plays the message signal, so its silent mode quiets this too.
 - The map no longer closes in and out with every point of a survey. It keeps in view the phone and every repeater that has answered in this survey: it moves out when a farther one answers and never back in by itself. Move or scale the map by hand and the scale stays yours: the map then only goes along with the phone while the phone is on screen, and Where am I brings the whole view back. It used to return to its own view 20 seconds after a finger moved it.
 - While a survey runs, the repeaters that answered at the last point have their names in bold on the map and the other names step back, and a scale in the corner says how far the map reaches.
+- A repeater's or a sensor's page has Forget the route under its Route row, so a route that has stopped working is dropped with one tap. It used to take four: the route's sheet, ⋯, Forget the route now, and back. The row is there while the radio holds a route to the node. The note that follows has Undo for eight seconds, which writes the route back; nothing goes on the air either way. Forget the route now in the route's menu has the same Undo.
 
 ## 0.5.0 — 2026-09-30
 

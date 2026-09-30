@@ -14,7 +14,7 @@
     <a href="https://github.com/cm4ker/ommesh/actions/workflows/build.yml"><img src="https://github.com/cm4ker/ommesh/actions/workflows/build.yml/badge.svg" alt="Статус сборки" /></a>
     <a href="https://github.com/meshcore-dev/MeshCore"><img src="https://img.shields.io/badge/MeshCore-companion-74ade8" alt="Клиент MeshCore" /></a>
   </p>
-  <p><a href="#установка">Установка</a> · <a href="#возможности">Возможности</a> · <a href="#скриншоты">Скриншоты</a> · <a href="#разработка">Разработка</a></p>
+  <p><a href="#установка">Установка</a> · <a href="#возможности">Возможности</a> · <a href="#скриншоты">Скриншоты</a> · <a href="#разработка">Разработка</a> · <a href="#участники">Участники</a></p>
 </div>
 
 ![Ommesh на компьютере: карта сети, список узлов и состояние ретранслятора](docs/screenshots/desktop-mesh.png)
@@ -208,3 +208,22 @@ docs/screenshots   Демонстрационные снимки для обеи
 - **iOS:** оболочка включает фоновый режим `bluetooth-central`, чтобы поддерживать соединение при переключении между приложениями.
 
 </details>
+
+## Участники
+
+Ommesh делают те, кто пишет код, и те, кто проверяет его на настоящих радио и рассказывает, что нашёл. Спасибо всем.
+
+<!-- people:start -->
+<table>
+  <tr>
+    <td align="center" valign="top" width="120"><a href="https://github.com/cm4ker"><img src="https://avatars.githubusercontent.com/u/5909124?v=4&s=128" width="64" height="64" alt="" /><br /><b>cm4ker</b></a><br /><sub>автор</sub><br /><sub>17 обращений</sub></td>
+    <td align="center" valign="top" width="120"><a href="https://github.com/DyGygg"><img src="https://avatars.githubusercontent.com/u/149152329?v=4&s=128" width="64" height="64" alt="" /><br /><b>DyGygg</b></a><br /><sub>код</sub><br /><sub>31 обращение</sub></td>
+    <td align="center" valign="top" width="120"><a href="https://github.com/Wandering79"><img src="https://avatars.githubusercontent.com/u/320853239?v=4&s=128" width="64" height="64" alt="" /><br /><b>Wandering79</b></a><br /><sub>9 обращений</sub></td>
+    <td align="center" valign="top" width="120"><a href="https://github.com/Alksndr55"><img src="https://avatars.githubusercontent.com/u/333634127?v=4&s=128" width="64" height="64" alt="" /><br /><b>Alksndr55</b></a><br /><sub>2 обращения</sub></td>
+    <td align="center" valign="top" width="120"><a href="https://github.com/deNoi5e"><img src="https://avatars.githubusercontent.com/u/9005584?v=4&s=128" width="64" height="64" alt="" /><br /><b>deNoi5e</b></a><br /><sub>2 обращения</sub></td>
+    <td align="center" valign="top" width="120"><a href="https://github.com/LekSPS"><img src="https://avatars.githubusercontent.com/u/119757495?v=4&s=128" width="64" height="64" alt="" /><br /><b>LekSPS</b></a><br /><sub>1 обращение</sub></td>
+  </tr>
+</table>
+<!-- people:end -->
+
+<sub>Список собирает `pnpm people` из коммитов и обращений в репозитории. Открыли обращение или прислали изменение — вы уже в нём.</sub>

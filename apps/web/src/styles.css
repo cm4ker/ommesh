@@ -5546,11 +5546,42 @@ button.hop {
 .tool-actions .button.survey-delete {
   flex: none;
 }
+/* A survey's way to a coverage map, above its files: the button, and under it where the points go. */
+.survey-send {
+  display: grid;
+  gap: var(--space-2);
+}
+/* In the button's place once the survey is there: when it went, and a small button to send it again. */
+.survey-sent-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-h-lg);
+}
+.survey-sent-row > svg,
+.survey-sent,
+.survey-on-map {
+  flex: none;
+  color: var(--success);
+}
+.survey-sent-row .row-sub {
+  white-space: normal;
+}
+/* In the list of surveys, the ones that are on a map. */
+.survey-sent {
+  display: grid;
+}
+.survey-on-map {
+  white-space: nowrap;
+}
+.survey-on-map svg {
+  margin-right: 3px;
+  vertical-align: -2px;
+}
 /* Before a survey goes to a coverage map: where it goes, and that everyone will see it. */
 .survey-agree {
   display: grid;
   gap: var(--space-3);
-  margin: 0 var(--space-4) var(--space-3);
   padding: var(--space-3);
   border-radius: var(--radius-lg);
   background: var(--warning-subtle);

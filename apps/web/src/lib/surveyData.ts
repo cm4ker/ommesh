@@ -46,6 +46,11 @@ export interface Survey {
   sent?: Record<string, { at: number; points: number }>;
 }
 
+/** Whether a survey has gone to a coverage map, whichever one. */
+export function onMap(survey: Survey): boolean {
+  return Object.keys(survey.sent ?? {}).length > 0;
+}
+
 /** An ask every half minute at most: a repeater answers four in two minutes, whoever asks. */
 export const PING_EVERY_MS = 30_000;
 /** Standing still adds nothing to the map, so the next ask waits until the phone has moved this far. */

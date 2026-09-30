@@ -96,6 +96,10 @@ export const SurveyIcon = icon('<path d="M4 18.5c3.5 0 4-5 8-5s4.5-5 8-5"/><circ
 /** A file handed on: to the share sheet, or downloaded. */
 export const ShareIcon = icon('<path d="M12 14.5v-11M8 7.5l4-4 4 4"/><path d="M7 10.5H5.5v10h13v-10H17"/>');
 export const FileIcon = icon('<path d="M7 3.5h7l4 4v13H7z"/><path d="M14 3.5v4h4"/>');
+/** A survey going to a coverage map on another site. */
+export const CloudUpIcon = icon('<path d="M4 14.9A7 7 0 1 1 15.7 8h1.8a4.5 4.5 0 0 1 2.5 8.2"/><path d="M12 12v9M8 16l4-4 4 4"/>');
+/** A survey that is on a coverage map. */
+export const CloudCheckIcon = icon('<path d="M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 1 1 0 9z"/><path d="M8.6 13.2l2.2 2.2 3.8-4"/>');
 export const PauseIcon = icon('<path d="M9 6.5v11M15 6.5v11"/>');
 /** Marks an action that transmits: it costs airtime, and happens only when asked. */
 export const AirIcon = icon('<path d="M12 21v-8.5"/><circle cx="12" cy="10.5" r="1.6"/><path d="M8.3 7a5.2 5.2 0 0 0 0 7M15.7 7a5.2 5.2 0 0 1 0 7"/><path d="M5.6 4.4a9 9 0 0 0 0 12.2M18.4 4.4a9 9 0 0 1 0 12.2"/>');

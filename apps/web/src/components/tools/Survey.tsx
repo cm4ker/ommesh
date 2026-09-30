@@ -20,13 +20,13 @@ import { useSession } from "../../lib/session.js";
 import { COVERAGE_MAPS, type CoverageMap } from "../../lib/coverage/maps.js";
 import { canSendCoverage, sendSurvey } from "../../lib/coverage/upload.js";
 import { deleteSurvey, markSurveySent, restoreSurvey, surveyNodeName, useSurveys, type SurveyRun } from "../../lib/survey.js";
-import { FIX_M, MOVE_M, PING_EVERY_MS, pointTone, repeaterRows, replyScore, surveyStats, type Survey, type SurveyPoint } from "../../lib/surveyData.js";
+import { FIX_M, MOVE_M, PING_EVERY_MS, onMap, pointTone, repeaterRows, replyScore, surveyStats, type Survey, type SurveyPoint } from "../../lib/surveyData.js";
 import { FORMAT_TYPE, surveyFile, surveyFileName, type SurveyFormat } from "../../lib/surveyFiles.js";
 import { toast } from "../../lib/toast.js";
 import { closeAllTools, closeTool, endSurvey, openRunningSurvey, openSurvey } from "../../lib/toolActions.js";
 import { dayLabel, timeOfDay } from "../../lib/format.js";
 import { Button, IconButton } from "../../ui/Button.js";
-import { BackIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, FileIcon, LinkOffIcon, LocateIcon, PauseIcon, RadioIcon, ShareIcon, StopIcon, SurveyIcon, TrashIcon } from "../Icons.js";
+import { BackIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, CloudCheckIcon, CloudUpIcon, FileIcon, LinkOffIcon, LocateIcon, PauseIcon, RadioIcon, ShareIcon, StopIcon, SurveyIcon, TrashIcon } from "../Icons.js";
 import { QualityChip } from "./RouteSheet.js";
 
 export function SurveySheet({ tool }: { tool: SurveyTool }) {
@@ -196,7 +196,18 @@ function SummaryView({ tool, survey }: { tool: SurveyTool; survey: Survey }) {
         </IconButton>
         <span className="row-main">
           <span className="row-title">{t("tools.survey.title")}</span>
-          <span className="row-sub muted">{when(survey)}</span>
+          <span className="row-sub muted">
+            {when(survey)}
+            {onMap(survey) ? (
+              <>
+                {" · "}
+                <span className="survey-on-map">
+                  <CloudCheckIcon size={13} />
+                  {t("tools.survey.onMap")}
+                </span>
+              </>
+            ) : null}
+          </span>
         </span>
         <IconButton label={t("common.close")} onClick={closeAllTools}>
           <CloseIcon size={18} />
@@ -262,6 +273,8 @@ function SummaryView({ tool, survey }: { tool: SurveyTool; survey: Survey }) {
 }
 
 function SurveyList({ list, run }: { list: Survey[]; run: SurveyRun | null }) {
+  const count = t("tools.survey.count", { count: list.length });
+  const sent = list.filter(onMap).length;
   return (
     <div className="tool">
       <div className="tool-head">
@@ -270,7 +283,7 @@ function SurveyList({ list, run }: { list: Survey[]; run: SurveyRun | null }) {
         </IconButton>
         <span className="row-main">
           <span className="row-title">{t("tools.survey.list")}</span>
-          <span className="row-sub muted">{t("tools.survey.count", { count: list.length })}</span>
+          <span className="row-sub muted">{sent ? t("tools.survey.countOnMap", { surveys: count, sent }) : count}</span>
         </span>
         <IconButton label={t("common.close")} onClick={closeAllTools}>
           <CloseIcon size={18} />
@@ -291,6 +304,12 @@ function SurveyList({ list, run }: { list: Survey[]; run: SurveyRun | null }) {
                     {duration(stats.ms)} · {formatDistance(stats.km)} · {t("tools.survey.points", { count: stats.points })}
                   </span>
                 </span>
+                {/* Only what is on a map is marked: a reader who sends nothing sees the list as it was. */}
+                {onMap(survey) ? (
+                  <span className="survey-sent" role="img" aria-label={t("tools.survey.sentMark")} title={t("tools.survey.sentMark")}>
+                    <CloudCheckIcon size={18} />
+                  </span>
+                ) : null}
                 <ChevronRightIcon size={16} className="muted" />
               </button>
             </li>
@@ -381,6 +400,12 @@ function ExportView({ survey }: { survey: Survey }) {
           <CloseIcon size={18} />
         </IconButton>
       </div>
+      {/* The map first: under four rows of files, a phone's sheet kept it out of sight. */}
+      <div className="survey-label">{t("tools.survey.maps", { count: COVERAGE_MAPS.length })}</div>
+      {COVERAGE_MAPS.map((map) => (
+        <SendToMap key={map.id} survey={survey} map={map} />
+      ))}
+      <div className="survey-label">{t("tools.survey.files")}</div>
       <ul className="list-rows hears" role="list">
         {FORMATS.map((format) => (
           <li key={format}>
@@ -396,19 +421,15 @@ function ExportView({ survey }: { survey: Survey }) {
         ))}
       </ul>
       <div className="check-cost">{isCapacitor() ? t("tools.survey.shareNote") : t("tools.survey.downloadNote")}</div>
-      <div className="survey-label">{t("tools.survey.maps")}</div>
-      <ul className="list-rows hears" role="list">
-        {COVERAGE_MAPS.map((map) => (
-          <SendToMap key={map.id} survey={survey} map={map} />
-        ))}
-      </ul>
     </div>
   );
 }
 
 /**
- * A community coverage map the survey can go to. Every send asks first, in
- * words that say the points leave for someone else's site and are public there.
+ * A community coverage map the survey can go to: one button, and once the
+ * survey is there, when it went and with how many points. Every send asks
+ * first, in words that say the points leave for someone else's site and are
+ * public there.
  */
 function SendToMap({ survey, map }: { survey: Survey; map: CoverageMap }) {
   const [asking, setAsking] = useState(false);
@@ -428,34 +449,47 @@ function SendToMap({ survey, map }: { survey: Survey; map: CoverageMap }) {
       setBusy(false);
     }
   };
-  const sub = !native
-    ? t("tools.survey.sendAppOnly")
-    : sent
-      ? t("tools.survey.sentAt", { when: `${dayLabel(sent.at / 1000)}, ${timeOfDay(sent.at / 1000)}`, points: t("tools.survey.points", { count: sent.points }), host: map.host })
-      : t("tools.survey.sendPublic", { host: map.host });
-  return (
-    <li>
-      <button type="button" className="row" disabled={!native || busy || asking} aria-busy={busy} onClick={() => setAsking(true)}>
-        <ShareIcon size={18} />
-        <span className="row-main">
-          <span className="row-title">{t("tools.survey.sendTo", { map: map.name })}</span>
-          <span className="row-sub muted">{sub}</span>
-        </span>
-        <ChevronRightIcon size={16} className="muted" />
-      </button>
-      {asking ? (
-        <div className="survey-agree">
-          <p>{t("tools.survey.agree", { points: t("tools.survey.points", { count: survey.points.length }), host: map.host })}</p>
-          <div className="tool-actions">
-            <Button variant="primary" onClick={() => void send()}>
-              {t("tools.survey.agreeSend", { host: map.host })}
-            </Button>
-            <Button variant="ghost" onClick={() => setAsking(false)}>
-              {t("common.cancel")}
-            </Button>
-          </div>
+  if (asking) {
+    return (
+      <div className="survey-agree">
+        <p>{t("tools.survey.agree", { points: t("tools.survey.points", { count: survey.points.length }), host: map.host })}</p>
+        <div className="tool-actions">
+          <Button variant="primary" onClick={() => void send()}>
+            {t("tools.survey.agreeSend", { host: map.host })}
+          </Button>
+          <Button variant="ghost" onClick={() => setAsking(false)}>
+            {t("common.cancel")}
+          </Button>
         </div>
-      ) : null}
-    </li>
+      </div>
+    );
+  }
+  if (sent && !busy) {
+    return (
+      <div className="survey-sent-row">
+        <CloudCheckIcon size={18} />
+        <span className="row-main">
+          <span className="row-title">{t("tools.survey.sentTo", { map: map.name })}</span>
+          <span className="row-sub muted">
+            {t("tools.survey.sentWhen", { when: `${dayLabel(sent.at / 1000)}, ${timeOfDay(sent.at / 1000)}`, points: t("tools.survey.points", { count: sent.points }) })}
+          </span>
+        </span>
+        {/* The map drops what it has already, so a second send costs nothing but the traffic. */}
+        {native ? (
+          <Button size="sm" onClick={() => setAsking(true)}>
+            {t("tools.survey.sendAgain")}
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+  return (
+    <div className="survey-send">
+      <Button variant="primary" size="lg" busy={busy} disabled={!native} onClick={() => setAsking(true)}>
+        <CloudUpIcon size={18} />
+        {t("tools.survey.sendTo", { map: map.name })}
+      </Button>
+      <div className="check-cost">{native ? t("tools.survey.sendPublic", { host: map.host }) : t("tools.survey.sendAppOnly")}</div>
+    </div>
   );
 }

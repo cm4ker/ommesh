@@ -3580,7 +3580,7 @@ export class MeshSession {
         this.log("raw", `snr ${frame.snr} rssi ${frame.rssi}: ${toHex(frame.payload)}`);
         return;
       case "logRxData": {
-        this.log("rx", `snr ${frame.snr} rssi ${frame.rssi}: ${toHex(frame.raw)}`);
+        // Not logged: a packet is heard every few seconds, and its hex would push every event out of the log. On the air shows them in words.
         this.noteHeard(frame.snr, frame.raw);
         if (this.heardListeners.size === 0) return;
         const heard: HeardPacket = { at: this.now(), snr: frame.snr, rssi: frame.rssi, size: frame.raw.length, packet: parseRawPacket(frame.raw) };

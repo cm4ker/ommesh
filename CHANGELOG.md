@@ -4,6 +4,9 @@
 
 ## Unreleased
 
+### Connecting
+- On a PC, a radio whose ESP32 has USB of its own (a Xiao, for one) keeps working after the app lets go of its cable. Since 0.4.0 the app raised two lines on the port, DTR and RTS, and when the port closed such a board took them for a flashing tool's and restarted into its loader: every later connection ended with "The radio did not answer in time", and the radio was off the mesh until it was reset. Now only DTR is raised, and nothing on a board behind a USB-to-UART chip (CP210x, CH340, FTDI). A radio already stuck this way needs its reset button pressed once, or its power off and on.
+
 ### Chats
 - The radio's name and charge stand at the top of Chats, beside the title, so which radio the app is on shows without a trip to Settings. A long name takes the room the title leaves and is cut only past that; the charge is never cut. At 20% and below the charge turns yellow with a warning mark. While the radio is not connected the name dims behind a red dot. A tap opens Settings, where the radio's card is. On a PC the name is at the top of Mesh too, and the radio's button at the bottom of the column of sections is gone: the name says the same, and Settings carries the red dot while the radio is not connected.
 

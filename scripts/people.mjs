@@ -28,31 +28,11 @@ export function people({ owner, contributors, issues }) {
     Number(b.maintainer) - Number(a.maintainer) || b.commits - a.commits || b.reports - a.reports || a.login.localeCompare(b.login));
 }
 
-const words = {
-  en: { maintainer: "maintainer", code: "code", reports: (n) => `${n} ${n === 1 ? "report" : "reports"}` },
-  ru: { maintainer: "автор", code: "код", reports: (n) => `${n} ${plural(n, "обращение", "обращения", "обращений")}` },
-};
-
-function plural(n, one, few, many) {
-  const [ten, hundred] = [n % 10, n % 100];
-  if (ten === 1 && hundred !== 11) return one;
-  return ten >= 2 && ten <= 4 && (hundred < 12 || hundred > 14) ? few : many;
-}
-
-/** What a person did, one short line each, under their picture. */
-export function roles(person, lang) {
-  const w = words[lang];
-  return [person.maintainer ? w.maintainer : person.commits ? w.code : null, person.reports ? w.reports(person.reports) : null].filter(Boolean);
-}
-
-export const role = (person, lang) => roles(person, lang).join(" · ");
-
-export function renderPeople(list, lang) {
+/** A picture and a name for each person; the counts only set the order. */
+export function renderPeople(list) {
   const cell = (p) => {
     const avatar = `${p.avatar}${p.avatar.includes("?") ? "&" : "?"}s=128`;
-    // GitHub draws <sub> with no line height, so a role that wrapped would overprint itself: one line each.
-    const lines = roles(p, lang).map((line) => `<br /><sub>${line}</sub>`).join("");
-    return `    <td align="center" valign="top" width="120"><a href="https://github.com/${p.login}"><img src="${avatar}" width="64" height="64" alt="" /><br /><b>${p.login}</b></a>${lines}</td>`;
+    return `    <td align="center" valign="top" width="120"><img src="${avatar}" width="64" height="64" alt="" /><br /><b>${p.login}</b></td>`;
   };
   const rows = [];
   for (let i = 0; i < list.length; i += perRow) rows.push(`  <tr>\n${list.slice(i, i + perRow).map(cell).join("\n")}\n  </tr>`);
@@ -84,11 +64,12 @@ async function github(path) {
 export async function main() {
   const [contributors, issues] = await Promise.all([github("contributors"), github("issues?state=all")]);
   const list = people({ owner: repository.split("/")[0], contributors, issues });
-  for (const [file, lang] of [["README.md", "en"], ["README.ru.md", "ru"]]) {
+  const table = renderPeople(list);
+  for (const file of ["README.md", "README.ru.md"]) {
     const path = resolve(root, file);
-    writeFileSync(path, replaceSection(readFileSync(path, "utf8"), renderPeople(list, lang)));
+    writeFileSync(path, replaceSection(readFileSync(path, "utf8"), table));
   }
-  console.log(list.map((p) => `${p.login}: ${role(p, "en")}`).join("\n"));
+  console.log(list.map((p) => p.login).join("\n"));
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) await main();

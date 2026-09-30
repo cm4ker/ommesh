@@ -1,0 +1,56 @@
+# Keeps the People list at the end of both READMEs in step with GitHub: whoever
+# opens an issue or lands a commit on master is in it within minutes, and an
+# issue labelled `spam` takes its author out again. The list is committed
+# straight to master with GITHUB_TOKEN. GitHub starts no workflow for a push
+# made with that token, so the list sets off no Dev build of its own; it goes
+# out with the next one.
+name: People
+
+on:
+  issues:
+    types: [opened, labeled, unlabeled]
+  push:
+    branches: [master]
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: people
+  cancel-in-progress: false
+
+jobs:
+  people:
+    # Other labels do not change the list.
+    if: github.event_name != 'issues' || github.event.action == 'opened' || github.event.label.name == 'spam'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Write the list and commit it if it changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # A push to master between the checkout and ours would be refused; write the list again on top of it.
+          for attempt in 1 2 3; do
+            git fetch -q origin master
+            git reset -q --hard origin/master
+            node scripts/people.mjs
+            if git diff --quiet -- README.md README.ru.md; then
+              echo "The list is up to date."
+              exit 0
+            fi
+            git commit -q -m "docs(readme): Update the People list" -- README.md README.ru.md
+            if git push -q origin HEAD:master; then exit 0; fi
+            echo "master moved on; writing the list again."
+          done
+          exit 1

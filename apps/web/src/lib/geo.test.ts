@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AdvType } from "@meshnet/meshcore";
-import { bearingDeg, compass, destination, distanceKm, formatDistance, formatLatLon, formatRoundDistance, freshness, hasPosition, parseLatLon } from "./geo.js";
+import { bearingDeg, compass, destination, distanceKm, formatDistance, formatLatLon, formatRoundDistance, freshness, hasPosition, metresPerPixel, parseLatLon, scaleBar } from "./geo.js";
 
 test("0, 0 is no position, and so is anything off the globe", () => {
   assert.equal(hasPosition(0, 0), false);
@@ -28,6 +28,19 @@ test("a distance picked on a slider keeps no figure it was not picked to", () =>
   assert.equal(formatRoundDistance(2.5), "2.5 km");
   assert.equal(formatRoundDistance(5), "5 km");
   assert.equal(formatRoundDistance(20), "20 km");
+});
+
+test("a map's scale shows the longest round length that fits it", () => {
+  // A street in Omsk: under a metre and a half to the pixel.
+  const street = metresPerPixel(55, 15);
+  assert.ok(Math.abs(street - 1.37) < 0.01);
+  assert.deepEqual(scaleBar(street, 96), { metres: 100, px: 73 });
+  // Each zoom out doubles the ground a pixel covers.
+  assert.ok(Math.abs(metresPerPixel(55, 10) / street - 32) < 1e-9);
+  assert.equal(scaleBar(metresPerPixel(55, 10), 96).metres, 2000);
+  assert.equal(scaleBar(1, 96).metres, 50);
+  assert.equal(scaleBar(1, 100).metres, 100);
+  assert.ok(scaleBar(0.37, 96).px <= 96);
 });
 
 test("a point so far along a bearing is that far, in that direction", () => {

@@ -102,6 +102,12 @@ export function surveyStep(now: number, fix: Fixish | null, lastPingAt: number |
   return "ping";
 }
 
+/** How far the phone still has to go from the last point before the next ask, in metres; null with no point or no fix to measure from. */
+export function metresToGo(fix: Fixish | null, last: SurveyPoint | null): number | null {
+  if (!fix || !last) return null;
+  return Math.max(0, Math.round(MOVE_M - distanceKm(last.lat, last.lon, fix.lat, fix.lon) * 1000));
+}
+
 /**
  * The points another hand has kept that are not here yet. A phone's radio core
  * runs a survey while the page sleeps, and tells of each step with how many

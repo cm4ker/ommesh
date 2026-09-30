@@ -54,6 +54,30 @@ export const SOUNDS = {
   },
 };
 
+/**
+ * What a coverage survey says after each ask, for a reader whose eyes are on
+ * the road. They are told apart by which way they go, not by their pitch: a
+ * lone beep in a car's noise is hard to place as high or low.
+ */
+export const CUES = {
+  // Two notes up: a repeater answered.
+  heard: {
+    wet: 0.1,
+    voices: [
+      { at: 0, dur: 0.09, f0: 988, gain: 0.85, attack: 0.005, release: 0.025, partials: [[1, 1], [2, 0.2], [3, 0.06]] },
+      { at: 0.1, dur: 0.15, f0: 1319, gain: 1, attack: 0.005, release: 0.05, decay: 0.4, partials: [[1, 1], [2, 0.2], [3, 0.06]] },
+    ],
+  },
+  // Two notes down: nobody did. The overtones carry it on a phone's small speaker, which loses the notes themselves.
+  unheard: {
+    wet: 0.1,
+    voices: [
+      { at: 0, dur: 0.11, f0: 523, gain: 0.9, attack: 0.006, release: 0.03, partials: [[1, 1], [2, 0.5], [3, 0.3], [4, 0.12]] },
+      { at: 0.12, dur: 0.22, f0: 392, gain: 1, attack: 0.006, release: 0.08, decay: 0.5, partials: [[1, 1], [2, 0.5], [3, 0.3], [4, 0.12]] },
+    ],
+  },
+};
+
 /** How long the sound is, reverb tail included. */
 function length(sound) {
   return Math.max(...sound.voices.map((v) => v.at + v.dur)) + 0.35;

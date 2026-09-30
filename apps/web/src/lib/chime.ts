@@ -47,6 +47,27 @@ export async function chime(signal: Signal): Promise<void> {
   }
 }
 
+/** What a coverage survey says after an ask: somebody answered, or nobody did (`CUES` in `scripts/sound-synth.mjs`). */
+export type Cue = "heard" | "unheard";
+
+/**
+ * Plays a survey's cue. A phone plays it as it plays the signal, so its
+ * silent mode quiets this too. A computer plays it from the page: the survey
+ * is on screen there, and started by the reader's own click.
+ */
+export async function cue(which: Cue): Promise<void> {
+  try {
+    if (shell() === "capacitor") {
+      await withWatch((w) => w.chime({ signal: which }));
+      await withNotices((n) => n.chime({ signal: which }));
+    } else {
+      await new Audio(`./sounds/signal_${which}.wav`).play();
+    }
+  } catch {
+    // A cue that cannot play leaves the survey as it is.
+  }
+}
+
 let previewing: HTMLAudioElement | null = null;
 
 /** Lets the reader hear a signal while choosing one: from the page, at the media volume, whatever the system's quiet. */

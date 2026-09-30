@@ -63,6 +63,8 @@ export interface MapOverlay {
   pulse: { lat: number; lon: number } | null;
   /** How far a filter by distance reaches from a node, drawn as circles round it. */
   rings?: MapRing[];
+  /** The repeaters that answered at a survey's point, by key: their names stand out from the rest. */
+  heard?: string[];
 }
 
 /** A circle `km` round a point, with the distance written on it. */
@@ -327,7 +329,7 @@ export function surveyOverlay(survey: Survey | null, point: number | null, state
     const to = (c ? contactEnd(c) : null) ?? (node && node.lat !== null && node.lon !== null ? { lat: node.lat, lon: node.lon, name: node.name, key: reply.key } : null);
     if (to) lines.push({ from, to, tone: quality(replyScore(reply)), tappable: false });
   }
-  return { lines, pins: [], numbers: {}, handles: [], pulse: null };
+  return { lines, pins: [], numbers: {}, handles: [], pulse: null, heard: p.replies.map((r) => r.key).sort() };
 }
 
 /**

@@ -238,6 +238,8 @@
   "survey.offline": "Radio not connected · no points meanwhile",
   "survey.paused": "Stood still {time} · the screen was off",
   "survey.next": "Next ask in {seconds} s",
+  "survey.toGo": "{m} m to go",
+  "survey.sound": "Sound after each point",
   "survey.stop": "Stop",
   "survey.answered": "{answered} of {count} answered",
   "survey.cost": "One short packet every 30 s while you move · the screen stays on",

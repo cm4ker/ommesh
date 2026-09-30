@@ -238,6 +238,8 @@
   "survey.offline": "Радио не на связи · точки не ставим",
   "survey.paused": "Замер стоял {time} · экран был выключен",
   "survey.next": "Следующий пинг через {seconds} с",
+  "survey.toGo": "ещё {m} м",
+  "survey.sound": "Звук после каждой точки",
   "survey.stop": "Стоп",
   "survey.answered": "с ответом {answered} из {count}",
   "survey.cost": "Один короткий пакет раз в 30 с, пока вы едете · экран не гаснет",

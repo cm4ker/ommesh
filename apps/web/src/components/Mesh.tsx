@@ -43,6 +43,7 @@ import { Sheet } from "../ui/Sheet.js";
 import { Avatar } from "./Avatar.js";
 import { AlertIcon, ChartIcon, CloseIcon, CopyIcon, LocationIcon, SlidersIcon, StarFilledIcon } from "./Icons.js";
 import { RadioTag } from "./RadioTag.js";
+import { SurveyBadge } from "./tools/Survey.js";
 import { ToolPanel } from "./tools/ToolPanel.js";
 
 // MapLibre and its styles load with the map, not with the app.
@@ -457,16 +458,13 @@ function shownPoint(tool: SurveyTool, surveys: SurveysState): number | null {
   return survey && survey.points.length ? survey.points.length - 1 : null;
 }
 
-/** While a survey runs, what the map keeps in view with the phone: the last point and the repeaters that answered there. */
-function followPoints(survey: Survey | null, state: SessionState): [number, number][] {
-  const last = survey?.points.at(-1);
-  if (!survey || !last) return [];
-  const points: [number, number][] = [[last.lat, last.lon]];
-  for (const reply of last.replies) {
-    const c = state.contacts[reply.key];
-    const node = survey.nodes[reply.key];
+/** While a survey runs, what the map keeps in view with the phone: every repeater that has answered in it, where it stands now. */
+function followPoints(survey: Survey, state: SessionState): [number, number][] {
+  const points: [number, number][] = [];
+  for (const [key, node] of Object.entries(survey.nodes)) {
+    const c = state.contacts[key];
     if (c && hasPosition(c.lat, c.lon)) points.push([c.lat, c.lon]);
-    else if (node && node.lat !== null && node.lon !== null) points.push([node.lat, node.lon]);
+    else if (node.lat !== null && node.lon !== null) points.push([node.lat, node.lon]);
   }
   return points;
 }
@@ -681,9 +679,10 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
   // A kept survey opened is brought into view whole, once.
   const surveyFit = useMemo(() => (survey && survey.endedAt !== null ? { id: `survey:${survey.id}`, points: survey.points.map((p) => [p.lat, p.lon] as [number, number]) } : null), [survey]);
   const fit = hub ? { id: `${hub}:${whole ? "all" : "part"}:${refit}`, points: fitPoints } : surveyFit;
-  const running = tool?.kind === "survey" && tool.view === "run" && surveying && tool.point === null;
-  // A new list only when the last point or where its repeaters are changes, so the map is not fitted on every render.
-  const followList = running ? followPoints(survey, state) : null;
+  // A point of it opened, the map goes on following: the answers there are read with the phone still in sight.
+  const running = tool?.kind === "survey" && tool.view === "run" && surveying;
+  // A new list only when a repeater answers for the first time or one of them moves, so the map is not fitted on every render.
+  const followList = running && survey ? { id: survey.id, points: followPoints(survey, state) } : null;
   const followKey = followList ? JSON.stringify(followList) : null;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const follow = useMemo(() => followList, [followKey]);
@@ -691,9 +690,11 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
   const hearsOpen = tool?.kind === "hears" || tool?.kind === "survey";
   const onHears = hearsOpen ? closeAllTools : whoHearsMe;
   const onHearsHold = state.status === "ready" && !surveying ? () => void surveyAtOnce() : undefined;
+  // The running survey's number stands over the map with its card put away too, but not over another tool's lines.
+  const top = surveying && (!tool || (tool.kind === "survey" && tool.view === "run")) ? <SurveyBadge /> : null;
   return (
     <Suspense fallback={<div className="empty muted">{t("mesh.map.loading")}</div>}>
-      <MapView selected={selected} onSelect={pick} onGroup={onGroup} filter={test} coverTop={coverTop} coverBottom={coverBottom} zoomButtons={zoomButtons} overlay={overlay} onLeg={leg} onHold={openSpotMenu} onHandleDrop={drop} onHears={onHears} hearsOn={hearsOpen} onHearsHold={onHearsHold} fit={fit} phone={phone} putHere={putHere} onLocate={onLocate} dots={dots} pickedDot={tool?.kind === "survey" ? tool.point : null} onDot={onDot} follow={follow} recording={surveying} />
+      <MapView selected={selected} onSelect={pick} onGroup={onGroup} filter={test} coverTop={coverTop} coverBottom={coverBottom} zoomButtons={zoomButtons} overlay={overlay} onLeg={leg} onHold={openSpotMenu} onHandleDrop={drop} onHears={onHears} hearsOn={hearsOpen} onHearsHold={onHearsHold} fit={fit} phone={phone} putHere={putHere} onLocate={onLocate} dots={dots} pickedDot={tool?.kind === "survey" ? tool.point : null} onDot={onDot} follow={follow} recording={surveying} top={top} />
     </Suspense>
   );
 }

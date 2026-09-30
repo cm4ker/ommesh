@@ -1,7 +1,7 @@
 /**
  * A coverage survey over the map (lib/survey.ts). While it runs, one short
- * card: how long, how many points, who hears the radio now, when the next
- * ask goes, and Stop. After: what the drive added up to and the repeaters
+ * card: how long, how many points, who hears the radio now, and Stop; and a
+ * number on the map itself, to be read at a glance. After: what the drive added up to and the repeaters
  * that answered, one of which can be picked to see only its points. Also the
  * surveys kept, a point's answers, and the files a survey can be written to.
  */
@@ -10,6 +10,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { locale, t } from "../../i18n/index.js";
 import { errorText } from "../../i18n/errors.js";
 import { formatDistance } from "../../lib/geo.js";
+import { cue } from "../../lib/chime.js";
 import { LISTEN_MS } from "../../lib/hears.js";
 import { formatSnr } from "../../lib/los.js";
 import { setMeshTool, type SurveyTool } from "../../lib/meshTool.js";
@@ -19,14 +20,14 @@ import { saveFile } from "../../lib/saveFile.js";
 import { useSession } from "../../lib/session.js";
 import { COVERAGE_MAPS, type CoverageMap } from "../../lib/coverage/maps.js";
 import { canSendCoverage, sendSurvey } from "../../lib/coverage/upload.js";
-import { deleteSurvey, markSurveySent, restoreSurvey, surveyNodeName, useSurveys, type SurveyRun } from "../../lib/survey.js";
-import { FIX_M, MOVE_M, PING_EVERY_MS, onMap, pointTone, repeaterRows, replyScore, surveyStats, type Survey, type SurveyPoint } from "../../lib/surveyData.js";
+import { deleteSurvey, markSurveySent, restoreSurvey, setSurveySound, surveyNodeName, useSurveySound, useSurveys, type SurveyRun } from "../../lib/survey.js";
+import { FIX_M, MOVE_M, PING_EVERY_MS, metresToGo, onMap, pointTone, repeaterRows, replyScore, surveyStats, type Survey, type SurveyPoint } from "../../lib/surveyData.js";
 import { FORMAT_TYPE, surveyFile, surveyFileName, type SurveyFormat } from "../../lib/surveyFiles.js";
 import { toast } from "../../lib/toast.js";
-import { closeAllTools, closeTool, endSurvey, openRunningSurvey, openSurvey } from "../../lib/toolActions.js";
+import { closeAllTools, closeTool, endSurvey, openLastAnswers, openRunningSurvey, openSurvey } from "../../lib/toolActions.js";
 import { dayLabel, timeOfDay } from "../../lib/format.js";
 import { Button, IconButton } from "../../ui/Button.js";
-import { BackIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, CloudCheckIcon, CloudUpIcon, FileIcon, LinkOffIcon, LocateIcon, PauseIcon, RadioIcon, ShareIcon, StopIcon, SurveyIcon, TrashIcon } from "../Icons.js";
+import { BackIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, CloudCheckIcon, CloudUpIcon, FileIcon, LinkOffIcon, LocateIcon, PauseIcon, RadioIcon, ShareIcon, SoundIcon, SoundOffIcon, StopIcon, SurveyIcon, TrashIcon } from "../Icons.js";
 import { QualityChip } from "./RouteSheet.js";
 
 export function SurveySheet({ tool }: { tool: SurveyTool }) {
@@ -93,11 +94,66 @@ export function SurveyStrip() {
 /** The strip itself, ticking only while there is a survey to tick for. */
 function RunningStrip({ survey }: { survey: Survey }) {
   const now = useNow();
+  const last = survey.points.at(-1) ?? null;
   return (
     <button type="button" className="survey-strip" onClick={openRunningSurvey}>
       <span className="survey-rec" aria-hidden="true" />
+      {/* What the last ask brought, for a reader who is in a chat meanwhile. */}
+      {last ? <span className={`survey-strip-count ${pointTone(last)}`}>{last.replies.length}</span> : null}
       <span className="survey-strip-text">{t("tools.survey.strip", { time: clock(surveyStats(survey, now).ms), points: t("tools.survey.points", { count: survey.points.length }) })}</span>
       <ChevronRightIcon size={16} />
+    </button>
+  );
+}
+
+/** What the survey is doing now, in a line, and the mark that goes before it. */
+function runStatus(survey: Survey, run: SurveyRun, now: number, fix: { accuracy: number } | null): { mark: ReactNode; line: string } {
+  const last = survey.points.at(-1) ?? null;
+  if (run.paused && run.paused.until > now) return { mark: <PauseIcon size={16} />, line: t("tools.survey.paused", { time: duration(run.paused.ms) }) };
+  if (run.phase === "offline") return { mark: <LinkOffIcon size={16} className="bad" />, line: t("tools.survey.offline") };
+  if (run.phase === "gps") return { mark: <LocateIcon size={16} />, line: fix && fix.accuracy > FIX_M ? t("tools.survey.gpsVague", { m: Math.round(fix.accuracy), need: FIX_M }) : t("tools.survey.gps") };
+  if (run.phase === "still") return { mark: <PauseIcon size={16} />, line: t("tools.survey.still", { m: MOVE_M }) };
+  if (run.phase === "listening") return { mark: <span className={`survey-dot ${last ? pointTone(last) : "none"}`} />, line: t("tools.survey.listening") };
+  if (last && last.replies.length) {
+    const best = [...last.replies].sort((a, b) => replyScore(b) - replyScore(a))[0]!;
+    return { mark: <span className={`survey-dot ${pointTone(last)}`} />, line: t("tools.survey.heard", { count: last.replies.length, name: surveyNodeName(survey, best.key), snr: formatSnr(replyScore(best)) }) };
+  }
+  return { mark: <span className="survey-dot none" />, line: last ? t("tools.survey.nobody") : t("tools.survey.gps") };
+}
+
+/**
+ * The survey's number, on top of the map while it runs: how many repeaters
+ * answered at the last point, large enough for a glance from behind the
+ * wheel, on a disc of the point's colour. The ring round it fills until the
+ * next ask: by the half minute, then, for a phone that stands still, by the
+ * metres it has yet to go. A tap opens who answered.
+ */
+export function SurveyBadge() {
+  const surveys = useSurveys();
+  const survey = surveys.run ? (surveys.list?.find((s) => s.id === surveys.run!.id) ?? null) : null;
+  return survey && surveys.run ? <RunningBadge survey={survey} run={surveys.run} /> : null;
+}
+
+function RunningBadge({ survey, run }: { survey: Survey; run: SurveyRun }) {
+  const now = useNow();
+  const phone = usePhone(false);
+  const last = survey.points.at(-1) ?? null;
+  const { line } = runStatus(survey, run, now, phone.fix);
+  // No point can be made now, so there is no number to stand by.
+  const idle = run.phase === "gps" || run.phase === "offline";
+  const listening = run.phase === "listening";
+  const toGo = run.phase === "still" ? metresToGo(phone.fix, last) : null;
+  const waited = run.phase === "wait" && run.lastPingAt !== null ? Math.min(1, (now - run.lastPingAt) / PING_EVERY_MS) : 0;
+  const filled = run.phase === "still" ? (toGo === null ? 1 : 1 - toGo / MOVE_M) : waited;
+  const title = run.phase === "wait" && run.lastPingAt !== null ? t("tools.survey.next", { seconds: Math.ceil((PING_EVERY_MS * (1 - waited)) / 1000) }) : line;
+  return (
+    <button type="button" className={`survey-badge ${idle || !last ? "none" : pointTone(last)}${listening ? " listening" : ""}`} aria-label={line} title={title} onClick={openLastAnswers}>
+      <svg viewBox="0 0 88 88" aria-hidden="true">
+        <circle className="bg" cx="44" cy="44" r="40" />
+        {idle ? null : <circle className="fg" cx="44" cy="44" r="40" pathLength={100} style={listening ? undefined : { strokeDashoffset: 100 * (1 - filled) }} />}
+      </svg>
+      <span className="survey-badge-disc">{run.phase === "offline" ? <LinkOffIcon size={26} /> : run.phase === "gps" ? <LocateIcon size={26} /> : last ? last.replies.length : null}</span>
+      {toGo ? <span className="survey-badge-sub">{t("tools.survey.toGo", { m: toGo })}</span> : null}
     </button>
   );
 }
@@ -105,55 +161,32 @@ function RunningStrip({ survey }: { survey: Survey }) {
 function RunView({ survey, run }: { survey: Survey; run: SurveyRun }) {
   const now = useNow();
   const phone = usePhone(false);
+  const sound = useSurveySound();
   const stats = surveyStats(survey, now);
-  const last = survey.points.at(-1) ?? null;
-  let mark: ReactNode;
-  let line: string;
-  if (run.paused && run.paused.until > now) {
-    mark = <PauseIcon size={16} />;
-    line = t("tools.survey.paused", { time: duration(run.paused.ms) });
-  } else if (run.phase === "offline") {
-    mark = <LinkOffIcon size={16} className="bad" />;
-    line = t("tools.survey.offline");
-  } else if (run.phase === "gps") {
-    mark = <LocateIcon size={16} />;
-    line = phone.fix && phone.fix.accuracy > FIX_M ? t("tools.survey.gpsVague", { m: Math.round(phone.fix.accuracy), need: FIX_M }) : t("tools.survey.gps");
-  } else if (run.phase === "still") {
-    mark = <PauseIcon size={16} />;
-    line = t("tools.survey.still", { m: MOVE_M });
-  } else if (run.phase === "listening") {
-    mark = <span className={`survey-dot ${last ? pointTone(last) : "none"}`} />;
-    line = t("tools.survey.listening");
-  } else if (last && last.replies.length) {
-    const best = [...last.replies].sort((a, b) => replyScore(b) - replyScore(a))[0]!;
-    mark = <span className={`survey-dot ${pointTone(last)}`} />;
-    line = t("tools.survey.heard", { count: last.replies.length, name: surveyNodeName(survey, best.key), snr: formatSnr(replyScore(best)) });
-  } else {
-    mark = <span className="survey-dot none" />;
-    line = last ? t("tools.survey.nobody") : t("tools.survey.gps");
-  }
-  const waiting = run.phase === "wait" && run.lastPingAt !== null;
-  const left = waiting ? Math.max(0, run.lastPingAt! + PING_EVERY_MS - now) : 0;
+  const { mark, line } = runStatus(survey, run, now, phone.fix);
   return (
     <div className="tool survey-run">
       <div className="survey-bar">
         <span className="survey-mark">{mark}</span>
         <span className="survey-title">{t("tools.survey.running", { time: clock(stats.ms), points: t("tools.survey.points", { count: stats.points }) })}</span>
-        {waiting ? (
-          <span className="survey-ring" title={t("tools.survey.next", { seconds: Math.ceil(left / 1000) })}>
-            <svg viewBox="0 0 30 30" aria-hidden="true">
-              <circle className="bg" cx="15" cy="15" r="12" />
-              <circle className="fg" cx="15" cy="15" r="12" style={{ strokeDashoffset: 75.4 * (left / PING_EVERY_MS) }} />
-            </svg>
-            <span>{Math.ceil(left / 1000)}</span>
-          </span>
-        ) : null}
+        <IconButton
+          label={t("tools.survey.sound")}
+          className={`survey-sound${sound ? " on" : ""}`}
+          aria-pressed={sound}
+          onClick={() => {
+            setSurveySound(!sound);
+            // Turned on, it says at once what an answer sounds like.
+            if (!sound) void cue("heard");
+          }}
+        >
+          {sound ? <SoundIcon size={18} /> : <SoundOffIcon size={18} />}
+        </IconButton>
         <Button variant="danger" size="sm" onClick={endSurvey}>
           <StopIcon size={14} />
           {t("tools.survey.stop")}
         </Button>
         {/* Put away, not closed: it goes on under the strip that leads back to it. */}
-        <IconButton label={t("tools.survey.collapse")} onClick={closeTool}>
+        <IconButton label={t("tools.survey.collapse")} className="survey-collapse" onClick={closeTool}>
           <ChevronDownIcon size={18} />
         </IconButton>
         <span className="survey-line muted">{line}</span>

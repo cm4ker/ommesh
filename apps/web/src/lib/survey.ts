@@ -18,8 +18,9 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { AdvType } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
+import { cue } from "./chime.js";
 import { hasPosition } from "./geo.js";
-import { askWhoHears, asksLeft, hearsListening, noteAsk, recentAsks } from "./hears.js";
+import { askWhoHears, asksLeft, hearsListening, LISTEN_MS, noteAsk, recentAsks } from "./hears.js";
 import { noteHeardUs } from "./links.js";
 import { getPhoneState, holdPhone, locateOnce, locateText, LocateError } from "./phonePosition.js";
 import { coreSurvey, coreSurveyStart, coreSurveyStop, onCoreSurvey, relayCarries, type CoreSurveyAnswer } from "./relay.js";
@@ -310,6 +311,8 @@ async function ping(id: string, at: { lat: number; lon: number; accuracy: number
   replaceSurvey(withPoints(survey, [point]));
   setRun({ phase: "wait" });
   persist();
+  // Said aloud for a reader whose eyes are on the road.
+  if (surveySound()) void cue(point.replies.length ? "heard" : "unheard");
 }
 
 // ---- run by the phone's radio core ----
@@ -355,6 +358,9 @@ function applyCore(core: CoreSurvey): void {
     replaceSurvey(withPoints(survey, points));
     persist();
     for (const point of points) for (const r of point.replies) noteHeardUs(r.key, r.us, r.them);
+    // Said aloud as the page's own are, but only a point made just now: not each of those read after a time away.
+    const last = points.at(-1)!;
+    if (points.length === 1 && Date.now() - last.at < 2 * LISTEN_MS && surveySound()) void cue(last.replies.length ? "heard" : "unheard");
   }
   // The core's asks count with the button's.
   if (core.lastPingAt !== null) noteAsk(core.lastPingAt);
@@ -451,6 +457,28 @@ export function discardSurvey(id: string): void {
   if (state.run?.id !== id) return;
   stopSurvey();
   deleteSurvey(id);
+}
+
+const SOUND_KEY = "survey.sound";
+const soundListeners = new Set<() => void>();
+
+/** Whether a point made says so aloud: two notes up for an answer, two down for none. On until turned off. */
+export function surveySound(): boolean {
+  return readSetting(SOUND_KEY, true);
+}
+
+export function setSurveySound(on: boolean): void {
+  writeSetting(SOUND_KEY, on);
+  for (const listener of soundListeners) listener();
+}
+
+function subscribeSound(listener: () => void): () => void {
+  soundListeners.add(listener);
+  return () => soundListeners.delete(listener);
+}
+
+export function useSurveySound(): boolean {
+  return useSyncExternalStore(subscribeSound, surveySound);
 }
 
 const HOLD_KEY = "survey.holdUsed";

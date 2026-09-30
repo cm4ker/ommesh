@@ -26,6 +26,19 @@ export function portDevice(path: string, info: PortInfo): FoundDevice {
   return { id: path, name: path, detail: product ?? known(info.manufacturer), rssi: null, role: "radio" };
 }
 
+// The makers of USB-to-UART chips: Silicon Labs (CP210x), WCH (CH340, CH9102), FTDI, Prolific.
+const BRIDGE_VENDORS = new Set([0x10c4, 0x1a86, 0x0403, 0x067b]);
+
+/**
+ * Whether the port is opened with DTR raised. A radio with USB of its own on TinyUSB (the nRF52
+ * boards: T-Echo, RAK) reads what it is sent but writes nothing back until the host raises it, and
+ * Windows opens a port with it down. A board behind a USB-to-UART chip needs no line, and such
+ * boards wire DTR to the BOOT pin, so there it stays as it was.
+ */
+export function raisesDtr(info: PortInfo | undefined): boolean {
+  return !(info?.type === "USB" && BRIDGE_VENDORS.has(Number(info.vid)));
+}
+
 let plugin: Promise<SerialModule> | null = null;
 function serial(): Promise<SerialModule> {
   plugin ??= import("tauri-plugin-serialplugin-api");
@@ -37,8 +50,9 @@ export class TauriSerialTransport extends BaseTransport {
   private readonly decoder = new StreamFrameDecoder();
 
   constructor(
-    private readonly port: Pick<InstanceType<SerialModule["SerialPort"]>, "open" | "watch" | "writeBinary" | "close" | "writeDataTerminalReady" | "writeRequestToSend">,
+    private readonly port: Pick<InstanceType<SerialModule["SerialPort"]>, "open" | "watch" | "writeBinary" | "close" | "writeDataTerminalReady">,
     readonly label: string,
+    private readonly dtr = true,
   ) {
     super();
   }
@@ -46,11 +60,10 @@ export class TauriSerialTransport extends BaseTransport {
   async open(): Promise<void> {
     try {
       await this.port.open();
-      // On Windows the port opens with DTR off, and a radio on TinyUSB (the nRF52 boards: T-Echo, RAK)
-      // reads what it is sent but writes nothing back until the host raises it. Both lines up, as a
-      // browser's Web Serial and pyserial open a port.
-      await this.port.writeDataTerminalReady(true);
-      await this.port.writeRequestToSend(true);
+      // RTS is never raised. An ESP32 on its own USB reads the two lines as a flashing tool's signals:
+      // a port closed with both up restarts the board into its loader, silent to every later
+      // connection until it is reset by hand. With DTR alone it keeps running (checked on a Xiao C6).
+      if (this.dtr) await this.port.writeDataTerminalReady(true);
       await this.port.watch(
         {
           onData: (data) => {
@@ -122,7 +135,9 @@ export const tauriSerialConnector: Connector = {
     if (!device) throw new Error(t("connect.error.pickPort"));
     const { SerialPort } = await serial();
     const port = new SerialPort({ path: device.id, baudRate: SERIAL_BAUD });
-    const transport = new TauriSerialTransport(port, device.name);
+    // A remembered port carries only its name, so what it is gets read again.
+    const info = (await SerialPort.available_ports().catch(() => ({}) as Record<string, PortInfo>))[device.id];
+    const transport = new TauriSerialTransport(port, device.name, raisesDtr(info));
     await transport.open();
     return transport;
   },

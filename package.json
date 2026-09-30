@@ -8,6 +8,7 @@
     "build": "pnpm -r build",
     "icons": "node scripts/icons.mjs",
     "sounds": "node scripts/sounds.mjs",
+    "people": "node scripts/people.mjs",
     "//": "@meshnet/meshcore is consumed through its dist, so every entry point that loads it rebuilds it first. Without this an edit to the protocol is invisible to the web app until someone remembers to build by hand.",
     "meshcore": "pnpm --filter @meshnet/meshcore build",
     "pretypecheck": "pnpm run meshcore",

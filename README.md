@@ -14,7 +14,7 @@
     <a href="https://github.com/cm4ker/ommesh/actions/workflows/build.yml"><img src="https://github.com/cm4ker/ommesh/actions/workflows/build.yml/badge.svg" alt="Build status" /></a>
     <a href="https://github.com/meshcore-dev/MeshCore"><img src="https://img.shields.io/badge/MeshCore-companion-74ade8" alt="MeshCore companion" /></a>
   </p>
-  <p><a href="#install">Install</a> · <a href="#features">Features</a> · <a href="#screenshots">Screenshots</a> · <a href="#development">Development</a></p>
+  <p><a href="#install">Install</a> · <a href="#features">Features</a> · <a href="#screenshots">Screenshots</a> · <a href="#development">Development</a> · <a href="#people">People</a></p>
 </div>
 
 ![Ommesh desktop: mesh map, nearby nodes and repeater status](docs/screenshots/desktop-mesh.png)
@@ -208,3 +208,22 @@ App artwork has one source: `apps/web/public/icon.svg`. After changing it, run `
 - **iOS:** the shell enables `bluetooth-central` background mode to support the connection while switching apps.
 
 </details>
+
+## People
+
+Ommesh is made by the people who write its code and the people who take it out on real radios and report what they find. Thank you all.
+
+<!-- people:start -->
+<table>
+  <tr>
+    <td align="center" valign="top" width="120"><a href="https://github.com/cm4ker"><img src="https://avatars.githubusercontent.com/u/5909124?v=4&s=128" width="64" height="64" alt="" /><br /><b>cm4ker</b></a><br /><sub>maintainer</sub><br /><sub>17 reports</sub></td>
+    <td align="center" valign="top" width="120"><a href="https://github.com/DyGygg"><img src="https://avatars.githubusercontent.com/u/149152329?v=4&s=128" width="64" height="64" alt="" /><br /><b>DyGygg</b></a><br /><sub>code</sub><br /><sub>31 reports</sub></td>
+    <td align="center" valign="top" width="120"><a href="https://github.com/Wandering79"><img src="https://avatars.githubusercontent.com/u/320853239?v=4&s=128" width="64" height="64" alt="" /><br /><b>Wandering79</b></a><br /><sub>9 reports</sub></td>
+    <td align="center" valign="top" width="120"><a href="https://github.com/Alksndr55"><img src="https://avatars.githubusercontent.com/u/333634127?v=4&s=128" width="64" height="64" alt="" /><br /><b>Alksndr55</b></a><br /><sub>2 reports</sub></td>
+    <td align="center" valign="top" width="120"><a href="https://github.com/deNoi5e"><img src="https://avatars.githubusercontent.com/u/9005584?v=4&s=128" width="64" height="64" alt="" /><br /><b>deNoi5e</b></a><br /><sub>2 reports</sub></td>
+    <td align="center" valign="top" width="120"><a href="https://github.com/LekSPS"><img src="https://avatars.githubusercontent.com/u/119757495?v=4&s=128" width="64" height="64" alt="" /><br /><b>LekSPS</b></a><br /><sub>1 report</sub></td>
+  </tr>
+</table>
+<!-- people:end -->
+
+<sub>The list is written by `pnpm people` from the repository's commits and issues. Opened an issue or sent a change? You are in it.</sub>

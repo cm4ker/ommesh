@@ -1,8 +1,13 @@
 package dev.cm4ker.meshnet;
 
+import android.annotation.SuppressLint;
 import android.app.ActivityManager;
 import android.content.ComponentCallbacks2;
+import android.content.pm.ActivityInfo;
+import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.Point;
+import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -48,6 +53,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(MeshRelayPlugin.class);
         super.onCreate(savedInstanceState);
 
+        holdOrientation();
         drawUnderBars();
 
         // The page draws its text at the system's size itself (SystemTextPlugin); the WebView scaling
@@ -93,6 +99,13 @@ public class MainActivity extends BridgeActivity {
                 setEnabled(true);
             }
         });
+    }
+
+    // A phone unfolded into a tablet, or folded back, turns again or stays upright from then on.
+    @Override
+    public void onConfigurationChanged(Configuration config) {
+        super.onConfigurationChanged(config);
+        holdOrientation();
     }
 
     // The radio core announces what arrives while the page is out of sight and asleep; in front, the page does.
@@ -181,6 +194,37 @@ public class MainActivity extends BridgeActivity {
         webView.destroy();
         new Handler(Looper.getMainLooper()).post(this::recreate);
         return true;
+    }
+
+    /**
+     * A phone stays upright: turned sideways, the Mesh sheet took most of its screen. A tablet turns
+     * every way, and held sideways it has room for the page's desktop layout, the list and the chat
+     * side by side (layout.ts). A tablet is Android's own large screen, 600 dp or more on its shorter
+     * side, and its whole display is measured rather than the window, so a split screen or a
+     * computer's window does not make it a phone. Android 16 already turns a large screen whatever
+     * an app asks; this does the same on the ones before it.
+     */
+    @SuppressLint("SourceLockedOrientationActivity") // Only a phone is held upright.
+    private void holdOrientation() {
+        int wanted = largeScreen() ? ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
+        if (getRequestedOrientation() != wanted) setRequestedOrientation(wanted);
+    }
+
+    @SuppressWarnings("deprecation") // getRealSize is how the display is measured before Android 11.
+    private boolean largeScreen() {
+        int width;
+        int height;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Rect bounds = getWindowManager().getMaximumWindowMetrics().getBounds();
+            width = bounds.width();
+            height = bounds.height();
+        } else {
+            Point size = new Point();
+            getWindowManager().getDefaultDisplay().getRealSize(size);
+            width = size.x;
+            height = size.y;
+        }
+        return Math.min(width, height) / getResources().getDisplayMetrics().density >= 600;
     }
 
     /**

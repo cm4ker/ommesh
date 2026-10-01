@@ -82,6 +82,13 @@
     "many": "К последнему сообщению, ниже {count} новых сообщений",
     "other": "К последнему сообщению, ниже {count} нового сообщения"
   },
+  "chat.toDay": "Перейти к дню",
+  "chat.dayCount": {
+    "one": "{count} сообщение",
+    "few": "{count} сообщения",
+    "many": "{count} сообщений",
+    "other": "{count} сообщения"
+  },
   "chat.logInToPost": "Войдите в {name}, чтобы писать",
   "chat.snr": "{value} дБ",
   "chat.direct": "напрямую",

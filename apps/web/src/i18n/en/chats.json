@@ -70,6 +70,11 @@
     "one": "Latest message, {count} new message below",
     "other": "Latest message, {count} new messages below"
   },
+  "chat.toDay": "Go to a day",
+  "chat.dayCount": {
+    "one": "{count} message",
+    "other": "{count} messages"
+  },
   "chat.logInToPost": "Log in to {name} to post",
   "chat.snr": "{value} dB",
   "chat.direct": "direct",

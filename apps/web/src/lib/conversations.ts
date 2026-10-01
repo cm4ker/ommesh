@@ -171,6 +171,30 @@ export function shownIn(messages: readonly MessageRecord[]): Map<string, Shown> 
   return out;
 }
 
+/** A day of a chat, as the list of days to go to shows it. */
+export interface ChatDay {
+  /** The first message of the day, the one its date line goes above. */
+  id: string;
+  /** That message's time, unix seconds. */
+  at: number;
+  /** How many messages the day holds. */
+  count: number;
+  /** Where the day starts among the chat's messages. */
+  from: number;
+}
+
+/** A chat's days in order, cut where `shownIn` starts a new one. */
+export function daysIn(messages: readonly MessageRecord[], shown: ReadonlyMap<string, Shown>): ChatDay[] {
+  const out: ChatDay[] = [];
+  messages.forEach((m, i) => {
+    const s = shown.get(m.id);
+    if (!s) return;
+    if (s.newDay || out.length === 0) out.push({ id: m.id, at: s.at, count: 0, from: i });
+    out.at(-1)!.count++;
+  });
+  return out;
+}
+
 /** The local calendar day of a time, as a number that grows with the date. */
 function dayNumber(unixSeconds: number): number {
   const date = new Date(unixSeconds * 1000);

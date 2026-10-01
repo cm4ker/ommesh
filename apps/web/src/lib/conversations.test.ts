@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { MessageRecord, SessionState } from "@meshnet/meshcore";
-import { messagesIn, shownIn, summarize } from "./conversations.js";
+import { daysIn, messagesIn, shownIn, summarize } from "./conversations.js";
 
 function message(conversation: string, text: string, receivedAt: number, direction: "in" | "out" = "in", sender: string | null = null): MessageRecord {
   return {
@@ -188,4 +188,21 @@ test("ours sent again goes down to when it went, in the chat and in its row", ()
   );
   assert.equal(shownIn(messagesIn(s, "ch:0")).get(ours.id)!.at, Math.floor(at(9, 20) / 1000));
   assert.equal(summarize(s)[0]?.preview, "You: again");
+});
+
+test("a chat's days start where its date lines go, each with how many messages it holds", () => {
+  const evening = message("ch:0", "evening", at(21, 0, 27), "in", "A");
+  const late = message("ch:0", "late", at(23, 50, 27), "out");
+  const morning = message("ch:0", "morning", at(8, 0, 29), "in", "A");
+  const noon = message("ch:0", "noon", at(12, 0, 29), "out");
+  const night = message("ch:0", "night", at(22, 0, 29), "in", "B");
+  const chat = messagesIn(state([evening, late, morning, noon, night]), "ch:0");
+  assert.deepEqual(
+    daysIn(chat, shownIn(chat)).map((d) => [d.id, d.count, d.from]),
+    [
+      [evening.id, 2, 0],
+      [morning.id, 3, 2],
+    ],
+  );
+  assert.deepEqual(daysIn([], new Map()), []);
 });

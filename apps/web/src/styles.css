@@ -2935,7 +2935,8 @@ html.notices-window #root {
 .screen.chat {
   --chat-room: max(0px, calc(var(--home-bar) - var(--space-2)));
 }
-:root.keyboard-follows .screen.chat > :not(.screen-head) {
+/* The floating date stays where it is, under the head, the top of the list in sight. */
+:root.keyboard-follows .screen.chat > :not(.screen-head, .chat-day-slot) {
   transform: translateY(min(0px, calc(var(--chat-room) - var(--chat-keyboard, 0px))));
   transition: transform 0.25s cubic-bezier(0.38, 0.7, 0.125, 1);
 }
@@ -2970,6 +2971,60 @@ html.notices-window #root {
   color: var(--text-muted);
   font-size: var(--text-xs);
   text-align: center;
+}
+/*
+ * The day of what is at the top of the list, floating over it while it is
+ * scrolled (lib/floatingDay.ts): the date line itself, lifted off the messages
+ * by a shadow. Its box cuts it off at the head as the next day pushes it up.
+ */
+.chat-day-slot {
+  flex: none;
+  position: relative;
+  z-index: 2;
+  height: 0;
+}
+.chat-day {
+  position: absolute;
+  inset: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  height: 48px;
+  padding-top: var(--space-2);
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.chat-day.on {
+  opacity: 1;
+}
+.chat-day .day {
+  height: fit-content;
+  margin: 0;
+  border: 0;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.18);
+  font-family: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+.chat-day.on .day {
+  pointer-events: auto;
+}
+.chat-day .day:hover {
+  color: var(--text);
+}
+/* Where the date lines are drawn hollow, the floating one is filled, or the messages show through it. */
+:root:is([data-look="terminal"], [data-look="lcd"]) .chat-day .day {
+  background: var(--bg);
+}
+/* The list's own date line, while the floating one covers it. */
+.chat-inner .day.under {
+  visibility: hidden;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-day {
+    transition: none;
+  }
 }
 /* Where the messages unread on opening begin; a band across the list, the one place the accent tints it. */
 .unread-line {

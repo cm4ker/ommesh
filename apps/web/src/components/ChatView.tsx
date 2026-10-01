@@ -3,9 +3,10 @@ import { AdvType, isConversationType, isDirect, parseConversation, type ContactR
 import { useBackLayer } from "../lib/back.js";
 import { GEO, MENTION } from "../lib/composer.js";
 import { LINK, linkOf, openLink } from "../lib/webLinks.js";
-import { messagesIn, shownIn, titleOf, type Shown } from "../lib/conversations.js";
+import { daysIn, messagesIn, shownIn, titleOf, type Shown } from "../lib/conversations.js";
 import { nameOfHash, relaysOf } from "../lib/echoes.js";
 import { getOpenAtUnread, takeUnread } from "../lib/firstUnread.js";
+import { useFloatingDay } from "../lib/floatingDay.js";
 import { agoPhrase, dayLabel, emojiOnly, timeOfDay } from "../lib/format.js";
 import { useJumboEmoji } from "../lib/jumboEmoji.js";
 import { moveForKeyboard } from "../lib/keyboard.js";
@@ -311,6 +312,38 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     keepBottom.current = null;
   }, [from]);
 
+  // The date over the list while it is scrolled; tapped, the chat's days to go to, the latest first.
+  const floating = useFloatingDay(scroller);
+  const [toDay, setToDay] = useState<{ id: string } | null>(null);
+  const pickDay = () => {
+    const days = daysIn(messages, shown);
+    const at = messages.findIndex((m) => m.id === floating.day.current);
+    showMenu(
+      days
+        .map((day, i) => ({
+          label: dayLabel(day.at),
+          hint: t("chats.chat.dayCount", { count: day.count }),
+          checked: at >= day.from && (i === days.length - 1 || at < days[i + 1]!.from),
+          onSelect: () => {
+            // A day further up than is drawn is drawn in, with a few above, as a jump to a message is.
+            if (day.from < drawnAt) setFrom(day.from > ABOVE ? messages[day.from - ABOVE]!.id : null);
+            setToDay({ id: day.id });
+          },
+        }))
+        .reverse(),
+      { title: t("chats.chat.toDay") },
+    );
+  };
+  // The day picked comes to the top, its date line where the floating one rests.
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    const line = toDay ? el?.querySelector(`[data-id="${CSS.escape(toDay.id)}"] > .day`) : null;
+    if (!el || !line) return;
+    el.scrollTop += line.getBoundingClientRect().top - floating.restAt();
+    stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    measure();
+  }, [toDay]);
+
   const move = (by: number) => {
     const next = matches[index + by];
     if (next) setPicked(next.id);
@@ -422,6 +455,13 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
           </span>
         </ScreenHead>
       )}
+
+      {/* Outside the list, so a finger on the date is not taken for scrolling; it stays put under the head when the chat rises for the keyboard. */}
+      <div className="chat-day-slot">
+        <div className="chat-day" aria-hidden="true">
+          <button ref={floating.pill} type="button" className="day" tabIndex={-1} onClick={pickDay} />
+        </div>
+      </div>
 
       <div
         className="chat-scroll"

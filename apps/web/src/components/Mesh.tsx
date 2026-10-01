@@ -487,7 +487,7 @@ function useMeshOverlay(selected: string | null, state: SessionState): MapOverla
   const editLegs = useMemo(() => {
     if (tool?.kind !== "route" || !tool.draft) return [];
     const target = state.contacts[tool.key];
-    const ends: (LosEnd | null)[] = [selfEnd(state), ...tool.draft.map((k) => { const r = state.contacts[k] ?? relayOf(k, state.contacts); return r ? contactEnd(r) : null; }), target ? contactEnd(target) : null];
+    const ends: (LosEnd | null)[] = [selfEnd(state), ...tool.draft.map((k) => { const r = state.contacts[k] ?? relayOf(k, state.contacts, tool.key); return r ? contactEnd(r) : null; }), target ? contactEnd(target) : null];
     return ends.slice(1).flatMap((b, i) => {
       const a = ends[i];
       return a && b ? [{ a, b, ha: defaultHeight(a, state.contacts), hb: defaultHeight(b, state.contacts) }] : [];
@@ -678,7 +678,15 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
   }, [hub, whole, hub ? state.neighbours[hub] : null, siftKey]);
   // A kept survey opened is brought into view whole, once.
   const surveyFit = useMemo(() => (survey && survey.endedAt !== null ? { id: `survey:${survey.id}`, points: survey.points.map((p) => [p.lat, p.lon] as [number, number]) } : null), [survey]);
-  const fit = hub ? { id: `${hub}:${whole ? "all" : "part"}:${refit}`, points: fitPoints } : surveyFit;
+  // A route to a node with no place has no node to bring into view: what the map knows of the route comes instead, once.
+  const routeTo = tool?.kind === "route" ? state.contacts[tool.key] : undefined;
+  let routeFit: { id: string; points: [number, number][] } | null = null;
+  if (routeTo && !hasPosition(routeTo.lat, routeTo.lon)) {
+    const points = overlay.lines.flatMap((l): [number, number][] => [[l.from.lat, l.from.lon], [l.to.lat, l.to.lon]]);
+    if (overlay.tail) points.push([overlay.tail.lat, overlay.tail.lon]);
+    routeFit = { id: `route:${routeTo.key}:${points.length > 0}`, points };
+  }
+  const fit = hub ? { id: `${hub}:${whole ? "all" : "part"}:${refit}`, points: fitPoints } : (surveyFit ?? routeFit);
   // A point of it opened, the map goes on following: the answers there are read with the phone still in sight.
   const running = tool?.kind === "survey" && tool.view === "run" && surveying;
   // A new list only when a repeater answers for the first time or one of them moves, so the map is not fitted on every render.

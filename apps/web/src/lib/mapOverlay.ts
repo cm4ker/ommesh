@@ -7,7 +7,7 @@
 
 import { AdvType, contactRoute, type ContactRecord, type SessionState } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
-import { candidatesOfHash } from "./echoes.js";
+import { candidatesOfHash, nameOfHash } from "./echoes.js";
 import { formatRoundDistance, hasPosition } from "./geo.js";
 import { legId } from "./legVerdicts.js";
 import type { Discovery } from "./discovery.js";
@@ -29,6 +29,8 @@ export interface OverlayLine {
   tappable: boolean;
   /** A word at its middle, for a leg the terrain closes. */
   label?: string | undefined;
+  /** Said at its middle, plainer than a label: the relays with no place on the map that the leg goes round. */
+  note?: string | undefined;
   /** How it stands among the rest: heard long ago, behind the one picked, the one picked. */
   mark?: "stale" | "dim" | "on" | "stale dim" | undefined;
 }
@@ -65,6 +67,14 @@ export interface MapOverlay {
   rings?: MapRing[];
   /** The repeaters that answered at a survey's point, by key: their names stand out from the rest. */
   heard?: string[];
+  /** Where a route goes off the map: the last node of it with a place, and the names of those after it. */
+  tail?: MapTail | undefined;
+}
+
+export interface MapTail {
+  lat: number;
+  lon: number;
+  text: string;
 }
 
 /** A circle `km` round a point, with the distance written on it. */
@@ -93,9 +103,9 @@ export function contactEnd(c: ContactRecord): LosEnd | null {
   return hasPosition(c.lat, c.lon) ? { lat: c.lat, lon: c.lon, name: c.name || c.prefix, key: c.key } : null;
 }
 
-/** The contact a hash names, when exactly one relaying contact does and its position is known. */
-export function relayOf(hash: string, contacts: Record<string, ContactRecord>): ContactRecord | null {
-  const found = candidatesOfHash(hash, contacts);
+/** The contact a hash names, when exactly one relaying contact other than the route's end (`not`) does. */
+export function relayOf(hash: string, contacts: Record<string, ContactRecord>, not?: string): ContactRecord | null {
+  const found = candidatesOfHash(hash, contacts, not);
   return found.length === 1 ? found[0]! : null;
 }
 
@@ -122,13 +132,21 @@ export function sameRelays(hashes: string[], relays: string[]): boolean {
   return hashes.length === relays.length && hashes.every((h, i) => relays[i]!.startsWith(h) || h.startsWith(relays[i]!));
 }
 
+/** A relay of a route by name: the contact it is, the one repeater its hash names other than the route's end, or the hash. */
+function hopName(hop: string, contacts: Record<string, ContactRecord>, end: string): string {
+  const c = contacts[hop];
+  return c ? c.name || c.prefix : (nameOfHash(hop, contacts, end) ?? hop);
+}
+
 /**
  * The lines through a chain of nodes, this radio first and the contact
  * last, and a handle on every relay and in the middle of every leg. A node
  * with no place on the map is skipped: the line goes round it, and the leg
- * cannot be tapped for its line of sight.
+ * cannot be tapped for its line of sight. Given the nodes' `names`, a leg
+ * says which it goes round, and the nodes after the last one on the map are
+ * named where the line stops.
  */
-function chainOverlay(nodes: (LosEnd | null)[], relays: string[], toneOf: (leg: number) => LineTone, label: (a: LosEnd, b: LosEnd) => string | undefined, handles: boolean): MapOverlay {
+function chainOverlay(nodes: (LosEnd | null)[], relays: string[], toneOf: (leg: number) => LineTone, label: (a: LosEnd, b: LosEnd) => string | undefined, handles: boolean, names?: string[]): MapOverlay {
   const worse = (a: LineTone, b: LineTone): LineTone => {
     const order: LineTone[] = ["fail", "weak", "fair", "good", "flight", "dest", "unknown", "plain"];
     return order.indexOf(a) <= order.indexOf(b) ? a : b;
@@ -143,12 +161,14 @@ function chainOverlay(nodes: (LosEnd | null)[], relays: string[], toneOf: (leg: 
     if (from) {
       let tone = toneOf(first);
       for (let j = first + 1; j < i; j++) tone = worse(tone, toneOf(j));
-      lines.push({ from, to, tone, tappable: i - first === 1, label: label(from, to) });
+      const round = names && i - first > 1 ? t("mesh.leg.via", { names: names.slice(first + 1, i).join(", ") }) : undefined;
+      lines.push({ from, to, tone, tappable: i - first === 1, label: label(from, to), note: round });
       gaps.push({ kind: "gap", index: first, lat: (from.lat + to.lat) / 2, lon: (from.lon + to.lon) / 2, from, to, key: null, relays });
     }
     from = to;
     first = i;
   }
+  const off = names && from && first < nodes.length - 1 ? { lat: from.lat, lon: from.lon, text: names.slice(first + 1).join(" › ") } : undefined;
   const drawn = (i: number, step: number): LosEnd | null => {
     for (let j = i + step; j >= 0 && j < nodes.length; j += step) if (nodes[j]) return nodes[j]!;
     return null;
@@ -158,7 +178,7 @@ function chainOverlay(nodes: (LosEnd | null)[], relays: string[], toneOf: (leg: 
     const at = nodes[i];
     if (at) hops.push({ kind: "hop", index: i - 1, lat: at.lat, lon: at.lon, from: drawn(i, -1), to: drawn(i, 1), key: at.key, relays });
   }
-  return { lines, pins: [], numbers: {}, handles: handles ? [...gaps, ...hops] : [], pulse: null };
+  return { lines, pins: [], numbers: {}, handles: handles ? [...gaps, ...hops] : [], pulse: null, ...(off ? { tail: off } : {}) };
 }
 
 /** The tone of each leg of a chain, from what a ping measured along it; the legs up to `from` only lead there. */
@@ -173,9 +193,9 @@ function pingTone(ping: Ping | null, legs: number, toPerson: boolean, from = -1)
   };
 }
 
-/** The node a hash names, where it is on the map. */
-function endOfHash(hash: string, contacts: Record<string, ContactRecord>): LosEnd | null {
-  const r = relayOf(hash, contacts);
+/** The node a hash names, where it is on the map; never `not`, the end of the route it is a relay of. */
+function endOfHash(hash: string, contacts: Record<string, ContactRecord>, not?: string): LosEnd | null {
+  const r = relayOf(hash, contacts, not);
   return r ? contactEnd(r) : null;
 }
 
@@ -205,30 +225,31 @@ function checkTrail(ping: Ping | null, nodesOf: (chain: string[]) => { nodes: (L
  * how it sounded when last pinged. A relay whose hash names nobody for sure,
  * or nobody with a position, cannot be drawn; the line then skips it and the
  * leg around it cannot be tapped. Its relays and legs can be dragged, but
- * not while a ping is on its way along them.
+ * not while a ping is on its way along them. A contact with no place of its
+ * own has its route drawn as far as the map knows it, named on from there.
  */
 export function routeOverlay(key: string, state: SessionState, ping: Ping | null): MapOverlay {
   const contact = state.contacts[key];
   if (!contact) return EMPTY_OVERLAY;
   const target = contactEnd(contact);
-  if (!target) return EMPTY_OVERLAY;
   const me = selfEnd(state);
   const toPerson = contact.type !== AdvType.Repeater;
   const measured = ping?.via ? null : ping;
   const trail = checkTrail(measured, (chain) => {
     const relays = measured?.targetInChain ? chain.slice(0, -1) : chain;
-    return { nodes: along(me, relays, target, state.contacts), relays };
+    return { nodes: along(me, relays, target, state.contacts, key), relays };
   });
   // A search still looking, or one that found nothing: what it left is all there is to show.
   if (measured?.search && !measured.search.found) return { ...EMPTY_OVERLAY, lines: trail };
   const relays = shownRelays(contact, ping);
   if (relays === null) return { ...EMPTY_OVERLAY, lines: trail };
-  const nodes = along(me, relays, target, state.contacts);
-  const route = chainOverlay(nodes, relays, pingTone(measured, nodes.length - 1, toPerson), () => undefined, !ping?.running);
+  const nodes = along(me, relays, target, state.contacts, key);
+  const names = [t("mesh.you"), ...relays.map((h) => hopName(h, state.contacts, key)), contact.name || contact.prefix];
+  const route = chainOverlay(nodes, relays, pingTone(measured, nodes.length - 1, toPerson), () => undefined, !ping?.running, names);
   // A way found that came home another way: that way, dashed, from where the trace turned.
   const home = measured?.search?.found && measured.search.back ? measured.search.back : null;
-  const turn = toPerson ? endOfHash(relays[relays.length - 1] ?? "", state.contacts) : target;
-  const back = home && turn ? chainOverlay(along(turn, home, me, state.contacts), home, () => "back", () => undefined, false).lines.map((l) => ({ ...l, tappable: false })) : [];
+  const turn = toPerson ? endOfHash(relays[relays.length - 1] ?? "", state.contacts, key) : target;
+  const back = home && turn ? chainOverlay(along(turn, home, me, state.contacts, key), home, () => "back", () => undefined, false).lines.map((l) => ({ ...l, tappable: false })) : [];
   return { ...route, lines: [...trail, ...back, ...route.lines] };
 }
 
@@ -254,9 +275,9 @@ export function spanOverlay(from: string, to: string | null, state: SessionState
   return { ...way, lines: [...trail, ...way.lines.map((l) => (l.tone === "was" ? { ...l, tappable: false } : l))] };
 }
 
-/** The nodes along relays given as hashes, from `from` to `to`; a relay not on the map is null. */
-function along(from: LosEnd | null, relays: string[], to: LosEnd | null, contacts: Record<string, ContactRecord>): (LosEnd | null)[] {
-  return [from, ...relays.map((h) => endOfHash(h, contacts)), to];
+/** The nodes along relays given as hashes, from `from` to `to`; a relay not on the map is null. `not` is the route's end. */
+function along(from: LosEnd | null, relays: string[], to: LosEnd | null, contacts: Record<string, ContactRecord>, not?: string): (LosEnd | null)[] {
+  return [from, ...relays.map((h) => endOfHash(h, contacts, not)), to];
 }
 
 /**
@@ -275,9 +296,9 @@ export function discoveryOverlay(key: string, state: SessionState, d: Discovery)
     return { ...held, handles: [], pulse: me ? { lat: me.lat, lon: me.lon } : null };
   }
   if (!d.found || !target) return routeOverlay(key, state, null);
-  const out = chainOverlay(along(me, d.found.out, target, state.contacts), d.found.out, () => "found", () => undefined, true);
-  const back = chainOverlay(along(target, d.found.back, me, state.contacts), d.found.back, () => "back", () => undefined, false);
-  const was = d.found.changed && d.before ? chainOverlay(along(me, d.before.relays, target, state.contacts), d.before.relays, () => "was", () => undefined, false) : null;
+  const out = chainOverlay(along(me, d.found.out, target, state.contacts, key), d.found.out, () => "found", () => undefined, true);
+  const back = chainOverlay(along(target, d.found.back, me, state.contacts, key), d.found.back, () => "back", () => undefined, false);
+  const was = d.found.changed && d.before ? chainOverlay(along(me, d.before.relays, target, state.contacts, key), d.before.relays, () => "was", () => undefined, false) : null;
   const plain = (lines: OverlayLine[]) => lines.map((l) => ({ ...l, tappable: false }));
   return { ...out, lines: [...plain(was?.lines ?? []), ...plain(back.lines), ...out.lines] };
 }
@@ -289,12 +310,13 @@ export function discoveryOverlay(key: string, state: SessionState, d: Discovery)
  */
 export function editOverlay(key: string, relays: string[], state: SessionState, blocked: Set<string>, ping: Ping | null): MapOverlay {
   const target = state.contacts[key];
-  const ends = [selfEnd(state), ...relays.map((k) => { const r = state.contacts[k] ?? relayOf(k, state.contacts); return r ? contactEnd(r) : null; }), target ? contactEnd(target) : null];
+  const ends = [selfEnd(state), ...relays.map((k) => { const r = state.contacts[k] ?? relayOf(k, state.contacts, key); return r ? contactEnd(r) : null; }), target ? contactEnd(target) : null];
+  const names = [t("mesh.you"), ...relays.map((k) => hopName(k, state.contacts, key)), target ? target.name || target.prefix : key];
   const toPerson = target?.type !== AdvType.Repeater;
   const pinged = ping?.via && sameRelays(ping.via, relays) ? ping : null;
   const measured = pingTone(pinged, ends.length - 1, toPerson);
   const tone = (i: number): LineTone => (pinged ? measured(i) : i === ends.length - 2 && toPerson ? "dest" : "unknown");
-  const overlay = chainOverlay(ends, relays, tone, (a, b) => (blocked.has(legId(a, b)) ? t("mesh.leg.blocked") : undefined), !pinged?.running);
+  const overlay = chainOverlay(ends, relays, tone, (a, b) => (blocked.has(legId(a, b)) ? t("mesh.leg.blocked") : undefined), !pinged?.running, names);
   const numbers: Record<string, number> = {};
   relays.forEach((k, i) => (numbers[k] = i + 1));
   return { ...overlay, lines: overlay.lines.map((l) => ({ ...l, tappable: true })), numbers };

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { ContactRecord, SessionState } from "@meshnet/meshcore";
-import { neighboursOverlay } from "./mapOverlay.js";
+import { neighboursOverlay, routeOverlay } from "./mapOverlay.js";
 import type { NeighboursTool } from "./meshTool.js";
 import { NO_FILTER, type NeighbourFilter } from "./neighbours.js";
 
@@ -28,4 +28,29 @@ test("the filter leaves out those it hides, and rings the distance it keeps", ()
   const far = neighboursOverlay(tool({ ...NO_FILTER, fromKm: 5, toKm: 50 }), state, false, AT);
   assert.deepEqual(far.lines.map((l) => l.to.key), [FAR]);
   assert.deepEqual(far.rings?.map((r) => [r.km, r.label]), [[5, "5 km"], [50, "50 km"]]);
+});
+
+// A room with no place of its own, held through Tower (on the map), KZN-7 (not) and a relay whose hash is the room's own first byte.
+const TOWER = "a3".repeat(32);
+const KZN = "e4".repeat(32);
+const ROOM = "94".repeat(32);
+const routed = (lat: number) => {
+  const room = { ...contact(ROOM, lat, lat ? 73.1 : 0), name: "Town Room", type: 3, outPathLen: 3, outPath: "a3e494" } as unknown as ContactRecord;
+  return {
+    self: { lat: 55, lon: 73 },
+    contacts: { [TOWER]: { ...contact(TOWER, 55.05, 73), name: "Tower" }, [KZN]: { ...contact(KZN, 0, 0), name: "KZN-7" }, [ROOM]: room },
+  } as unknown as SessionState;
+};
+
+test("a route to a node off the map is drawn as far as the map knows it, and named on from there", () => {
+  const overlay = routeOverlay(ROOM, routed(0), null);
+  assert.deepEqual(overlay.lines.map((l) => [l.from.key, l.to.key]), [["self", TOWER]]);
+  // The relay sharing the room's first byte is not the room itself.
+  assert.deepEqual(overlay.tail, { lat: 55.05, lon: 73, text: "KZN-7 › 94 › Town Room" });
+});
+
+test("a leg that goes round relays off the map says which", () => {
+  const overlay = routeOverlay(ROOM, routed(55.2), null);
+  assert.deepEqual(overlay.lines.map((l) => [l.from.key, l.to.key, l.note ?? null]), [["self", TOWER, null], [TOWER, ROOM, "via KZN-7, 94"]]);
+  assert.equal(overlay.tail, undefined);
 });

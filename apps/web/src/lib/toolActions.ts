@@ -99,11 +99,11 @@ export async function forgetRoute(key: string): Promise<void> {
 /** The relays of the route the radio holds for a contact, as contact keys where a hash names one for sure. */
 function heldRelays(key: string, state: SessionState): string[] {
   const contact = state.contacts[key];
-  return (contact ? (contactRoute(contact) ?? []) : []).map((h) => relayOf(h, state.contacts)?.key ?? h);
+  return (contact ? (contactRoute(contact) ?? []) : []).map((h) => relayOf(h, state.contacts, key)?.key ?? h);
 }
 
 /** The route to `key` being changed to `draft`, in its sheet. */
-function editRoute(key: string, draft: string[]): void {
+export function editRoute(key: string, draft: string[]): void {
   const tool = getMeshTool();
   const route: RouteTool = tool?.kind === "route" && tool.key === key ? tool : { kind: "route", key, draft: null, returnTo: null };
   if (getNav().section !== "mesh" || getNav().meshFocus !== key) showOnMap(key);
@@ -121,7 +121,7 @@ export function dropOnRoute(key: string, handle: MapHandle, onto: string): void 
   const contact = state.contacts[key];
   if (!contact) return;
   const tool = getMeshTool();
-  const relays = tool?.kind === "route" && tool.key === key && tool.draft ? tool.draft : handle.relays.map((h) => state.contacts[h]?.key ?? relayOf(h, state.contacts)?.key ?? h);
+  const relays = tool?.kind === "route" && tool.key === key && tool.draft ? tool.draft : handle.relays.map((h) => state.contacts[h]?.key ?? relayOf(h, state.contacts, key)?.key ?? h);
   const own = handle.kind === "hop" ? relays[handle.index] : undefined;
   if (onto === own) return;
   const inRoute = onto === "self" || onto === key || relays.includes(onto);

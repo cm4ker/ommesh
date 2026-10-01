@@ -4,31 +4,39 @@
  * out along the route and back; when that stays silent it finds where the
  * route breaks and looks for a way round in what the radio has heard, and a
  * way that comes back becomes the route (lib/ping.ts). A point dragged or a
- * repeater tapped on the map starts a change, and the same button checks it
- * and then saves it. Asking the whole mesh (a flood), the way from here to
- * another repeater, and how long a learned route lasts are in ⋯.
+ * repeater tapped on the map starts a change, and so does a relay of the
+ * chain tapped, or the + before its end, which picks one from a list and so
+ * reaches repeaters with no place on the map. The same button checks the
+ * change and then saves it. Asking the whole mesh (a flood), the way from
+ * here to another repeater, and how long a learned route lasts are in ⋯.
  * Everywhere else a route is one row that opens this.
  */
 
 import { AdvType, contactRoute, isConversationType, type ContactRecord, type SessionState } from "@meshnet/meshcore";
-import { useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { t } from "../../i18n/index.js";
 import { discover, forgetDiscovery, undoDiscovery, useDiscovery, type Discovery } from "../../lib/discovery.js";
 import { nameOfHash } from "../../lib/echoes.js";
 import { agoPhrase } from "../../lib/format.js";
 import { legId, useLegVerdicts } from "../../lib/legVerdicts.js";
+import { buildGraph, SELF } from "../../lib/linkGraph.js";
+import { linkBook } from "../../lib/links.js";
 import { formatSnr, quality, qualityWord, type LinkRadio } from "../../lib/los.js";
 import { contactEnd, defaultHeight, relayOf, sameRelays, selfEnd } from "../../lib/mapOverlay.js";
 import { setMeshTool, type LosEnd, type RouteTool } from "../../lib/meshTool.js";
+import { heardAt } from "../../lib/nodes.js";
 import { keepLooking, measuredLegs, ping, ROUNDS, settlePing, stopPing, undoFound, usePing, weakestLeg, type Ping } from "../../lib/ping.js";
+import { relayChoices, type RelayChoice } from "../../lib/relayPick.js";
 import { inMinutes, limitLabel, ROUTE_LIMITS, routeStatus, useNow } from "../../lib/routes.js";
 import { session, useSession } from "../../lib/session.js";
 import { act, toast } from "../../lib/toast.js";
-import { cancelRouteEdit, forgetRoute, openLineOfSight, openRoute, openSpan } from "../../lib/toolActions.js";
+import { cancelRouteEdit, editRoute, forgetRoute, openLineOfSight, openRoute, openSpan } from "../../lib/toolActions.js";
 import { Button, IconButton } from "../../ui/Button.js";
+import { SearchField } from "../../ui/Field.js";
 import { ActionRow, glue, LinkRow } from "../../ui/List.js";
 import { showMenu, type MenuItem } from "../../ui/Menu.js";
-import { AlertIcon, BackIcon, CheckIcon, ChevronRightIcon, MoreIcon } from "../Icons.js";
+import { Sheet } from "../../ui/Sheet.js";
+import { AlertIcon, BackIcon, CheckIcon, ChevronRightIcon, MoreIcon, PlusIcon } from "../Icons.js";
 import { SignIn } from "../node/SignIn.js";
 
 export function QualityChip({ snr, numbers = true }: { snr: number; numbers?: boolean }) {
@@ -69,9 +77,9 @@ function relaysOf(p: Ping): string[] {
   return p.targetInChain ? p.chain.slice(0, -1) : p.chain;
 }
 
-/** Each node along the route, this radio first, by name where the hash names one contact. */
+/** Each node along the route, this radio first, by name where the hash names one contact other than the end. */
 function namesAlong(p: Ping, contact: ContactRecord, state: SessionState): string[] {
-  return [t("tools.you"), ...relaysOf(p).map((h) => nameOfHash(h, state.contacts) ?? h), contact.name || contact.prefix];
+  return [t("tools.you"), ...relaysOf(p).map((h) => nameOfHash(h, state.contacts, contact.key) ?? h), contact.name || contact.prefix];
 }
 
 /** Where along a chain it broke: after the node before the leg, or at the first hop. */
@@ -83,7 +91,7 @@ export function breakWords(p: Ping, state: SessionState): string | null {
 
 /** The two ends of leg `index` of the route, when both are on the map. */
 function legEnds(p: Ping, contact: ContactRecord, state: SessionState, index: number) {
-  const ends = [selfEnd(state), ...relaysOf(p).map((h) => { const r = relayOf(h, state.contacts); return r ? contactEnd(r) : null; }), contactEnd(contact)];
+  const ends = [selfEnd(state), ...relaysOf(p).map((h) => { const r = relayOf(h, state.contacts, contact.key); return r ? contactEnd(r) : null; }), contactEnd(contact)];
   const a = ends[index];
   const b = ends[index + 1];
   return a && b ? { a, b } : null;
@@ -105,10 +113,11 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
   const d = useDiscovery(tool.key);
   const [signingIn, setSigningIn] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [picking, setPicking] = useState<Picking | null>(null);
   const contact = state.contacts[tool.key];
   const self = state.self;
   const radio: LinkRadio | null = self ? { frequencyKhz: self.frequencyKhz, bandwidthHz: self.bandwidthHz, spreadingFactor: self.spreadingFactor, codingRate: self.codingRate, txPowerDbm: self.txPower } : null;
-  const nodeOf = (k: string) => state.contacts[k] ?? relayOf(k, state.contacts);
+  const nodeOf = (k: string) => state.contacts[k] ?? relayOf(k, state.contacts, tool.key);
   // The legs of a change the terrain closes, warned of before it is kept.
   const draftEnds = tool.draft ? [selfEnd(state), ...tool.draft.map((k) => { const c = nodeOf(k); return c ? contactEnd(c) : null; }), contact ? contactEnd(contact) : null] : [];
   const draftLegs = draftEnds.slice(1).flatMap((b, i) => {
@@ -180,19 +189,32 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
     sub = bits ? bits[0]!.toUpperCase() + bits.slice(1) : held.length === 0 ? t("tools.route.heardDirect") : t("tools.route.keptUntil");
   }
 
-  const relayName = (k: string) => nodeOf(k)?.name || (state.contacts[k] ? k.slice(0, 8) : (nameOfHash(k, state.contacts) ?? k));
+  // The relays the chain shows, as contact keys where a hash names one for sure: a change starts from them.
   const shownChain = heldPing && !heldPing.running && heldPing.search?.found ? relaysOf(heldPing) : null;
-  const chain: string[] | null = editing
-    ? tool.draft!.map(relayName)
-    : flooding
-      ? null
-      : shownChain
-        ? shownChain.map((h) => nameOfHash(h, state.contacts) ?? h)
-        : held
-          ? held.map((h) => nameOfHash(h, state.contacts) ?? h)
-          : relaysItself && heldPing?.chain.length && !heldPing.search
-            ? relaysOf(heldPing).map((h) => nameOfHash(h, state.contacts) ?? h)
-            : null;
+  const shownHops = editing ? tool.draft! : (shownChain ?? held ?? (relaysItself && heldPing?.chain.length && !heldPing.search ? relaysOf(heldPing) : []));
+  const hops = shownHops.map((h) => (state.contacts[h] ? h : (relayOf(h, state.contacts, key)?.key ?? h)));
+  const hopName = (k: string) => {
+    const c = nodeOf(k);
+    return c ? c.name || c.prefix : k;
+  };
+  const change = (next: string[]) => editRoute(key, next);
+  const hopMenu = (i: number) =>
+    showMenu(
+      [
+        { label: t("tools.route.hop.replace"), onSelect: () => setPicking({ mode: "replace", index: i }) },
+        { label: t("tools.route.hop.before"), onSelect: () => setPicking({ mode: "before", index: i }) },
+        { label: t("tools.route.hop.remove"), danger: true, onSelect: () => change(hops.filter((_, j) => j !== i)) },
+      ],
+      { title: hopName(hops[i]!) },
+    );
+  const picked = (k: string) => {
+    if (!picking) return;
+    const next = [...hops];
+    if (picking.mode === "replace") next[picking.index] = k;
+    else next.splice(picking.index, 0, k);
+    setPicking(null);
+    change(next);
+  };
 
   // ---- the one button, and a link when one is worth it ----
 
@@ -259,19 +281,29 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
   return (
     <div className="tool route-sheet">
       <SheetHead title={t("tools.route.to", { name })} sub={sub} onBack={onClose} onMore={settings} />
-      {chain ? (
+      {flooding ? null : (
         <p className="tool-line chain">
           <span className="muted">{t("tools.you")}</span>
-          {chain.map((n, i) => (
-            <span key={`${i}:${n}`}>
-              <span className="sep">›</span>
-              <b>{n}</b>
-            </span>
-          ))}
+          {hops.map((k, i) => {
+            const c = nodeOf(k);
+            return (
+              <span key={`${i}:${k}`}>
+                <span className="sep">›</span>
+                <button type="button" className="chain-hop" disabled={running} onClick={() => hopMenu(i)}>
+                  {hopName(k)}
+                  {c && contactEnd(c) ? null : <i className="chain-off" title={t("tools.route.offMap")} aria-label={t("tools.route.offMap")} />}
+                </button>
+              </span>
+            );
+          })}
+          <span className="sep">›</span>
+          <button type="button" className="chain-add" disabled={running} aria-label={t("tools.route.addRelay")} title={t("tools.route.addRelay")} onClick={() => setPicking({ mode: "before", index: hops.length })}>
+            <PlusIcon size={14} />
+          </button>
           <span className="sep">›</span>
           <span className="muted">{name}</span>
         </p>
-      ) : null}
+      )}
       {editing
         ? draftLegs
             .filter((l) => verdicts.get(legId(l.a, l.b)) === "blocked")
@@ -315,7 +347,84 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
           void discover(key);
         }}
       />
+      <RelayPicker picking={picking} hops={hops} hopName={hopName} target={contact} size={size} onPick={picked} onClose={() => setPicking(null)} />
     </div>
+  );
+}
+
+/** Where a relay picked from the list goes: in place of relay `index`, or in before it (at the end, before the contact). */
+interface Picking {
+  mode: "replace" | "before";
+  index: number;
+}
+
+/**
+ * The repeaters to pick the next relay from, those heard next to the one
+ * before it first (lib/relayPick.ts), with a field to find one by name or
+ * hash. A repeater that shares no position is as easy to pick as any.
+ */
+function RelayPicker({ picking, hops, hopName, target, size, onPick, onClose }: { picking: Picking | null; hops: string[]; hopName: (k: string) => string; target: ContactRecord; size: number; onPick: (key: string) => void; onClose: () => void }) {
+  const state = useSession();
+  const [query, setQuery] = useState("");
+  const open = picking !== null;
+  useEffect(() => {
+    if (open) setQuery("");
+  }, [open]);
+  // The book is read as the list opens; what is heard while it is open waits for the next time.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const graph = useMemo(() => (open ? buildGraph(linkBook(), state, Date.now()) : null), [open]);
+  const index = picking?.index ?? 0;
+  const prev = index === 0 ? SELF : hops[index - 1]!;
+  const choices = useMemo(() => (graph ? relayChoices(state, graph, { prev, target: target.key, taken: hops, query, size }) : { near: [], rest: [] }), [graph, state, prev, target.key, hops, query, size]);
+  const prevName = prev === SELF ? null : hopName(prev);
+  const title = !picking
+    ? ""
+    : picking.mode === "replace"
+      ? t("tools.route.pick.instead", { name: hopName(hops[index]!) })
+      : index < hops.length
+        ? t("tools.route.pick.before", { name: hopName(hops[index]!) })
+        : prevName
+          ? t("tools.route.pick.after", { name: prevName })
+          : t("tools.route.pick.afterYou");
+  const targetName = target.name || target.prefix;
+  const row = (c: RelayChoice) => {
+    const bits: ReactNode[] = [];
+    if (c.nearEnd) bits.push(<span key="end" className="pick-near">{t("tools.route.pick.nearEnd", { name: targetName })}</span>);
+    if (!c.placed) bits.push(t("tools.route.offMap"));
+    if (c.contact && heardAt(c.contact) > 0) bits.push(t("tools.route.pick.heard", { time: agoPhrase(heardAt(c.contact)) }));
+    return (
+      <li key={c.key}>
+        <button type="button" className="row" onClick={() => onPick(c.key)}>
+          <span className="row-main">
+            <span className="row-title">{c.contact ? c.contact.name || c.contact.prefix : t("tools.route.pick.unknown")}</span>
+            <span className="row-sub muted">{bits.flatMap((b, i) => (i ? [" · ", b] : [b]))}</span>
+          </span>
+          <span className="pick-hash mono muted">{c.key.slice(0, size * 2)}</span>
+        </button>
+      </li>
+    );
+  };
+  return (
+    <Sheet open={open} onClose={onClose} title={title}>
+      <SearchField value={query} onValue={setQuery} placeholder={t("tools.route.pick.find")} aria-label={t("tools.route.pick.find")} />
+      {choices.near.length ? (
+        <>
+          <div className="group-title">{prevName ? t("tools.route.pick.near", { name: prevName }) : t("tools.route.pick.nearYou")}</div>
+          <ul className="list" role="list">
+            {choices.near.map(row)}
+          </ul>
+        </>
+      ) : null}
+      {choices.rest.length ? (
+        <>
+          {choices.near.length ? <div className="group-title">{t("tools.route.pick.rest")}</div> : null}
+          <ul className="list" role="list">
+            {choices.rest.map(row)}
+          </ul>
+        </>
+      ) : null}
+      {choices.near.length + choices.rest.length === 0 ? <p className="group-note">{query ? t("tools.route.pick.noneNamed") : t("tools.route.pick.none")}</p> : null}
+    </Sheet>
   );
 }
 

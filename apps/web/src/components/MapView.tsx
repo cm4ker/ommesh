@@ -798,7 +798,20 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
         const el = element("map-leg-label", escapeHtml(line.label), [64, 18]);
         el.style.pointerEvents = "none";
         overlayMarkers.current.push(new Marker({ element: el, offset: [0, -21] }).setLngLat([(line.from.lon + line.to.lon) / 2, (line.from.lat + line.to.lat) / 2]).addTo(m));
+      } else if (line.note) {
+        // The relays it goes round, under the leg's middle, so the point that drags it stays free.
+        const el = document.createElement("div");
+        el.className = "map-leg-note";
+        el.textContent = line.note;
+        overlayMarkers.current.push(new Marker({ element: el, offset: [0, 21] }).setLngLat([(line.from.lon + line.to.lon) / 2, (line.from.lat + line.to.lat) / 2]).addTo(m));
       }
+    }
+    if (overlay.tail) {
+      // Where the route leaves the map: who it goes on to, under the last node of it that has a place, clear of its name.
+      const el = document.createElement("div");
+      el.className = "map-tail";
+      el.innerHTML = `<b>› ${escapeHtml(overlay.tail.text)}</b><small>${escapeHtml(t("mesh.leg.offMap"))}</small>`;
+      overlayMarkers.current.push(new Marker({ element: el, anchor: "top", offset: [0, 16] }).setLngLat([overlay.tail.lon, overlay.tail.lat]).addTo(m));
     }
     for (const pin of overlay.pins) {
       const el = element("map-spot", "<span></span>", [20, 20]);

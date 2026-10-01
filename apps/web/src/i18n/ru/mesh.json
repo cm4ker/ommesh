@@ -76,6 +76,8 @@
   "terrainAttribution": "Рельеф: Mapzen, AWS Open Data",
   "leg.breaks": "обрыв",
   "leg.blocked": "преграда",
+  "leg.via": "через {names}",
+  "leg.offMap": "нет на карте",
   "kind.person": "Человек",
   "kind.repeater": "Репитер",
   "kind.room": "Комната",

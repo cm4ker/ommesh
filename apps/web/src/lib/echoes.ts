@@ -21,10 +21,11 @@ export function relaysOf(echoes: MessageEcho[], contacts: Record<string, Contact
 /**
  * The contacts a path hash could be: those whose key starts with it, the
  * repeaters and rooms among them when there are any, since only they relay.
- * With one-byte hashes on a busy mesh there are often several.
+ * With one-byte hashes on a busy mesh there are often several. `not` is the
+ * node a route leads to, which is never a relay on its own way.
  */
-export function candidatesOfHash(hash: string, contacts: Record<string, ContactRecord>): ContactRecord[] {
-  const all = Object.values(contacts).filter((c) => c.key.startsWith(hash));
+export function candidatesOfHash(hash: string, contacts: Record<string, ContactRecord>, not?: string): ContactRecord[] {
+  const all = Object.values(contacts).filter((c) => c.key.startsWith(hash) && c.key !== not);
   const relaying = all.filter((c) => c.type === AdvType.Repeater || c.type === AdvType.Room);
   return relaying.length > 0 ? relaying : all;
 }
@@ -69,7 +70,7 @@ export function spreadOf(echoes: MessageEcho[]): Spread {
   };
 }
 
-export function nameOfHash(hash: string, contacts: Record<string, ContactRecord>): string | null {
-  const matches = candidatesOfHash(hash, contacts);
+export function nameOfHash(hash: string, contacts: Record<string, ContactRecord>, not?: string): string | null {
+  const matches = candidatesOfHash(hash, contacts, not);
   return matches.length === 1 ? matches[0]!.name : null;
 }

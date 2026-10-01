@@ -76,6 +76,8 @@
   "terrainAttribution": "Terrain: Mapzen, AWS Open Data",
   "leg.breaks": "breaks",
   "leg.blocked": "blocked",
+  "leg.via": "via {names}",
+  "leg.offMap": "not on the map",
   "kind.person": "Person",
   "kind.repeater": "Repeater",
   "kind.room": "Room",

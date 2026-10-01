@@ -1,11 +1,13 @@
 import { useRef, useSyncExternalStore } from "react";
 import { useBatteryType } from "../lib/batteryType.js";
+import { useFollowStatus } from "../lib/followPhone.js";
 import { t } from "../i18n/index.js";
 import { battery, batteryPercent, lowCharge } from "../lib/format.js";
 import { disconnect, useLink } from "../lib/link.js";
 import { useLookalikePrefs } from "../lib/lookalikes.js";
 import { openRadioPage, type RadioPage } from "../lib/nav.js";
 import { canHover } from "../lib/platform.js";
+import { placeOpen } from "../lib/privacy.js";
 import { PULL_TRIGGER, usePull } from "../lib/pull.js";
 import { resync, STEP_COUNT, stepLabel, useResync } from "../lib/resync.js";
 import { summaryOf, useNoticePrefs } from "../lib/noticePrefs.js";
@@ -19,7 +21,7 @@ import { Button, IconButton } from "../ui/Button.js";
 import { Group, LinkRow } from "../ui/List.js";
 import { showMenu } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
-import { AirIcon, AlertIcon, BellIcon, FileIcon, GaugeIcon, InfoIcon, LinkIcon, LocationIcon, LogIcon, PaletteIcon, PowerIcon, RadioIcon, RefreshIcon, ShieldIcon, SlidersIcon, TextIcon, UsersIcon, WavesIcon } from "./Icons.js";
+import { AirIcon, AlertIcon, BellIcon, FileIcon, GaugeIcon, InfoIcon, LinkIcon, LogIcon, PaletteIcon, PersonIcon, PowerIcon, RadioIcon, RefreshIcon, ShieldIcon, SlidersIcon, TextIcon, UsersIcon, WavesIcon } from "./Icons.js";
 import { presetName, radioTitle } from "./RadioPages.js";
 import { readingsSummary } from "./Readings.js";
 
@@ -50,6 +52,7 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
   const cell = useBatteryType(self?.key);
   const low = !!state.battery && lowCharge(state.battery.mv, cell);
   const own = state.telemetry["self"];
+  const gps = useFollowStatus(self?.key).gps;
   const row = (page: RadioPage, icon: React.ReactNode, value?: string) => (
     <LinkRow key={page} icon={icon} label={radioTitle(page)} value={value} tone={page === "power" ? "danger" : undefined} selected={selected === page} onClick={() => openRadioPage(page)} />
   );
@@ -128,11 +131,11 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
         </div>
 
         <Group title={t("radio.home.thisRadio")}>
-          {row("name", <LocationIcon size={17} />, self?.name)}
+          {row("name", <PersonIcon size={17} />, self?.name)}
           {row("frequency", <RadioIcon size={17} />, self ? t("radio.home.presetPower", { preset: presetName(self), tx: self.txPower }) : undefined)}
           {row("readings", <GaugeIcon size={17} />, [state.battery ? `${batteryPercent(state.battery.mv, cell)}%` : null, own ? readingsSummary(own.readings) : null].filter(Boolean).join(" · ") || undefined)}
           {row("contacts", <UsersIcon size={17} />, contactsValue)}
-          {row("privacy", <ShieldIcon size={17} />)}
+          {row("privacy", <ShieldIcon size={17} />, self ? (placeOpen(self, gps) ? t("radio.privacy.placeShown") : t("radio.privacy.placeHidden")) : undefined)}
           {row("advanced", <SlidersIcon size={17} />)}
         </Group>
         <Group title={t("radio.home.thisApp")}>

@@ -554,6 +554,17 @@ export function isFavourite(contact: ContactRecord): boolean {
   return (contact.flags & ContactFlag.Favourite) !== 0;
 }
 
+/** The three bits that let a contact read what the radio opens to trusted contacts only. */
+const TRUSTED = ContactFlag.TelemetryBase | ContactFlag.TelemetryLocation | ContactFlag.TelemetryEnvironment;
+
+/**
+ * Whether a contact may read what the radio opens to trusted contacts. Another
+ * app may have set only some of the three bits; any one of them counts.
+ */
+export function isTrusted(contact: ContactRecord): boolean {
+  return (contact.flags & TRUSTED) !== 0;
+}
+
 export function contactHops(contact: ContactRecord): number | null {
   return contact.outPathLen === 0xff ? null : contact.outPathLen & 63;
 }
@@ -1598,6 +1609,14 @@ export class MeshSession {
     const contact = this.state.contacts[key];
     if (!contact) throw new Error("unknown contact");
     const flags = favourite ? contact.flags | ContactFlag.Favourite : contact.flags & ~ContactFlag.Favourite;
+    await this.writeContact({ ...contact, flags });
+  }
+
+  /** Trusts a contact with all three kinds at once; the radio's own settings say which of them it gets. */
+  async setTrusted(key: string, trusted: boolean): Promise<void> {
+    const contact = this.state.contacts[key];
+    if (!contact) throw new Error("unknown contact");
+    const flags = trusted ? contact.flags | TRUSTED : contact.flags & ~TRUSTED;
     await this.writeContact({ ...contact, flags });
   }
 

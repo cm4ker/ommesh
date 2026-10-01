@@ -7,6 +7,8 @@ import { ago, agoPhrase, batteryPercent, errorShare, fullDate, lowCharge, span }
 import { openNodePage, push, showOnMap } from "../lib/nav.js";
 import { isAdmin, nodeClock, type NodeClock } from "../lib/nodes.js";
 import { session, useSession } from "../lib/session.js";
+import { reach } from "../lib/privacy.js";
+import { useFollowStatus } from "../lib/followPhone.js";
 import { act, toast } from "../lib/toast.js";
 import { Confirm } from "../ui/Dialog.js";
 import { ActionRow, AirMark, ChoiceRow, Group, InfoRow, LinkRow } from "../ui/List.js";
@@ -352,6 +354,7 @@ export function OwnReadings() {
   const self = state.self;
   const online = state.status === "ready";
   const chosen = useChosenBatteryType(self?.key);
+  const gps = useFollowStatus(self?.key).gps;
   const [radio, setRadio] = useState<RadioStats | null>(null);
   const [core, setCore] = useState<CoreStats | null>(null);
   const [picking, setPicking] = useState(false);
@@ -406,7 +409,12 @@ export function OwnReadings() {
       <Group>
         <LinkRow
           label={t("radio.sensors.who")}
-          hint={t("radio.sensors.whoValue", { battery: mode(self.telemetryModeBase), location: mode(self.telemetryModeLocation), sensors: mode(self.telemetryModeEnvironment) })}
+          hint={
+            // A position goes in an answer only from a radio's own GPS, so without one there is none to give.
+            gps === true
+              ? t("radio.sensors.whoValue", { battery: mode(self.telemetryModeBase), location: mode(reach(self.telemetryModeLocation, self.telemetryModeBase)), sensors: mode(reach(self.telemetryModeEnvironment, self.telemetryModeBase)) })
+              : t("radio.sensors.whoValueNoGps", { battery: mode(self.telemetryModeBase), sensors: mode(reach(self.telemetryModeEnvironment, self.telemetryModeBase)) })
+          }
           onClick={() => push({ kind: "radio", page: "privacy" })}
         />
       </Group>
@@ -415,11 +423,11 @@ export function OwnReadings() {
   );
 }
 
-/** Who may read this radio's telemetry, as the privacy page words it. */
+/** Who may ask for this radio's readings, as the privacy page words it. */
 function telemetryModes(): { value: number; label: string }[] {
   return [
     { value: TelemMode.Deny, label: t("radio.telemetry.nobody") },
-    { value: TelemMode.AllowFlags, label: t("radio.telemetry.flagged") },
+    { value: TelemMode.AllowFlags, label: t("radio.telemetry.trusted") },
     { value: TelemMode.AllowAll, label: t("radio.telemetry.anyone") },
   ];
 }

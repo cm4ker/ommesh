@@ -1,9 +1,9 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { ByteWriter, fromHex } from "./protocol/bytes.js";
-import { Cmd, Push, Resp, TxtType } from "./protocol/codes.js";
+import { Cmd, ContactFlag, Push, Resp, TxtType } from "./protocol/codes.js";
 import { groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
-import { channelConversation, CLOCK_RESET_TIME, ClockAheadError, contactConversation, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
+import { channelConversation, CLOCK_RESET_TIME, ClockAheadError, contactConversation, isTrusted, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
 import { BaseTransport } from "./transport.js";
 import { TimeoutError, TransportClosedError } from "./client.js";
 
@@ -2266,4 +2266,22 @@ test("history from a file comes in once, beside what is here", async () => {
   assert.equal(after.contacts[gone.key], undefined);
   assert.equal(after.removed[heard.key], undefined);
   await session.disconnect();
+});
+
+test("trusting a contact sets its three telemetry bits and keeps its favourite mark", async () => {
+  const { radio, session } = await nodeSession();
+  await session.setFavourite(HILL_KEY, true);
+  await session.setTrusted(HILL_KEY, true);
+  const write = radio.sent.filter((f) => f[0] === Cmd.AddUpdateContact).at(-1)!;
+  assert.equal(write[34], ContactFlag.Favourite | ContactFlag.TelemetryBase | ContactFlag.TelemetryLocation | ContactFlag.TelemetryEnvironment);
+  assert.ok(isTrusted(session.getState().contacts[HILL_KEY]!));
+  await session.setTrusted(HILL_KEY, false);
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.AddUpdateContact).at(-1)![34], ContactFlag.Favourite);
+  assert.ok(!isTrusted(session.getState().contacts[HILL_KEY]!));
+});
+
+test("a contact another app trusted with one kind only still counts as trusted", () => {
+  const contact = { flags: ContactFlag.TelemetryLocation } as Parameters<typeof isTrusted>[0];
+  assert.ok(isTrusted(contact));
+  assert.ok(!isTrusted({ ...contact, flags: ContactFlag.Favourite }));
 });

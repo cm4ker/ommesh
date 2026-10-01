@@ -1805,6 +1805,10 @@ mark {
 .screen-scroll > .group-note {
   margin: var(--space-3) var(--space-3) 0;
 }
+/* A search over a page's list, as on Settings › Trusted contacts. */
+.screen-scroll > .search {
+  margin-top: var(--space-3);
+}
 .line {
   position: relative;
   width: 100%;

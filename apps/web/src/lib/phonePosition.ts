@@ -38,7 +38,7 @@ export function locateText(error: unknown): string {
   if (problem === "denied") return t("radio.locate.denied");
   if (problem === "off") return t("radio.locate.off");
   if (problem === "timeout") return t("radio.locate.timeout");
-  return t("radio.name.noPosition");
+  return t("radio.position.none");
 }
 
 /** A first fix with no network, GPS alone, can take most of a minute; a mesh is often used with none. */

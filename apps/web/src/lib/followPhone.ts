@@ -165,7 +165,7 @@ async function move(key: string): Promise<void> {
   if (problem === "denied") {
     // Leave taken away in the phone's settings: following stops, and says why.
     setFollowPhone(key, false);
-    toast(t("radio.name.followDenied"), "error");
+    toast(t("radio.position.followDenied"), "error");
     return;
   }
   const self = session.getState().self;

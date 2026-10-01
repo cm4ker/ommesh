@@ -33,10 +33,9 @@ import { AdvType, channelConversation, type MessageRecord, type SessionState } f
 import { channelAccess, type ChannelAccess } from "./channels.js";
 import { titleOf } from "./conversations.js";
 import { t } from "../i18n/index.js";
-import { isDirect, mentionsMe } from "./noticePrefs.js";
+import { isDirect, mentionsMe, type NoticeKind } from "./noticePrefs.js";
 
-/** What a notice is about, which on Android is its channel: the reader sets each one's sound in the system. */
-export type NoticeKind = "direct" | "chats" | "nodes";
+export type { NoticeKind };
 
 /**
  * Whose circle a notice shows, as `Avatar` draws it from a name: the person

@@ -41,9 +41,8 @@ final class MeshRelay: NSObject {
     private static let rx = CBUUID(string: "6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
     private static let tx = CBUUID(string: "6E400003-B5A3-F393-E0A9-E50E24DCCA9E")
     private static let inboxesKey = "meshnet.relay.inboxes"
-    /// The page's notice settings and names for the core, and the signal its notices ring with.
+    /// The page's notice settings, sounds included, and names for the core.
     private static let watchKey = "meshnet.relay.watch"
-    private static let soundKey = "meshnet.relay.sound"
     /// The survey running, points and all, as the core gives it: what is left of it if the app stops under it.
     private static let surveyKey = "meshnet.relay.survey"
 
@@ -140,7 +139,7 @@ final class MeshRelay: NSObject {
                 saveInboxes()
             case let .post(notice):
                 // A burst of news rings with its first notice only.
-                let sound = notice.silent ? nil : UserDefaults.standard.string(forKey: MeshRelay.soundKey)
+                let sound = notice.silent ? nil : notice.sound
                 let shown = PageNotice(id: Int(notice.id), tag: notice.tag, title: notice.title, body: notice.body, sound: sound)
                 MeshWatch.show(shown) { error in
                     if let error { NSLog("MeshRelay: a notice was not shown: %@", error.localizedDescription) }
@@ -257,11 +256,10 @@ final class MeshRelay: NSObject {
         run(core.fromClient(client: .page, frame: frame, write: lastWrite))
     }
 
-    /// The page's notice settings and names, as the JSON the core reads (`WatchConfig`), and the
-    /// signal file its notices ring with; kept, for a start without the page.
-    func configure(json: String, sound: String?) {
+    /// The page's notice settings, sounds included, and names, as the JSON the core reads
+    /// (`WatchConfig`); kept, for a start without the page.
+    func configure(json: String) {
         UserDefaults.standard.set(json, forKey: MeshRelay.watchKey)
-        UserDefaults.standard.set(sound, forKey: MeshRelay.soundKey)
         run(core.configure(json: json))
     }
 
@@ -583,8 +581,8 @@ extension MeshRelay: CBPeripheralDelegate {
 /// `state()`, and a `state` event `{ linked, on, computer }` whenever one of
 /// them changes. While `attach()`ed, the page talks to the radio through here:
 /// `send({ data })` (base64), answered once the frame has gone to the radio,
-/// and `frame` events `{ data }`. `configure({ json, sound })` hands the radio
-/// core the page's notice settings and names, `announced({ tag })` what the
+/// and `frame` events `{ data }`. `configure({ json })` hands the radio core
+/// the page's notice settings, sounds included, and names, `announced({ tag })` what the
 /// page announced itself.
 ///
 /// A coverage survey is run by the core, so it goes on while the page sleeps:
@@ -713,9 +711,8 @@ final class MeshRelayPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("configure needs json")
             return
         }
-        let sound = call.getString("sound")
         DispatchQueue.main.async {
-            MeshRelay.shared.configure(json: json, sound: sound)
+            MeshRelay.shared.configure(json: json)
             call.resolve()
         }
     }

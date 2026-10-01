@@ -167,6 +167,8 @@
   "notices.label": "Notifications",
   "notices.mentionsHint": "Only when someone writes your name.",
   "notices.default": "Default ({level})",
+  "notices.sound": "Sound",
+  "notices.soundDefault": "Default ({sound})",
   "notices.all": "All",
   "notices.mentions": "Mentions",
   "message.gone": "This message is gone.",

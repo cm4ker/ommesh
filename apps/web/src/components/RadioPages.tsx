@@ -8,7 +8,9 @@ import { disconnect, useLink } from "../lib/link.js";
 import { setLookalikePrefs, useLookalikePrefs } from "../lib/lookalikes.js";
 import { setOpenAtUnread, useOpenAtUnread } from "../lib/firstUnread.js";
 import { setJumboEmoji, useJumboEmoji } from "../lib/jumboEmoji.js";
-import { SIGNALS, setNoticePrefs, useNoticePrefs, type Corner, type NoticePrefs } from "../lib/noticePrefs.js";
+import { isDirect, oneSignal, SIGNALS, setNoticePrefs, useNoticePrefs, type Corner, type NoticeKind, type NoticePrefs } from "../lib/noticePrefs.js";
+import { titleOf } from "../lib/conversations.js";
+import { ChatSoundRow, signalName } from "./ChatNotices.js";
 import { askPermission, hasNoticeSettings, openNoticeSettings } from "../lib/notify.js";
 import { previewSignal } from "../lib/chime.js";
 import { push, type RadioPage } from "../lib/nav.js";
@@ -46,7 +48,19 @@ import { errorText } from "../i18n/errors.js";
 type Self = NonNullable<SessionState["self"]>;
 
 /** Pages opened from another page rather than from the Radio list: the list keeps the parent picked. */
-export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = { removed: "contacts", sound: "notifications", people: "about", position: "privacy", trusted: "privacy" };
+export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = {
+  removed: "contacts",
+  sound: "notifications",
+  soundDirect: "notifications",
+  soundChats: "notifications",
+  soundNodes: "notifications",
+  people: "about",
+  position: "privacy",
+  trusted: "privacy",
+};
+
+/** Pages that read only under their own parent, one kind's sound under Sound: the palette leaves them out. */
+export const RADIO_INNER: ReadonlySet<RadioPage> = new Set(["soundDirect", "soundChats", "soundNodes"]);
 
 /** Each page's title as a key; `radioTitle` says it. */
 export const RADIO_TITLES: Record<RadioPage, Key> = {
@@ -61,6 +75,9 @@ export const RADIO_TITLES: Record<RadioPage, Key> = {
   advanced: "radio.titles.advanced",
   notifications: "radio.titles.notifications",
   sound: "radio.titles.sound",
+  soundDirect: "radio.notifications.direct",
+  soundChats: "radio.notifications.chats",
+  soundNodes: "radio.notifications.nodes",
   messages: "radio.titles.messages",
   history: "radio.titles.history",
   appearance: "radio.titles.appearance",
@@ -226,6 +243,12 @@ function PageBody({ page }: { page: RadioPage }) {
       return <NotificationsPage />;
     case "sound":
       return <SoundPage />;
+    case "soundDirect":
+      return <KindSoundPage kind="direct" />;
+    case "soundChats":
+      return <KindSoundPage kind="chats" />;
+    case "soundNodes":
+      return <KindSoundPage kind="nodes" />;
     case "messages":
       return <MessagesPage />;
     case "history":
@@ -590,7 +613,7 @@ function NotificationsPage() {
       : phone
         ? t("radio.notifications.systemPhone", { app })
         : t("radio.notifications.systemTab");
-  const signal = SIGNALS.find((s) => s.id === prefs.signal) ?? SIGNALS[0]!;
+  const one = oneSignal(prefs);
   return (
     <>
       <Group title={t("radio.notifications.messages")}>
@@ -635,7 +658,7 @@ function NotificationsPage() {
           onChange={(v) => setNoticePrefs({ shownBy: v })}
         />
         {desktop && own ? <CornerRow value={prefs.corner} onChange={(corner) => setNoticePrefs({ corner })} /> : null}
-        <LinkRow label={t("radio.titles.sound")} value={t(signal.label)} onClick={() => push({ kind: "radio", page: "sound" })} />
+        <LinkRow label={t("radio.titles.sound")} value={one ? signalName(one) : t("radio.sound.mixed")} onClick={() => push({ kind: "radio", page: "sound" })} />
         {hasNoticeSettings() ? (
           <LinkRow
             label={windows ? t("radio.notifications.windowsSettings") : t("radio.notifications.systemSettings")}
@@ -672,9 +695,17 @@ function CornerRow({ value, onChange }: { value: Corner; onChange: (corner: Corn
   );
 }
 
-/** The app's signal, one to pick and hear. */
+/** Each kind of notice, its name and the page where its sound is picked. */
+const SOUND_KINDS: { kind: NoticeKind; label: Key; page: RadioPage }[] = [
+  { kind: "direct", label: "radio.notifications.direct", page: "soundDirect" },
+  { kind: "chats", label: "radio.notifications.chats", page: "soundChats" },
+  { kind: "nodes", label: "radio.notifications.nodes", page: "soundNodes" },
+];
+
+/** The sound of each kind of notice, and of the chats that have one of their own (gh #73). */
 function SoundPage() {
   const prefs = useNoticePrefs();
+  const state = useSession();
   const note =
     shell() === "tauri"
       ? t("radio.sound.desktop")
@@ -683,16 +714,38 @@ function SoundPage() {
           ? t("radio.sound.android")
           : t("radio.sound.ios")
         : t("radio.sound.web");
+  const own = Object.keys(prefs.chatSound);
   return (
-    <Group note={note}>
+    <>
+      <Group note={note}>
+        {SOUND_KINDS.map((k) => (
+          <LinkRow key={k.kind} label={t(k.label)} value={signalName(prefs.sounds[k.kind])} onClick={() => push({ kind: "radio", page: k.page })} />
+        ))}
+      </Group>
+      {own.length > 0 ? (
+        <Group title={t("radio.sound.chats")}>
+          {own.map((conversation) => (
+            <ChatSoundRow key={conversation} conversation={conversation} direct={isDirect(state, conversation)} name={titleOf(state, conversation)} />
+          ))}
+        </Group>
+      ) : null}
+    </>
+  );
+}
+
+/** One kind's sound, to pick and hear. */
+function KindSoundPage({ kind }: { kind: NoticeKind }) {
+  const prefs = useNoticePrefs();
+  return (
+    <Group>
       {SIGNALS.map((s) => (
         <ChoiceRow
           key={s.id}
           label={t(s.label)}
           hint={t(s.hint)}
-          checked={prefs.signal === s.id}
+          checked={prefs.sounds[kind] === s.id}
           onSelect={() => {
-            setNoticePrefs({ signal: s.id });
+            setNoticePrefs({ sounds: { ...prefs.sounds, [kind]: s.id } });
             previewSignal(s.id);
           }}
         />

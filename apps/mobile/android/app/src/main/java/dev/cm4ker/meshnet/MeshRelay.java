@@ -93,9 +93,8 @@ final class MeshRelay {
     private static final UUID CCCD = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     private static final String PREFS = "meshnet.relay";
     private static final String INBOXES_KEY = "inboxes";
-    /** The page's notice settings and names for the core, and the signal its notices ring with. */
+    /** The page's notice settings, sounds included, and names for the core. */
     private static final String WATCH_KEY = "watch";
-    private static final String SOUND_KEY = "sound";
     /** The survey running, points and all, as the core gives it: what is left of it if the app stops under it. */
     private static final String SURVEY_KEY = "survey";
     /** How often a survey wants to know where the phone is. */
@@ -301,7 +300,7 @@ final class MeshRelay {
             } else if (effect instanceof Effect.Post) {
                 Notice notice = ((Effect.Post) effect).getNotice();
                 NoticesPlugin.show(context, notice.getId(), notice.getTag(), kind(notice), notice.getTitle(), notice.getBody(),
-                    prefs().getString(SOUND_KEY, null), notice.getSilent());
+                    notice.getSound(), notice.getSilent());
             } else if (effect instanceof Effect.Withdraw) {
                 NotificationManagerCompat.from(context).cancel(((Effect.Withdraw) effect).getId());
             } else if (effect instanceof Effect.SurveyChanged) {
@@ -447,11 +446,11 @@ final class MeshRelay {
     }
 
     /**
-     * The page's notice settings and names, as the JSON the core reads ({@code WatchConfig}), and the
-     * signal file its notices ring with; kept, for a process Android starts again without the page.
+     * The page's notice settings, sounds included, and names, as the JSON the core reads
+     * ({@code WatchConfig}); kept, for a process Android starts again without the page.
      */
-    void configure(String json, String sound) {
-        prefs().edit().putString(WATCH_KEY, json).putString(SOUND_KEY, sound).apply();
+    void configure(String json) {
+        prefs().edit().putString(WATCH_KEY, json).apply();
         run(core.configure(json));
     }
 

@@ -5,6 +5,8 @@ import type { Notice } from "./announce.js";
 import { dismissBanner, getBanner, showBanner } from "./banner.js";
 import type { NativeNotice } from "./nativeNotices.js";
 import { DEFAULT_PREFS, setNoticePrefs } from "./noticePrefs.js";
+import type { SessionState } from "@meshnet/meshcore";
+import { t } from "../i18n/index.js";
 import { askPermissionOnce, noticeId, notify, pageOnScreen, tellChannels, withdraw } from "./notify.js";
 
 const calls: { plugin: string; method: string; options: unknown }[] = [];
@@ -43,16 +45,19 @@ const channelMessage: Notice = {
   face: { name: "Alice" },
 };
 
-/** Lets calls the page does not wait for (the pref subscription's, the banner's signal) reach the native side. */
+/** No contacts: every chat but a channel is a person's. */
+const state = { contacts: {} } as unknown as SessionState;
+
+/** Lets calls the page does not wait for (the banner's signal) reach the native side. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
 // The first native call imports the plugin layer; done once here, it is not racing the first test.
 before(async () => {
-  await tellChannels();
+  await withdraw(channelMessage.tag);
 });
 
 beforeEach(async () => {
-  setNoticePrefs({ shownBy: DEFAULT_PREFS.shownBy, signal: DEFAULT_PREFS.signal });
+  setNoticePrefs({ shownBy: DEFAULT_PREFS.shownBy, sounds: DEFAULT_PREFS.sounds, chatSound: {} });
   dismissBanner();
   await settle();
   calls.length = 0;
@@ -93,7 +98,7 @@ test("an iOS notice the page shows tells the radio core, after it is posted, tha
 });
 
 test("a quiet signal posts a notice without a sound", async () => {
-  setNoticePrefs({ signal: "none" });
+  setNoticePrefs({ sounds: { ...DEFAULT_PREFS.sounds, chats: "none" } });
   await settle();
   calls.length = 0;
   await notify(channelMessage);
@@ -176,15 +181,39 @@ test("the first connection checks and requests notification permission", async (
   ]);
 });
 
-test("Android makes its channels ring with the signal, posts through its own plugin and withdraws there, never calling the iOS one", async () => {
+test("Android makes its channels ring with the sounds, posts through its own plugin and withdraws there, never calling the iOS one", async () => {
   platform = "android";
-  await tellChannels();
+  await tellChannels(state, true);
   await notify(channelMessage);
   await withdraw("c:ch:1");
   assert.deepEqual(calls.map((c) => `${c.plugin}.${c.method}`), ["Notices.channels", "Notices.post", "MeshRelay.announced", "Notices.cancel"]);
-  assert.deepEqual(calls[0]?.options, { sound: "signal_chirp.wav" });
+  assert.deepEqual(calls[0]?.options, {
+    wanted: [
+      { kind: "direct", sound: "signal_chirp.wav", label: null },
+      { kind: "chats", sound: "signal_chirp.wav", label: null },
+      { kind: "nodes", sound: "signal_chirp.wav", label: null },
+    ],
+  });
   const native = calls[1]?.options as NativeNotice;
   assert.equal(native.kind, "chats");
   assert.equal(native.sound, "signal_chirp.wav");
   assert.deepEqual(calls[3]?.options, { id: noticeId("c:ch:1") });
+});
+
+test("a chat's own sound rings its notice, and the other chats ring with their kind's", async () => {
+  setNoticePrefs({ sounds: { ...DEFAULT_PREFS.sounds, chats: "hop" }, chatSound: { "ch:1": "roger" } });
+  await notify(channelMessage);
+  await notify({ ...channelMessage, tag: "c:ch:2" });
+  const sounds = calls.filter((c) => c.method === "post").map((c) => (c.options as NativeNotice).sound);
+  assert.deepEqual(sounds, ["signal_roger.wav", "signal_hop.wav"]);
+});
+
+test("on Android a chat's own sound has a channel beside its kind's, named after the sound, and is told only when that changes", async () => {
+  platform = "android";
+  setNoticePrefs({ chatSound: { "ch:1": "roger", "ch:2": "roger", "c:a1": "chirp" } });
+  await tellChannels(state, true);
+  await tellChannels(state);
+  const told = calls.filter((c) => c.method === "channels");
+  assert.equal(told.length, 1);
+  assert.deepEqual((told[0]?.options as { wanted: unknown[] }).wanted.slice(3), [{ kind: "chats", sound: "signal_roger.wav", label: t("radio.signals.roger") }]);
 });

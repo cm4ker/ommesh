@@ -12,7 +12,7 @@ import { act } from "../lib/toast.js";
 import { Avatar } from "./Avatar.js";
 import { NEW_CHAT_EVENT } from "./ChatList.js";
 import { AirIcon, PlusIcon, RefreshIcon, SearchIcon, SlidersIcon, LinkOffIcon } from "./Icons.js";
-import { RADIO_TITLES, radioTitle } from "./RadioPages.js";
+import { RADIO_INNER, RADIO_TITLES, radioTitle } from "./RadioPages.js";
 
 interface Item {
   group: string;
@@ -45,7 +45,7 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
     const online = state.status === "ready";
     const chats: Item[] = summarize(state).map((row) => ({ group: t("app.palette.group.chats"), label: row.title, hint: row.preview ?? undefined, icon: <Avatar name={row.title} type={row.contact?.type} channel={row.kind === "channel" ? channelAccess(row.channel) : undefined} size={22} />, run: () => openConversation(row.id) }));
     const nodes: Item[] = Object.values(state.contacts).map((c) => ({ group: t("app.palette.group.mesh"), label: c.name || c.prefix, hint: kindLabel(c.type), icon: <Avatar name={c.name || c.prefix} type={c.type} size={22} />, run: () => openProfile(c.key, true) }));
-    const pages: Item[] = (Object.keys(RADIO_TITLES) as RadioPage[]).map((page) => ({ group: t("app.palette.group.settings"), label: radioTitle(page), icon: <SlidersIcon size={16} />, run: () => openRadioPage(page) }));
+    const pages: Item[] = (Object.keys(RADIO_TITLES) as RadioPage[]).filter((page) => !RADIO_INNER.has(page)).map((page) => ({ group: t("app.palette.group.settings"), label: radioTitle(page), icon: <SlidersIcon size={16} />, run: () => openRadioPage(page) }));
     const commands: Item[] = [
       { group: t("app.palette.group.commands"), label: t("app.palette.newChat"), icon: <PlusIcon size={16} />, run: () => { goSection("chats"); setTimeout(() => window.dispatchEvent(new Event(NEW_CHAT_EVENT))); } },
       ...(online

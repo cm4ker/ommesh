@@ -143,6 +143,8 @@
   "sound.android": "Plays with every notice. Silent mode and Do not disturb still keep it quiet. A new sound makes the notification channels anew, so a sound picked for one in Android's settings gives way to this one.",
   "sound.ios": "Plays with every notice. Silent mode and Do not disturb still keep it quiet.",
   "sound.web": "Plays with the banner in this tab. The browser's own notices ring with the system's sound.",
+  "sound.mixed": "Mixed",
+  "sound.chats": "Chats with their own sound",
   "signals.chirp": "Chirp",
   "signals.chirpHint": "A LoRa preamble, slowed down: two up, one down.",
   "signals.roger": "Roger",

@@ -50,8 +50,16 @@ export interface NoticesPlugin {
   post(options: NativeNotice): Promise<void>;
   cancel(options: { id: number }): Promise<void>;
   chime(options: { signal: string }): Promise<void>;
-  /** Makes the notification channels ring with this signal (null: quietly). */
-  channels(options: { sound: string | null }): Promise<void>;
+  /** Makes these notification channels and deletes the app's others; a `label` is a sound beside its kind's own. */
+  channels(options: { wanted: NativeChannel[] }): Promise<void>;
+}
+
+/** One of Android's notification channels: a kind's, ringing with `sound` (null: quietly). */
+export interface NativeChannel {
+  kind: string;
+  sound: string | null;
+  /** The sound's name, said after the kind's in the channel's name; none for the kind's own channel. */
+  label: string | null;
 }
 
 let watch: MeshWatchPlugin | null = null;

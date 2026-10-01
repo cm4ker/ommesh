@@ -57,8 +57,8 @@ interface MeshRelayPlugin {
   /** Shares the linked radio, or stops sharing it; the link stays. */
   share(options: { on: boolean }): Promise<RelayState>;
   stop(): Promise<RelayState>;
-  /** The page's notice settings and names for the radio core, and the signal file its notices ring with. */
-  configure(options: { json: string; sound: string | null }): Promise<void>;
+  /** The page's notice settings, sounds included, and names for the radio core. */
+  configure(options: { json: string }): Promise<void>;
   /** The page announced this tag itself. */
   announced(options: { tag: string }): Promise<void>;
   /** Android: why the app or its page stopped lately, newest first. */
@@ -266,9 +266,9 @@ export async function setSharing(on: boolean): Promise<void> {
 }
 
 /** What the radio core needs to announce messages while the page sleeps. */
-export async function configureCore(json: string, sound: string | null): Promise<void> {
+export async function configureCore(json: string): Promise<void> {
   if (!relayAvailable()) return;
-  await withRelay((api) => api.configure({ json, sound }));
+  await withRelay((api) => api.configure({ json }));
 }
 
 /** The page announced this itself, so the radio core's notice for it waits no more. */

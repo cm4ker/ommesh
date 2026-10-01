@@ -33,34 +33,40 @@ import { dismissBanner, showBanner, withdrawBanner } from "./banner.js";
 import { chime, signalFile } from "./chime.js";
 import { withNotices, withWatch, type NativeNotice } from "./nativeNotices.js";
 import { avatarPng } from "./noticeAvatar.js";
-import { anyMessageWanted, getNoticePrefs, subscribeNoticePrefs, type NoticePrefs } from "./noticePrefs.js";
+import { anyMessageWanted, getNoticePrefs, kindSounds, noticeSignal, SIGNALS, type NoticePrefs } from "./noticePrefs.js";
 import { nativePlatform, shell } from "./platform.js";
 import { coreAnnounced } from "./relay.js";
+import { t } from "../i18n/index.js";
+import type { SessionState } from "@meshnet/meshcore";
 
 export type { NoticeKind } from "./announce.js";
 
+let told = "";
+
 /**
- * Makes Android's notification channels ring with the reader's signal: a
- * channel's sound is fixed when it is made. (What the radio core behind the
- * phone's link needs to announce in the page's place is `coreWatch.ts`'s.)
+ * Makes Android's notification channels ring with the reader's sounds: a
+ * channel's sound is fixed when it is made, so each kind has one for its own
+ * sound and one more for each other sound a chat of that kind rings with,
+ * named after it. Told again only when that changes, unless `anyway` (the
+ * names are in another language). What the radio core behind the phone's
+ * link needs to announce in the page's place is `coreWatch.ts`'s.
  */
-export async function tellChannels(): Promise<void> {
-  const sound = signalFile(getNoticePrefs().signal);
+export async function tellChannels(state: SessionState, anyway = false): Promise<void> {
+  if (shell() !== "capacitor" || nativePlatform() !== "android") return;
+  const wanted = kindSounds(getNoticePrefs(), state).map(({ kind, signal, own }) => ({
+    kind,
+    sound: signalFile(signal),
+    label: own ? null : t(SIGNALS.find((s) => s.id === signal)!.label),
+  }));
+  const now = JSON.stringify(wanted);
+  if (now === told && !anyway) return;
+  told = now;
   try {
-    await withNotices((n) => n.channels({ sound }));
+    await withNotices((n) => n.channels({ wanted }));
   } catch (error) {
     console.warn("Could not configure native notifications", error);
   }
 }
-
-let told = "";
-subscribeNoticePrefs(() => {
-  // Only what the channels keep: a corner moved on the desktop is not news to a phone.
-  const now = getNoticePrefs().signal;
-  if (now === told) return;
-  told = now;
-  void tellChannels();
-});
 
 type LocalNotificationsModule = typeof import("@capacitor/local-notifications");
 
@@ -164,7 +170,7 @@ export interface Card {
 export async function notify(notice: Notice): Promise<void> {
   const prefs = getNoticePrefs();
   // A quiet notice plays nothing, whichever signal the reader picked.
-  const signal = notice.silent ? "none" : prefs.signal;
+  const signal = notice.silent ? "none" : noticeSignal(prefs, notice);
   if (prefs.shownBy === "app") {
     if (shell() === "tauri") {
       const card: Card = { tag: notice.tag, title: notice.title, body: notice.body, face: notice.face ?? null, chat: notice.tag.startsWith("c:") && notice.tag !== "c:" };
@@ -187,7 +193,7 @@ async function system(notice: Notice, prefs: NoticePrefs): Promise<void> {
   switch (shell()) {
     case "tauri": {
       const avatar = notice.face ? await avatarPng(notice.face) : null;
-      await invoke("announce", { title, body, tag, avatar, signal: notice.silent ? "none" : prefs.signal }).catch(() => undefined);
+      await invoke("announce", { title, body, tag, avatar, signal: notice.silent ? "none" : noticeSignal(prefs, notice) }).catch(() => undefined);
       return;
     }
     case "capacitor": {
@@ -233,7 +239,7 @@ function nativeNotice(notice: Notice, prefs: NoticePrefs): NativeNotice {
     title: notice.title,
     body: notice.body,
     kind: notice.kind,
-    sound: signalFile(prefs.signal),
+    sound: signalFile(noticeSignal(prefs, notice)),
     silent: notice.silent ?? false,
   };
 }

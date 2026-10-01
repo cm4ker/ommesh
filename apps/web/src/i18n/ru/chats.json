@@ -193,6 +193,8 @@
   "notices.label": "Уведомления",
   "notices.mentionsHint": "Только когда кто-то пишет ваше имя.",
   "notices.default": "По умолчанию ({level})",
+  "notices.sound": "Звук",
+  "notices.soundDefault": "По умолчанию ({sound})",
   "notices.all": "Все",
   "notices.mentions": "Упоминания",
   "message.gone": "Этого сообщения больше нет.",

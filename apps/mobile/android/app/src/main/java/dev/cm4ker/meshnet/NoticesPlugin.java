@@ -18,6 +18,7 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.pm.ShortcutInfoCompat;
 import androidx.core.content.pm.ShortcutManagerCompat;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -37,9 +38,11 @@ import org.json.JSONObject;
  *   <li>a notice is words alone under the app's icon. A circle of who wrote stood in for the
  *       app's icon in the shade (gh #49) and crowded the words on a watch the phone passes
  *       notices on to;
- *   <li>the channels (direct messages, channels and rooms, new nodes) ring with the signal the
- *       reader picked, a raw resource ({@code res/raw/signal_*.wav}). A channel's sound is fixed
- *       once it is made, so a new signal makes the three anew under new ids and deletes the old;
+ *   <li>the channels (direct messages, channels and rooms, new nodes) ring with the signals the
+ *       reader picked, raw resources ({@code res/raw/signal_*.wav}). A channel's sound is fixed
+ *       once it is made, so each kind has a channel for each sound it rings with, its own and the
+ *       ones its chats have (gh #73), under ids that name the sound; a sound nobody rings with
+ *       any more takes its channel with it;
  *   <li>a tap goes to the activity with LocalNotifications' own extras, so the page's listener
  *       for that plugin ({@code localNotificationActionPerformed}) opens the chat, cold start
  *       included.
@@ -94,11 +97,26 @@ public class NoticesPlugin extends Plugin {
         call.resolve();
     }
 
-    /** The channels, ringing with {@code sound} ({@code signal_<id>.wav}, or none for quiet ones). */
+    /**
+     * The channels the page wants, {@code wanted: [{ kind, sound, label }]}: each kind's own, ringing
+     * with {@code sound} ({@code signal_<id>.wav}, or none for a quiet one), and one more for each
+     * other sound a chat of that kind rings with, named with its {@code label} after the kind's.
+     */
     @PluginMethod
     public void channels(PluginCall call) {
-        channels(getContext(), call.getString("sound"));
+        JSArray wanted = call.getArray("wanted", new JSArray());
+        List<String[]> channels = new ArrayList<>();
+        for (int i = 0; i < wanted.length(); i++) {
+            JSONObject one = wanted.optJSONObject(i);
+            if (one != null) channels.add(new String[] {one.optString("kind", "chats"), text(one, "sound"), text(one, "label")});
+        }
+        channels(getContext(), channels);
         call.resolve();
+    }
+
+    /** A string the page may have sent as null, which {@code optString} would read as "null". */
+    private static String text(JSONObject object, String key) {
+        return object.isNull(key) ? null : object.optString(key);
     }
 
     @PluginMethod
@@ -141,7 +159,7 @@ public class NoticesPlugin extends Plugin {
      * chat. A message's is filed as one, which Do not disturb's exceptions for messages go by.
      */
     private static NotificationCompat.Builder builder(Context context, int id, String tag, String kind, String title, String body, String sound) {
-        channels(context, sound);
+        made(context, kind, sound);
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, channelId(kind, sound))
             .setSmallIcon(R.drawable.ic_stat_meshnet)
             .setColor(COLOR)
@@ -201,38 +219,15 @@ public class NoticesPlugin extends Plugin {
         call.resolve();
     }
 
-    /** The three channels ringing with this sound, and none of ours ringing with another. */
-    private static void channels(Context context, String sound) {
+    /** These channels, each {@code { kind, sound, label }}, and none of ours ringing with another sound. */
+    private static void channels(Context context, List<String[]> channels) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager == null) return;
         Set<String> wanted = new HashSet<>();
-        Uri uri = soundUri(context, sound);
-        for (String[] kind : KINDS) {
-            String id = channelId(kind[0], sound);
-            wanted.add(id);
-            String word = "channel" + Character.toUpperCase(kind[0].charAt(0)) + kind[0].substring(1);
-            String name = Words.get(context, word, kind[1]);
-            String description = Words.get(context, word + "Hint", kind[2]);
-            NotificationChannel existing = manager.getNotificationChannel(id);
-            if (existing != null) {
-                // Renamed in the language now. Of a channel that is there Android takes only the name
-                // and the description, so the reader's settings for it stay.
-                if (!name.contentEquals(existing.getName()) || !description.equals(existing.getDescription())) {
-                    NotificationChannel renamed = new NotificationChannel(id, name, existing.getImportance());
-                    renamed.setDescription(description);
-                    manager.createNotificationChannel(renamed);
-                }
-                continue;
-            }
-            NotificationChannel channel = new NotificationChannel(id, name, NotificationManager.IMPORTANCE_HIGH);
-            channel.setDescription(description);
-            channel.setLockscreenVisibility(NotificationCompat.VISIBILITY_PRIVATE);
-            channel.setSound(uri, uri != null ? attributes() : null);
-            manager.createNotificationChannel(channel);
-        }
-        // The ones made for another signal, and the three LocalNotifications made before these,
-        // with the bare kind as their id.
+        for (String[] channel : channels) wanted.add(channel(context, manager, channel[0], channel[1], channel[2], true));
+        // The ones made for a sound nobody rings with any more, and the three LocalNotifications
+        // made before these, with the bare kind as their id.
         for (NotificationChannel channel : manager.getNotificationChannels()) {
             String id = channel.getId();
             if (wanted.contains(id)) continue;
@@ -243,6 +238,47 @@ public class NoticesPlugin extends Plugin {
                 }
             }
         }
+    }
+
+    /**
+     * The channel a notice goes on, made when the page has not had it made yet (the radio core may
+     * post first after the app starts again): named after its kind alone until the page names it.
+     */
+    private static void made(Context context, String kind, String sound) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager != null) channel(context, manager, kind, sound, null, false);
+    }
+
+    /**
+     * The channel of a kind ringing with a sound, made when it is not there and, when
+     * {@code rename}, named in the language now, with the sound's {@code label} after the kind's
+     * name when it is not the kind's own; its id. Of a channel that is there Android takes only
+     * the name and the description, so the reader's settings for it stay.
+     */
+    private static String channel(Context context, NotificationManager manager, String kind, String sound, String label, boolean rename) {
+        String[] english = KINDS[1];
+        for (String[] k : KINDS) if (k[0].equals(kind)) english = k;
+        String id = channelId(english[0], sound);
+        String word = "channel" + Character.toUpperCase(english[0].charAt(0)) + english[0].substring(1);
+        String name = Words.get(context, word, english[1]) + (label == null ? "" : " · " + label);
+        String description = Words.get(context, word + "Hint", english[2]);
+        NotificationChannel existing = manager.getNotificationChannel(id);
+        if (existing != null) {
+            if (rename && (!name.contentEquals(existing.getName()) || !description.equals(existing.getDescription()))) {
+                NotificationChannel renamed = new NotificationChannel(id, name, existing.getImportance());
+                renamed.setDescription(description);
+                manager.createNotificationChannel(renamed);
+            }
+            return id;
+        }
+        Uri uri = soundUri(context, sound);
+        NotificationChannel channel = new NotificationChannel(id, name, NotificationManager.IMPORTANCE_HIGH);
+        channel.setDescription(description);
+        channel.setLockscreenVisibility(NotificationCompat.VISIBILITY_PRIVATE);
+        channel.setSound(uri, uri != null ? attributes() : null);
+        manager.createNotificationChannel(channel);
+        return id;
     }
 
     private static String channelId(String kind, String sound) {

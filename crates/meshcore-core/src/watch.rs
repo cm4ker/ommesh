@@ -89,6 +89,11 @@ pub struct WatchConfig {
     pub nodes: NodeLevel,
     /// Chats with a level of their own, by conversation.
     pub chat: HashMap<String, ChatLevel>,
+    /// The sound each kind of notice rings with.
+    pub sounds: Sounds,
+    /// Chats with a sound of their own, by conversation; none for a quiet one (gh #73).
+    #[serde(rename = "chatSound")]
+    pub chat_sound: HashMap<String, Option<String>>,
     pub contacts: Vec<Contact>,
     pub channels: Vec<Channel>,
     /// What the notices say, in the page's language.
@@ -104,9 +109,53 @@ impl Default for WatchConfig {
             chats: ChatLevel::All,
             nodes: NodeLevel::People,
             chat: HashMap::new(),
+            sounds: Sounds::default(),
+            chat_sound: HashMap::new(),
             contacts: Vec::new(),
             channels: Vec::new(),
             words: Words::default(),
+        }
+    }
+}
+
+/// The file each kind of notice rings with (`signal_<id>.wav`, which the phone has), none for a
+/// quiet kind.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct Sounds {
+    pub direct: Option<String>,
+    pub chats: Option<String>,
+    pub nodes: Option<String>,
+}
+
+impl Default for Sounds {
+    /// The page's: every kind chirps.
+    fn default() -> Self {
+        let chirp = Some("signal_chirp.wav".to_string());
+        Sounds {
+            direct: chirp.clone(),
+            chats: chirp.clone(),
+            nodes: chirp,
+        }
+    }
+}
+
+impl WatchConfig {
+    /// The sound a notice rings with, as the page's `noticeSignal`: its chat's own, or its kind's.
+    /// The notice about several chats is one of channels and rooms.
+    fn sound(&self, notice: &Notice) -> Option<String> {
+        let own = notice
+            .tag
+            .strip_prefix("c:")
+            .filter(|conversation| !conversation.is_empty())
+            .and_then(|conversation| self.chat_sound.get(conversation));
+        match own {
+            Some(sound) => sound.clone(),
+            None => match notice.kind {
+                NoticeKind::Direct => self.sounds.direct.clone(),
+                NoticeKind::Chats => self.sounds.chats.clone(),
+                NoticeKind::Nodes => self.sounds.nodes.clone(),
+            },
         }
     }
 }
@@ -248,6 +297,9 @@ pub struct Notice {
     pub title: String,
     pub body: String,
     pub kind: NoticeKind,
+    /// The file it rings with (`signal_<id>.wav`), which on Android also picks its channel; none
+    /// for a quiet one.
+    pub sound: Option<String>,
     /// Shown without the signal: a burst of news rings with its first notice only.
     pub silent: bool,
 }
@@ -260,6 +312,7 @@ impl Notice {
             title,
             body,
             kind,
+            sound: None,
             silent: false,
         }
     }
@@ -502,6 +555,7 @@ impl Watch {
 
     /// Posts a notice: the burst's first rings, the rest bring what is out up to date quietly.
     fn post(&mut self, mut notice: Notice) {
+        notice.sound = self.config.sound(&notice);
         notice.silent = !std::mem::take(&mut self.unrung);
         self.effects.push(Effect::Post { notice });
     }
@@ -973,6 +1027,7 @@ mod tests {
     fn reads_the_pages_config() {
         let config: WatchConfig = serde_json::from_str(
             r#"{"me":"Node-21","direct":false,"chats":"mentions","nodes":"all","chat":{"ch:1":"off"},
+                "sounds":{"direct":"signal_hop.wav","nodes":null},"chatSound":{"ch:0":"signal_roger.wav","ch:1":null},
                 "contacts":[{"key":"a1","name":"Alice","type":1}],"channels":[{"index":0,"name":"Public"}],"extra":1}"#,
         )
         .unwrap();
@@ -981,6 +1036,18 @@ mod tests {
         assert_eq!(config.chats, ChatLevel::Mentions);
         assert_eq!(config.nodes, NodeLevel::All);
         assert_eq!(config.chat.get("ch:1"), Some(&ChatLevel::Off));
+        assert_eq!(config.sounds.direct.as_deref(), Some("signal_hop.wav"));
+        assert_eq!(
+            config.sounds.chats.as_deref(),
+            Some("signal_chirp.wav"),
+            "a kind left out chirps"
+        );
+        assert_eq!(config.sounds.nodes, None, "null is a quiet kind");
+        assert_eq!(
+            config.chat_sound.get("ch:0"),
+            Some(&Some("signal_roger.wav".to_string()))
+        );
+        assert_eq!(config.chat_sound.get("ch:1"), Some(&None));
         assert_eq!(config.contacts[0].kind, ADV_TYPE_CHAT);
         assert_eq!(config.channels[0].name, "Public");
         let empty: WatchConfig = serde_json::from_str("{}").unwrap();
@@ -1010,12 +1077,69 @@ mod tests {
         rig.grace_ends();
         assert_eq!(
             rig.posted,
-            vec![Notice::new(
-                format!("c:c:{ALICE}"),
-                "Alice".into(),
-                "hi".into(),
-                NoticeKind::Direct
-            )]
+            vec![Notice {
+                sound: Some("signal_chirp.wav".into()),
+                ..Notice::new(
+                    format!("c:c:{ALICE}"),
+                    "Alice".into(),
+                    "hi".into(),
+                    NoticeKind::Direct
+                )
+            }]
+        );
+    }
+
+    #[test]
+    fn a_notice_rings_with_its_chats_own_sound_or_its_kinds() {
+        let mut rig = Rig::new(WatchConfig {
+            sounds: Sounds {
+                chats: Some("signal_hop.wav".into()),
+                ..Sounds::default()
+            },
+            chat_sound: HashMap::from([
+                ("ch:0".to_string(), Some("signal_roger.wav".to_string())),
+                (format!("c:{ALICE}"), None),
+            ]),
+            ..config()
+        });
+        rig.arrives(channel(0, "RM55: hi"))
+            .arrives(channel(1, "Wan8: hey"))
+            .arrives(direct(&ALICE[..12], 1, "psst"))
+            .arrives(direct(&BOB[..12], 2, "yo"))
+            .grace_ends();
+        let sounds: Vec<(&str, Option<&str>)> = rig
+            .posted
+            .iter()
+            .map(|n| (n.tag.as_str(), n.sound.as_deref()))
+            .collect();
+        assert_eq!(sounds, vec![("c:", Some("signal_hop.wav"))]);
+
+        let mut rig = Rig::new(WatchConfig {
+            chat_sound: HashMap::from([
+                ("ch:0".to_string(), Some("signal_roger.wav".to_string())),
+                (format!("c:{ALICE}"), None),
+            ]),
+            ..config()
+        });
+        rig.arrives(channel(0, "RM55: hi"))
+            .arrives(channel(1, "Wan8: hey"))
+            .arrives(direct(&ALICE[..12], 1, "psst"))
+            .grace_ends();
+        let mut sounds: Vec<(&str, Option<&str>)> = rig
+            .posted
+            .iter()
+            .map(|n| (n.tag.as_str(), n.sound.as_deref()))
+            .collect();
+        sounds.sort();
+        let alice = format!("c:c:{ALICE}");
+        assert_eq!(
+            sounds,
+            vec![
+                (alice.as_str(), None),
+                ("c:ch:0", Some("signal_roger.wav")),
+                ("c:ch:1", Some("signal_chirp.wav")),
+            ],
+            "a quiet chat posts with no sound, the rest with theirs"
         );
     }
 

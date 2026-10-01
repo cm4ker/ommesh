@@ -20,8 +20,8 @@ import com.getcapacitor.annotation.PermissionCallback;
  * of them changes ({@code radio}: the linked radio's address; {@code up}: its TX notifies, so frames
  * go through at once; {@code on}: shared). While {@code attach()}ed, the page talks to the radio through
  * here: {@code send({ data })} (base64), answered once the frame has gone to the radio, and
- * {@code frame} events {@code { data }}. {@code configure({ json, sound })} hands the radio core
- * the page's notice settings and names, {@code announced({ tag })} what the page announced itself,
+ * {@code frame} events {@code { data }}. {@code configure({ json })} hands the radio core
+ * the page's notice settings, sounds included, and names, {@code announced({ tag })} what the page announced itself,
  * and {@code exits()} why the app or its page stopped lately.
  *
  * <p>A coverage survey is run by the core, so it goes on while the page sleeps:
@@ -199,9 +199,8 @@ public class MeshRelayPlugin extends Plugin {
             call.reject("configure needs json");
             return;
         }
-        String sound = call.getString("sound");
         getActivity().runOnUiThread(() -> {
-            relay().configure(json, sound);
+            relay().configure(json);
             call.resolve();
         });
     }

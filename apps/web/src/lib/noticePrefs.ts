@@ -8,6 +8,9 @@
  *   radio (`@[name]`), or none.
  * - New nodes: only a person's radio, any node, or none.
  * - A chat may have a level of its own, which wins over the one for its kind.
+ * - Each kind rings with a sound of its own, and a chat may have its own
+ *   sound, which wins the same way (gh #73): Public may chirp while a
+ *   person's message says "roger".
  * - Who draws them: the system, or the app itself, Telegram's way. The app
  *   can only draw while it runs: a computer's app does in the tray, a phone's
  *   and a tab's only while on screen, and the system draws the rest.
@@ -20,6 +23,8 @@ import { AdvType, type MessageRecord, type SessionState } from "@meshnet/meshcor
 import { t, type Key } from "../i18n/index.js";
 import { readSetting, writeSetting } from "./storage.js";
 
+/** What a notice is about, which on Android is its channel: the reader sets each one's sound in the system. */
+export type NoticeKind = "direct" | "chats" | "nodes";
 /** How much of a chat rings: a person's chat takes "all" or "off" only. */
 export type ChatLevel = "all" | "mentions" | "off";
 export type NodeLevel = "people" | "all" | "off";
@@ -47,20 +52,40 @@ export interface NoticePrefs {
   chat: Record<string, ChatLevel>;
   shownBy: ShownBy;
   corner: Corner;
-  /** The sound of every notice, on every shell; the system still decides when to be quiet. */
-  signal: Signal;
+  /** The sound of each kind's notices, on every shell; the system still decides when to be quiet. */
+  sounds: Record<NoticeKind, Signal>;
+  /** Chats with a sound of their own, by conversation. */
+  chatSound: Record<string, Signal>;
 }
 
-export const DEFAULT_PREFS: NoticePrefs = { direct: true, chats: "all", nodes: "people", chat: {}, shownBy: "system", corner: "br", signal: "chirp" };
+export const DEFAULT_PREFS: NoticePrefs = {
+  direct: true,
+  chats: "all",
+  nodes: "people",
+  chat: {},
+  shownBy: "system",
+  corner: "br",
+  sounds: { direct: "chirp", chats: "chirp", nodes: "chirp" },
+  chatSound: {},
+};
 
 const KEY = "meshnet.notices";
 /** The two switches before there were levels; off stays off. */
 const OLD_MESSAGES = "meshnet.notify";
 const OLD_NODES = "meshnet.notify.nodes";
 
+/** What an earlier build stored: one `signal` for every notice came before a sound for each kind. */
+type Stored = Partial<NoticePrefs> & { signal?: Signal };
+
+export function fromStored(stored: Stored): NoticePrefs {
+  const { signal, ...rest } = stored;
+  const before = signal ? { direct: signal, chats: signal, nodes: signal } : {};
+  return { ...DEFAULT_PREFS, ...rest, chat: { ...stored.chat }, sounds: { ...DEFAULT_PREFS.sounds, ...before, ...stored.sounds }, chatSound: { ...stored.chatSound } };
+}
+
 function load(): NoticePrefs {
-  const stored = readSetting<Partial<NoticePrefs> | null>(KEY, null);
-  if (stored) return { ...DEFAULT_PREFS, ...stored, chat: { ...stored.chat } };
+  const stored = readSetting<Stored | null>(KEY, null);
+  if (stored) return fromStored(stored);
   const messages = readSetting<boolean>(OLD_MESSAGES, true);
   const nodes = readSetting<boolean>(OLD_NODES, true);
   return { ...DEFAULT_PREFS, direct: messages, chats: messages ? "all" : "off", nodes: nodes ? DEFAULT_PREFS.nodes : "off" };
@@ -85,6 +110,14 @@ export function setChatLevel(conversation: string, level: ChatLevel | null): voi
   if (level) chat[conversation] = level;
   else delete chat[conversation];
   setNoticePrefs({ chat });
+}
+
+/** Gives a chat a sound of its own, or, with null, back to the one for its kind. */
+export function setChatSound(conversation: string, signal: Signal | null): void {
+  const chatSound = { ...prefs.chatSound };
+  if (signal) chatSound[conversation] = signal;
+  else delete chatSound[conversation];
+  setNoticePrefs({ chatSound });
 }
 
 export function subscribeNoticePrefs(listener: () => void): () => void {
@@ -131,6 +164,33 @@ export function nodeWanted(p: NoticePrefs, type: number): boolean {
 /** Whether any message at all may ring: a chat of its own may, with the rest off. */
 export function anyMessageWanted(p: NoticePrefs): boolean {
   return p.direct || p.chats !== "off" || Object.values(p.chat).some((l) => l !== "off");
+}
+
+/** The sound a notice rings with: its chat's own, or its kind's. The notice about several chats is one of channels and rooms. */
+export function noticeSignal(p: NoticePrefs, notice: { tag: string; kind: NoticeKind }): Signal {
+  const conversation = notice.tag.startsWith("c:") ? notice.tag.slice(2) : "";
+  return (conversation ? p.chatSound[conversation] : undefined) ?? p.sounds[notice.kind];
+}
+
+/** The one sound every notice rings with, or null when they differ. */
+export function oneSignal(p: NoticePrefs): Signal | null {
+  const all = [...Object.values(p.sounds), ...Object.values(p.chatSound)];
+  return all.every((s) => s === all[0]) ? (all[0] ?? null) : null;
+}
+
+/**
+ * The sounds each kind's notices ring with: the kind's own first, then every
+ * other one a chat of that kind has. Android makes a channel of each, since a
+ * channel's sound is fixed once it is made.
+ */
+export function kindSounds(p: NoticePrefs, state: SessionState): { kind: NoticeKind; signal: Signal; own: boolean }[] {
+  const kinds: NoticeKind[] = ["direct", "chats", "nodes"];
+  const sounds = kinds.map((kind) => ({ kind, signal: p.sounds[kind], own: true }));
+  for (const [conversation, signal] of Object.entries(p.chatSound)) {
+    const kind: NoticeKind = isDirect(state, conversation) ? "direct" : "chats";
+    if (!sounds.some((s) => s.kind === kind && s.signal === signal)) sounds.push({ kind, signal, own: false });
+  }
+  return sounds;
 }
 
 /** One word for the Radio screen's row. */

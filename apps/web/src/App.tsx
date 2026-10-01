@@ -9,7 +9,7 @@ import { useLink } from "./lib/link.js";
 import { t, useLanguage, type Key } from "./i18n/index.js";
 import { errorText } from "./i18n/errors.js";
 import { ALL_CHATS, createAnnouncer } from "./lib/announce.js";
-import { getNoticePrefs, messageWanted, nodeWanted } from "./lib/noticePrefs.js";
+import { getNoticePrefs, messageWanted, nodeWanted, subscribeNoticePrefs } from "./lib/noticePrefs.js";
 import { noteUnread } from "./lib/firstUnread.js";
 import { askPermissionOnce, notify, onCardAction, onNotificationClick, pageOnScreen, tellChannels, withdraw } from "./lib/notify.js";
 import { quickReply } from "./lib/quickReply.js";
@@ -137,8 +137,17 @@ export function App() {
     [],
   );
 
-  // Android's notification channels ring with the reader's signal, from the start.
-  useEffect(() => { void tellChannels(); }, []);
+  // Android's notification channels ring with the reader's sounds, from the start; a chat's kind is known once its contact is.
+  useEffect(() => {
+    const tell = () => void tellChannels(session.getState());
+    tell();
+    const stopPrefs = subscribeNoticePrefs(tell);
+    const stopSession = session.subscribe(tell);
+    return () => {
+      stopPrefs();
+      stopSession();
+    };
+  }, []);
 
   // A phone may end the app in the background without a word, and history is
   // saved a moment after it changes: on the way out it is saved at once.

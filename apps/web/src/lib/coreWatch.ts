@@ -76,6 +76,9 @@ export function coreConfig(state: SessionState): string {
     chats: prefs.chats,
     nodes: prefs.nodes,
     chat: prefs.chat,
+    // As the files the phone rings with: null is a quiet kind or chat.
+    sounds: { direct: signalFile(prefs.sounds.direct), chats: signalFile(prefs.sounds.chats), nodes: signalFile(prefs.sounds.nodes) },
+    chatSound: Object.fromEntries(Object.entries(prefs.chatSound).map(([conversation, signal]) => [conversation, signalFile(signal)])),
     contacts: Object.values(state.contacts).map((c) => ({ key: c.key, name: c.name, type: c.type })),
     channels: state.channels.map((c) => ({ index: c.index, name: c.name })),
     words: words(),
@@ -95,15 +98,14 @@ export function startCoreWatch(state: () => SessionState, subscribe: (listener: 
     if (!anyway && names[0] === now.self && names[1] === now.contacts && names[2] === now.channels) return;
     names = [now.self, now.contacts, now.channels];
     const json = coreConfig(now);
-    const sound = signalFile(getNoticePrefs().signal);
-    if (json + sound === told) return;
-    told = json + sound;
+    if (json === told) return;
+    told = json;
     const spoken = language();
-    configureCore(json, sound)
+    configureCore(json)
       .then(() => {
         if (named === spoken) return;
         named = spoken;
-        return tellChannels();
+        return tellChannels(now, true);
       })
       .catch((error) => console.warn("Could not configure the radio core's notices", error));
   };

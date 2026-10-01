@@ -1,6 +1,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AdvType, isConversationType, isDirect, parseConversation, type ContactRecord, type MessageRecord, type SessionState } from "@meshnet/meshcore";
 import { useBackLayer } from "../lib/back.js";
+import { channelAccess } from "../lib/channels.js";
 import { GEO, MENTION } from "../lib/composer.js";
 import { LINK, linkOf, openLink } from "../lib/webLinks.js";
 import { daysIn, messagesIn, shownIn, titleOf, type Shown } from "../lib/conversations.js";
@@ -454,7 +455,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
           }
         >
           <button type="button" className="chat-who" onClick={details} disabled={!details} aria-label={t("chats.chat.about", { name: title })}>
-            <Avatar name={title} type={contact?.type} channel={target.kind === "channel"} size={32} />
+            <Avatar name={title} type={contact?.type} channel={target.kind === "channel" ? channelAccess(state.channels.find((c) => c.index === target.index)) : undefined} size={32} />
           </button>
           <span className="screen-name-stack">
             <button type="button" className="chat-who screen-name" onClick={details} disabled={!details}>

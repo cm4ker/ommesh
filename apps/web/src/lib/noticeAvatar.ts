@@ -2,7 +2,8 @@
  * A notification's circle as a PNG, for the systems that draw notices
  * themselves (gh #25): the same swatch `Avatar` draws in the page, a hue
  * hashed from the name with the emoji it ends with or its initials, or the
- * glyph of a repeater, a room or a sensor, or "#" for a channel.
+ * glyph of a repeater, a room or a sensor, or "#" for a channel anyone can
+ * read and a lock for a private one.
  *
  * Every shell but a browser crops the picture itself (Windows' circle crop,
  * Android's and iOS's person icons), so it is drawn square and full; a
@@ -15,7 +16,7 @@
 import { AdvType } from "@meshnet/meshcore";
 import type { Face } from "./announce.js";
 import { hue, initials, trailingEmoji } from "./format.js";
-import { REPEATER_GLYPH, ROOM_GLYPH, SENSOR_GLYPH } from "./glyphs.js";
+import { LOCK_GLYPH, REPEATER_GLYPH, ROOM_GLYPH, SENSOR_GLYPH } from "./glyphs.js";
 
 /** Pixels on a side: twice what a notice shows at the most, for a sharp picture on a dense screen. */
 const SIZE = 192;
@@ -56,7 +57,7 @@ const cache = new Map<string, Promise<string | null>>();
  * no canvas to draw on, such as under the tests.
  */
 export function avatarPng(face: Face, round = false): Promise<string | null> {
-  const key = `${face.name}\u0000${face.type ?? AdvType.Chat}\u0000${face.channel ? 1 : 0}\u0000${round ? 1 : 0}`;
+  const key = `${face.name}\u0000${face.type ?? AdvType.Chat}\u0000${face.channel ?? ""}\u0000${round ? 1 : 0}`;
   let drawn = cache.get(key);
   if (!drawn) {
     drawn = draw(face, round).catch(() => null);
@@ -84,7 +85,7 @@ async function draw(face: Face, round: boolean): Promise<string | null> {
     g.fillRect(0, 0, SIZE, SIZE);
   }
 
-  const glyph = face.channel ? null : GLYPHS[face.type ?? AdvType.Chat];
+  const glyph = face.channel === "private" ? LOCK_GLYPH : face.channel ? null : GLYPHS[face.type ?? AdvType.Chat];
   if (glyph) {
     await drawGlyph(g, glyph, ink);
   } else {

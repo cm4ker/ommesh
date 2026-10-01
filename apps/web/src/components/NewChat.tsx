@@ -102,21 +102,12 @@ function People({ onDone }: { onDone: () => void }) {
 function PublicChannelForm({ onDone }: { onDone: () => void }) {
   const state = useSession();
   const [text, setText] = useState("");
-  const [key, setKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const index = freeChannelIndex(state);
   const name = hashtagName(text);
+  const key = name ? hashtagSecret(name) : null;
   const existing = name ? state.channels.find((c) => c.name.toLowerCase() === name) : undefined;
-
-  useEffect(() => {
-    let live = true;
-    setKey(null);
-    if (name) void hashtagSecret(name).then((k) => live && setKey(k));
-    return () => {
-      live = false;
-    };
-  }, [name]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -130,7 +121,7 @@ function PublicChannelForm({ onDone }: { onDone: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      await session.setChannel(index, name, fromHex(await hashtagSecret(name)));
+      await session.setChannel(index, name, fromHex(hashtagSecret(name)));
       openConversation(channelConversation(index));
       onDone();
     } catch (err) {

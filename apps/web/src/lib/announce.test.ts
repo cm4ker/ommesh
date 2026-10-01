@@ -51,7 +51,7 @@ function initial(messages: MessageRecord[] = [], unread: Record<string, number> 
     contactsFull: false,
     removing: null,
     channels: [
-      { index: 0, name: "Public", secret: "00" },
+      { index: 0, name: "Public", secret: "8b3387e9c5cdea6ac9e5edbaa115cd72" },
       { index: 1, name: "test", secret: "01" },
       { index: 2, name: "Friends", secret: "02" },
     ],
@@ -275,7 +275,12 @@ test("a channel's message shows its writer's circle", () => {
 
 test("several messages in a channel show the channel's circle", () => {
   drain([message("ch:0", "one", "Alice"), message("ch:0", "two", "Bob"), message("ch:0", "three", "Carol"), message("ch:0", "four", "Alice")]);
-  assert.deepEqual(full.at(-1)?.face, { name: "Public", channel: true });
+  assert.deepEqual(full.at(-1)?.face, { name: "Public", channel: "public" });
+});
+
+test("a private channel's circle is told apart from a public one's", () => {
+  drain([message("ch:2", "one", "Alice"), message("ch:2", "two", "Bob")]);
+  assert.deepEqual(full.at(-1)?.face, { name: "Friends", channel: "private" });
 });
 
 test("a person's message shows their circle by their advert", () => {

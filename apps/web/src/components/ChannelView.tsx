@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { channelConversation, fromHex } from "@meshnet/meshcore";
+import { channelAccess } from "../lib/channels.js";
 import { openConversation } from "../lib/nav.js";
 import { session, useSession } from "../lib/session.js";
 import { act, toast } from "../lib/toast.js";
@@ -36,7 +37,7 @@ export function ChannelView({ index, chrome }: { index: number; chrome: Chrome }
       </ScreenHead>
       <div className="screen-scroll">
         <div className="hero">
-          <Avatar name={channel.name || t("chats.conversation.channel", { index: channel.index })} channel size={68} />
+          <Avatar name={channel.name || t("chats.conversation.channel", { index: channel.index })} channel={channelAccess(channel)} size={68} />
           <h1>{channel.name || t("chats.conversation.channel", { index: channel.index })}</h1>
           <span className="muted">{t("chats.channel.slot", { index: channel.index })}</span>
         </div>

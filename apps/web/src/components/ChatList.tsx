@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { isFavourite, parseConversation, TxtType, type MessageRecord } from "@meshnet/meshcore";
+import { channelAccess } from "../lib/channels.js";
 import { CHAT_ORDERS, changed, chatGroups, chatsInOrder, getChatOrder, setChatOrder, useChatOrder } from "../lib/chatOrder.js";
 import { ago } from "../lib/format.js";
 import { summarize, type ConversationSummary } from "../lib/conversations.js";
@@ -219,7 +220,7 @@ function FoundRow({ message, row, query }: { message: MessageRecord; row: Conver
           openConversation(message.conversation);
         }}
       >
-        <Avatar name={row.title} type={row.contact?.type} channel={row.kind === "channel"} size={44} />
+        <Avatar name={row.title} type={row.contact?.type} channel={row.kind === "channel" ? channelAccess(row.channel) : undefined} size={44} />
         <span className="row-main">
           <span className="row-top">
             <span className="row-title">{row.title}</span>
@@ -260,7 +261,7 @@ function ChatRow({ row, radio, selected, onDelete }: { row: ConversationSummary;
         {row.kind === "channel" ? t("common.clear") : t("common.delete")}
       </button>
       <button type="button" className={["row", selected ? "selected" : ""].join(" ")} onClick={() => (swipe.isOpen() ? swipe.close() : openConversation(row.id))} {...press}>
-        <Avatar name={row.title} type={row.contact?.type} channel={row.kind === "channel"} size={44} />
+        <Avatar name={row.title} type={row.contact?.type} channel={row.kind === "channel" ? channelAccess(row.channel) : undefined} size={44} />
         <span className="row-main">
           <span className="row-top">
             <span className="row-title">

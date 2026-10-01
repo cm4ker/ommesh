@@ -24,7 +24,7 @@ export function NoticeCard({ title, body, face, onOpen, onClose, children }: {
   const named = face && title.startsWith(face.name) ? face.name : null;
   return (
     <div className="notice-card" role="button" tabIndex={0} onClick={onOpen} onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && onOpen()}>
-      {face ? <Avatar name={face.name} type={face.type} channel={face.channel ?? false} size={36} /> : <img className="notice-app" src="./icon.svg" alt="" width={36} height={36} />}
+      {face ? <Avatar name={face.name} type={face.type} channel={face.channel} size={36} /> : <img className="notice-app" src="./icon.svg" alt="" width={36} height={36} />}
       <div className="notice-text">
         <div className="notice-title">
           {named ? (

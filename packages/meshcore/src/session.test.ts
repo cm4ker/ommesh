@@ -1789,6 +1789,52 @@ test("pinning a contact to flood drops its route now, and again whenever the rad
   await session.disconnect();
 });
 
+test("a route forgotten by hand is gone at once, before the radio gets to the command", async () => {
+  const radio = new ScriptedRadio();
+  radio.contacts = [contactFrame(BOB, "Bob", 1_699_999_000, 1, [0xa3, 0x7f])];
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  // The radio is busy, as it is while it streams its contacts after a connect.
+  const send = radio.send.bind(radio);
+  let free!: () => void;
+  const busy = new Promise<void>((resolve) => (free = resolve));
+  radio.send = async (frame) => {
+    if (frame[0] === Cmd.ResetPath) await busy;
+    return send(frame);
+  };
+
+  const forgetting = session.resetPath(bobKey());
+  assert.equal(session.getState().contacts[bobKey()]?.outPathLen, 0xff);
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.ResetPath).length, 0);
+
+  free();
+  await forgetting;
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.ResetPath).length, 1);
+  assert.equal(session.getState().contacts[bobKey()]?.outPathLen, 0xff);
+  await session.disconnect();
+});
+
+test("a route the radio refuses to forget comes back", async () => {
+  const radio = new ScriptedRadio();
+  radio.contacts = [contactFrame(BOB, "Bob", 1_699_999_000, 1, [0xa3, 0x7f])];
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  const send = radio.send.bind(radio);
+  radio.send = async (frame) => {
+    if (frame[0] !== Cmd.ResetPath) return send(frame);
+    radio.sent.push(frame);
+    queueMicrotask(() => radio.push(new Uint8Array([Resp.Err, 2])));
+  };
+  const held = session.getState().contacts[bobKey()]!;
+  assert.equal(held.outPathLen, 2);
+
+  const forgetting = session.resetPath(bobKey());
+  assert.equal(session.getState().contacts[bobKey()]?.outPathLen, 0xff);
+  await assert.rejects(forgetting);
+  assert.deepEqual(session.getState().contacts[bobKey()], held);
+  await session.disconnect();
+});
+
 test("a route older than its time limit is dropped before the next message goes", async () => {
   let clock = 1_700_000_000_000;
   const radio = new ScriptedRadio();

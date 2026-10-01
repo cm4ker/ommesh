@@ -1747,12 +1747,27 @@ export class MeshSession {
   private async dropRoute(client: MeshCoreClient, key: string, reason: string): Promise<void> {
     if (this.droppingRoutes.has(key)) return;
     this.droppingRoutes.add(key);
+    // The route goes from the state at once. The command waits its turn behind whatever the
+    // radio is busy with, and the contacts it streams after a connect take seconds over BLE
+    // (74 took 4.6 s on an Android phone). Nothing sent after it can overtake it, so what
+    // goes next to this contact floods. Should the radio refuse, the route comes back.
+    const held = this.state.contacts[key];
+    if (held && held.outPathLen !== 0xff) {
+      this.set({ contacts: { ...this.state.contacts, [key]: { ...held, outPathLen: 0xff, pathSince: null } } });
+    }
     try {
       await client.resetPath(this.contactBytes(key));
       const contact = this.state.contacts[key];
       if (!contact) return;
+      // Again: the radio may have learned a route meanwhile, before the command reached it.
       this.set({ contacts: { ...this.state.contacts, [key]: { ...contact, outPathLen: 0xff, pathSince: null } } });
       this.log("path", `route to ${contact.name || key.slice(0, 12)} dropped: ${reason}`);
+    } catch (error) {
+      const now = this.state.contacts[key];
+      if (held && held.outPathLen !== 0xff && now && now.outPathLen === 0xff) {
+        this.set({ contacts: { ...this.state.contacts, [key]: { ...now, outPathLen: held.outPathLen, outPath: held.outPath, pathSince: held.pathSince } } });
+      }
+      throw error;
     } finally {
       this.droppingRoutes.delete(key);
     }

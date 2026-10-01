@@ -87,13 +87,16 @@ export async function forgetRoute(key: string): Promise<void> {
   const relays = contact ? contactRoute(contact) : null;
   if (!contact || relays === null) return;
   const since = contact.pathSince;
-  if (!(await act(() => session.resetPath(key)))) return;
+  // The route leaves the page at once, and so the note shows at once: the radio may take
+  // seconds to get to the command. A refusal's error takes the note's place.
+  const forgetting = act(() => session.resetPath(key));
   toast(
     t("tools.route.forgot"),
     "",
     { label: t("common.undo"), run: () => void act(() => session.setRoute(key, relays, { learnedAt: since }), t("tools.route.putBack")) },
     t(isConversationType(contact.type) ? "tools.route.forgotMessage" : "tools.route.forgotRequest"),
   );
+  await forgetting;
 }
 
 /** The relays of the route the radio holds for a contact, as contact keys where a hash names one for sure. */

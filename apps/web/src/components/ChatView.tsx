@@ -66,6 +66,8 @@ const FIRST_DRAWN = 60;
 const MORE_DRAWN = 100;
 /** Messages still drawn above one the chat opens or jumps to: the first unread, a match. */
 const ABOVE = 10;
+/** How long the list has to stay still before older messages are drawn in above, ms. */
+const STILL = 150;
 
 export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversation: string; chrome: Chrome; infoOpen?: boolean | undefined; onInfo?: () => void }) {
   const state = useSession();
@@ -311,6 +313,21 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     el.scrollTop = el.scrollHeight - keepBottom.current;
     keepBottom.current = null;
   }, [from]);
+  // Within two screens of the top, the page above is drawn in once the list is still. On an
+  // iPhone the list glides on after the finger lifts, and a scroll position set meanwhile is
+  // lost or lands where the glide has already left, so the messages on screen jumped.
+  const more = useRef(drawMore);
+  more.current = drawMore;
+  const touching = useRef(false);
+  const still = useRef(0);
+  const drawWhenStill = () => {
+    clearTimeout(still.current);
+    still.current = window.setTimeout(() => {
+      const el = scroller.current;
+      if (el && !touching.current && el.scrollTop < el.clientHeight * 2) more.current();
+    }, STILL);
+  };
+  useEffect(() => () => clearTimeout(still.current), []);
 
   // The date over the list while it is scrolled; tapped, the chat's days to go to, the latest first.
   const floating = useFloatingDay(scroller);
@@ -470,8 +487,18 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
           const el = e.currentTarget;
           stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
           measure();
-          // Within a screen of the top, the page above is drawn in.
-          if (el.scrollTop < el.clientHeight) drawMore();
+          drawWhenStill();
+        }}
+        onTouchStart={() => {
+          touching.current = true;
+        }}
+        onTouchEnd={() => {
+          touching.current = false;
+          drawWhenStill();
+        }}
+        onTouchCancel={() => {
+          touching.current = false;
+          drawWhenStill();
         }}
       >
         <div className="chat-inner" ref={inner}>

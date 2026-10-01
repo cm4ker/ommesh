@@ -10,6 +10,7 @@
 
 ### Chats
 - The radio's name and charge stand at the top of Chats, beside the title, so which radio the app is on shows without a trip to Settings. A long name takes the room the title leaves and is cut only past that; the charge is never cut. At 20% and below the charge turns yellow with a warning mark. While the radio is not connected the name dims behind a red dot. A tap opens Settings, where the radio's card is. On a PC the name is at the top of Mesh too, and the radio's button at the bottom of the column of sections is gone: the name says the same, and Settings carries the red dot while the radio is not connected.
+- Scrolling through a chat, the date of the messages at the top floats over them, as in Telegram, and fades a second after you stop. The next day's date, coming up from below, pushes it away. Tap it for the chat's days, each with how many messages it holds, and pick one to go straight to its first message. Opening a chat, a new message coming in or the keyboard coming up does not bring the date out.
 
 ### Mesh and the map
 - On an iPhone a running coverage survey shows on the locked screen: "Survey running · 25 points", its time counting up, and under it who heard the last point or why none is being made, as in Android's notice. On an iPhone with a Dynamic Island the count stands there while another app is open, with a green dot when the last point was answered. It goes when the survey stops. It needs iOS 16.2, and can be turned off in the phone's Settings › Ommesh › Live Activities.

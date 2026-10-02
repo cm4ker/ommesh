@@ -37,16 +37,6 @@ export function writersIn(messages: readonly MessageRecord[], me: string | null)
   return [...byName.values()].sort((a, b) => b.lastAt - a.lastAt);
 }
 
-export type WriterAge = "day" | "week" | "earlier";
-
-const DAY = 86_400_000;
-
-/** Wrote within a day, within a week, or before: those who went quiet sink to the last. */
-export function ageOf(lastAt: number, now: number): WriterAge {
-  const since = now - lastAt;
-  return since < DAY ? "day" : since < 7 * DAY ? "week" : "earlier";
-}
-
 /** The writers whose name holds the query, read as the message search reads, lookalike letters and all. */
 export function findWriters(writers: readonly Writer[], query: string): Writer[] {
   const q = fold(query.trim());

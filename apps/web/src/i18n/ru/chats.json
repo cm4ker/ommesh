@@ -201,9 +201,6 @@
     "other": "{count} человека"
   },
   "writers.shown": "{shown} из {count}",
-  "writers.day": "За сутки",
-  "writers.week": "За неделю",
-  "writers.earlier": "Раньше",
   "writers.messages": {
     "one": "{count} сообщение",
     "few": "{count} сообщения",

@@ -8,22 +8,16 @@ import { openConversation, openProfile } from "../lib/nav.js";
 import { heardAt, hopsLabel, kindLabel } from "../lib/nodes.js";
 import { sendersOf } from "../lib/senders.js";
 import { session, useSession } from "../lib/session.js";
-import { ageOf, findWriters, writersIn, type Writer, type WriterAge } from "../lib/writers.js";
+import { findWriters, writersIn, type Writer } from "../lib/writers.js";
 import { SearchField } from "../ui/Field.js";
 import { Group } from "../ui/List.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
 import { AtIcon, ChatIcon, PersonIcon, SearchIcon } from "./Icons.js";
 import { Gone, ScreenHead, type Chrome } from "./ScreenHead.js";
-import { t, type Key } from "../i18n/index.js";
+import { t } from "../i18n/index.js";
 
-const AGES: { age: WriterAge; title: Key }[] = [
-  { age: "day", title: "chats.writers.day" },
-  { age: "week", title: "chats.writers.week" },
-  { age: "earlier", title: "chats.writers.earlier" },
-];
-
-/** Who has written in a channel (#64), from the history held here, grouped by how lately. */
+/** Who has written in a channel (#64), from the history held here, the latest to write first. */
 export function ChannelWriters({ index, chrome }: { index: number; chrome: Chrome }) {
   const state = useSession();
   const channel = state.channels.find((c) => c.index === index);
@@ -52,25 +46,22 @@ export function ChannelWriters({ index, chrome }: { index: number; chrome: Chrom
           enterKeyHint="search"
         />
         {writers.length === 0 ? <p className="group-note">{t("chats.writers.none")}</p> : shown.length === 0 ? <p className="group-note">{t("chats.writers.noMatch")}</p> : null}
-        {AGES.map(({ age, title }) => {
-          const rows = shown.filter((w) => ageOf(w.lastAt, now) === age);
-          return rows.length ? (
-            <Group key={age} title={t(title)}>
-              {rows.map((w) => (
-                <button key={w.name} type="button" className="line line-link" onClick={() => writerMenu(w, conversation)}>
-                  <Avatar name={w.name} size={32} />
-                  <span className="line-text">
-                    <span>{w.name}</span>
-                    <small>
-                      {agoPhrase(w.lastAt, now)} · {t("chats.writers.messages", { count: w.count })}
-                    </small>
-                  </span>
-                  {w.last.hops !== null ? <span className="line-value">{w.last.hops === 0 ? t("chats.chat.direct") : t("chats.chat.hops", { count: w.last.hops })}</span> : null}
-                </button>
-              ))}
-            </Group>
-          ) : null;
-        })}
+        {shown.length ? (
+          <Group>
+            {shown.map((w) => (
+              <button key={w.name} type="button" className="line line-link" onClick={() => writerMenu(w, conversation)}>
+                <Avatar name={w.name} size={32} />
+                <span className="line-text">
+                  <span>{w.name}</span>
+                  <small>
+                    {agoPhrase(w.lastAt, now)} · {t("chats.writers.messages", { count: w.count })}
+                  </small>
+                </span>
+                {w.last.hops !== null ? <span className="line-value">{w.last.hops === 0 ? t("chats.chat.direct") : t("chats.chat.hops", { count: w.last.hops })}</span> : null}
+              </button>
+            ))}
+          </Group>
+        ) : null}
         {writers.length > 0 ? <p className="group-note">{t("chats.writers.note")}</p> : null}
       </div>
     </div>

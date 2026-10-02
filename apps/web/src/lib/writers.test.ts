@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { MessageRecord } from "@meshnet/meshcore";
-import { ageOf, findWriters, writersIn } from "./writers.js";
+import { findWriters, writersIn } from "./writers.js";
 
 let seq = 0;
 function message(sender: string | null, receivedAt: number, direction: "in" | "out" = "in", hops: number | null = null): MessageRecord {
@@ -55,13 +55,6 @@ test("a message filed out of order does not take the place of a later one", () =
   const [kite] = writersIn([message("Kite", 5_000, "in", 2), message("Kite", 4_000, "in", 6)], null);
   assert.equal(kite!.lastAt, 5_000);
   assert.equal(kite!.last.hops, 2);
-});
-
-test("a day, a week, and before", () => {
-  const now = 100 * 86_400_000;
-  assert.equal(ageOf(now - 60_000, now), "day");
-  assert.equal(ageOf(now - 2 * 86_400_000, now), "week");
-  assert.equal(ageOf(now - 8 * 86_400_000, now), "earlier");
 });
 
 test("found by name, case and lookalike letters aside", () => {

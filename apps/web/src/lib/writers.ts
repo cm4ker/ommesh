@@ -7,34 +7,43 @@
  */
 
 import type { MessageRecord } from "@meshnet/meshcore";
+import { placedAt } from "./conversations.js";
 import { fold } from "./messageSearch.js";
 
 export interface Writer {
   name: string;
+  /** Written from this radio: our own messages, under the name it had when each went. */
+  mine: boolean;
   /** How many of their messages the history holds. */
   count: number;
-  /** When their latest came in, local ms. */
+  /** When their latest came in, or ours went, local ms. */
   lastAt: number;
   /** Their latest message: how far it came, how loud, and the way it took. */
   last: MessageRecord;
 }
 
-/** Everyone who wrote among these messages, the latest to write first; `me` is left out. */
-export function writersIn(messages: readonly MessageRecord[], me: string | null): Writer[] {
-  const byName = new Map<string, Writer>();
+/**
+ * Everyone who wrote among these messages, the latest to write first, this
+ * radio among them. Someone else heard under our name is a row of their own.
+ */
+export function writersIn(messages: readonly MessageRecord[]): Writer[] {
+  const rows = new Map<string, Writer>();
   for (const m of messages) {
-    if (m.direction !== "in" || !m.sender || m.sender === me) continue;
-    const seen = byName.get(m.sender);
-    if (!seen) byName.set(m.sender, { name: m.sender, count: 1, lastAt: m.receivedAt, last: m });
+    if (!m.sender) continue;
+    const mine = m.direction === "out";
+    const key = `${mine ? "out" : "in"}:${m.sender}`;
+    const at = placedAt(m);
+    const seen = rows.get(key);
+    if (!seen) rows.set(key, { name: m.sender, mine, count: 1, lastAt: at, last: m });
     else {
       seen.count++;
-      if (m.receivedAt >= seen.lastAt) {
-        seen.lastAt = m.receivedAt;
+      if (at >= seen.lastAt) {
+        seen.lastAt = at;
         seen.last = m;
       }
     }
   }
-  return [...byName.values()].sort((a, b) => b.lastAt - a.lastAt);
+  return [...rows.values()].sort((a, b) => b.lastAt - a.lastAt);
 }
 
 /** The writers whose name holds the query, read as the message search reads, lookalike letters and all. */

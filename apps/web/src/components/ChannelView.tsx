@@ -21,8 +21,7 @@ export function ChannelView({ index, chrome }: { index: number; chrome: Chrome }
   const online = state.status === "ready";
   const [name, setName] = useState(channel?.name ?? "");
   const [removing, setRemoving] = useState(false);
-  const me = state.self?.name ?? null;
-  const writers = useMemo(() => writersIn(messagesIn(state, channelConversation(index)), me), [state, index, me]);
+  const writers = useMemo(() => writersIn(messagesIn(state, channelConversation(index))), [state, index]);
 
   useEffect(() => setName(channel?.name ?? ""), [channel?.name]);
 
@@ -54,7 +53,7 @@ export function ChannelView({ index, chrome }: { index: number; chrome: Chrome }
                 <span className="writers-row-value">
                   <span className="faces" aria-hidden="true">
                     {writers.slice(0, 3).map((w) => (
-                      <Avatar key={w.name} name={w.name} size={22} />
+                      <Avatar key={`${w.mine}:${w.name}`} name={w.name} size={22} />
                     ))}
                   </span>
                   {writers.length}

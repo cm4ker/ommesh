@@ -13,7 +13,7 @@ import { dayLabel, emojiOnly, timeOfDay } from "../lib/format.js";
 import { useJumboEmoji } from "../lib/jumboEmoji.js";
 import { moveForKeyboard } from "../lib/keyboard.js";
 import { onJump, takeJump, type Jump } from "../lib/jump.js";
-import { findMessages, messagesFrom, searchTerm } from "../lib/messageSearch.js";
+import { findMessages, messagesFrom, searchTerm, type Sender } from "../lib/messageSearch.js";
 import { openChannel, openMessage, openProfile } from "../lib/nav.js";
 import { openRoute } from "../lib/toolActions.js";
 import { usePress } from "../lib/press.js";
@@ -283,9 +283,12 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   // The chat's own search: every match marked, one at a time in sight, the newest first. Opened
   // from the list of who writes (#64), it goes through one sender's messages, and words typed
   // narrow those.
-  const [askedFrom] = useState(() => takeAsk(conversation, "from")?.name ?? null);
+  const [askedFrom] = useState(() => {
+    const ask = takeAsk(conversation, "from");
+    return ask ? { name: ask.name, mine: ask.mine ?? false } : null;
+  });
   const [finding, setFinding] = useState(askedFrom !== null);
-  const [findFrom, setFindFrom] = useState<string | null>(askedFrom);
+  const [findFrom, setFindFrom] = useState<Sender | null>(askedFrom);
   const [findQuery, setFindQuery] = useState("");
   const [picked, setPicked] = useState<string | null>(null);
   const findField = useRef<HTMLInputElement>(null);
@@ -398,7 +401,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
         setFound(null);
         setFindQuery("");
         setPicked(null);
-        setFindFrom(ask.name);
+        setFindFrom({ name: ask.name, mine: ask.mine ?? false });
         setFinding(true);
       }),
     [conversation],
@@ -434,16 +437,16 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
             <button
               type="button"
               className="chat-find-from"
-              aria-label={t("chats.find.dropFrom", { name: findFrom })}
-              title={t("chats.find.dropFrom", { name: findFrom })}
+              aria-label={t("chats.find.dropFrom", { name: findFrom.name })}
+              title={t("chats.find.dropFrom", { name: findFrom.name })}
               onClick={() => {
                 setFindFrom(null);
                 setPicked(null);
                 findField.current?.focus();
               }}
             >
-              <Avatar name={findFrom} size={20} />
-              <span className="chat-find-from-name">{findFrom}</span>
+              <Avatar name={findFrom.name} size={20} />
+              <span className="chat-find-from-name">{findFrom.name}</span>
               <CloseIcon size={12} />
             </button>
           ) : null}

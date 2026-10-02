@@ -30,7 +30,7 @@ function message(sender: string | null, receivedAt: number, direction: "in" | "o
 }
 
 test("one row per name, counted, the latest to write first", () => {
-  const writers = writersIn([message("Kite", 1_000, "in", 3), message("Fox 🦊", 2_000), message("Kite", 3_000, "in", 1), message("Ridge", 2_500)], "Me");
+  const writers = writersIn([message("Kite", 1_000, "in", 3), message("Fox 🦊", 2_000), message("Kite", 3_000, "in", 1), message("Ridge", 2_500)]);
   assert.deepEqual(
     writers.map((w) => [w.name, w.count, w.lastAt]),
     [
@@ -43,22 +43,26 @@ test("one row per name, counted, the latest to write first", () => {
   assert.equal(writers[0]!.last.hops, 1);
 });
 
-test("ours, our own name and unnamed messages are left out", () => {
-  const writers = writersIn([message("Me", 1_000, "out"), message("Me", 2_000), message(null, 3_000), message("Kite", 4_000)], "Me");
+test("ours are a row of their own, apart from someone else heard under our name; unnamed ones are left out", () => {
+  const writers = writersIn([message("Me", 1_000, "out"), message("Me", 2_000), message(null, 3_000), message("Kite", 4_000), message("Me", 5_000, "out")]);
   assert.deepEqual(
-    writers.map((w) => w.name),
-    ["Kite"],
+    writers.map((w) => [w.name, w.mine, w.count]),
+    [
+      ["Me", true, 2],
+      ["Kite", false, 1],
+      ["Me", false, 1],
+    ],
   );
 });
 
 test("a message filed out of order does not take the place of a later one", () => {
-  const [kite] = writersIn([message("Kite", 5_000, "in", 2), message("Kite", 4_000, "in", 6)], null);
+  const [kite] = writersIn([message("Kite", 5_000, "in", 2), message("Kite", 4_000, "in", 6)]);
   assert.equal(kite!.lastAt, 5_000);
   assert.equal(kite!.last.hops, 2);
 });
 
 test("found by name, case and lookalike letters aside", () => {
-  const writers = writersIn([message("Kolya ⛺", 1_000), message("Марина", 2_000), message("Bob (bike)", 3_000)], null);
+  const writers = writersIn([message("Kolya ⛺", 1_000), message("Марина", 2_000), message("Bob (bike)", 3_000)]);
   assert.deepEqual(
     findWriters(writers, "kol").map((w) => w.name),
     ["Kolya ⛺"],

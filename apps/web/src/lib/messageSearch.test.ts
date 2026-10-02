@@ -101,15 +101,20 @@ test("one sender's messages, the newest first, narrowed by a query once it is lo
   const ours: MessageRecord = { ...said("o", "Kite", "kite here too", 5), direction: "out" };
   const all = [said("a", "Kite", "on the ridge", 1), said("b", "Fox", "on the ridge too", 2), said("c", "Kite", "back home", 3), ours];
   assert.deepEqual(
-    messagesFrom(all, "Kite", "").map((m) => m.id),
+    messagesFrom(all, { name: "Kite", mine: false }, "").map((m) => m.id),
     ["c", "a"],
   );
   assert.deepEqual(
-    messagesFrom(all, "Kite", "ridge").map((m) => m.id),
+    messagesFrom(all, { name: "Kite", mine: false }, "ridge").map((m) => m.id),
     ["a"],
   );
   assert.deepEqual(
-    messagesFrom(all, "Kite", "r").map((m) => m.id),
+    messagesFrom(all, { name: "Kite", mine: false }, "r").map((m) => m.id),
     ["c", "a"],
+  );
+  // Ours, under the name we wrote them with.
+  assert.deepEqual(
+    messagesFrom(all, { name: "Kite", mine: true }, "").map((m) => m.id),
+    ["o"],
   );
 });

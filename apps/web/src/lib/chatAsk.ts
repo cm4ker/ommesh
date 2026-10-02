@@ -9,6 +9,8 @@ export interface ChatAsk {
   conversation: string;
   kind: "mention" | "from";
   name: string;
+  /** For "from": our own messages, written under that name. */
+  mine?: boolean;
 }
 
 let pending: ChatAsk | null = null;

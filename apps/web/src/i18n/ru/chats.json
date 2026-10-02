@@ -216,6 +216,7 @@
   "writers.write": "Написать лично",
   "writers.mention": "Упомянуть в канале",
   "writers.theirs": "Сообщения в канале",
+  "writers.you": "вы",
   "notices.label": "Уведомления",
   "notices.mentionsHint": "Только когда кто-то пишет ваше имя.",
   "notices.default": "По умолчанию ({level})",

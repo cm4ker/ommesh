@@ -22,9 +22,8 @@ export function ChannelWriters({ index, chrome }: { index: number; chrome: Chrom
   const state = useSession();
   const channel = state.channels.find((c) => c.index === index);
   const conversation = channelConversation(index);
-  const me = state.self?.name ?? null;
   const messages = useMemo(() => messagesIn(state, conversation), [state, conversation]);
-  const writers = useMemo(() => writersIn(messages, me), [messages, me]);
+  const writers = useMemo(() => writersIn(messages), [messages]);
   const [query, setQuery] = useState("");
   const shown = findWriters(writers, query);
   const now = Date.now();
@@ -49,11 +48,12 @@ export function ChannelWriters({ index, chrome }: { index: number; chrome: Chrom
         {shown.length ? (
           <Group>
             {shown.map((w) => (
-              <button key={w.name} type="button" className="line line-link" onClick={() => writerMenu(w, conversation)}>
+              <button key={`${w.mine}:${w.name}`} type="button" className="line line-link" onClick={() => (w.mine ? ourMessages(w, conversation) : writerMenu(w, conversation))}>
                 <Avatar name={w.name} size={32} />
                 <span className="line-text">
                   <span>{w.name}</span>
                   <small>
+                    {w.mine ? `${t("chats.writers.you")} · ` : ""}
                     {agoPhrase(w.lastAt, now)} · {t("chats.writers.messages", { count: w.count })}
                   </small>
                 </span>
@@ -76,6 +76,12 @@ function wayOf(w: Writer, contacts: Record<string, ContactRecord>): string | nul
   const first = spreadOf(w.last.echoes).first[0]?.hash;
   const count = t("chats.chat.hops", { count: hops });
   return first ? t("chats.writers.via", { hops: count, name: nameOfHash(first, contacts) ?? first.toUpperCase() }) : count;
+}
+
+/** Ours: nothing to ask of ourselves, so straight to the messages we wrote here. */
+function ourMessages(w: Writer, conversation: string): void {
+  askChat({ conversation, kind: "from", name: w.name, mine: true });
+  openConversation(conversation);
 }
 
 /** What can be done about one who wrote: their profile, a word to them, a mention, their messages. */

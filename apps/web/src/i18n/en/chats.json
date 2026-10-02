@@ -186,6 +186,7 @@
   "writers.write": "Message directly",
   "writers.mention": "Mention in the channel",
   "writers.theirs": "Their messages",
+  "writers.you": "you",
   "notices.label": "Notifications",
   "notices.mentionsHint": "Only when someone writes your name.",
   "notices.default": "Default ({level})",

@@ -17,7 +17,7 @@ export type Section = "chats" | "mesh" | "radio";
 export type NodePage = "neighbours" | "history" | "settings" | "access" | "console";
 
 /** The radio section's pages. */
-export type RadioPage = "name" | "frequency" | "readings" | "privacy" | "position" | "trusted" | "contacts" | "removed" | "advanced" | "notifications" | "sound" | "soundDirect" | "soundChats" | "soundNodes" | "messages" | "history" | "appearance" | "connection" | "air" | "log" | "power" | "about" | "people";
+export type RadioPage = "name" | "frequency" | "readings" | "privacy" | "trusted" | "contacts" | "removed" | "advanced" | "notifications" | "sound" | "soundDirect" | "soundChats" | "soundNodes" | "messages" | "history" | "appearance" | "connection" | "air" | "log" | "power" | "about" | "people";
 
 export type Screen =
   | { kind: "chat"; conversation: string }
@@ -52,11 +52,12 @@ function restore(saved: unknown): Nav {
   const value = saved as Partial<Nav>;
   if (value.stacks && SECTIONS.includes(value.section as Section)) {
     const stacks = { ...EMPTY.stacks };
-    // A route was a screen of its own before it moved to the map; Battery and Sensors became Readings.
+    // A route was a screen of its own before it moved to the map, and the radio's position became a part of
+    // Privacy, which lies under it on the stack; Battery and Sensors became Readings.
     for (const s of SECTIONS)
       if (Array.isArray(value.stacks[s]))
         stacks[s] = value.stacks[s]
-          .filter((x) => x && typeof x === "object" && "kind" in x && (x as { kind: string }).kind !== "route")
+          .filter((x) => x && typeof x === "object" && "kind" in x && (x as { kind: string }).kind !== "route" && !(x.kind === "radio" && (x.page as string) === "position"))
           .map((x) => (x.kind === "radio" && ((x.page as string) === "battery" || (x.page as string) === "sensors") ? { kind: "radio", page: "readings" } : x));
     return { section: value.section as Section, stacks, meshFocus: typeof value.meshFocus === "string" ? value.meshFocus : null };
   }

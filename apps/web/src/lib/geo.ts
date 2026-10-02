@@ -20,6 +20,15 @@ export function parseLatLon(text: string): { lat: number; lon: number } | null {
   return Math.abs(lat) <= 90 && Math.abs(lon) <= 180 ? { lat, lon } : null;
 }
 
+/**
+ * One half of a position with its decimal comma made a point, as a number pad
+ * in a comma locale types it: "55,7558" is one half, not two whole degrees.
+ * Anything else comes back trimmed and otherwise as it was.
+ */
+export function pointDecimal(text: string): string {
+  return text.trim().replace(/^(-?\d+),(\d+)$/, "$1.$2");
+}
+
 /** A spot as a map copies it: five decimals, about a metre. */
 export function formatLatLon(lat: number, lon: number): string {
   return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AdvType } from "@meshnet/meshcore";
-import { bearingDeg, compass, destination, distanceKm, formatDistance, formatLatLon, formatRoundDistance, freshness, hasPosition, metresPerPixel, parseLatLon, scaleBar } from "./geo.js";
+import { bearingDeg, compass, destination, distanceKm, formatDistance, formatLatLon, formatRoundDistance, freshness, hasPosition, metresPerPixel, parseLatLon, pointDecimal, scaleBar } from "./geo.js";
 
 test("0, 0 is no position, and so is anything off the globe", () => {
   assert.equal(hasPosition(0, 0), false);
@@ -67,6 +67,14 @@ test("a position pasted from a map, or a geo: link, gives both halves", () => {
   assert.equal(parseLatLon("95.1, 37.6"), null);
   assert.equal(parseLatLon("55.7, 37.6, 12z"), null);
   assert.equal(parseLatLon("Moscow"), null);
+});
+
+test("a half typed with a decimal comma reads as one number", () => {
+  assert.equal(pointDecimal("55,7558"), "55.7558");
+  assert.equal(pointDecimal(" -33,8688 "), "-33.8688");
+  assert.equal(pointDecimal("55.7558"), "55.7558");
+  assert.equal(pointDecimal("55.75580, 37.61730"), "55.75580, 37.61730");
+  assert.equal(parseLatLon(pointDecimal("55,75")), null);
 });
 
 test("a spot reads as a map copies it, and reads back the same", () => {

@@ -1,20 +1,20 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AdvType, isConversationType, isDirect, parseConversation, type ContactRecord, type MessageRecord, type SessionState } from "@meshnet/meshcore";
+import { AdvType, isConversationType, isDirect, parseConversation, type MessageRecord, type SessionState } from "@meshnet/meshcore";
 import { useBackLayer } from "../lib/back.js";
 import { channelAccess } from "../lib/channels.js";
+import { onAsk, takeAsk } from "../lib/chatAsk.js";
 import { GEO, MENTION } from "../lib/composer.js";
 import { LINK, linkOf, openLink } from "../lib/webLinks.js";
 import { daysIn, messagesIn, shownIn, titleOf, type Shown } from "../lib/conversations.js";
 import { nameOfHash, relaysOf } from "../lib/echoes.js";
 import { getOpenAtUnread, takeUnread } from "../lib/firstUnread.js";
 import { useFloatingDay } from "../lib/floatingDay.js";
-import { agoPhrase, dayLabel, emojiOnly, timeOfDay } from "../lib/format.js";
+import { dayLabel, emojiOnly, timeOfDay } from "../lib/format.js";
 import { useJumboEmoji } from "../lib/jumboEmoji.js";
 import { moveForKeyboard } from "../lib/keyboard.js";
 import { onJump, takeJump, type Jump } from "../lib/jump.js";
-import { findMessages, searchTerm } from "../lib/messageSearch.js";
+import { findMessages, messagesFrom, searchTerm } from "../lib/messageSearch.js";
 import { openChannel, openMessage, openProfile } from "../lib/nav.js";
-import { heardAt, hopsLabel, kindLabel } from "../lib/nodes.js";
 import { openRoute } from "../lib/toolActions.js";
 import { usePress } from "../lib/press.js";
 import { routeWords } from "../lib/routes.js";
@@ -26,6 +26,7 @@ import { Button, IconButton } from "../ui/Button.js";
 import { SearchField } from "../ui/Field.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar, SenderName } from "./Avatar.js";
+import { pickProfile } from "./ChannelWriters.js";
 import { Composer, type Reply } from "./Composer.js";
 import { NotOnRadio } from "./ContactsPages.js";
 import {
@@ -35,6 +36,7 @@ import {
   ChevronRightIcon,
   ChevronUpIcon,
   ClockIcon,
+  CloseIcon,
   CopyIcon,
   DoubleCheckIcon,
   InfoIcon,
@@ -101,10 +103,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
         return;
       }
       if (found.length > 1) {
-        showMenu(
-          found.map((c) => ({ label: c.name, hint: nodeLine(c), icon: <Avatar name={c.name} type={c.type} size={28} />, onSelect: () => openProfile(c.key) })),
-          { title: t("chats.chat.sameName", { count: found.length, name }) },
-        );
+        pickProfile(found, name);
         return;
       }
       showMenu([{ label: t("chats.message.reply"), icon: <ReplyIcon size={17} />, onSelect: () => answer(message) }], { title: t("chats.chat.noAdvert", { name }) });
@@ -281,12 +280,16 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     return () => clearTimeout(done);
   }, [flashing]);
 
-  // The chat's own search: every match marked, one at a time in sight, the newest first.
-  const [finding, setFinding] = useState(false);
+  // The chat's own search: every match marked, one at a time in sight, the newest first. Opened
+  // from the list of who writes (#64), it goes through one sender's messages, and words typed
+  // narrow those.
+  const [askedFrom] = useState(() => takeAsk(conversation, "from")?.name ?? null);
+  const [finding, setFinding] = useState(askedFrom !== null);
+  const [findFrom, setFindFrom] = useState<string | null>(askedFrom);
   const [findQuery, setFindQuery] = useState("");
   const [picked, setPicked] = useState<string | null>(null);
   const findField = useRef<HTMLInputElement>(null);
-  const matches = useMemo(() => (finding ? findMessages(messages, findQuery) : []), [finding, messages, findQuery]);
+  const matches = useMemo(() => (!finding ? [] : findFrom !== null ? messagesFrom(messages, findFrom, findQuery) : findMessages(messages, findQuery)), [finding, findFrom, messages, findQuery]);
   const matched = useMemo(() => new Set(matches.map((m) => m.id)), [matches]);
   // Held by its id, so a match arriving meanwhile does not move the one looked at.
   const index = Math.max(0, matches.findIndex((m) => m.id === picked));
@@ -368,6 +371,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   };
   const closeFind = useCallback(() => {
     setFinding(false);
+    setFindFrom(null);
     setFindQuery("");
     setPicked(null);
   }, []);
@@ -385,6 +389,20 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     window.addEventListener(FIND_IN_CHAT_EVENT, openFind);
     return () => window.removeEventListener(FIND_IN_CHAT_EVENT, openFind);
   }, [openFind]);
+  // One sender's messages asked for while this chat is already open, as on the desktop.
+  useEffect(
+    () =>
+      onAsk((ask) => {
+        if (ask.conversation !== conversation || ask.kind !== "from") return;
+        takeAsk(conversation, "from");
+        setFound(null);
+        setFindQuery("");
+        setPicked(null);
+        setFindFrom(ask.name);
+        setFinding(true);
+      }),
+    [conversation],
+  );
   // A result picked while this chat is already open, as on the desktop.
   useEffect(
     () =>
@@ -412,10 +430,28 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     <div ref={screen} className={["screen chat", finding ? "finding" : ""].join(" ")}>
       {finding ? (
         <header className="screen-head chat-find-head">
+          {findFrom !== null ? (
+            <button
+              type="button"
+              className="chat-find-from"
+              aria-label={t("chats.find.dropFrom", { name: findFrom })}
+              title={t("chats.find.dropFrom", { name: findFrom })}
+              onClick={() => {
+                setFindFrom(null);
+                setPicked(null);
+                findField.current?.focus();
+              }}
+            >
+              <Avatar name={findFrom} size={20} />
+              <span className="chat-find-from-name">{findFrom}</span>
+              <CloseIcon size={12} />
+            </button>
+          ) : null}
           <SearchField
             ref={findField}
             value={findQuery}
-            autoFocus
+            // Stepping through one sender's messages, the keyboard would only hide them.
+            autoFocus={findFrom === null}
             onValue={(next) => {
               setFindQuery(next);
               setPicked(null);
@@ -529,6 +565,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
                   contacts={m.direction === "out" ? state.contacts : undefined}
                   mark={finding ? (matched.has(m.id) ? findQuery : undefined) : found?.id === m.id ? found.query : undefined}
                   current={m.id === current}
+                  faded={finding && findFrom !== null && !matched.has(m.id)}
                   flash={m.id === flashing}
                 />
               </div>
@@ -554,7 +591,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
       {finding ? (
         <footer className="chat-find-bar">
           <span className="chat-find-count muted" aria-live="polite">
-            {searchTerm(findQuery) === null ? "" : matches.length ? t("chats.find.count", { n: index + 1, count: matches.length }) : t("chats.find.none")}
+            {searchTerm(findQuery) === null && findFrom === null ? "" : matches.length ? t("chats.find.count", { n: index + 1, count: matches.length }) : t("chats.find.none")}
           </span>
           {/* Kept from taking the focus, so the keyboard stays up for another word. */}
           <IconButton label={t("chats.find.older")} disabled={index >= matches.length - 1} onPointerDown={(e) => e.preventDefault()} onClick={() => move(1)}>
@@ -672,12 +709,6 @@ function sameRun(a: MessageRecord, b: MessageRecord, shown: Map<string, Shown>):
   return a.direction === b.direction && a.sender === b.sender && !to.newDay && to.at - from.at < 300;
 }
 
-/** A node among several of one name, told apart by what it is and when it was last heard. */
-function nodeLine(contact: ContactRecord): string {
-  const at = heardAt(contact);
-  return [kindLabel(contact.type), at ? t("chats.chat.heardAgo", { time: agoPhrase(at) }) : t("chats.chat.neverHeard"), hopsLabel(contact)].join(" · ");
-}
-
 interface MessageProps {
   message: MessageRecord;
   /** The time on it, unix seconds, as `shownIn` gives it. */
@@ -696,6 +727,8 @@ interface MessageProps {
   mark: string | undefined;
   /** The match the chat's search has in sight. */
   current: boolean;
+  /** Not one of the sender's the search goes through: set back, so theirs stand out. */
+  faded: boolean;
   /** Just opened from a search result. */
   flash: boolean;
 }
@@ -704,7 +737,7 @@ interface MessageProps {
  * One bubble. Memoised: a message arriving, or an echo of one, changes one record, and the
  * other bubbles of a long conversation have nothing new to draw.
  */
-const Message = memo(function Message({ message, at, lead, showSender, avatar, me, onReply: replyTo, onWho, contacts, mark, current, flash }: MessageProps) {
+const Message = memo(function Message({ message, at, lead, showSender, avatar, me, onReply: replyTo, onWho, contacts, mark, current, faded, flash }: MessageProps) {
   const out = message.direction === "out";
   const [busy, setBusy] = useState(false);
   const large = useJumboEmoji();
@@ -769,7 +802,7 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
   const relayTitle = relays.length && contacts ? t("chats.chat.relayedBy", { count: relays.length, names: relays.map((r) => nameOfHash(r.hash, contacts) ?? r.hash).join(", ") }) : undefined;
 
   return (
-    <div className={["msg", out ? "out" : "in", lead ? "lead" : ""].join(" ")} data-reply={onReply ? message.id : undefined}>
+    <div className={["msg", out ? "out" : "in", lead ? "lead" : "", faded ? "msg-faded" : ""].join(" ")} data-reply={onReply ? message.id : undefined}>
       <span className="msg-reply-cue" aria-hidden="true">
         <ReplyIcon size={16} />
       </span>

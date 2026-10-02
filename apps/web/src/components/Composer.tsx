@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { AdvType, MAX_TEXT_LEN, parseConversation } from "@meshnet/meshcore";
+import { onAsk, takeAsk } from "../lib/chatAsk.js";
 import { costOf, blockEdges, hasCyrillic, headerBytes, mentionOf, mentionQuery, pathBytes, quoteOf, segments, splitParts, translit } from "../lib/composer.js";
 import { messagesIn } from "../lib/conversations.js";
 import { getDraft, setDraft } from "../lib/drafts.js";
@@ -122,6 +123,29 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
     el.setSelectionRange(el.value.length, el.value.length);
     raiseKeyboard();
   }, [reply]);
+
+  // A name asked for from the list of who writes (#64): it heads the field, past a reply's quote,
+  // and the keyboard comes up for the rest. Asked while the chat is open, as on the desktop, too.
+  const putName = useRef<(name: string) => void>(() => {});
+  putName.current = (name) => {
+    const el = field.current;
+    if (!el) return;
+    const tag = mentionOf(name);
+    const at = quoted.current && el.value.startsWith(quoted.current) ? quoted.current.length : 0;
+    if (!el.value.startsWith(tag, at)) replace(at, at, tag);
+    el.focus({ preventScroll: true });
+    el.setSelectionRange(el.value.length, el.value.length);
+    raiseKeyboard();
+  };
+  useLayoutEffect(() => {
+    const asked = takeAsk(conversation, "mention");
+    if (asked) putName.current(asked.name);
+    return onAsk((ask) => {
+      if (ask.conversation !== conversation || ask.kind !== "mention") return;
+      takeAsk(conversation, "mention");
+      putName.current(ask.name);
+    });
+  }, [conversation]);
 
   /**
    * The reply let go: its quote goes with it, unless it has been written over. Let go from the

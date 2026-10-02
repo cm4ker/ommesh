@@ -1582,10 +1582,42 @@ mark {
 /* A chat's own search: the field in place of its head, and in place of the composer the way between the matches. */
 .chat-find-head .search {
   flex: 1;
+  min-width: 0;
   margin: 0 0 0 var(--space-2);
 }
 .chat.finding > .compose {
   display: none;
+}
+/* Going through one sender's messages (#64): their name before the field, tapped to search everyone's. */
+.chat-find-from {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 45%;
+  height: calc(30px * var(--box-scale));
+  margin-left: var(--space-2);
+  padding: 0 8px 0 4px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.chat-find-from-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-find-from:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.msg-faded {
+  opacity: 0.4;
 }
 .chat-find-bar {
   flex: none;
@@ -1889,6 +1921,25 @@ button.line:disabled,
 .line-chev {
   flex: none;
   color: var(--text-faint);
+}
+/* Who wrote in a channel (#64): the latest three faces, overlapping, before the count. */
+.writers-row-value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+.faces {
+  display: inline-flex;
+}
+.faces .avatar {
+  box-shadow: 0 0 0 2px var(--panel);
+}
+.app.wide .pane .faces .avatar {
+  box-shadow: 0 0 0 2px var(--bg);
+}
+.faces .avatar + .avatar {
+  margin-left: -6px;
 }
 
 /* ---- People: About's row and its page ---- */

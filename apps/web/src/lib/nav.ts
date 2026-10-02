@@ -24,6 +24,8 @@ export type Screen =
   /** How one message travelled: a sheet over its chat on the phone, the panel on the desktop. */
   | { kind: "message"; conversation: string; id: string }
   | { kind: "channel"; index: number }
+  /** Who has written in a channel, opened from its page. */
+  | { kind: "writers"; index: number }
   | { kind: "profile"; key: string }
   | { kind: "node"; key: string; page: NodePage }
   | { kind: "radio"; page: RadioPage };
@@ -156,6 +158,10 @@ export function openProfile(key: string, inMesh = false): void {
 
 export function openChannel(index: number): void {
   push({ kind: "channel", index });
+}
+
+export function openWriters(index: number): void {
+  push({ kind: "writers", index });
 }
 
 export function openMessage(conversation: string, id: string): void {

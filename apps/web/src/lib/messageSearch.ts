@@ -54,6 +54,15 @@ export function findMessages(messages: readonly MessageRecord[], query: string):
   return messages.filter((m) => foldedText(m).includes(q)).sort((a, b) => placedAt(b) - placedAt(a));
 }
 
+/**
+ * One sender's messages in a channel or a room, the newest first: all of them, or with a query
+ * long enough to search, those holding it (#64).
+ */
+export function messagesFrom(messages: readonly MessageRecord[], sender: string, query: string): MessageRecord[] {
+  const q = searchTerm(query);
+  return messages.filter((m) => m.direction === "in" && m.sender === sender && (!q || foldedText(m).includes(q))).sort((a, b) => placedAt(b) - placedAt(a));
+}
+
 /** Where the query stands in a text: start and end of each place, in order, none overlapping. */
 export function matchRanges(text: string, query: string): [number, number][] {
   const q = searchTerm(query);

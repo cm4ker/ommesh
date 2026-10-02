@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { MessageRecord } from "@meshnet/meshcore";
-import { findMessages, fold, matchRanges, searchTerm, snippet } from "./messageSearch.js";
+import { findMessages, fold, matchRanges, messagesFrom, searchTerm, snippet } from "./messageSearch.js";
 
 function message(id: string, text: string, timestamp: number, conversation = "ch:0"): MessageRecord {
   return {
@@ -94,4 +94,22 @@ test("a line is never cut inside an emoji", () => {
   const cut = snippet(text, "антенна");
   const first = cut.charCodeAt(1);
   assert.ok(first < 0xdc00 || first > 0xdfff);
+});
+
+test("one sender's messages, the newest first, narrowed by a query once it is long enough", () => {
+  const said = (id: string, sender: string, text: string, at: number): MessageRecord => ({ ...message(id, text, at), sender });
+  const ours: MessageRecord = { ...said("o", "Kite", "kite here too", 5), direction: "out" };
+  const all = [said("a", "Kite", "on the ridge", 1), said("b", "Fox", "on the ridge too", 2), said("c", "Kite", "back home", 3), ours];
+  assert.deepEqual(
+    messagesFrom(all, "Kite", "").map((m) => m.id),
+    ["c", "a"],
+  );
+  assert.deepEqual(
+    messagesFrom(all, "Kite", "ridge").map((m) => m.id),
+    ["a"],
+  );
+  assert.deepEqual(
+    messagesFrom(all, "Kite", "r").map((m) => m.id),
+    ["c", "a"],
+  );
 });

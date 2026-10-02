@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { channelConversation, fromHex } from "@meshnet/meshcore";
 import { channelAccess } from "../lib/channels.js";
-import { openConversation } from "../lib/nav.js";
+import { messagesIn } from "../lib/conversations.js";
+import { openConversation, openWriters } from "../lib/nav.js";
 import { session, useSession } from "../lib/session.js";
 import { act, toast } from "../lib/toast.js";
+import { writersIn } from "../lib/writers.js";
 import { Confirm } from "../ui/Dialog.js";
 import { ActionRow, Block, Group, LinkRow } from "../ui/List.js";
 import { Avatar } from "./Avatar.js";
@@ -12,13 +14,15 @@ import { CopyIcon } from "./Icons.js";
 import { Gone, ScreenHead, type Chrome } from "./ScreenHead.js";
 import { t } from "../i18n/index.js";
 
-/** A channel's own page, opened from its conversation: its name, its key, and leaving it. */
+/** A channel's own page, opened from its conversation: who writes in it, its name, its key, and leaving it. */
 export function ChannelView({ index, chrome }: { index: number; chrome: Chrome }) {
   const state = useSession();
   const channel = state.channels.find((c) => c.index === index);
   const online = state.status === "ready";
   const [name, setName] = useState(channel?.name ?? "");
   const [removing, setRemoving] = useState(false);
+  const me = state.self?.name ?? null;
+  const writers = useMemo(() => writersIn(messagesIn(state, channelConversation(index)), me), [state, index, me]);
 
   useEffect(() => setName(channel?.name ?? ""), [channel?.name]);
 
@@ -42,6 +46,24 @@ export function ChannelView({ index, chrome }: { index: number; chrome: Chrome }
           <span className="muted">{t("chats.channel.slot", { index: channel.index })}</span>
         </div>
         <ChatNotices conversation={channelConversation(channel.index)} direct={false} />
+        {writers.length > 0 ? (
+          <Group>
+            <LinkRow
+              label={t("chats.channel.writers")}
+              value={
+                <span className="writers-row-value">
+                  <span className="faces" aria-hidden="true">
+                    {writers.slice(0, 3).map((w) => (
+                      <Avatar key={w.name} name={w.name} size={22} />
+                    ))}
+                  </span>
+                  {writers.length}
+                </span>
+              }
+              onClick={() => openWriters(channel.index)}
+            />
+          </Group>
+        ) : null}
         <Group title={t("chats.channel.name")}>
           <Block>
             <input

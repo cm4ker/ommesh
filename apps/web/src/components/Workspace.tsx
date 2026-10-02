@@ -17,6 +17,7 @@ import { Sheet } from "../ui/Sheet.js";
 import { Button } from "../ui/Button.js";
 import { Prompt } from "../ui/Dialog.js";
 import { ChannelView } from "./ChannelView.js";
+import { ChannelWriters } from "./ChannelWriters.js";
 import { ChatList, NEW_CHAT_EVENT } from "./ChatList.js";
 import { ChatView, FIND_IN_CHAT_EVENT } from "./ChatView.js";
 import { ChatIcon, NodesIcon, SearchIcon, SettingsIcon } from "./Icons.js";
@@ -64,6 +65,8 @@ function ScreenView({ screen, chrome, wide }: { screen: Screen; chrome: Chrome; 
       return <MessageView conversation={screen.conversation} id={screen.id} chrome={chrome} />;
     case "channel":
       return <ChannelView index={screen.index} chrome={chrome} />;
+    case "writers":
+      return <ChannelWriters index={screen.index} chrome={chrome} />;
     case "profile":
       return <Profile key={screen.key} contactKey={screen.key} chrome={chrome} />;
     case "node":

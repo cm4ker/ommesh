@@ -18,6 +18,13 @@ test("a neighbour is matched to the contact its prefix names, and placed only wi
   assert.deepEqual(rows.map((r) => [r.contact?.name ?? r.prefix, r.placed]), [["Ridge", false], ["Tower", true], ["0d4c7bddeeff", false]]);
 });
 
+test("the list goes strongest first, or heard last first (#75)", () => {
+  const state = { contacts, neighbours: { [HILL]: list([{ prefix: TOWER.slice(0, 12), heardSecsAgo: 60, snr: -4 }, { prefix: RIDGE.slice(0, 12), heardSecsAgo: 86_000, snr: 9 }, { prefix: "0d4c7bddeeff", heardSecsAgo: 600, snr: 2 }]) } };
+  const names = (sort?: "signal" | "heard") => neighbourRows(state, HILL, AT, sort).map((r) => r.contact?.name ?? r.prefix);
+  assert.deepEqual(names(), ["Ridge", "0d4c7bddeeff", "Tower"]);
+  assert.deepEqual(names("heard"), ["Tower", "0d4c7bddeeff", "Ridge"]);
+});
+
 test("how long ago a neighbour was heard counts from now, and past a day it may be gone", () => {
   const state = { contacts, neighbours: { [HILL]: list([{ prefix: TOWER.slice(0, 12), heardSecsAgo: STALE_S - 600, snr: 1 }]) } };
   assert.equal(neighbourRows(state, HILL, AT)[0]!.stale, false);

@@ -6051,6 +6051,10 @@ button.hop {
 .nb-summary i.weak {
   background: var(--danger);
 }
+/* At the line's right end, its padding hung outside so the words line up with the rows' right edge and the line keeps its height. */
+.nb-summary .nb-sort {
+  margin: -6px calc(-1 * var(--space-2)) -6px auto;
+}
 .nb-progress {
   display: flex;
   flex-direction: column;

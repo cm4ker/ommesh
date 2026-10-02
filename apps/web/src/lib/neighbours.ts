@@ -34,8 +34,18 @@ export function contactOfPrefix(contacts: Record<string, ContactRecord>, prefix:
   return null;
 }
 
-/** The neighbours of `key` fetched so far, strongest first. */
-export function neighbourRows(state: Pick<SessionState, "contacts" | "neighbours">, key: string, now: number): NeighbourRow[] {
+/**
+ * How the list goes (#75): strongest first, or the one heard last first. The
+ * repeater keeps a neighbour it heard well a day ago above one it hears now,
+ * so the second shows who is about it at the moment.
+ */
+export type NeighbourSort = "signal" | "heard";
+
+const bySignal = (a: NeighbourRow, b: NeighbourRow) => b.snr - a.snr || a.heardS - b.heardS;
+const byHeard = (a: NeighbourRow, b: NeighbourRow) => a.heardS - b.heardS || b.snr - a.snr;
+
+/** The neighbours of `key` fetched so far, strongest first unless `order` says otherwise. */
+export function neighbourRows(state: Pick<SessionState, "contacts" | "neighbours">, key: string, now: number, order: NeighbourSort = "signal"): NeighbourRow[] {
   const list = state.neighbours[key];
   if (!list) return [];
   const hub = state.contacts[key];
@@ -49,7 +59,7 @@ export function neighbourRows(state: Pick<SessionState, "contacts" | "neighbours
       const km = from && placed ? distanceKm(from.lat, from.lon, contact.lat, contact.lon) : null;
       return { prefix: n.prefix, snr: n.snr, heardS, contact, placed, km, stale: heardS > STALE_S };
     })
-    .sort((a, b) => b.snr - a.snr);
+    .sort(order === "heard" ? byHeard : bySignal);
 }
 
 /** Whether the list holds all the repeater said it has. */

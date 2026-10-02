@@ -1,6 +1,6 @@
 /**
  * A repeater's neighbours over the map: how many it hears and how well, the
- * list strongest first, and the rest of it on its way. A funnel narrows the
+ * list strongest first or heard last first, and the rest of it on its way. A funnel narrows the
  * map and the list by signal, distance and how lately heard. A neighbour tapped,
  * in the list or on the map, opens the link between the two: how each hears
  * the other, a check both ways from this radio, and the terrain between.
@@ -21,15 +21,17 @@ import type { LosEnd, NeighboursTool } from "../../lib/meshTool.js";
 import { openProfile } from "../../lib/nav.js";
 import { fetchAllNeighbours, useNeighbourFetch } from "../../lib/neighbourFetch.js";
 import { heardInList, isComplete, isFiltering, kmTicks, kmToPlace, neighbourRows, NO_FILTER, PAGE, passes, placeToKm, scaleKm, withinDistance, type NeighbourFilter, type NeighbourRow } from "../../lib/neighbours.js";
+import { NEIGHBOUR_SORTS, setNeighbourSort, useNeighbourSort } from "../../lib/neighbourSort.js";
 import { measuredLegs, ping, ROUNDS, spanKey, stopPing, usePing } from "../../lib/ping.js";
 import { useSession } from "../../lib/session.js";
 import { toast } from "../../lib/toast.js";
 import { closeAllTools, closeTool, fitNeighbours, openLineOfSight, openNeighbourLink, openNeighboursOf, setNeighbourFilter } from "../../lib/toolActions.js";
 import { Button, IconButton } from "../../ui/Button.js";
 import { Group, InfoRow, LinkRow } from "../../ui/List.js";
+import { showMenu } from "../../ui/Menu.js";
 import { MarkedSlider } from "../../ui/Slider.js";
 import { Avatar } from "../Avatar.js";
-import { AirIcon, BackIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, FilterIcon, LockIcon, RefreshIcon } from "../Icons.js";
+import { AirIcon, BackIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, FilterIcon, LockIcon, RefreshIcon, SortIcon } from "../Icons.js";
 import { SignIn } from "../node/SignIn.js";
 import { antennaHeight } from "./LosView.js";
 import { chainEnds, CheckResult, QualityChip, SheetHead } from "./RouteSheet.js";
@@ -52,11 +54,12 @@ function NeighbourList({ tool }: { tool: NeighboursTool }) {
   const fetch = useNeighbourFetch(tool.key);
   const [offOpen, setOffOpen] = useState(false);
   const [sifting, setSifting] = useState(false);
+  const sort = useNeighbourSort();
   const hub = state.contacts[tool.key];
   const hubName = hub ? nameOf(hub) : t("tools.nb.theRepeater");
   const list = state.neighbours[tool.key];
   const now = Date.now();
-  const all = neighbourRows(state, tool.key, now);
+  const all = neighbourRows(state, tool.key, now, sort);
   const filter = tool.filter ?? null;
   const filtering = isFiltering(filter);
   const rows = all.filter((r) => passes(r, filter));
@@ -132,12 +135,17 @@ function NeighbourList({ tool }: { tool: NeighboursTool }) {
       <SheetHead title={t("tools.nb.title", { name: hubName })} sub={sub} onBack={closeTool} action={funnel} />
       {sifting ? <FilterPanel hubName={hubName} rows={all} filter={filter ?? NO_FILTER} onDone={() => setSifting(false)} /> : filtering ? <FilterPills filter={filter!} onOpen={() => setSifting(true)} /> : null}
       {filtering && all.length && !rows.length ? <p className="tool-note muted">{t("tools.nb.nobody")}</p> : null}
-      {placed.length ? (
+      {placed.length || rows.length > 1 ? (
         <div className="nb-summary">
-          <span><i className="good" />{t("tools.nb.good", { count: counts.good })}</span>
-          <span><i className="fair" />{t("tools.nb.fair", { count: counts.fair })}</span>
-          <span><i className="weak" />{t("tools.nb.weak", { count: counts.weak })}</span>
-          {off.length ? <span>· {t("tools.nb.offMap", { count: off.length })}</span> : null}
+          {placed.length ? (
+            <>
+              <span><i className="good" />{t("tools.nb.good", { count: counts.good })}</span>
+              <span><i className="fair" />{t("tools.nb.fair", { count: counts.fair })}</span>
+              <span><i className="weak" />{t("tools.nb.weak", { count: counts.weak })}</span>
+              {off.length ? <span>· {t("tools.nb.offMap", { count: off.length })}</span> : null}
+            </>
+          ) : null}
+          {rows.length > 1 ? <SortButton /> : null}
         </div>
       ) : null}
       {progress}
@@ -208,6 +216,30 @@ function NeighbourList({ tool }: { tool: NeighboursTool }) {
         {t("tools.nb.cost", { count: pages, name: hubName, max: KEPT })}
       </div>
     </div>
+  );
+}
+
+/** The list's order, named at the end of the count line, and the menu that changes it. */
+function SortButton() {
+  const sort = useNeighbourSort();
+  const current = NEIGHBOUR_SORTS.find((s) => s.id === sort)!;
+  return (
+    <button
+      type="button"
+      className={["sort-btn", "nb-sort", sort !== "signal" ? "changed" : ""].join(" ")}
+      aria-label={t("tools.nb.sortLabel", { order: t(current.label).toLowerCase() })}
+      onClick={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        showMenu(
+          NEIGHBOUR_SORTS.map((s) => ({ label: t(s.label), checked: s.id === sort, onSelect: () => setNeighbourSort(s.id) })),
+          { title: t("tools.nb.sortTitle"), at: { x: r.left, y: r.bottom + 4 } },
+        );
+      }}
+    >
+      <SortIcon size={14} />
+      {t(current.short)}
+      <ChevronDownIcon size={12} />
+    </button>
   );
 }
 

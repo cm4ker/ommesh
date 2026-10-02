@@ -39,6 +39,26 @@ function gh(...args) {
   return execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 
+const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/**
+ * A file put on the rolling dev release again. GitHub now and then answers with a 500, and
+ * --clobber deletes the old file before the new one goes up, so one such answer left the
+ * channel without its feed (run 36966380421). Uploading over a file is safe to repeat; an
+ * error that is not the server's own is not tried again.
+ */
+function uploadAgain(run, pause, ...args) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return run(...args);
+    } catch (error) {
+      if (attempt >= 4 || !/HTTP 5\d\d/.test(String(error.stderr ?? ""))) throw error;
+      console.log(`GitHub failed the upload (try ${attempt}), trying again.`);
+      pause(5000 * attempt);
+    }
+  }
+}
+
 function releaseByTag(repo, tag, run = gh) {
   try { return JSON.parse(run("api", `repos/${repo}/releases/tags/${encodeURIComponent(tag)}`)); }
   catch (error) {
@@ -63,7 +83,7 @@ export function newerBuild(version, than) {
 }
 
 // Every feed points to immutable files. A published tag is never rebuilt in place.
-export function publish(info, directory, env, run = gh) {
+export function publish(info, directory, env, run = gh, pause = sleep) {
   const repo = env.GITHUB_REPOSITORY;
   const manifest = readJson(resolve(directory, "latest.json"));
   if (!info.publish || manifest.version !== info.version) throw new Error("Not a matching release build");
@@ -87,7 +107,7 @@ export function publish(info, directory, env, run = gh) {
   const channelRelease = releaseByTag(repo, "dev", run);
   if (channelRelease?.draft) throw new Error("The dev channel release must be public");
   const manualAssets = assets.filter((path) => basename(path) !== "latest.json");
-  run("release", "upload", "dev", "--repo", repo, "--clobber", ...manualAssets);
+  uploadAgain(run, pause, "release", "upload", "dev", "--repo", repo, "--clobber", ...manualAssets);
   const currentNames = new Set(manualAssets.map((path) => basename(path)));
   for (const asset of channelRelease?.assets ?? []) {
     // Only rolling download aliases are replaced here; old versioned releases go in pruneDevReleases.
@@ -99,7 +119,7 @@ export function publish(info, directory, env, run = gh) {
   writeFileSync(notesFile, `Latest development build: [Ommesh ${info.version}](https://github.com/${repo}/releases/tag/${info.tag}).\n\nWindows installers, Android APK and web bundle are also attached here for manual download. Desktop clients use latest.json below, which points to the immutable versioned release.\n`);
   run("release", "edit", "dev", "--repo", repo, "--prerelease", "--latest=false", "--title", `Dev · ${info.version}`, "--notes-file", notesFile);
   // This is the final write, after both architectures and their signatures exist.
-  run("release", "upload", "dev", "--repo", repo, "--clobber", resolve(directory, "latest.json"));
+  uploadAgain(run, pause, "release", "upload", "dev", "--repo", repo, "--clobber", resolve(directory, "latest.json"));
 }
 
 /** Deletes all but the newest `keep` versioned Dev releases, with their tags. The feed

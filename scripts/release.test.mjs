@@ -90,6 +90,29 @@ test("an upload failure or stale build never changes the channel feed", (t) => {
   assert.equal(calls.some((call) => call[2] === "dev" && call[1] !== "download"), false);
 });
 
+test("a server error on the rolling feed's upload is tried again, other errors are not", (t) => {
+  const { directory, info, env } = publication(t);
+  const feed = (call) => call[1] === "upload" && call[2] === "dev" && basename(call.at(-1)) === "latest.json";
+  const calls = [];
+  const pauses = [];
+  let failed = 0;
+  publish(info, directory, env, (...args) => {
+    calls.push(args);
+    if (args[1] === "download") return JSON.stringify({ version: "0.2.0-dev.41.1" });
+    if (args[0] === "api") return JSON.stringify({ draft: false, assets: [] });
+    if (feed(args) && failed++ < 2) throw Object.assign(new Error("Command failed"), { stderr: "HTTP 500 (https://api.github.com/repos/cm4ker/ommesh/releases/assets/1)\n" });
+    return "";
+  }, (ms) => pauses.push(ms));
+  assert.equal(calls.filter(feed).length, 3);
+  assert.deepEqual(pauses, [5000, 10000]);
+  assert.throws(() => publish(info, directory, env, (...args) => {
+    if (args[1] === "download") return JSON.stringify({ version: "0.2.0-dev.41.1" });
+    if (args[0] === "api") return JSON.stringify({ draft: false, assets: [] });
+    if (feed(args)) throw Object.assign(new Error("Command failed"), { stderr: "HTTP 422: Validation Failed\n" });
+    return "";
+  }, () => assert.fail("a client error is not tried again")), /Command failed/);
+});
+
 test("a build reaches the feed when it is newer than the feed, even if master moved on", () => {
   assert.equal(newerBuild("0.2.0-dev.47.1", "0.2.0-dev.45.1"), true);
   assert.equal(newerBuild("0.2.0-dev.45.2", "0.2.0-dev.45.1"), true);

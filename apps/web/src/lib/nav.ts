@@ -26,6 +26,10 @@ export type Screen =
   | { kind: "channel"; index: number }
   /** Who has written in a channel, opened from its page. */
   | { kind: "writers"; index: number }
+  /** A place from a message on a map of its own: the message's text, who sent it (null for us) and when. */
+  | { kind: "place"; text: string; from: string | null; at: number }
+  /** A point put on the map by hand, for the place in a conversation's message field. */
+  | { kind: "pickPlace"; conversation: string }
   | { kind: "profile"; key: string }
   | { kind: "node"; key: string; page: NodePage }
   | { kind: "radio"; page: RadioPage };
@@ -166,6 +170,14 @@ export function openWriters(index: number): void {
 
 export function openMessage(conversation: string, id: string): void {
   push({ kind: "message", conversation, id });
+}
+
+export function openPlace(text: string, from: string | null, at: number): void {
+  push({ kind: "place", text, from, at });
+}
+
+export function pickPlace(conversation: string): void {
+  push({ kind: "pickPlace", conversation });
 }
 
 export function openNodePage(key: string, page: NodePage): void {

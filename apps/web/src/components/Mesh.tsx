@@ -19,6 +19,7 @@ import { FOLLOW_MOVE_M, followsPhone, radioHasGps, useFollowStatus } from "../li
 import { locateOnce, locateText, phoneLocates, usePhone } from "../lib/phonePosition.js";
 import { contactEnd, defaultHeight, discoveryOverlay, EMPTY_OVERLAY, editOverlay, hearsOverlay, losOverlay, neighboursOverlay, relayOf, routeOverlay, selfEnd, spanOverlay, surveyOverlay, type MapDot, type MapHandle, type MapOverlay } from "../lib/mapOverlay.js";
 import { setMeshTool, useMeshTool, type LosEnd, type MeshTool, type SurveyTool } from "../lib/meshTool.js";
+import { clearMeshPlace, useMeshPlace } from "../lib/meshPlace.js";
 import { useSurveys, type SurveysState } from "../lib/survey.js";
 import { toneFor, type Survey } from "../lib/surveyData.js";
 import { focusOnMap, openProfile, takeListLowered, useNav } from "../lib/nav.js";
@@ -478,6 +479,7 @@ function useMeshOverlay(selected: string | null, state: SessionState): MapOverla
   const linkPing = usePing(tool?.kind === "neighbours" && tool.link ? spanKey(tool.key, tool.link) : null);
   const discovery = useDiscovery(focus);
   const hears = useHears();
+  const place = useMeshPlace();
   const self = state.self;
   const radio: LinkRadio | null = useMemo(
     () => (self ? { frequencyKhz: self.frequencyKhz, bandwidthHz: self.bandwidthHz, spreadingFactor: self.spreadingFactor, codingRate: self.codingRate, txPowerDbm: self.txPower } : null),
@@ -512,7 +514,9 @@ function useMeshOverlay(selected: string | null, state: SessionState): MapOverla
             ? discovery && (discovery.running || discovery.found) && discovery.at >= (ping?.at ?? 0)
               ? discoveryOverlay(focus, state, discovery)
               : routeOverlay(focus, state, ping)
-            : EMPTY_OVERLAY;
+            : place
+              ? { ...EMPTY_OVERLAY, pins: [{ lat: place.lat, lon: place.lon }] }
+              : EMPTY_OVERLAY;
   // The state changes with every packet heard; the lines are drawn again only when they change.
   const same = JSON.stringify(overlay);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -629,6 +633,8 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
     if (key === null && tool?.kind === "survey") {
       if (tool.point !== null) closeTool();
     } else if (key === null && tool && tool.kind !== "route") closeTool();
+    // A tap anywhere puts a place from a chat away, as it puts away a picked node.
+    clearMeshPlace();
     onSelect(key);
   };
   const leg = (from: LosEnd, to: LosEnd) => {
@@ -686,7 +692,10 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
     if (overlay.tail) points.push([overlay.tail.lat, overlay.tail.lon]);
     routeFit = { id: `route:${routeTo.key}:${points.length > 0}`, points };
   }
-  const fit = hub ? { id: `${hub}:${whole ? "all" : "part"}:${refit}`, points: fitPoints } : (surveyFit ?? routeFit);
+  // A place from a chat is brought into view each time it is shown.
+  const place = useMeshPlace();
+  const placeFit = place ? { id: `place:${place.id}`, points: [[place.lat, place.lon]] as [number, number][] } : null;
+  const fit = hub ? { id: `${hub}:${whole ? "all" : "part"}:${refit}`, points: fitPoints } : (surveyFit ?? routeFit ?? placeFit);
   // A point of it opened, the map goes on following: the answers there are read with the phone still in sight.
   const running = tool?.kind === "survey" && tool.view === "run" && surveying;
   // A new list only when a repeater answers for the first time or one of them moves, so the map is not fitted on every render.

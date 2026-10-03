@@ -25,6 +25,7 @@ import { MeshList, MeshMap, MeshPhone, useMeshAttention } from "./Mesh.js";
 import { MessageView } from "./MessageView.js";
 import { NodePageView } from "./node/NodePage.js";
 import { Palette } from "./Palette.js";
+import { PlacePicker, PlaceView } from "./PlaceView.js";
 import { Profile } from "./Profile.js";
 import { RadioHome } from "./RadioHome.js";
 import { RADIO_PARENTS, RadioPageView } from "./RadioPages.js";
@@ -67,6 +68,10 @@ function ScreenView({ screen, chrome, wide }: { screen: Screen; chrome: Chrome; 
       return <ChannelView index={screen.index} chrome={chrome} />;
     case "writers":
       return <ChannelWriters index={screen.index} chrome={chrome} />;
+    case "place":
+      return <PlaceView text={screen.text} from={screen.from} at={screen.at} chrome={chrome} />;
+    case "pickPlace":
+      return <PlacePicker conversation={screen.conversation} chrome={chrome} />;
     case "profile":
       return <Profile key={screen.key} contactKey={screen.key} chrome={chrome} />;
     case "node":

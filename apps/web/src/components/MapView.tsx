@@ -17,7 +17,7 @@
  * radio there. Nothing here asks the air for anything.
  */
 
-import { addProtocol, LngLatBounds, Map as MapLibre, Marker, type StyleSpecification } from "maplibre-gl";
+import { LngLatBounds, Map as MapLibre, Marker } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AdvType, type ContactRecord } from "@meshnet/meshcore";
@@ -29,47 +29,10 @@ import { NodeCanvas, type LatLon } from "../lib/nodeCanvas.js";
 import type { Fix } from "../lib/phonePosition.js";
 import type { MenuAt } from "../lib/press.js";
 import { useSession } from "../lib/session.js";
-import { TILE_URL, tileAttribution, tileBlob } from "../lib/tiles.js";
+import { tileAttribution } from "../lib/tiles.js";
 import { IconButton } from "../ui/Button.js";
 import { CompassIcon, FitIcon, GroupIcon, LocateIcon, MinusIcon, PlusIcon, WavesIcon } from "./Icons.js";
-
-function darkTheme(): boolean {
-  return document.documentElement.dataset["appearance"] === "dark";
-}
-
-/** Tiles through lib/tiles.ts, which keeps them for use with no network; registered once for every map. */
-let tilesServed = false;
-function serveTiles(): void {
-  if (tilesServed) return;
-  tilesServed = true;
-  addProtocol("osm-cache", async (params) => {
-    const m = /^osm-cache:\/\/(\d+)\/(\d+)\/(\d+)/.exec(params.url);
-    if (!m) throw new Error(`not a tile: ${params.url}`);
-    const blob = await tileBlob(TILE_URL.replace("{z}", m[1]!).replace("{x}", m[2]!).replace("{y}", m[3]!));
-    return { data: await blob.arrayBuffer() };
-  });
-}
-
-/**
- * OSM's light tiles as they are, or turned over for a dark theme: the CSS
- * filter the map once had, invert(1) hue-rotate(180deg) brightness(0.92)
- * contrast(0.88) saturate(0.55), done by the map's shader instead. Inverting
- * last is the same as first, since a half turn of hue, saturation and contrast
- * are all even about the middle grey.
- */
-function tilePaint(dark: boolean) {
-  return dark
-    ? { "raster-hue-rotate": 180, "raster-saturation": -0.45, "raster-contrast": -0.12, "raster-brightness-min": 0.92, "raster-brightness-max": 0 }
-    : { "raster-hue-rotate": 0, "raster-saturation": 0, "raster-contrast": 0, "raster-brightness-min": 0, "raster-brightness-max": 1 };
-}
-
-function mapStyle(dark: boolean): StyleSpecification {
-  return {
-    version: 8,
-    sources: { osm: { type: "raster", tiles: ["osm-cache://{z}/{x}/{y}"], tileSize: 256, maxzoom: 19 } },
-    layers: [{ id: "osm", type: "raster", source: "osm", paint: tilePaint(dark) }],
-  };
-}
+import { darkTheme, mapStyle, serveTiles, tilePaint } from "./mapStyle.js";
 
 /** A group spread less than this, in metres, is the same spot at any zoom, and is listed rather than zoomed into. */
 const SAME_SPOT_M = 25;

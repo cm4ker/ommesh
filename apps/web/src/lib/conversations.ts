@@ -15,6 +15,7 @@ import {
   type SessionState,
 } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
+import { textWithPlaces } from "./place.js";
 
 export interface ConversationSummary {
   id: string;
@@ -30,10 +31,12 @@ export interface ConversationSummary {
 }
 
 function preview(message: MessageRecord, kind: ConversationSummary["kind"]): string {
-  if (message.direction === "out") return t("chats.conversation.you", { text: message.text });
+  // A place is a word here: the row has no room for its map.
+  const text = textWithPlaces(message.text);
+  if (message.direction === "out") return t("chats.conversation.you", { text });
   // A room's posts carry their author the way a channel's messages do.
-  if ((kind === "channel" || message.txtType === TxtType.SignedPlain) && message.sender) return `${message.sender}: ${message.text}`;
-  return message.text;
+  if ((kind === "channel" || message.txtType === TxtType.SignedPlain) && message.sender) return `${message.sender}: ${text}`;
+  return text;
 }
 
 export function summarize(state: SessionState): ConversationSummary[] {

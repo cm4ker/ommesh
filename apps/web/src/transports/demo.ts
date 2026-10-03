@@ -371,7 +371,14 @@ class DemoRadio extends BaseTransport {
 
   start(): void {
     // Queued before the app connected: their packets were never heard, so their routes are unknown.
-    this.queue.push(this.dm(PEOPLE[0]!, "Welcome to the demo mesh"), this.dm(PEOPLE[0]!, "👋"), this.channel(0, "Bob (bike)", "Public channel works too"));
+    // A place each: Alice's exact, sent from her phone, and a rough one on Public.
+    this.queue.push(
+      this.dm(PEOPLE[0]!, "Welcome to the demo mesh"),
+      this.dm(PEOPLE[0]!, "👋"),
+      this.dm(PEOPLE[0]!, "geo:55.04212,73.39208;u=9 Meet you here"),
+      this.channel(0, "Bob (bike)", "Public channel works too"),
+      this.channel(0, "Bob (bike)", "geo:55.06,73.43;u=1000 Somewhere round here today"),
+    );
     this.chatter = setInterval(() => void this.chat(), 25_000);
     this.murmur = setInterval(() => this.overhear(), 3_500);
     // The town's floods: every link once at first, so there is something to look through from the start.

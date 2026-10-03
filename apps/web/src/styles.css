@@ -4041,13 +4041,339 @@ button.hop {
   text-underline-offset: 2px;
   -webkit-touch-callout: none;
 }
+/* A place in the middle of a message's words: a chip that opens it on its map. */
 .geo {
   display: inline-flex;
   align-items: center;
   gap: 3px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--accent);
   font-family: var(--font-mono);
   font-size: 0.92em;
+  cursor: pointer;
+}
+
+/*
+ * A place: a still picture cut from the kept tiles with a pin, or a circle
+ * with no pin for a rough one; turned over in a dark theme as the map's tiles are.
+ */
+.snap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--panel);
+}
+.snap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+:root[data-appearance="dark"] .snap canvas {
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.55);
+}
+.place-pin path {
+  fill: var(--accent);
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+.place-pin circle {
+  fill: var(--bg);
+}
+/* Over a picture or a map being put on, the pin's point is the place. */
+.snap .place-pin,
+.place-centre .place-pin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 24px;
+  height: 31px;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+}
+.place-area {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border: 1.6px dashed var(--accent);
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  pointer-events: none;
+}
+/* Where you are inside the circle a rough place goes as: seen by you only. */
+.place-cross {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+.place-cross::before,
+.place-cross::after {
+  content: "";
+  position: absolute;
+  background: var(--text);
+  opacity: 0.6;
+}
+.place-cross::before {
+  left: 6px;
+  width: 2px;
+  height: 14px;
+}
+.place-cross::after {
+  top: 6px;
+  width: 14px;
+  height: 2px;
+}
+.place-wait {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  background: var(--panel);
+  color: var(--text-faint);
+}
+.place-wait .place-pin {
+  width: 20px;
+  height: 26px;
+  opacity: 0.5;
+}
+/* No tile and no network: the way to the place, and how far. */
+.place-way {
+  display: grid;
+  place-items: center;
+  background: var(--panel);
+  color: var(--text-muted);
+}
+.place-way .place-pin {
+  width: 24px;
+  height: 31px;
+}
+.place-way-ring {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  opacity: 0.3;
+}
+.place-way-north {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  opacity: 0.55;
+}
+.place-way-arrow {
+  fill: var(--accent);
+}
+/* In a bubble the picture runs edge to edge, under the sender's name when it has one. */
+.bubble.place-msg {
+  width: 260px;
+  overflow: hidden;
+}
+.place-msg .place-pic,
+.place-msg .place-way {
+  position: relative;
+  margin: 4px -11px 6px;
+}
+.place-msg > .place-pic:first-child,
+.place-msg > .place-way:first-child {
+  margin-top: -7px;
+}
+.place-line,
+.place-sub {
+  display: block;
+}
+.place-line b {
+  font-weight: 600;
+}
+.place-line,
+.place-sub {
+  color: var(--text-muted);
+}
+.place-line b {
+  color: var(--text);
+}
+.place-sub {
+  font-size: var(--text-xs);
+}
+.place-msg .place-caption {
+  display: block;
+  margin-top: 3px;
+}
+
+/* The place in the message field: open over the text, or folded into a bar above it. */
+.compose-send.pin {
+  color: var(--accent);
+}
+.place-panel-in {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 4px 4px 8px;
+  border-bottom: 1px solid color-mix(in oklab, var(--text) 12%, transparent);
+}
+.place-snap {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+}
+.place-drop {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--elevated);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
+}
+.place-drop:hover {
+  background: var(--elevated);
+}
+.place-panel-in .segmented button {
+  height: calc(34px * var(--box-scale));
+  font-size: var(--text-sm);
+}
+.place-panel-in .segmented button[aria-disabled="true"] {
+  opacity: 0.5;
+}
+.place-bar {
+  padding-left: 6px;
+  cursor: pointer;
+}
+.place-bar-thumb {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  overflow: hidden;
+}
+.place-bar-thumb .place-pin {
+  width: 16px;
+  height: 21px;
+}
+.place-bar-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.compose-bar-text.place-bar-text b {
+  color: var(--text);
+}
+.place-bar-text small {
+  font-size: var(--text-xs);
+}
+
+/* A place on a map of its own, and a point being put on one. */
+.place-map-box {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.place-map-box > .map-view {
+  position: absolute;
+  inset: 0;
+}
+.place-float {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px 6px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--elevated);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
+  cursor: pointer;
+}
+.place-centre {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  pointer-events: none;
+}
+.place-panel {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--space-3) var(--space-3) max(var(--space-3), var(--safe-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.place-head {
+  font-size: var(--text-lg);
+}
+.place-head b {
+  font-weight: 650;
+}
+.place-head span {
+  color: var(--text-muted);
+}
+.place-panel .place-caption {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.place-coords {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.place-coords code {
+  flex: 1;
+  min-width: 0;
+  font: var(--text-sm) var(--font-mono);
+  color: var(--text-muted);
+}
+.place-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
+}
+.place-field {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+}
+.place-field.bad {
+  border-color: var(--danger);
+}
+.place-marker .place-pin {
+  display: block;
+  width: 26px;
+  height: 34px;
+}
+.place-me {
+  position: relative;
+  width: 18px;
+  height: 18px;
+}
+.place-node {
+  position: relative;
+  width: 12px;
+  height: 12px;
+}
+.place-node-dot {
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--accent);
+  border-radius: 3px;
+  background: var(--bg);
+}
+.place-node .map-name {
+  left: 16px;
+  top: -2px;
 }
 
 /* ---- cards and settings ---- */

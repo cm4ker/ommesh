@@ -3,7 +3,8 @@ import { AdvType, isConversationType, isDirect, parseConversation, type MessageR
 import { useBackLayer } from "../lib/back.js";
 import { channelAccess } from "../lib/channels.js";
 import { onAsk, takeAsk } from "../lib/chatAsk.js";
-import { GEO, MENTION } from "../lib/composer.js";
+import { MENTION } from "../lib/composer.js";
+import { PLACE_SOURCE, placeMessage, placeOfMark } from "../lib/place.js";
 import { LINK, linkOf, openLink } from "../lib/webLinks.js";
 import { daysIn, messagesIn, shownIn, titleOf, type Shown } from "../lib/conversations.js";
 import { nameOfHash, relaysOf } from "../lib/echoes.js";
@@ -14,7 +15,7 @@ import { useJumboEmoji } from "../lib/jumboEmoji.js";
 import { moveForKeyboard } from "../lib/keyboard.js";
 import { onJump, takeJump, type Jump } from "../lib/jump.js";
 import { findMessages, messagesFrom, searchTerm, type Sender } from "../lib/messageSearch.js";
-import { openChannel, openMessage, openProfile } from "../lib/nav.js";
+import { openChannel, openMessage, openPlace, openProfile } from "../lib/nav.js";
 import { openRoute } from "../lib/toolActions.js";
 import { usePress } from "../lib/press.js";
 import { routeWords } from "../lib/routes.js";
@@ -29,6 +30,7 @@ import { Avatar, SenderName } from "./Avatar.js";
 import { pickProfile } from "./ChannelWriters.js";
 import { Composer, type Reply } from "./Composer.js";
 import { NotOnRadio } from "./ContactsPages.js";
+import { PlaceBody } from "./PlaceCard.js";
 import {
   AlertIcon,
   CheckIcon,
@@ -563,6 +565,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
                   showSender={voice && first}
                   avatar={voice ? (last && m.sender ? "show" : "gap") : null}
                   me={me}
+                  peer={title}
                   onReply={voice && m.sender ? answer : undefined}
                   onWho={voice ? who : undefined}
                   contacts={m.direction === "out" ? state.contacts : undefined}
@@ -639,8 +642,8 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
  * stands out more, and an address opens in the browser. Searched, the words found are marked in
  * the text between them and in the addresses.
  */
-function richText(text: string, me: string | null, mark: string | undefined): ReactNode {
-  const pattern = new RegExp(`${MENTION.source}|${GEO.source}|(${LINK.source})`, "g");
+function richText(text: string, me: string | null, mark: string | undefined, onPlace?: (mark: string) => void): ReactNode {
+  const pattern = new RegExp(`${MENTION.source}|(${PLACE_SOURCE})|(${LINK.source})`, "gi");
   const out: ReactNode[] = [];
   let at = 0;
   for (const m of text.matchAll(pattern)) {
@@ -653,8 +656,8 @@ function richText(text: string, me: string | null, mark: string | undefined): Re
           @{m[1]}
         </span>,
       );
-    } else if (m[4] !== undefined) {
-      const link = linkOf(m[4]);
+    } else if (m[3] !== undefined) {
+      const link = linkOf(m[3]);
       if (link) {
         length = link.text.length;
         out.push(
@@ -680,11 +683,25 @@ function richText(text: string, me: string | null, mark: string | undefined): Re
         out.push(marked(m[0], mark));
       }
     } else {
+      const place = placeOfMark(m[0]);
+      const label = place ? `${place.lat.toFixed(place.rough ? 2 : 4)}, ${place.lon.toFixed(place.rough ? 2 : 4)}` : m[0];
       out.push(
-        <span key={start} className="geo" title={m[0]}>
+        <button
+          key={start}
+          type="button"
+          className="geo"
+          title={m[0]}
+          // The bubble opens the message's details on a tap; this opens the place on its map.
+          onClick={(e) => {
+            e.stopPropagation();
+            onPlace?.(m[0]);
+          }}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
           <LocationIcon size={12} />
-          {m[2]}, {m[3]}
-        </span>,
+          {place?.rough ? "≈ " : ""}
+          {label}
+        </button>,
       );
     }
     at = start + length;
@@ -722,6 +739,8 @@ interface MessageProps {
   /** In a channel or a room, a message heard: the sender's avatar by the last of a run, an empty column by the rest. */
   avatar: "show" | "gap" | null;
   me: string | null;
+  /** Who the conversation is with: the sender of a direct message heard, which carries no name of its own. */
+  peer: string;
   onReply: ((message: MessageRecord) => void) | undefined;
   onWho: ((message: MessageRecord) => void) | undefined;
   /** For a message of ours only: the relays that echoed it are named from them. */
@@ -740,7 +759,7 @@ interface MessageProps {
  * One bubble. Memoised: a message arriving, or an echo of one, changes one record, and the
  * other bubbles of a long conversation have nothing new to draw.
  */
-const Message = memo(function Message({ message, at, lead, showSender, avatar, me, onReply: replyTo, onWho, contacts, mark, current, faded, flash }: MessageProps) {
+const Message = memo(function Message({ message, at, lead, showSender, avatar, me, peer, onReply: replyTo, onWho, contacts, mark, current, faded, flash }: MessageProps) {
   const out = message.direction === "out";
   const [busy, setBusy] = useState(false);
   const large = useJumboEmoji();
@@ -762,6 +781,10 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
   // One to three emoji and nothing else: large, with no bubble (#41), unless turned off in Appearance.
   // A red one keeps its bubble for the strip.
   const jumbo = bad || !large ? 0 : emojiOnly(message.text);
+  // One place and nothing else to it but words: a map with them under it.
+  const placed = useMemo(() => (jumbo ? null : placeMessage(message.text)), [jumbo, message.text]);
+  const from = out ? null : message.sender || peer;
+  const showPlace = (text: string) => openPlace(text, from, at);
 
   const retry = async () => {
     setBusy(true);
@@ -823,23 +846,31 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
         <div
           role="button"
           tabIndex={0}
-          className={[jumbo ? `jumbo jumbo-${jumbo}` : "bubble", bad ? "bad" : "", current ? "msg-current" : "", flash ? "msg-flash" : ""].join(" ")}
+          className={[jumbo ? `jumbo jumbo-${jumbo}` : "bubble", placed ? "place-msg" : "", bad ? "bad" : "", current ? "msg-current" : "", flash ? "msg-flash" : ""].join(" ")}
           onClick={() => {
             // A click that ends a text selection is not a tap.
             if (String(window.getSelection?.() ?? "").length > 0) return;
-            openMessage(message.conversation, message.id);
+            // A place opens on its map; how it travelled stays in the menu.
+            if (placed) showPlace(message.text);
+            else openMessage(message.conversation, message.id);
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
-              openMessage(message.conversation, message.id);
+              if (placed) showPlace(message.text);
+              else openMessage(message.conversation, message.id);
             }
           }}
           title={relayTitle}
           {...press}
         >
           {showSender && message.sender ? <SenderName name={message.sender} /> : null}
-          <span className="msg-text">{richText(message.text, me, mark)}</span>
+          {placed ? <PlaceBody place={placed.place} mine={out} /> : null}
+          {placed ? (
+            placed.place.label || placed.caption ? <span className="msg-text place-caption">{richText([placed.place.label, placed.caption].filter(Boolean).join("\n"), me, mark, showPlace)}</span> : null
+          ) : (
+            <span className="msg-text">{richText(message.text, me, mark, showPlace)}</span>
+          )}
           <span className="msg-meta">
             {tech ? <span className="msg-tech">{tech} ·</span> : null}
             <span>{timeOfDay(at)}</span>

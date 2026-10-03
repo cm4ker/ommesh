@@ -14,6 +14,8 @@ import { onAsk, takeAsk } from "../lib/chatAsk.js";
 import { costOf, blockEdges, hasCyrillic, headerBytes, mentionOf, mentionQuery, pathBytes, quoteOf, segments, splitParts, translit } from "../lib/composer.js";
 import { messagesIn } from "../lib/conversations.js";
 import { getDraft, setDraft } from "../lib/drafts.js";
+import { rememberRough, setPlace, updatePlace, usePlace } from "../lib/placeDraft.js";
+import { attachPlace, placeLine, placeReady, PlaceBar, PlacePanel, usePlaceFollow } from "./ComposerPlace.js";
 import { raiseKeyboard } from "../lib/keyboard.js";
 import { utf8Length } from "../lib/format.js";
 import { packLookalikes, useLookalikePrefs } from "../lib/lookalikes.js";
@@ -22,7 +24,7 @@ import { usePress } from "../lib/press.js";
 import { session, useSession } from "../lib/session.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
-import { ClockIcon, CloseIcon, ReplyIcon, SendIcon, TextIcon, WavesIcon } from "./Icons.js";
+import { ClockIcon, CloseIcon, LocationIcon, ReplyIcon, SendIcon, TextIcon, WavesIcon } from "./Icons.js";
 import { t } from "../i18n/index.js";
 import { tx } from "../i18n/rich.js";
 
@@ -56,16 +58,25 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   const self = state.self;
   const pack = useCallback((t: string) => packLookalikes(t, lookalikes), [lookalikes]);
   const mention = reply ? mentionOf(reply.name) : "";
-  const prefix = (target.kind === "channel" ? `${self?.name ?? ""}: ` : "") + mention;
+  // A place put in the field goes first in the message, before the text, as one more part of what heads it.
+  const place = usePlace(radio, conversation);
+  usePlaceFollow(radio, conversation, place);
+  const line = place ? placeLine(place) : "";
+  const prefix = (target.kind === "channel" ? `${self?.name ?? ""}: ` : "") + mention + (line ? `${line} ` : "");
   const header = target.kind === "channel" ? headerBytes("channel") : headerBytes("direct", contact ? pathBytes(contact.outPathLen) : 0);
   const shape = self ? { spreadingFactor: self.spreadingFactor, bandwidthHz: self.bandwidthHz, codingRate: self.codingRate } : null;
   const cost = costOf(text, { pack, prefix, header, radio: shape });
   const body = text.trim();
   const head = quoted.current && text.startsWith(quoted.current) ? quoted.current : "";
-  // A quote with nothing written under it is not a message yet.
+  // A quote with nothing written under it is not a message yet; a place alone is.
   const empty = text.slice(head.length).trim() === "";
+  const nothing = empty && !place;
   const over = cost.over > 0;
   const tone = over ? "over" : cost.used >= cost.budget * 0.8 ? "warn" : "";
+  // The tag counts the place with the text, as the reader sees one message.
+  const lineBytes = line ? utf8Length(line) + 1 : 0;
+  const shownUsed = cost.used + (line && !empty ? lineBytes : line ? lineBytes - 1 : 0);
+  const shownBudget = cost.budget + lineBytes;
 
   const messages = useMemo(() => messagesIn(state, conversation), [state, conversation]);
   // Who can be named: whoever has written in this channel or room, the latest first.
@@ -191,16 +202,27 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
     onSent();
   };
 
+  /** The place's text ahead of what was written, and the place out of the field once it goes. */
+  const takePlace = (): string => {
+    if (!place) return "";
+    // How the writer's own place went is how the next one here starts; a point put by hand says nothing of it.
+    if (place.source !== "point") rememberRough(radio, conversation, place.rough);
+    setPlace(radio, conversation, null);
+    return empty ? line : `${line} `;
+  };
+
   const send = async (how: { raw?: boolean; flood?: boolean } = {}) => {
-    if (empty) return;
+    if (nothing || (place && !placeReady(place))) return;
     if (how.raw ? utf8Length(body) > cost.budget : over) {
       nudge();
       return;
     }
-    const out = mention + (how.raw ? body : pack(body));
+    const lead = mention + takePlace();
+    const out = lead + (empty ? "" : how.raw ? body : pack(body));
+    const original = lead + (empty ? "" : body);
     cleared();
     try {
-      await session.sendText(conversation, out, { original: mention + body, ...(how.flood ? { flood: true } : {}) });
+      await session.sendText(conversation, out, { original, ...(how.flood ? { flood: true } : {}) });
     } catch {
       // The message's own row says it failed, and offers to try again.
     }
@@ -208,7 +230,7 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
 
   const sendSplit = async () => {
     const parts = splitParts(pack(body), cost.budget);
-    const first = mention;
+    const first = mention + takePlace();
     cleared();
     for (const [i, part] of parts.entries()) {
       try {
@@ -221,7 +243,7 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
 
   // Held, or right-clicked: the other ways to send this.
   const press = usePress((at) => {
-    if (empty) return;
+    if (nothing) return;
     const items: MenuItem[] = [];
     if (target.kind === "contact") items.push({ label: t("chats.composer.sendFlood"), icon: <WavesIcon size={17} />, air: true, hint: t("chats.composer.sendFloodHint"), onSelect: () => void send({ flood: true }) });
     const extra = cost.typed - cost.used;
@@ -279,9 +301,12 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   }
 
   const saved = cost.typed - cost.used;
-  const button = empty
-    ? { cls: "idle", label: t("common.send"), icon: <SendIcon size={18} />, disabled: true, act: () => undefined }
-    : over
+  // An empty field's button puts a place in it; with a place or text in it, it sends.
+  const button = nothing
+    ? { cls: "pin", label: t("chats.place.attach"), icon: <LocationIcon size={19} />, disabled: false, act: () => attachPlace(radio, conversation, many) }
+    : place && !placeReady(place)
+      ? { cls: "idle", label: t("chats.place.locating"), icon: <SendIcon size={18} />, disabled: true, act: () => undefined }
+      : over
       ? { cls: "over", label: t("chats.composer.tooLongToSend"), icon: <SendIcon size={18} />, disabled: true, act: () => undefined }
       : online
         ? { cls: "ready", label: t("common.send"), icon: <SendIcon size={18} />, disabled: false, act: () => void send() }
@@ -290,7 +315,7 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   const parts = over ? splitParts(pack(body), cost.budget).length : 0;
 
   return (
-    <footer className={["compose", focused ? "focus" : "", text || reply ? "has" : "", online ? "" : "waiting", shake ? "shake" : ""].join(" ")} onAnimationEnd={() => setShake(false)}>
+    <footer className={["compose", focused ? "focus" : "", text || reply || place ? "has" : "", online ? "" : "waiting", shake ? "shake" : ""].join(" ")} onAnimationEnd={() => setShake(false)}>
       {matches.length > 0 && pick ? (
         <div className="compose-pop" role="listbox" aria-label={t("chats.composer.mention")}>
           {matches.map((who, i) => (
@@ -311,15 +336,15 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
         </div>
       ) : null}
       <div className="compose-box">
-        {!empty && !(pick && matches.length > 0) ? (
+        {!nothing && !(pick && matches.length > 0) ? (
           <span className={["compose-tag", tone].join(" ")} id={`cost-${conversation}`}>
             {over ? (
               t("chats.composer.bytesOver", { bytes: cost.over })
             ) : tone === "warn" ? (
-              t("chats.composer.usedOf", { used: cost.used, budget: cost.budget })
+              t("chats.composer.usedOf", { used: shownUsed, budget: shownBudget })
             ) : (
               <>
-                {t("chats.composer.bytes", { bytes: cost.used })}
+                {t("chats.composer.bytes", { bytes: shownUsed })}
                 {saved > 0 ? <span className="saved"> −{saved}</span> : null}
                 {cost.airMs !== null ? ` · ${t("chats.composer.seconds", { value: (cost.airMs / 1000).toFixed(2) })}` : ""}
               </>
@@ -338,6 +363,20 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
               <CloseIcon size={14} />
             </button>
           </div>
+        ) : null}
+        {place?.open ? (
+          <PlacePanel radio={radio} conversation={conversation} place={place} />
+        ) : place ? (
+          <PlaceBar
+            radio={radio}
+            conversation={conversation}
+            place={place}
+            onOpen={() => {
+              // Opened, the map takes the room the keyboard had.
+              field.current?.blur();
+              updatePlace(radio, conversation, { open: true });
+            }}
+          />
         ) : null}
         {over ? (
           <div className="compose-bar compose-over">
@@ -376,7 +415,11 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
               onScroll={(e) => {
                 if (mirror.current) mirror.current.scrollTop = e.currentTarget.scrollTop;
               }}
-              onFocus={() => setFocused(true)}
+              onFocus={() => {
+                setFocused(true);
+                // Typing folds the place into a bar above the text: on a phone the keyboard takes the map's room.
+                if (place?.open) updatePlace(radio, conversation, { open: false });
+              }}
               onBlur={() => {
                 setFocused(false);
                 setPick(null);

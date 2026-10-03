@@ -5598,6 +5598,26 @@ button.hop {
   }
 }
 
+/* On a touch screen a long press opens a row's or a message's menu, and elsewhere does nothing, as
+   in a phone's own apps: it never selects the words under the finger (iOS would select a whole row
+   and lay its Copy bar over the menu). Fields and what a node sent back to read still select. */
+@media (pointer: coarse) {
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  input,
+  textarea,
+  [contenteditable],
+  .c-out,
+  .log-text {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+  }
+}
+
 /* A touch screen has no pointer resting on things, and a hover a tap leaves behind would stay lit.
    There a press lights what is pressed, for as long as the finger is on it. */
 @media (hover: none) {

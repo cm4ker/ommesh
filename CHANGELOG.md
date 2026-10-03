@@ -2,7 +2,7 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
-## Unreleased
+## 0.6.0 — 2026-10-03
 
 ### Connecting
 - On a PC, a radio whose ESP32 has USB of its own (a Xiao, for one) keeps working after the app lets go of its cable. Since 0.4.0 the app raised two lines on the port, DTR and RTS, and when the port closed such a board took them for a flashing tool's and restarted into its loader: every later connection ended with "The radio did not answer in time", and the radio was off the mesh until it was reset. Now only DTR is raised, and nothing on a board behind a USB-to-UART chip (CP210x, CH340, FTDI). A radio already stuck this way needs its reset button pressed once, or its power off and on.

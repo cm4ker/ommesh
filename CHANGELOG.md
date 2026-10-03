@@ -48,6 +48,7 @@
 
 ### Fixes
 - On an iPhone or iPad with iOS 15 or 16 before 16.4, the app opens again. Since 0.4.0 it showed only a grey screen there.
+- On a phone, holding a chat's row no longer selects its words. The row's menu came up with the phone's own Copy and Translate bar over it. A long press now opens only the menu, and elsewhere selects nothing, as in the phone's own apps; text fields and a node's replies in its console can still be selected.
 
 ## 0.5.0 — 2026-09-30
 

@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { isFavourite, parseConversation, TxtType, type MessageRecord } from "@meshnet/meshcore";
 import { channelAccess } from "../lib/channels.js";
 import { CHAT_ORDERS, changed, chatGroups, chatsInOrder, getChatOrder, setChatOrder, useChatOrder } from "../lib/chatOrder.js";
+import { pinnedAt, radioPins, setPinned, usePinStore } from "../lib/chatPins.js";
 import { ago } from "../lib/format.js";
 import { summarize, type ConversationSummary } from "../lib/conversations.js";
 import { useDraft } from "../lib/drafts.js";
@@ -17,7 +18,7 @@ import { Confirm } from "../ui/Dialog.js";
 import { SearchField } from "../ui/Field.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
-import { BellOffIcon, CheckIcon, ChevronDownIcon, HashIcon, PersonIcon, PlusIcon, SortIcon, StarFilledIcon, TrashIcon } from "./Icons.js";
+import { BellOffIcon, CheckIcon, ChevronDownIcon, HashIcon, PersonIcon, PinIcon, PinOffIcon, PlusIcon, SortIcon, StarFilledIcon, TrashIcon } from "./Icons.js";
 import { marked } from "./Marked.js";
 import { NewBuildStrip } from "./NewBuild.js";
 import { NewChat } from "./NewChat.js";
@@ -46,6 +47,8 @@ export function ChatList({ selected }: { selected: string | null }) {
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<ConversationSummary | null>(null);
   const order = useChatOrder();
+  const radio = state.self?.key ?? "";
+  const pins = radioPins(usePinStore()[radio], state.channels);
 
   useEffect(() => {
     const open = () => setAdding(true);
@@ -56,11 +59,18 @@ export function ChatList({ selected }: { selected: string | null }) {
   // A query finds chats by name and, from two letters, messages in every chat (#42).
   const q = fold(query.trim());
   const byId = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
-  const chatsFound = q ? chatsInOrder(rows.filter((r) => fold(r.title).includes(q)), order) : [];
+  const chatsFound = q ? chatsInOrder(rows.filter((r) => fold(r.title).includes(q)), order, pins) : [];
   const found = useMemo(() => findMessages(state.messages, query).filter((m) => byId.has(m.conversation)), [state.messages, query, byId]);
-  const groups = chatGroups(rows, order);
+  const groups = chatGroups(rows, order, pins);
   const unread = rows.filter((r) => r.unread > 0).length;
-  const chatRow = (row: ConversationSummary) => <ChatRow key={row.id} row={row} radio={state.self?.key ?? ""} selected={selected === row.id} onDelete={() => setDeleting(row)} />;
+  const pin = (row: ConversationSummary, on: boolean) => {
+    setPinned(radio, state.channels, row, on);
+    toast(on ? t("chats.list.pinned") : t("chats.list.unpinned"));
+  };
+  const chatRow = (row: ConversationSummary) => {
+    const pinned = pinnedAt(pins, row) !== null;
+    return <ChatRow key={row.id} row={row} radio={radio} selected={selected === row.id} pinned={pinned} onPin={() => pin(row, !pinned)} onDelete={() => setDeleting(row)} />;
+  };
 
   return (
     <div className="list-pane">
@@ -124,10 +134,11 @@ export function ChatList({ selected }: { selected: string | null }) {
             </span>
             <SortButton />
           </div>
-          {groups.map((g) => (
-            <Fragment key={g.title}>
+          {groups.map((g, i) => (
+            <Fragment key={g.id}>
               <div className="list-group">{g.title}</div>
-              <ul className="list-rows" role="list">
+              {/* Untitled pinned chats end at a line, so the rows under it read as the rest. */}
+              <ul className={["list-rows", g.id === "pinned" && !g.title && i < groups.length - 1 ? "pinned-end" : ""].join(" ")} role="list">
                 {g.rows.map(chatRow)}
               </ul>
             </Fragment>
@@ -145,6 +156,8 @@ export function ChatList({ selected }: { selected: string | null }) {
         onConfirm={() => {
           if (deleting) {
             session.deleteConversation(deleting.id);
+            // A person's chat goes from the list, and its pin with it; a cleared channel stays, pinned.
+            if (deleting.kind !== "channel" && pinnedAt(pins, deleting) !== null) setPinned(radio, state.channels, deleting, false);
             if (selected === deleting.id) openConversation(null);
             toast(deleting.kind === "channel" ? t("chats.list.cleared") : t("chats.list.deleted"));
           }
@@ -238,7 +251,7 @@ function FoundRow({ message, row, query }: { message: MessageRecord; row: Conver
   );
 }
 
-function ChatRow({ row, radio, selected, onDelete }: { row: ConversationSummary; radio: string; selected: boolean; onDelete: () => void }) {
+function ChatRow({ row, radio, selected, pinned, onPin, onDelete }: { row: ConversationSummary; radio: string; selected: boolean; pinned: boolean; onPin: () => void; onDelete: () => void }) {
   const target = parseConversation(row.id);
   const draft = useDraft(radio, row.id);
   const press = usePress((at) => {
@@ -249,6 +262,7 @@ function ChatRow({ row, radio, selected, onDelete }: { row: ConversationSummary;
             ? { label: t("chats.row.profile"), icon: <PersonIcon size={17} />, onSelect: () => setStack("chats", [{ kind: "chat", conversation: row.id }, { kind: "profile", key: target.key }]) }
             : null,
         row.unread > 0 ? { label: t("chats.row.markRead"), icon: <CheckIcon size={17} />, onSelect: () => session.markRead(row.id) } : null,
+        pinned ? { label: t("chats.row.unpin"), icon: <PinOffIcon size={17} />, onSelect: onPin } : { label: t("chats.row.pin"), icon: <PinIcon size={17} />, onSelect: onPin },
         { label: row.kind === "channel" ? t("chats.row.clearMessages") : t("chats.row.deleteChat"), icon: <TrashIcon size={17} />, danger: true, onSelect: onDelete },
     ];
     showMenu(items.filter((x): x is MenuItem => x !== null), { title: row.title, at });
@@ -281,7 +295,7 @@ function ChatRow({ row, radio, selected, onDelete }: { row: ConversationSummary;
                 (row.preview ?? (row.kind === "channel" ? t("chats.row.quiet") : ""))
               )}
             </span>
-            {row.unread > 0 ? <span className="badge">{row.unread}</span> : null}
+            {row.unread > 0 ? <span className="badge">{row.unread}</span> : pinned ? <PinIcon size={14} className="row-pin" aria-label={t("chats.row.pinned")} /> : null}
           </span>
         </span>
       </button>

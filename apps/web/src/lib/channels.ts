@@ -6,6 +6,11 @@ import { sha256 } from "./sha256.js";
 /** The key of "Public", the channel every radio starts with. */
 const PUBLIC_SECRET = "8b3387e9c5cdea6ac9e5edbaa115cd72";
 
+/** Whether a channel is Public itself, told by its key: a rename keeps it Public. */
+export function isPublicChannel(channel: Pick<ChannelRecord, "secret">): boolean {
+  return channel.secret.toLowerCase() === PUBLIC_SECRET;
+}
+
 /** The first slot the radio has free, or -1. */
 export function freeChannelIndex(state: SessionState): number {
   const used = new Set(state.channels.map((c) => c.index));
@@ -52,8 +57,8 @@ export type ChannelAccess = "public" | "private";
  */
 export function channelAccess(channel: Pick<ChannelRecord, "name" | "secret"> | null | undefined): ChannelAccess {
   if (!channel) return "public";
+  if (isPublicChannel(channel)) return "public";
   const secret = channel.secret.toLowerCase();
-  if (secret === PUBLIC_SECRET) return "public";
   // Folded as this app keys a name, or with its case as another app may have kept it; a rename keeps the key, so "#" may be gone.
   const bare = channel.name.trim().replace(/^#+/, "");
   const names = [`#${bare}`, hashtagName(bare)];

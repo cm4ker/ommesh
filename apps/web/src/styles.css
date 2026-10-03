@@ -1769,6 +1769,14 @@ mark {
   font-size: var(--text-xs);
   flex: none;
 }
+/* A pinned chat with nothing unread: the pin stands where the count would. */
+.row-pin {
+  flex: none;
+  color: var(--text-faint);
+}
+.list-rows.pinned-end {
+  border-bottom: 1px solid var(--border-strong);
+}
 
 /* A row pulled left shows its action behind it. */
 .swipe {

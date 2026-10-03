@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { t, type Key } from "../i18n/index.js";
+import { pinnedAt, type RadioPins } from "./chatPins.js";
 import type { ConversationSummary } from "./conversations.js";
 import { readSetting, writeSetting } from "./storage.js";
 
@@ -78,25 +79,41 @@ export function chatComparator(order: ChatOrder): (a: Row, b: Row) => number {
 }
 
 export interface ChatGroup {
+  id: "pinned" | "channels" | "direct" | "all";
   title: string;
   rows: Row[];
 }
 
 /**
- * The list's groups, each in the order: the channels, then the direct chats;
- * or, with channels not first, one list. A lone group goes without a title.
+ * The list's groups. The pinned chats come first, the latest pinned on top,
+ * whatever the order: new messages do not move them. Then the rest in the
+ * order: the channels, then the direct chats; or, with channels not first,
+ * one list, and then the pinned go without a title either. A lone group goes
+ * without a title.
  */
-export function chatGroups(rows: Row[], p: ChatOrderPrefs): ChatGroup[] {
-  const sorted = [...rows].sort(chatComparator(p.order));
-  if (!p.channelsFirst) return [{ title: "", rows: sorted }];
-  const groups = [
-    { title: t("chats.order.channelsGroup"), rows: sorted.filter((r) => r.kind === "channel") },
-    { title: t("chats.order.directGroup"), rows: sorted.filter((r) => r.kind !== "channel") },
-  ].filter((g) => g.rows.length > 0);
-  return groups.length === 1 ? [{ title: "", rows: groups[0]!.rows }] : groups;
+export function chatGroups(rows: Row[], p: ChatOrderPrefs, pins: RadioPins = {}): ChatGroup[] {
+  const at = new Map<string, number>();
+  for (const row of rows) {
+    const when = pinnedAt(pins, row);
+    if (when !== null) at.set(row.id, when);
+  }
+  const pinned = rows.filter((r) => at.has(r.id)).sort((a, b) => at.get(b.id)! - at.get(a.id)! || byLatest(a, b));
+  const rest = rows.filter((r) => !at.has(r.id)).sort(chatComparator(p.order));
+  const groups: ChatGroup[] = p.channelsFirst
+    ? [
+        { id: "pinned", title: t("chats.order.pinnedGroup"), rows: pinned },
+        { id: "channels", title: t("chats.order.channelsGroup"), rows: rest.filter((r) => r.kind === "channel") },
+        { id: "direct", title: t("chats.order.directGroup"), rows: rest.filter((r) => r.kind !== "channel") },
+      ]
+    : [
+        { id: "pinned", title: "", rows: pinned },
+        { id: "all", title: "", rows: rest },
+      ];
+  const shown = groups.filter((g) => g.rows.length > 0);
+  return shown.length === 1 ? [{ ...shown[0]!, title: "" }] : shown.length ? shown : [{ id: "all", title: "", rows: [] }];
 }
 
 /** The rows as the list shows them, top to bottom, for stepping through them from the keyboard. */
-export function chatsInOrder(rows: Row[], p: ChatOrderPrefs): Row[] {
-  return chatGroups(rows, p).flatMap((g) => g.rows);
+export function chatsInOrder(rows: Row[], p: ChatOrderPrefs, pins: RadioPins = {}): Row[] {
+  return chatGroups(rows, p, pins).flatMap((g) => g.rows);
 }

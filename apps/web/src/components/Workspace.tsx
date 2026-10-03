@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useBackLayer, useSectionsBack } from "../lib/back.js";
 import { chatsInOrder, getChatOrder } from "../lib/chatOrder.js";
+import { getPins } from "../lib/chatPins.js";
 import { summarize, totalUnread } from "../lib/conversations.js";
 import { pairLink, reconnectNow, useLink } from "../lib/link.js";
 import { useWide } from "../lib/layout.js";
@@ -581,7 +582,7 @@ function useDesktopKeys({ openPalette, togglePanel, escape }: { openPalette: () 
         togglePanel();
       } else if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
         e.preventDefault();
-        const rows = chatsInOrder(summarize(state), getChatOrder());
+        const rows = chatsInOrder(summarize(state), getChatOrder(), getPins(state.self?.key ?? "", state.channels));
         const index = rows.findIndex((r) => r.id === shownConversation({ ...getNav(), section: "chats" }, true));
         const next = rows[Math.max(0, Math.min(rows.length - 1, index + (e.key === "ArrowDown" ? 1 : -1)))];
         if (next) openConversation(next.id);

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chatComparator, chatGroups, chatsInOrder, type ChatOrder } from "./chatOrder.js";
+import type { RadioPins } from "./chatPins.js";
 import type { ConversationSummary } from "./conversations.js";
 
 function channel(index: number, title: string, lastAt: number, unread = 0): ConversationSummary {
@@ -61,4 +62,45 @@ test("the rows passed in are left as they were", () => {
   const rows = [...all];
   chatGroups(rows, { order: "name", channelsFirst: true });
   assert.deepEqual(rows, all);
+});
+
+// Lena pinned last, so she stands above Work, pinned first; neither moves for newer messages.
+const pins: RadioPins = { "ch:3": { at: 10, name: "Work" }, "c:Lena": { at: 20 } };
+
+test("pinned chats come first, the latest pinned on top, in one untitled block", () => {
+  const groups = chatGroups(all, { order: "latest", channelsFirst: false }, pins);
+  assert.deepEqual(
+    groups.map((g) => [g.id, g.title, titles(g.rows)]),
+    [
+      ["pinned", "", ["Lena", "Work"]],
+      ["all", "", ["Public", "#omsk", "bob", "Hunters"]],
+    ],
+  );
+});
+
+test("pinned chats keep their place whatever the order", () => {
+  assert.deepEqual(titles(chatsInOrder(all, { order: "name", channelsFirst: false }, pins)), ["Lena", "Work", "bob", "Hunters", "#omsk", "Public"]);
+  assert.deepEqual(titles(chatsInOrder(all, { order: "unread", channelsFirst: false }, pins)).slice(0, 2), ["Lena", "Work"]);
+});
+
+test("with channels first, the pinned stand above both groups under a title of their own", () => {
+  const groups = chatGroups(all, { order: "latest", channelsFirst: true }, pins);
+  assert.deepEqual(
+    groups.map((g) => [g.title, titles(g.rows)]),
+    [
+      ["Pinned", ["Lena", "Work"]],
+      ["Channels", ["Public", "#omsk", "Hunters"]],
+      ["Direct", ["bob"]],
+    ],
+  );
+});
+
+test("a channel's pin does not pass to another channel written into its slot", () => {
+  const other = channel(3, "Hunting club", 0);
+  assert.deepEqual(chatGroups([other, bob], { order: "latest", channelsFirst: false }, pins).map((g) => g.id), ["all"]);
+});
+
+test("everything pinned is one untitled group", () => {
+  const groups = chatGroups([lena, work], { order: "latest", channelsFirst: true }, pins);
+  assert.deepEqual(groups.map((g) => [g.title, titles(g.rows)]), [["", ["Lena", "Work"]]]);
 });

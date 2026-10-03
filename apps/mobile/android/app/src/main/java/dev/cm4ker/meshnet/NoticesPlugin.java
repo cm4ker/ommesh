@@ -14,6 +14,7 @@ import android.os.Build;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.provider.Settings;
+import androidx.annotation.RequiresApi;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.pm.ShortcutInfoCompat;
@@ -256,6 +257,7 @@ public class NoticesPlugin extends Plugin {
      * name when it is not the kind's own; its id. Of a channel that is there Android takes only
      * the name and the description, so the reader's settings for it stay.
      */
+    @RequiresApi(Build.VERSION_CODES.O)
     private static String channel(Context context, NotificationManager manager, String kind, String sound, String label, boolean rename) {
         String[] english = KINDS[1];
         for (String[] k : KINDS) if (k[0].equals(kind)) english = k;

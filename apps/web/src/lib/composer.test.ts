@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { airtimeMs, blockEdges, costOf, headerBytes, mentionQuery, quoteOf, segments, splitParts, translit } from "./composer.js";
+import { airtimeMs, blockEdges, costOf, headerBytes, mentionQuery, quoteHeadLength, quoteOf, segments, splitParts, translit } from "./composer.js";
 import { packLookalikes } from "./lookalikes.js";
 import { utf8Length } from "./format.js";
 
@@ -79,6 +79,13 @@ test("a reply's quote leaves out the names a message opens with, and the quote i
   assert.equal(quoteOf("@[Kolya] >А с моста…\nС балкона тоже"), "С балкона тоже");
   assert.equal(quoteOf(">Слышу\nИ я"), "И я");
   assert.equal(quoteOf("Две\nстроки   текста"), "Две строки…");
+});
+
+test("a reply quotes a place in words, never as numbers cut short", () => {
+  assert.equal(quoteOf("geo:55.04212,73.39208;u=9 Meet you here"), "📍 Meet you here");
+  assert.equal(quoteOf("geo:55.75,37.62;u=1000"), "📍 Place");
+  assert.equal(quoteHeadLength("@[Alice] >📍 Meet you here\nOn my way"), "@[Alice] >📍 Meet you here\n".length);
+  assert.equal(quoteHeadLength("On my way"), 0);
 });
 
 test("a reply's quote counts characters, so an emoji is never cut in half", () => {

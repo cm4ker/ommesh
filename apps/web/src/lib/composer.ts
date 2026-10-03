@@ -11,6 +11,7 @@
  */
 
 import { MAX_TEXT_LEN } from "@meshnet/meshcore";
+import { textWithPlaces } from "./place.js";
 
 const encoder = new TextEncoder();
 const bytes = (text: string) => encoder.encode(text).length;
@@ -146,15 +147,19 @@ const QUOTE_CHARS = 15;
 /** A reply's head, as the composer writes it: the mention, then the quoted line. */
 const QUOTE_HEAD = /^(?:@\[[^\]\n]{1,32}\] )?>[^\n]*\n/;
 
+/** How long the head a reply puts before its own words is: 0 for a message that answers nothing. */
+export function quoteHeadLength(text: string): number {
+  return QUOTE_HEAD.exec(text)?.[0].length ?? 0;
+}
+
 /**
  * The start of a message, for the line a reply puts at the head of the field:
  * its own quote and the names it opens with left out, cut at a word, and "…"
- * where something was cut.
+ * where something was cut. A place is quoted in words: cut, its numbers would
+ * read as another place, far from the first.
  */
 export function quoteOf(text: string): string {
-  const said = text
-    .replace(QUOTE_HEAD, "")
-    .replace(/^(?:@\[[^\]\n]{1,32}\] ?)+/, "")
+  const said = textWithPlaces(text.replace(QUOTE_HEAD, "").replace(/^(?:@\[[^\]\n]{1,32}\] ?)+/, ""))
     .replace(/\s+/g, " ")
     .trim();
   const chars = Array.from(said);
@@ -221,4 +226,3 @@ export function hasCyrillic(text: string): boolean {
   return /[Ѐ-ӿ]/.test(text);
 }
 
-export const GEO = /geo:(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)/g;

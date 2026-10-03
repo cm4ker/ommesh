@@ -39,6 +39,20 @@ test("places are found where they stand in a text", () => {
   assert.deepEqual(findPlaces("no place here, 55.7 37.6"), []);
 });
 
+test("a mark cut short is no place, while a full stop after one is only a full stop", () => {
+  // A quote cut at fifteen characters left this of Alice's place: read whole, it was a place 100 km wide at 55°, 73°.
+  assert.deepEqual(findPlaces("@[Alice] >geo:55.04212,73…\nOn my way"), []);
+  assert.deepEqual(findPlaces("geo:55.04212,73.3..."), []);
+  assert.deepEqual(findPlaces("[LOC]55.04212,73.39…"), []);
+  assert.equal(findPlaces("Встречаемся тут: geo:55.75,37.62.").length, 1);
+});
+
+test("a place in the line a reply quotes is not the reply's own", () => {
+  const reply = "@[Alice] >geo:55.04212,73.39208\nOn my way";
+  assert.equal(placeMessage(reply, "@[Alice] >geo:55.04212,73.39208\n".length), null);
+  assert.equal(placeMessage(`${reply} geo:55.03,73.37;u=1000`, "@[Alice] >geo:55.04212,73.39208\n".length)?.place.lat, 55.03);
+});
+
 test("one place makes a place message, the rest of the text its caption", () => {
   assert.deepEqual(placeMessage("geo:55.74967,37.62395;u=8 Мы тут"), { place: placeOfMark("geo:55.74967,37.62395;u=8"), caption: "Мы тут" });
   assert.equal(placeMessage("@[Коля] geo:55.75,37.62;u=1000 рядом")?.caption, "@[Коля] рядом");

@@ -38,9 +38,11 @@ export interface FoundPlace {
 export const ROUGH_M = 1000;
 
 const NUM = String.raw`-?\d{1,3}(?:\.\d+)?`;
+/** A number cut short ("73…", "73.3...") ends no mark: the part left would read as another place. */
+const WHOLE = String.raw`(?!\d|\.\d|\.\.|…)`;
 
 /** The marks, with nothing captured, to be put among other patterns. */
-export const PLACE_SOURCE = String.raw`geo:${NUM},${NUM}(?:;[A-Za-z-]+=[^;\s]*)*|\bm:${NUM},${NUM}\|[^|\n]*\|[A-Za-z]+|\[(?:WAY|LOC)\]${NUM},${NUM}`;
+export const PLACE_SOURCE = String.raw`geo:${NUM},${NUM}${WHOLE}(?:;[A-Za-z-]+=[^;\s]*)*|\bm:${NUM},${NUM}\|[^|\n]*\|[A-Za-z]+|\[(?:WAY|LOC)\]${NUM},${NUM}${WHOLE}`;
 
 const PARTS = new RegExp(
   [
@@ -89,10 +91,11 @@ export function findPlaces(text: string): FoundPlace[] {
 /**
  * A message that is a place: one mark, and the rest of its text as the
  * caption under the map. Null for a message with no place or several, whose
- * places stay in the text.
+ * places stay in the text. Marks before `from`, in the line a reply quotes,
+ * are the answered message's, not this one's.
  */
-export function placeMessage(text: string): { place: Place; caption: string } | null {
-  const found = findPlaces(text);
+export function placeMessage(text: string, from = 0): { place: Place; caption: string } | null {
+  const found = findPlaces(text).filter((f) => f.start >= from);
   if (found.length !== 1) return null;
   const { start, end, place } = found[0]!;
   const before = text.slice(0, start).trimEnd();

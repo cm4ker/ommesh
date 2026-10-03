@@ -3,7 +3,7 @@ import { AdvType, isConversationType, isDirect, parseConversation, type MessageR
 import { useBackLayer } from "../lib/back.js";
 import { channelAccess } from "../lib/channels.js";
 import { onAsk, takeAsk } from "../lib/chatAsk.js";
-import { MENTION } from "../lib/composer.js";
+import { MENTION, quoteHeadLength } from "../lib/composer.js";
 import { PLACE_SOURCE, placeMessage, placeOfMark } from "../lib/place.js";
 import { LINK, linkOf, openLink } from "../lib/webLinks.js";
 import { daysIn, messagesIn, shownIn, titleOf, type Shown } from "../lib/conversations.js";
@@ -782,7 +782,8 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
   // A red one keeps its bubble for the strip.
   const jumbo = bad || !large ? 0 : emojiOnly(message.text);
   // One place and nothing else to it but words: a map with them under it.
-  const placed = useMemo(() => (jumbo ? null : placeMessage(message.text)), [jumbo, message.text]);
+  // A place in the line a reply quotes is the answered message's, and does not make this one a place.
+  const placed = useMemo(() => (jumbo ? null : placeMessage(message.text, quoteHeadLength(message.text))), [jumbo, message.text]);
   const from = out ? null : message.sender || peer;
   const showPlace = (text: string) => openPlace(text, from, at);
 

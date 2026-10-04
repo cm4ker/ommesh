@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+### Updates
+- Ommesh comes out once a week. After an update a strip over the chats says "Ommesh is updated to 0.7.0" with What's new: each new thing in a line or two, with Show where it has a place in the app, and the fixes folded into one row. Settings › About › What's new keeps every version from 0.7.0 on, and Every change in detail opens this list on GitHub. What's new comes with the app and reads with no network. A version with fixes only puts up no strip, and neither does a first install.
+- On a PC, App updates says what the new version brings before it is downloaded, in the app's language. It used to show the version's number and a link.
+- A PC starts on the Stable channel, the weekly version, whatever build was installed. One installed from a Dev build used to follow Dev, which changed several times a day; Dev picked by hand stays picked.
+- An Android phone with Ommesh from a release on GitHub hears of the next weekly version, with what it brings and Download. Only Dev builds used to hear of newer ones.
+
 ### Connecting
 - Forgetting a route works with a radio that takes a while to save its contacts, such as a Heltec on Smart UI firmware. The app waited 8 seconds for the radio to answer and then showed an error; the late answer went to the next request, and a repeater's status then failed with "sendStatusReq: expected sent, got ok". Now the app waits up to 30 seconds while the radio forgets a route, or changes or removes a contact.
 

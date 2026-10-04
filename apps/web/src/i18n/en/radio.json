@@ -50,6 +50,7 @@
   "position.latitudeHint": "Or paste both, as a map copies them: 55.75580, 37.61730.",
   "position.longitude": "Longitude",
   "position.useDevice": "Use this device's position",
+  "position.useDeviceGps": "The radio's GPS puts its own in place once it picks up satellites.",
   "position.follow": "Follow the phone",
   "position.followHint": "The radio gets a new position when the phone has moved more than 50 m. At most once in 5 minutes, while the app is open.",
   "position.followWrote": "From the phone {time}, to {accuracy} m.",

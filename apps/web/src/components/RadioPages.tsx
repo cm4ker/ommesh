@@ -291,9 +291,9 @@ function PrivacyPage({ self, online }: { self: Self; online: boolean }) {
   const follow = useFollowStatus(self.key);
   const contacts = useSession().contacts;
   const [locating, setLocating] = useState(false);
-  // The radio's own GPS writes its position itself; the phone would argue with it, and a typed one would be overwritten.
+  // The radio's own GPS writes its position itself, so the phone does not follow it there. A position typed or taken
+  // from this device still stands until the GPS has a fix: that is the way out when the GPS is slow to find one.
   const following = follow.on && follow.gps !== true;
-  const fixed = following || follow.gps === true;
   const shared = self.advertLocPolicy !== AdvertLocPolicy.None;
   const base = self.telemetryModeBase;
   const narrower = telemetryOptions().filter((o) => Number(o.value) <= base);
@@ -333,17 +333,17 @@ function PrivacyPage({ self, online }: { self: Self; online: boolean }) {
             ? t("radio.position.followWrote", { time: agoPhrase(follow.wrote.at), accuracy: follow.wrote.accuracy })
             : t("radio.position.followWaiting");
   // The map's spot menu also puts the radio where a finger holds, or a mouse right-clicks.
-  const mapHint = fixed ? undefined : t(canHover() ? "radio.position.mapHintMouse" : "radio.position.mapHint");
+  const mapHint = following ? undefined : t(canHover() ? "radio.position.mapHintMouse" : "radio.position.mapHint");
   return (
     <>
       <Group title={t("radio.privacy.location")} note={t("radio.privacy.nameNote")}>
         {phoneLocates() ? <SwitchRow label={t("radio.position.follow")} hint={followHint} checked={following} disabled={!online || locating || follow.gps === true} onChange={(v) => void setFollow(v)} /> : null}
         <CommitField
           label={t("radio.position.latitude")}
-          hint={fixed ? undefined : t("radio.position.latitudeHint")}
+          hint={following ? undefined : t("radio.position.latitudeHint")}
           value={String(self.lat)}
           inputMode="decimal"
-          disabled={!online || fixed}
+          disabled={!online || following}
           check={orBoth(number(-90, 90, "radio.check.latitude"))}
           onCommit={(text) => setPosition(text, (n) => session.setLocation(n, self.lon))}
         />
@@ -352,11 +352,11 @@ function PrivacyPage({ self, online }: { self: Self; online: boolean }) {
           hint={mapHint}
           value={String(self.lon)}
           inputMode="decimal"
-          disabled={!online || fixed}
+          disabled={!online || following}
           check={orBoth(number(-180, 180, "radio.check.longitude"))}
           onCommit={(text) => setPosition(text, (n) => session.setLocation(self.lat, n))}
         />
-        {canLocate() && !fixed ? <ActionRow label={t("radio.position.useDevice")} disabled={!online} busy={locating} onClick={() => void locate()} /> : null}
+        {canLocate() && !following ? <ActionRow label={t("radio.position.useDevice")} hint={follow.gps === true ? t("radio.position.useDeviceGps") : undefined} disabled={!online} busy={locating} onClick={() => void locate()} /> : null}
         <SwitchRow
           label={t("radio.privacy.share")}
           hint={shared && following ? t("radio.privacy.shareFollowHint") : t("radio.privacy.shareHint")}

@@ -7,6 +7,9 @@
 ### Connecting
 - Forgetting a route works with a radio that takes a while to save its contacts, such as a Heltec on Smart UI firmware. The app waited 8 seconds for the radio to answer and then showed an error; the late answer went to the next request, and a repeater's status then failed with "sendStatusReq: expected sent, got ok". Now the app waits up to 30 seconds while the radio forgets a route, or changes or removes a contact.
 
+### Mesh and the map
+- A far repeater, room or sensor has time to answer. The app waited as long as the radio guessed, and for a request sent to the whole mesh the radio guesses about 6 seconds however far the node is; an answer from five or six hops away comes later, so the app said "No reply" and the answer arrived after it. Now the wait counts the hops there and back and the size of the answer: along a route, the route's hops; to the whole mesh, as far as the farthest route your radio holds. Neighbours, the access list, a sensor's history and the owner's details that still come late are kept, and the "No reply" under them goes.
+
 ### Settings
 - Use this device's position is back on a radio with GPS of its own, and its latitude and longitude can be typed again. In 0.6.0 the button was gone there and the numbers were read-only, so a radio whose GPS was slow to pick up satellites stayed where it last was. A position set this way holds until the GPS picks them up.
 

@@ -2,6 +2,11 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
+## Unreleased
+
+### Connecting
+- Forgetting a route works with a radio that takes a while to save its contacts, such as a Heltec on Smart UI firmware. The app waited 8 seconds for the radio to answer and then showed an error; the late answer went to the next request, and a repeater's status then failed with "sendStatusReq: expected sent, got ok". Now the app waits up to 30 seconds while the radio forgets a route, or changes or removes a contact.
+
 ## 0.6.0 — 2026-10-03
 
 ### Connecting

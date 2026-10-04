@@ -203,7 +203,8 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
   const login = state.logins[key];
   const chosen = useChosenBatteryType(key);
   const [busy, setBusy] = useState<"refresh" | "more" | null>(null);
-  const [silent, setSilent] = useState(false);
+  // When the node last let a request go unanswered; an answer that comes after, however late, ends it.
+  const [silentAt, setSilentAt] = useState<number | null>(null);
   const [picking, setPicking] = useState(false);
   const [clockBusy, setClockBusy] = useState<"check" | "set" | "reset" | null>(null);
   const [askReset, setAskReset] = useState(false);
@@ -219,9 +220,9 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
     setBusy(what);
     try {
       await request();
-      setSilent(false);
+      setSilentAt(null);
     } catch (e) {
-      if (e instanceof NoReplyError && !statusNode) setSilent(true);
+      if (e instanceof NoReplyError && !statusNode) setSilentAt(Date.now());
       else toast(errorText(e), "error");
     } finally {
       setBusy(null);
@@ -274,7 +275,7 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
 
   return (
     <>
-      <Group title={answeredAt ? t("node.readings.titleAgo", { time: ago(answeredAt) }) : t("node.readings.title")} note={silent ? t("mesh.profile.readingsSilent") : contact.type === AdvType.Sensor ? (contact.name ? t("node.status.alerts", { name: contact.name }) : t("node.status.alertsUnnamed")) : undefined}>
+      <Group title={answeredAt ? t("node.readings.titleAgo", { time: ago(answeredAt) }) : t("node.readings.title")} note={silentAt !== null && (answeredAt ?? 0) < silentAt ? t("mesh.profile.readingsSilent") : contact.type === AdvType.Sensor ? (contact.name ? t("node.status.alerts", { name: contact.name }) : t("node.status.alertsUnnamed")) : undefined}>
         {tiles.length ? (
           <div className="line-block readings">
             <div className="reading-tiles">

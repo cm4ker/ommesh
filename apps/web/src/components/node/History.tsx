@@ -66,7 +66,8 @@ export function History({ contact }: { contact: ContactRecord }) {
   const online = state.status === "ready";
   const [windowSecs, setWindowSecs] = useState(record?.windowSecs ?? 86_400);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // An error stands until an answer newer than it comes in: one that came late says the node heard.
+  const [error, setError] = useState<{ text: string; at: number } | null>(null);
 
   const ask = async (secs: number) => {
     setBusy(true);
@@ -74,7 +75,7 @@ export function History({ contact }: { contact: ContactRecord }) {
     try {
       await session.requestSeries(key, secs);
     } catch (e) {
-      setError(e instanceof NoReplyError ? t("node.history.noReply", { seconds: /(\d+) s$/.exec(e.message)?.[1] ?? "?" }) : errorText(e));
+      setError({ text: e instanceof NoReplyError ? t("node.history.noReply", { seconds: /(\d+) s$/.exec(e.message)?.[1] ?? "?" }) : errorText(e), at: Date.now() });
     } finally {
       setBusy(false);
     }
@@ -100,7 +101,7 @@ export function History({ contact }: { contact: ContactRecord }) {
           </Button>
         </span>
       </div>
-      {error ? <p className="connect-error">{error}</p> : null}
+      {error && (record?.at ?? 0) < error.at ? <p className="connect-error">{error.text}</p> : null}
       {shown ? (
         shown.series.length === 0 ? (
           <p className="muted">{t("node.history.nothing")}</p>

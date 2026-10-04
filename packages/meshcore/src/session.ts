@@ -11,7 +11,7 @@
 
 import { MeshCoreClient, MeshCoreError, TimeoutError, type TextSendResult } from "./client.js";
 import { ByteReader, bytesEqual, fromHex, pathByteLength, toHex, unixNow } from "./protocol/bytes.js";
-import { neighbourSearchMs, traceBudgetMs } from "./protocol/airtime.js";
+import { neighbourSearchMs, replyBudgetMs, sealedBytes, traceBudgetMs, type ReplySize } from "./protocol/airtime.js";
 import { groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
 import { PayloadType, parseRawPacket, type RawPacket } from "./protocol/packet.js";
 import { AclRole, AdvType, Cmd, ContactFlag, ControlType, ErrCode, MAX_TEXT_LEN, NeighbourOrder, PUB_KEY_PREFIX_SIZE, StatsType, TxtType } from "./protocol/codes.js";
@@ -420,8 +420,8 @@ export interface SessionOptions {
   storage?: SessionStorage;
   /** Overrides the clock, for tests. Returns ms. */
   now?: () => number;
-  /** How long to wait for a remote node, from the radio's estimate; for tests. */
-  replyWaitMs?: (estimateMs: number, extraMs: number) => number;
+  /** How long to wait for a remote node, from the time worked out for its answer; for tests. */
+  replyWaitMs?: (estimateMs: number) => number;
   trace?: ConstructorParameters<typeof MeshCoreClient>[1] extends infer O ? (O extends { trace?: infer T } ? T : never) : never;
   /** How long to wait for a trace to come back, from the time worked out for it; for tests. */
   traceWaitMs?: (estimateMs: number) => number;
@@ -899,8 +899,10 @@ interface RemoteJob {
   start: (client: MeshCoreClient) => Promise<TextSendResult>;
   /** Whether this event is the reply, given what the radio said when it sent the request. */
   answers: (event: RemoteEvent, sent: TextSendResult | null) => boolean;
-  /** Added to the radio's estimate: a node holds a console reply back before it sends it. */
-  extraWaitMs: number;
+  /** What the request and its answer carry, for how long the answer should take. */
+  size: ReplySize;
+  /** Takes an answer that comes after the wait for it ran out. */
+  late: ((event: RemoteEvent) => void) | null;
   /** What the radio said of the send, once it has. */
   sent: TextSendResult | null;
   /** Events that arrived before the radio had confirmed the send. */
@@ -911,13 +913,44 @@ interface RemoteJob {
 }
 
 interface RemoteOptions {
-  extraWaitMs?: number;
+  size?: ReplySize;
+  late?: (event: RemoteEvent) => void;
   onStart?: () => void;
 }
 
-/** How long to wait for a remote node: the radio's estimate with room to spare, but not forever. */
-function replyWaitMs(estimateMs: number, extraMs: number): number {
-  return Math.min(60_000, Math.max(6_000, estimateMs * 1.25 + 1_500 + extraMs));
+/**
+ * What requests and their answers carry (`replyBudgetMs`). A request is 13
+ * bytes sealed: its stamp, its type and eight more. A node holds an answer
+ * 300 ms before it sends it, and a console reply 600 (`simple_repeater`).
+ */
+const ANSWER_HOLD_MS = 300;
+const CONSOLE_HOLD_MS = 600;
+const REQUEST_BYTES = sealedBytes(13);
+const REPLY_SIZE = {
+  // A sign-in carries this radio's whole key before the sealed stamp and password.
+  login: { askBytes: 1 + 32 + 2 + 32, answerBytes: 13, holdMs: ANSWER_HOLD_MS },
+  // The tag and a repeater's 56 bytes of counters.
+  status: { askBytes: REQUEST_BYTES, answerBytes: 60, holdMs: ANSWER_HOLD_MS },
+  // The tag and the readings in Cayenne LPP, a few bytes each.
+  telemetry: { askBytes: REQUEST_BYTES, answerBytes: 64, holdMs: ANSWER_HOLD_MS },
+  // A discovery asks for the battery reading alone.
+  path: { askBytes: REQUEST_BYTES, answerBytes: 16, holdMs: ANSWER_HOLD_MS },
+} as const;
+// A page of a list: ten neighbours of eleven bytes, the access list or a sensor's series.
+const BINARY_ANSWER_BYTES = 120;
+// Most console replies are a line; some run to a few.
+const CONSOLE_ANSWER_BYTES = 100;
+
+/** How far a flood is reckoned to go for an answer: as far as the farthest route this radio holds, within these. */
+const FLOOD_REACH_MIN = 4;
+const FLOOD_REACH_MAX = 8;
+
+/** How long an answer that missed its wait is still taken. */
+const LATE_ANSWER_MS = 60_000;
+
+/** How long to wait for a remote node: the longer of the radio's estimate with room to spare and the time worked out for the answer, but not forever. */
+function replyWaitMs(estimateMs: number, holdMs: number, budgetMs: number): number {
+  return Math.min(60_000, Math.max(6_000, estimateMs * 1.25 + 1_500 + holdMs, budgetMs));
 }
 
 export class MeshSession {
@@ -929,7 +962,7 @@ export class MeshSession {
   private readonly appName: string;
   private readonly storage: SessionStorage | null;
   private readonly now: () => number;
-  private readonly replyWait: (estimateMs: number, extraMs: number) => number;
+  private readonly replyWait: (estimateMs: number) => number;
   private readonly trace: SessionOptions["trace"];
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private saveChain: Promise<void> = Promise.resolve();
@@ -965,6 +998,8 @@ export class MeshSession {
   private droppingRoutes = new Set<string>();
   private remoteQueue: RemoteJob[] = [];
   private remoteActive: RemoteJob | null = null;
+  /** Requests whose wait ran out, still taking their answer until `until`. */
+  private lateJobs: { job: RemoteJob; until: number }[] = [];
   private jobCounter = 0;
   /** The next console tag; two hex digits, so the node's `XX|` rule holds. */
   private cliTag = Math.floor(Math.random() * 256);
@@ -981,7 +1016,7 @@ export class MeshSession {
     this.appName = options.appName ?? "Meshnet";
     this.storage = options.storage ?? null;
     this.now = options.now ?? (() => Date.now());
-    this.replyWait = options.replyWaitMs ?? replyWaitMs;
+    this.replyWait = options.replyWaitMs ?? ((budget) => budget);
     this.traceWait = options.traceWaitMs ?? ((budget) => Math.min(30_000, Math.max(2_500, budget)));
     this.searchWait = options.searchWaitMs ?? ((budget) => budget);
     this.trace = options.trace;
@@ -2899,6 +2934,7 @@ export class MeshSession {
       "sign in",
       (client) => client.sendLogin(bytes, password),
       (event) => event.kind === "login" && event.prefix === contact.prefix,
+      { size: REPLY_SIZE.login },
     );
     return this.state.logins[key]!;
   }
@@ -2930,6 +2966,7 @@ export class MeshSession {
         return sent;
       },
       (event) => event.kind === "login" && event.prefix === contact.prefix,
+      { size: REPLY_SIZE.login },
     );
     const login = this.state.logins[key]!;
     this.log("path", `${contact.name || key.slice(0, 12)}: ${login.ok ? "signed in by flood; it now learns the way back" : "sign-in by flood refused"}`);
@@ -2952,6 +2989,7 @@ export class MeshSession {
       "status",
       (client) => client.sendStatusReq(bytes),
       (event) => event.kind === "status" && event.prefix === contact.prefix,
+      { size: REPLY_SIZE.status },
     );
     return this.state.statuses[key]!;
   }
@@ -2969,6 +3007,7 @@ export class MeshSession {
       "telemetry",
       (client) => client.sendTelemetryReq(bytes).then((sent) => sent!),
       (event) => event.kind === "telemetry" && event.prefix === contact.prefix,
+      { size: REPLY_SIZE.telemetry },
     );
     return event.kind === "telemetry" ? event.readings : null;
   }
@@ -2988,6 +3027,7 @@ export class MeshSession {
       "path discovery",
       (client) => client.sendPathDiscoveryReq(bytes),
       (event) => event.kind === "path" && event.prefix === contact.prefix,
+      { size: REPLY_SIZE.path },
     );
     if (event.kind !== "path") throw new Error("unreachable");
     const held = this.state.contacts[key] ?? contact;
@@ -3008,14 +3048,15 @@ export class MeshSession {
   async requestNeighbours(key: string, options: { order?: number; offset?: number; count?: number } = {}): Promise<NeighbourList> {
     const order = options.order ?? 0;
     const offset = options.offset ?? 0;
-    const data = await this.binaryRequest(key, offset > 0 ? "more neighbours" : "neighbours", neighboursRequest({ order, offset, count: options.count ?? 10 }));
-    const { total, neighbours } = readNeighbours(data);
-    const page = neighbours.map((n) => ({ prefix: toHex(n.prefix), heardSecsAgo: n.heardSecsAgo, snr: n.snr }));
-    const prior = this.state.neighbours[key];
-    const list = offset > 0 && prior && prior.order === order ? [...prior.neighbours.slice(0, offset), ...page] : page;
-    const record: NeighbourList = { total, order, neighbours: list, at: this.now() };
-    this.set({ neighbours: { ...this.state.neighbours, [key]: record } });
-    return record;
+    return this.binaryRequest(key, offset > 0 ? "more neighbours" : "neighbours", neighboursRequest({ order, offset, count: options.count ?? 10 }), (data) => {
+      const { total, neighbours } = readNeighbours(data);
+      const page = neighbours.map((n) => ({ prefix: toHex(n.prefix), heardSecsAgo: n.heardSecsAgo, snr: n.snr }));
+      const prior = this.state.neighbours[key];
+      const list = offset > 0 && prior && prior.order === order ? [...prior.neighbours.slice(0, offset), ...page] : page;
+      const record: NeighbourList = { total, order, neighbours: list, at: this.now() };
+      this.set({ neighbours: { ...this.state.neighbours, [key]: record } });
+      return record;
+    });
   }
 
   /**
@@ -3052,29 +3093,37 @@ export class MeshSession {
   }
 
   async requestAccessList(key: string): Promise<AccessRecord[]> {
-    const data = await this.binaryRequest(key, "access list", accessListRequest());
-    const entries = readAccessList(data).map((e) => ({ prefix: toHex(e.prefix), permissions: e.permissions }));
-    this.set({ accessLists: { ...this.state.accessLists, [key]: { entries, at: this.now() } } });
-    return entries;
+    return this.binaryRequest(key, "access list", accessListRequest(), (data) => {
+      const entries = readAccessList(data).map((e) => ({ prefix: toHex(e.prefix), permissions: e.permissions }));
+      this.set({ accessLists: { ...this.state.accessLists, [key]: { entries, at: this.now() } } });
+      return entries;
+    });
   }
 
   async requestOwnerInfo(key: string): Promise<OwnerInfo> {
-    const data = await this.binaryRequest(key, "owner info", ownerInfoRequest());
-    const info: OwnerInfo = { ...readOwnerInfo(data), at: this.now() };
-    this.set({ ownerInfo: { ...this.state.ownerInfo, [key]: info } });
-    return info;
+    return this.binaryRequest(key, "owner info", ownerInfoRequest(), (data) => {
+      const info: OwnerInfo = { ...readOwnerInfo(data), at: this.now() };
+      this.set({ ownerInfo: { ...this.state.ownerInfo, [key]: info } });
+      return info;
+    });
   }
 
   /** A sensor's min, max and mean of each series over the last `windowSecs`. */
   async requestSeries(key: string, windowSecs: number): Promise<SeriesWindow> {
-    const data = await this.binaryRequest(key, "min/max/avg", avgMinMaxRequest(windowSecs, 0));
-    const { time, series } = readAvgMinMax(data);
-    const record: SeriesWindow = { windowSecs, time, series, at: this.now() };
-    this.set({ series: { ...this.state.series, [key]: record } });
-    return record;
+    return this.binaryRequest(key, "min/max/avg", avgMinMaxRequest(windowSecs, 0), (data) => {
+      const { time, series } = readAvgMinMax(data);
+      const record: SeriesWindow = { windowSecs, time, series, at: this.now() };
+      this.set({ series: { ...this.state.series, [key]: record } });
+      return record;
+    });
   }
 
-  private async binaryRequest(key: string, label: string, body: Uint8Array): Promise<Uint8Array> {
+  /**
+   * Sends a binary request and keeps what its answer says with `take`. The
+   * answer is known by its tag alone, so one that comes after the wait for it
+   * ran out is still kept, and shows up where the reader looks.
+   */
+  private async binaryRequest<T>(key: string, label: string, body: Uint8Array, take: (data: Uint8Array) => T): Promise<T> {
     this.needContact(key);
     const bytes = fromHex(key);
     const event = await this.remoteRequest(
@@ -3082,9 +3131,20 @@ export class MeshSession {
       label,
       (client) => client.sendBinaryReq(bytes, body),
       (event, sent) => event.kind === "binary" && sent !== null && event.tag === sent.ackTag,
+      {
+        size: { askBytes: sealedBytes(4 + body.length), answerBytes: BINARY_ANSWER_BYTES, holdMs: ANSWER_HOLD_MS },
+        late: (event) => {
+          if (event.kind !== "binary") return;
+          try {
+            take(event.data);
+          } catch (error) {
+            this.log("error", `${label}: ${(error as Error).message}`);
+          }
+        },
+      },
     );
     if (event.kind !== "binary") throw new Error("unreachable");
-    return event.data;
+    return take(event.data);
   }
 
   /**
@@ -3117,8 +3177,8 @@ export class MeshSession {
         (client) => client.sendCliCommand(prefix, `${tag}|${command}`, this.cliStamp(key)),
         (event) => event.kind === "cli" && event.prefix === contact.prefix && event.tag === tag,
         {
-          // The node holds a console reply back for about half a second.
-          extraWaitMs: 1_500,
+          // A text: its stamp, a byte of flags, then the tagged command.
+          size: { askBytes: sealedBytes(5 + new TextEncoder().encode(`${tag}|${command}`).length), answerBytes: CONSOLE_ANSWER_BYTES, holdMs: CONSOLE_HOLD_MS },
           onStart: () => {
             sentAt = this.now();
             this.patchConsole(key, entry.id, { status: "waiting", at: sentAt });
@@ -3297,7 +3357,7 @@ export class MeshSession {
     options: RemoteOptions = {},
   ): Promise<RemoteEvent> {
     if (!this.client || this.client.isClosed) return Promise.reject(new Error("not connected"));
-    const { extraWaitMs = 0, onStart } = options;
+    const { size = REPLY_SIZE.status, late, onStart } = options;
     return new Promise((resolve, reject) => {
       this.jobCounter += 1;
       this.remoteQueue.push({
@@ -3307,7 +3367,8 @@ export class MeshSession {
           return start(client);
         },
         answers,
-        extraWaitMs,
+        size,
+        late: late ?? null,
         sent: null,
         early: [],
         timer: null,
@@ -3345,13 +3406,14 @@ export class MeshSession {
       const sent = await job.start(client);
       if (this.remoteActive !== job) return;
       job.sent = sent;
-      const wait = this.replyWait(sent.estTimeoutMs, job.extraWaitMs);
+      const wait = this.replyWait(this.answerWait(job, sent));
       job.info = { ...job.info, until: this.now() + wait };
       this.publishRemote();
-      this.log("remote", `${job.info.label} to ${name}: ${sent.flood ? "as a flood" : "along its route"}`);
+      this.log("remote", `${job.info.label} to ${name}: ${sent.flood ? "as a flood" : "along its route"}, waiting ${Math.round(wait / 1000)} s`);
       job.timer = setTimeout(() => {
         job.timer = null;
         this.log("remote", `${job.info.label} to ${name}: no reply`);
+        if (job.late) this.lateJobs = [...this.liveLateJobs(), { job, until: this.now() + LATE_ANSWER_MS }];
         this.finishRemote(job, new NoReplyError(job.info.label, wait));
       }, wait);
       for (const event of job.early.splice(0)) this.remoteEvent(event);
@@ -3370,18 +3432,53 @@ export class MeshSession {
     void this.pumpRemote();
   }
 
+  /**
+   * How long to wait for the answer to a request the radio has sent. Along a
+   * route the reach is the route's; a flood's is not known, and is taken as
+   * the farthest route this radio holds, since the mesh reaches that far.
+   */
+  private answerWait(job: RemoteJob, sent: TextSendResult): number {
+    const self = this.state.self;
+    if (!self || self.bandwidthHz <= 0) return replyWaitMs(sent.estTimeoutMs, job.size.holdMs, 0);
+    const contact = this.state.contacts[job.info.key];
+    const routed = !sent.flood && contact !== undefined && contact.outPathLen !== 0xff;
+    const hops = routed ? contact.outPathLen & 63 : this.floodReach();
+    const hashSize = routed ? (contact.outPathLen >> 6) + 1 : (this.state.device?.pathHashMode ?? 0) + 1;
+    return replyWaitMs(sent.estTimeoutMs, job.size.holdMs, replyBudgetMs({ hops, hashSize, flood: sent.flood }, job.size, self));
+  }
+
+  private floodReach(): number {
+    let farthest = 0;
+    for (const c of Object.values(this.state.contacts)) if (c.outPathLen !== 0xff) farthest = Math.max(farthest, c.outPathLen & 63);
+    return Math.min(FLOOD_REACH_MAX, Math.max(FLOOD_REACH_MIN, farthest));
+  }
+
+  private liveLateJobs(): { job: RemoteJob; until: number }[] {
+    const now = this.now();
+    return this.lateJobs.filter((l) => l.until > now);
+  }
+
   /** Hands a reply from a remote node to the request waiting for it; says whether one was. */
   private remoteEvent(event: RemoteEvent): boolean {
     const job = this.remoteActive;
-    if (!job) return false;
     // A binary reply is known by the tag the radio gave when it sent the
     // request; one that overtakes that answer waits for it.
-    if (event.kind === "binary" && !job.sent) {
+    if (job && event.kind === "binary" && !job.sent) {
       job.early.push(event);
       return true;
     }
-    if (!job.answers(event, job.sent)) return false;
-    this.finishRemote(job, null, event);
+    if (job && job.answers(event, job.sent)) {
+      this.finishRemote(job, null, event);
+      return true;
+    }
+    // An answer that took longer than its wait is still what was asked for.
+    this.lateJobs = this.liveLateJobs();
+    const late = this.lateJobs.find((l) => l.job.answers(event, l.job.sent));
+    if (!late) return false;
+    this.lateJobs = this.lateJobs.filter((l) => l !== late);
+    const name = this.state.contacts[late.job.info.key]?.name || late.job.info.key.slice(0, 12);
+    this.log("remote", `${late.job.info.label} to ${name}: answered late`);
+    late.job.late?.(event);
     return true;
   }
 
@@ -3393,6 +3490,7 @@ export class MeshSession {
     const jobs = [...(this.remoteActive ? [this.remoteActive] : []), ...this.remoteQueue];
     this.remoteActive = null;
     this.remoteQueue = [];
+    this.lateJobs = [];
     for (const job of jobs) {
       if (job.timer) clearTimeout(job.timer);
       job.reject(new Error(reason));

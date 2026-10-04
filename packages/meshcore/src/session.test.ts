@@ -1370,6 +1370,38 @@ test("a node that never answers times the request out and lets the next one go",
   assert.equal(radio.sent.filter((f) => f[0] === Cmd.SendStatusReq).length, 2);
 });
 
+test("a flood waits for an answer from as far as the farthest route, a route for its own length", async () => {
+  const waits: number[] = [];
+  const { radio, session } = await nodeSession({
+    replyWaitMs: (ms) => {
+      waits.push(ms);
+      return 20;
+    },
+  });
+  // Bob is six relays away; Hill has no route, so the radio floods to it.
+  radio.contacts = [contactFrame(HILL, "Hill", 10, 2), contactFrame(BOB, "Bob", 12, 1, [1, 2, 3, 4, 5, 6])];
+  await session.refreshContacts(true);
+  await assert.rejects(session.requestStatus(HILL_KEY), /no reply/);
+  // The radio said 2 s; six hops each way on 62.5 kHz SF7 take far longer.
+  assert.ok(waits[0]! > 17_000 && waits[0]! < 18_500, String(waits[0]));
+
+  radio.contacts = [contactFrame(HILL, "Hill", 20, 2, [0x3f, 0xa1]), contactFrame(BOB, "Bob", 12, 1, [1, 2, 3, 4, 5, 6])];
+  await session.refreshContacts(true);
+  await assert.rejects(session.requestStatus(HILL_KEY), /no reply/);
+  assert.equal(waits[1], 6_000);
+});
+
+test("a list that answers after its wait ran out is still kept", async () => {
+  const { radio, session } = await nodeSession({ replyWaitMs: () => 20 });
+  await assert.rejects(session.requestNeighbours(HILL_KEY), /no reply/);
+  assert.equal(session.getState().neighbours[HILL_KEY], undefined);
+  radio.push(neighboursReply(radio, 1, [["aabbccddeeff", 30, 6]]));
+  assert.deepEqual(session.getState().neighbours[HILL_KEY]?.neighbours, [{ prefix: "aabbccddeeff", heardSecsAgo: 30, snr: 6 }]);
+  // Taken once: the same answer again is no one's.
+  radio.push(neighboursReply(radio, 2, []));
+  assert.equal(session.getState().neighbours[HILL_KEY]?.total, 1);
+});
+
 test("a request that hears nothing goes once, keeps its route and signs in to nothing", async () => {
   const { radio, session } = await nodeSession({ replyWaitMs: () => 20 });
   radio.contacts = [contactFrame(HILL, "Hill", 10, 2, [0x3f, 0xa1])];

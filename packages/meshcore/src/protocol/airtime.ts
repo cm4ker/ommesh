@@ -35,6 +35,45 @@ export function traceBudgetMs(hops: number, hashSize: number, radio: AirtimeRadi
   return 1500 + (hops + 1) * (3 * loraAirtimeMs(bytes, radio) + 80);
 }
 
+/** A datagram's payload for `plain` bytes: two one-byte hashes and a MAC, then the text sealed in 16-byte blocks. */
+export function sealedBytes(plain: number): number {
+  return 4 + Math.ceil(plain / 16) * 16;
+}
+
+/** How a request goes to a node: through how many relays, the bytes of each hash, and whether as a flood. */
+export interface ReplyWay {
+  hops: number;
+  hashSize: number;
+  flood: boolean;
+}
+
+/** What a request and its answer carry: the request's payload as sent, the answer before it is sealed, and how long the node holds it. */
+export interface ReplySize {
+  askBytes: number;
+  answerBytes: number;
+  holdMs: number;
+}
+
+/**
+ * The longest a node should take to answer a request, ms. The radio's own
+ * estimate counts sixteen airtimes of the request for a flood, however far it
+ * goes, and six a hop along a route, but nothing for the answer, which is
+ * larger: a node many hops away answered well after it (October 2026). Here
+ * the request goes out and the answer comes back, each sent once a hop and
+ * held by every relay for a pause of up to 2.5 times its time on air on a
+ * flood (`txdelay` 0.5, times 5) or 1.5 along a route (`direct.txdelay` 0.3),
+ * and the node holds its answer before it sends it. A flood is answered in a
+ * path packet, which carries the way the request came as well. The path is
+ * counted as it is halfway.
+ */
+export function replyBudgetMs(way: ReplyWay, size: ReplySize, radio: AirtimeRadio): number {
+  const path = Math.ceil((way.hops * way.hashSize) / 2);
+  const ask = loraAirtimeMs(2 + path + size.askBytes, radio);
+  const answer = loraAirtimeMs(2 + path + sealedBytes(way.flood ? 2 + way.hops * way.hashSize + size.answerBytes : size.answerBytes), radio);
+  const pause = way.flood ? 2.5 : 1.5;
+  return 1500 + size.holdMs + (way.hops + 1) * (ask + answer + 160) + way.hops * pause * (ask + answer);
+}
+
 /**
  * How long a repeater's neighbours take to answer `discover.neighbors`, ms.
  * Each answers once, zero hop, after a random pause of up to twenty times

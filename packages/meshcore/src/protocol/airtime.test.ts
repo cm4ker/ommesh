@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loraAirtimeMs, neighbourSearchMs, traceBudgetMs } from "./airtime.js";
+import { loraAirtimeMs, neighbourSearchMs, replyBudgetMs, sealedBytes, traceBudgetMs } from "./airtime.js";
 
 // The OMS preset: 869.161 MHz, 62.5 kHz, SF7, 4/7.
 const OMS = { bandwidthHz: 62_500, spreadingFactor: 7, codingRate: 7 };
@@ -26,4 +26,24 @@ test("a neighbour search waits for answers from neighbours with twice the defaul
   assert.equal(Math.round(narrow / 100) / 10, 12.3);
   // The repeater listens for a minute and no longer.
   assert.equal(neighbourSearchMs({ bandwidthHz: 7_800, spreadingFactor: 12, codingRate: 8 }), 60_000);
+});
+
+test("an answer from a flood is given time for every hop there and back, past what the radio estimates", () => {
+  const status = { askBytes: sealedBytes(13), answerBytes: 60, holdMs: 300 };
+  // The radio says 500 + 16 airtimes of the 22-byte request for a flood however far it goes: 6.2 s with room to spare.
+  const radio = (500 + 16 * loraAirtimeMs(22, OMS)) * 1.25 + 1800;
+  assert.ok(radio < 6_500, String(radio));
+  // Six hops each way, each relay holding the packet up to 2.5 of its airtimes.
+  const six = replyBudgetMs({ hops: 6, hashSize: 1, flood: true }, status, OMS);
+  assert.ok(six > 17_000 && six < 18_500, String(six));
+  // Along a route a relay holds a packet for less, and no path rides in the answer.
+  const routed = replyBudgetMs({ hops: 6, hashSize: 1, flood: false }, status, OMS);
+  assert.ok(routed < six - 4_000, String(routed));
+});
+
+test("a longer answer is given longer", () => {
+  const way = { hops: 3, hashSize: 1, flood: false };
+  const short = replyBudgetMs(way, { askBytes: 36, answerBytes: 10, holdMs: 600 }, OMS);
+  const long = replyBudgetMs(way, { askBytes: 36, answerBytes: 150, holdMs: 600 }, OMS);
+  assert.ok(long > short + 2_000, `${short} ${long}`);
 });

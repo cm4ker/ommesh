@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AclRole, AdvType, NodeCommandError, isCliError, type ContactRecord } from "@meshnet/meshcore";
+import { AclRole, AdvType, NoReplyError, NodeCommandError, isCliError, type ContactRecord } from "@meshnet/meshcore";
 import { errorText } from "../../i18n/errors.js";
 import { t, type Key } from "../../i18n/index.js";
 import { tx } from "../../i18n/rich.js";
@@ -42,7 +42,8 @@ export function Access({ contact }: { contact: ContactRecord }) {
   const online = state.status === "ready";
   const selfPrefix = state.self?.prefix ?? "";
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // A node silent past the wait may answer late: a list newer than that silence stands in for the error.
+  const [error, setError] = useState<{ text: string; silentAt: number | null } | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [grantKey, setGrantKey] = useState("");
@@ -55,7 +56,7 @@ export function Access({ contact }: { contact: ContactRecord }) {
     try {
       await action();
     } catch (e) {
-      setError(message(e));
+      setError({ text: message(e), silentAt: e instanceof NoReplyError ? Date.now() : null });
     } finally {
       setBusy(null);
     }
@@ -84,7 +85,7 @@ export function Access({ contact }: { contact: ContactRecord }) {
           {list ? t("node.refresh") : t("node.access.askNode")}
         </Button>
       </div>
-      {error ? <p className="connect-error">{error}</p> : null}
+      {error && !(error.silentAt !== null && (list?.at ?? 0) > error.silentAt) ? <p className="connect-error">{error.text}</p> : null}
       {note ? <p className="muted small">{note}</p> : null}
 
       {list ? (

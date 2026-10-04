@@ -34,7 +34,8 @@ export function Neighbours({ contact }: { contact: ContactRecord }) {
   const outcome = search && !searching && (list?.at ?? 0) <= search.at ? search : null;
   const [order, setOrder] = useState<number>(list?.order ?? NeighbourOrder.Newest);
   const [busy, setBusy] = useState<"page" | "more" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // An error stands until an answer newer than it comes in: one that came late says the node heard.
+  const [error, setError] = useState<{ text: string; at: number } | null>(null);
 
   const fetch = async (nextOrder: number, offset: number) => {
     setBusy(offset > 0 ? "more" : "page");
@@ -44,7 +45,7 @@ export function Neighbours({ contact }: { contact: ContactRecord }) {
       // More of the list the search read is still that list.
       if (offset > 0 && outcome) keepSearch(key, read.at);
     } catch (e) {
-      setError(e instanceof NoReplyError ? t("node.neighbours.noReply", { seconds: /(\d+) s$/.exec(e.message)?.[1] ?? "?" }) : errorText(e));
+      setError({ text: e instanceof NoReplyError ? t("node.neighbours.noReply", { seconds: /(\d+) s$/.exec(e.message)?.[1] ?? "?" }) : errorText(e), at: Date.now() });
     } finally {
       setBusy(null);
     }
@@ -99,7 +100,7 @@ export function Neighbours({ contact }: { contact: ContactRecord }) {
       {/* The repeater takes the command from an admin only, so a guest is not offered it. */}
       {isAdmin(state.logins[key]) ? <SearchStrip search={searching ? search : outcome} waitMs={waitMs} disabled={!online || busy !== null} onSearch={startSearch} /> : null}
 
-      {error ? <p className="connect-error">{error}</p> : null}
+      {error && (list?.at ?? 0) < error.at ? <p className="connect-error">{error.text}</p> : null}
 
       {list ? (
         rows.length === 0 ? (

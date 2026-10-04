@@ -14,6 +14,7 @@ pnpm web            # dev server at http://localhost:5180
 pnpm typecheck      # every package
 pnpm test           # scripts/*.test.mjs, then every package's tests
 pnpm build          # protocol package + web bundle
+pnpm news [X.Y.Z]   # a version's App Store, TestFlight and Telegram texts, from its news file
 cargo test --manifest-path crates/meshcore-core/Cargo.toml   # the Rust radio core (CI runs it)
 pnpm --filter @meshnet/desktop desktop:check                 # cargo check of the Tauri shell
 ```
@@ -72,5 +73,6 @@ Anything sent over the air to test a change goes to the `#test` channel, never P
 - **Generated files** are not edited by hand: the icons, the sounds (`pnpm sounds`), the People list at the end of both READMEs and in the app (`apps/web/src/lib/people.json`, `apps/web/public/people/`, `apps/web/src/fonts/caveat-thanks.woff2`; `pnpm people`, which the People workflow runs and commits to master on every new issue), `apps/mobile/ios/App/CapApp-SPM/Package.swift` (written by `cap sync`) and `apps/desktop/src-tauri/tauri.release.json` (written by `scripts/release.mjs`).
 - **Commits** read `type(scope): What changes for the user (#issue)`, for example `feat(search): Put a clearing cross in every search field (#44)`. Types are `feat`, `fix`, `perf`, `docs`, `ci`. They are in English, and the body says in prose what changed and why.
 - **Changelog.** Each user-visible change gets a line in both `CHANGELOG.md` and `CHANGELOG.ru.md` under `## Unreleased`, in the matching area heading, written for users. Commit it separately as `docs(changelog): …`.
-- **Releases.** Every push to `master` publishes a Dev release that installed apps on the Dev channel update to. A `vX.Y.Z` tag that matches the root `package.json` version makes a stable release. Work on a branch and open a pull request unless the maintainer says otherwise.
+- **Releases.** Ommesh comes out once a week: the Unreleased section is cut on Wednesday and the version tagged on Thursday. Every push to `master` still publishes a Dev release, which only apps switched to the Dev channel take. A `vX.Y.Z` tag that matches the root `package.json` version makes a stable release; after it, bump the root version to the next one. Work on a branch and open a pull request unless the maintainer says otherwise.
+- **News.** A stable version needs `apps/web/src/news/X.Y.Z.json`, or its tag fails: at most five new things (a title under 60 characters that says what the reader can now do, and a sentence or two) and the fixes a line each, in `en` and `ru`, condensed from the Unreleased section. The app shows it after the update, and the update dialog, GitHub, Google Play, the App Store and Telegram get it too (`scripts/news.mjs`, `docs/desktop-updates.md`). A new thing's `show` (`chats`, `mesh` or `radio/<page>`) is where its Show button leads.
 - **Issues** are tracked on GitHub (`cm4ker/ommesh`). Reference the issue number in commits.

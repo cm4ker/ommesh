@@ -6,9 +6,9 @@
   <p>
     <a href="https://play.google.com/store/apps/details?id=dev.cm4ker.meshnet"><img src="docs/badges/google-play-en.png" height="56" alt="Get it on Google Play" /></a>
     &nbsp;
-    <a href="https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-setup-x64.exe"><img src="docs/badges/windows-en.svg" height="56" alt="Download for Windows" /></a>
+    <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x64.exe"><img src="docs/badges/windows-en.svg" height="56" alt="Download for Windows" /></a>
   </p>
-  <p><sub>Windows on <a href="https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-setup-arm64.exe">ARM</a> · <a href="https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-setup-x86.exe">32-bit Windows</a> · <a href="#install">other ways to install</a> · iPhone: coming to the App Store</sub></p>
+  <p><sub>Windows on <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-arm64.exe">ARM</a> · <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x86.exe">32-bit Windows</a> · <a href="#install">other ways to install</a> · iPhone: coming to the App Store</sub></p>
   <p><strong>English</strong> · <a href="README.ru.md">Русский</a></p>
   <p>
     <a href="https://github.com/cm4ker/ommesh/actions/workflows/build.yml"><img src="https://github.com/cm4ker/ommesh/actions/workflows/build.yml/badge.svg" alt="Build status" /></a>
@@ -26,12 +26,12 @@
 | Device | Get Ommesh |
 | :--- | :--- |
 | **Android** | [Google Play](https://play.google.com/store/apps/details?id=dev.cm4ker.meshnet). Updates come through the store. |
-| **Windows 10 and 11** | Installer for [x64](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-setup-x64.exe), [ARM](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-setup-arm64.exe) or [32-bit](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-setup-x86.exe). The app offers each new build itself. |
+| **Windows 10 and 11** | Installer for [x64](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x64.exe), [ARM](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-arm64.exe) or [32-bit](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x86.exe). The app offers each new version itself. |
 | **iPhone** | Coming to the App Store. |
 | **macOS and Linux** | Build the desktop app from source; see [Development](#development). |
 | **Browser** | Chrome or Edge can reach a radio over Bluetooth or USB. Run the web client from source; see [Development](#development). |
 
-The Windows installers are the newest Dev build: every change to the app makes one, and the app itself offers the next (**Settings → About**, or **App updates** on the connection screen). A PC with neither WebView2 nor internet access (Windows 10 LTSC, a fresh image) needs the offline installer from the [Dev release page](https://github.com/cm4ker/ommesh/releases/tag/dev); it carries WebView2 and is about 190 MB larger. Windows 11 already has WebView2. Testers can also take the [Dev Android APK](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh_android-debug.apk); it is signed with a different key, so remove the Google Play version first. See [update channels and signing](docs/desktop-updates.md).
+Ommesh comes out once a week. The Windows installers are the newest version, and the app itself offers the next (**Settings → About**, or **App updates** on the connection screen); after an update, **What's new** says what it brought. Testers who want every change as it lands can pick the **Dev** channel in **App updates**. A PC with neither WebView2 nor internet access (Windows 10 LTSC, a fresh image) needs the offline installer from the [latest release page](https://github.com/cm4ker/ommesh/releases/latest); it carries WebView2 and is about 190 MB larger. Windows 11 already has WebView2. Testers can also take the [Dev Android APK](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh_android-debug.apk); it is signed with a different key, so remove the Google Play version first. See [update channels and signing](docs/desktop-updates.md).
 
 ### Connect a radio
 

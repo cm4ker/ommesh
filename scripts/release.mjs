@@ -2,6 +2,7 @@ import { appendFileSync, readFileSync, readdirSync, writeFileSync } from "node:f
 import { basename, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
+import { baseVersion, githubBody, problems, readRelease, updaterNotes } from "./news.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
@@ -19,7 +20,12 @@ export function releaseInfo(base, env) {
   return { version, channel: tagged ? "stable" : "dev", tag: tagged ? `v${base}` : `dev-${version}`, publish };
 }
 
-export function makeManifest({ version, tag, repository, files, signature, date = new Date().toISOString() }) {
+/**
+ * The feed the desktop updater reads. With the version's news (scripts/news.mjs) it carries them whole
+ * under `news`, which the app shows in the reader's language before the download; its notes then list
+ * the new things in both languages, for clients from before 0.7.0, which show the notes as they are.
+ */
+export function makeManifest({ version, tag, repository, files, signature, news = null, date = new Date().toISOString() }) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error("Invalid GitHub repository");
   const platforms = {};
   for (const [arch, target] of [["x64", "windows-x86_64"], ["arm64", "windows-aarch64"], ["x86", "windows-i686"]]) {
@@ -32,7 +38,8 @@ export function makeManifest({ version, tag, repository, files, signature, date 
     if (!signed) throw new Error(`Empty signature for ${arch}`);
     platforms[target] = { signature: signed, url: `https://github.com/${repository}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(name)}` };
   }
-  return { version, notes: `Ommesh ${version}\nRelease details: https://github.com/${repository}/releases/tag/${encodeURIComponent(tag)}`, pub_date: date, platforms };
+  const notes = news ? updaterNotes(news) : `Ommesh ${version}\nRelease details: https://github.com/${repository}/releases/tag/${encodeURIComponent(tag)}`;
+  return { version, notes, pub_date: date, platforms, ...(news ? { news } : {}) };
 }
 
 function gh(...args) {
@@ -88,7 +95,9 @@ export function publish(info, directory, env, run = gh, pause = sleep) {
   const manifest = readJson(resolve(directory, "latest.json"));
   if (!info.publish || manifest.version !== info.version) throw new Error("Not a matching release build");
   const notesFile = resolve(directory, "release-notes.md");
-  writeFileSync(notesFile, `${manifest.notes}\n\nBuilt from ${env.GITHUB_SHA}.\n`);
+  // A stable release's page says what it brings; a Dev build's keeps the feed's short notes.
+  const body = info.channel === "stable" && manifest.news ? githubBody(manifest.news, repo) : manifest.notes;
+  writeFileSync(notesFile, `${body}\n\nBuilt from ${env.GITHUB_SHA}.\n`);
   const assets = readdirSync(directory).filter((name) => name !== "release-notes.md").map((name) => resolve(directory, name));
   run("release", "create", info.tag, "--repo", repo, "--target", env.GITHUB_SHA, "--draft", "--latest=false", "--title", `Ommesh ${info.version}`, "--notes-file", notesFile, ...(info.channel === "dev" ? ["--prerelease"] : []));
   run("release", "upload", info.tag, "--repo", repo, ...assets);
@@ -132,16 +141,33 @@ export function pruneDevReleases(repo, run = gh, keep = 2) {
   for (const tag of tags.slice(keep)) run("release", "delete", tag, "--repo", repo, "--cleanup-tag", "--yes");
 }
 
+/**
+ * What the version brings, from its news file. A stable release cannot go out without one: its page, the
+ * feed and the app's What's new all say it. A Dev build carries the news of the version it leads to, once written.
+ */
+export function releaseNews(info, read = readRelease) {
+  const version = baseVersion(info.version);
+  const news = read(version);
+  if (info.channel === "stable") {
+    if (!news) throw new Error(`Write apps/web/src/news/${version}.json before tagging v${version}: what this version brings`);
+    const wrong = problems(news, `${version}.json`);
+    if (wrong.length) throw new Error(wrong.join("\n"));
+  }
+  return news && problems(news).length === 0 ? news : null;
+}
+
 export function main(command, directory = "out", env = process.env) {
   const info = releaseInfo(readJson(resolve(root, "package.json")).version, env);
   if (command === "prepare") {
+    // Before any build starts, so a tag without its news fails in seconds rather than after the installers.
+    releaseNews(info);
     json(resolve(root, "apps/desktop/src-tauri/tauri.release.json"), { version: info.version, bundle: { createUpdaterArtifacts: info.publish } });
     if (env.GITHUB_ENV) appendFileSync(env.GITHUB_ENV, `MESHNET_VERSION=${info.version}\n`);
     if (env.GITHUB_OUTPUT) for (const [key, value] of Object.entries(info)) appendFileSync(env.GITHUB_OUTPUT, `${key}=${value}\n`);
     console.log(JSON.stringify(info));
   } else if (command === "manifest") {
     const files = readdirSync(directory);
-    json(resolve(directory, "latest.json"), makeManifest({ ...info, repository: env.GITHUB_REPOSITORY, files, signature: (name) => readFileSync(resolve(directory, name), "utf8") }));
+    json(resolve(directory, "latest.json"), makeManifest({ ...info, repository: env.GITHUB_REPOSITORY, files, signature: (name) => readFileSync(resolve(directory, name), "utf8"), news: releaseNews(info) }));
   } else if (command === "publish") {
     if (!info.publish) throw new Error("Only publishing pushes can create releases");
     // Bootstrap the channel once; existing releases and their files are kept.

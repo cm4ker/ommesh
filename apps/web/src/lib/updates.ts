@@ -13,7 +13,8 @@ import { radioBusyForUpdate } from "./updateSafety.js";
 const CHANNEL_KEY = "meshnet.updates.channel";
 const AUTO_KEY = "meshnet.updates.auto";
 const savedChannel = readSetting<unknown>(CHANNEL_KEY, null);
-const initialChannel: UpdateChannel = savedChannel === "dev" || savedChannel === "stable" ? savedChannel : __APP_VERSION__.includes("-") ? "dev" : "stable";
+// Stable unless chosen otherwise, a Dev build too: Ommesh comes out once a week, and Dev, with every change, is for whoever picks it.
+const initialChannel: UpdateChannel = savedChannel === "dev" || savedChannel === "stable" ? savedChannel : "stable";
 const PERIOD = 6 * 60 * 60_000;
 
 export const updates = new UpdateController(async (channel) => {
@@ -22,7 +23,7 @@ export const updates = new UpdateController(async (channel) => {
   return metadata ? new Update(metadata) : null;
 }, initialChannel);
 
-interface DesktopInfo { version: string; supported: boolean; channel: UpdateChannel }
+interface DesktopInfo { version: string; supported: boolean }
 let info = { version: __APP_VERSION__, supported: false, ready: false, error: null as string | null, open: false, auto: readSetting<boolean>(AUTO_KEY, true) };
 const listeners = new Set<() => void>();
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); };
@@ -55,7 +56,6 @@ export function initializeUpdates(): Promise<void> {
     try {
       const native = await invoke<DesktopInfo>("desktop_update_info");
       emit({ version: native.version, supported: native.supported, ready: true });
-      if (savedChannel !== "stable" && savedChannel !== "dev") updates.setChannel(native.channel);
       void automaticCheck();
       setInterval(() => void automaticCheck(), PERIOD);
       document.addEventListener("visibilitychange", () => {

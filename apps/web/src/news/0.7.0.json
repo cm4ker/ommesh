@@ -1,0 +1,62 @@
+{
+  "version": "0.7.0",
+  "date": "2026-10-08",
+  "items": [
+    {
+      "kind": "new",
+      "en": {
+        "title": "Ommesh comes out once a week",
+        "text": "After each update the app says what is new, and About keeps the list. A PC takes the weekly version; Dev, with every change, stays a choice in App updates."
+      },
+      "ru": {
+        "title": "Ommesh выходит раз в неделю",
+        "text": "После обновления приложение покажет, что нового, а список версий есть в «О приложении». ПК получает недельную версию, Dev с каждой правкой — по выбору."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "radio/frequency",
+      "en": {
+        "title": "Repeat and the route hash beside the frequency",
+        "text": "Repeat lets your radio pass on others' messages like a repeater. Route hash sets how many bytes of its key each repeater writes into the path."
+      },
+      "ru": {
+        "title": "Ретрансляция и хеш маршрута рядом с частотой",
+        "text": "«Ретрансляция» передаёт чужие сообщения дальше, как репитер. «Хеш маршрута» задаёт, сколько байт ключа каждый репитер пишет в путь."
+      }
+    },
+    {
+      "kind": "new",
+      "en": {
+        "title": "A far node has time to answer",
+        "text": "The wait counts the hops there and back, so a repeater five or six hops away no longer gets \"No reply\" before its answer comes."
+      },
+      "ru": {
+        "title": "Далёкий узел успевает ответить",
+        "text": "Ожидание считает хопы туда и обратно, и репитер за пять-шесть хопов больше не получает «Нет ответа» раньше, чем придёт ответ."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "radio/privacy",
+      "en": {
+        "title": "This device's position for a radio with GPS",
+        "text": "Use this device's position is back on a radio with GPS of its own, and its latitude and longitude can be typed while the GPS looks for satellites."
+      },
+      "ru": {
+        "title": "Местоположение устройства и для радио с GPS",
+        "text": "«Взять местоположение этого устройства» вернулось у радио со своим GPS, а широту и долготу снова можно ввести, пока GPS ищет спутники."
+      }
+    },
+    {
+      "kind": "fix",
+      "en": "Forget the route works with a radio that is slow to save its contacts, such as a Heltec on Smart UI.",
+      "ru": "«Забыть маршрут» работает с радио, которое долго сохраняет контакты, например с Heltec на Smart UI."
+    },
+    {
+      "kind": "fix",
+      "en": "Apply on Frequency and power no longer turns repeat off.",
+      "ru": "«Применить» на странице «Частота и мощность» больше не выключает ретрансляцию."
+    }
+  ]
+}

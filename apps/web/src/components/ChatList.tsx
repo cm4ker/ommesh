@@ -21,6 +21,7 @@ import { Avatar } from "./Avatar.js";
 import { BellOffIcon, CheckIcon, ChevronDownIcon, HashIcon, PersonIcon, PinIcon, PinOffIcon, PlusIcon, SortIcon, StarFilledIcon, TrashIcon } from "./Icons.js";
 import { marked } from "./Marked.js";
 import { NewBuildStrip } from "./NewBuild.js";
+import { NewsStrip } from "./News.js";
 import { NewChat } from "./NewChat.js";
 import { RadioTag } from "./RadioTag.js";
 import { t } from "../i18n/index.js";
@@ -95,6 +96,7 @@ export function ChatList({ selected }: { selected: string | null }) {
         enterKeyHint="search"
         data-find
       />
+      <NewsStrip />
       <NewBuildStrip />
       {rows.length === 0 ? (
         <div className="empty muted">{t("chats.list.empty")}</div>

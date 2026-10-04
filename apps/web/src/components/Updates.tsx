@@ -7,6 +7,7 @@ import { Button } from "../ui/Button.js";
 import { Dialog } from "../ui/Dialog.js";
 import { Group, InfoRow, SelectRow, SwitchRow } from "../ui/List.js";
 import { RefreshIcon } from "./Icons.js";
+import { ReleaseNews } from "./News.js";
 
 export function UpdateButton({ compact = false }: { compact?: boolean }) {
   const state = useUpdates();
@@ -55,8 +56,10 @@ export function UpdatesDialog() {
           : state.version ? t("app.update.versionAvailable", { version: state.version }) : t("app.update.offline")}
       </div>
       {state.phase === "downloading" ? <progress className="update-progress" aria-label={t("app.update.progress")} max={100} value={percent ?? undefined} /> : null}
-      {state.version ? <p><strong>{t("app.update.version", { version: state.version })}</strong></p> : null}
-      {state.notes ? <div className="update-notes">{state.notes}</div> : null}
+      {/* What the version brings, in the reader's language, when its feed says; a feed from before 0.7.0 has only its notes. */}
+      {/* A Dev build carries the news of the version it leads to, so its own number is said apart. */}
+      {state.version && state.version !== state.news?.version ? <p><strong>{t("app.update.version", { version: state.version })}</strong></p> : null}
+      {state.news ? <ReleaseNews release={state.news} actions={false} /> : state.notes ? <div className="update-notes">{state.notes}</div> : null}
       {state.phase === "ready" ? <p className="muted small">{t("app.update.restartNote")}</p> : null}
       {state.error || info.error ? <p className="connect-error" role="alert">{state.error ?? info.error}</p> : null}
       {state.checkedAt ? <p className="muted small">{t("app.update.lastChecked", { time: new Date(state.checkedAt).toLocaleString(locale()) })}</p> : null}

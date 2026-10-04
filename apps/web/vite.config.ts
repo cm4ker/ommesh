@@ -20,6 +20,8 @@ export default defineConfig({
   clearScreen: false,
   define: {
     __APP_VERSION__: JSON.stringify(process.env["MESHNET_VERSION"] ?? version),
+    // apps/mobile/scripts/android.mjs sets it for the bundle that goes to Google Play.
+    __FOR_PLAY__: JSON.stringify(process.env["MESHNET_FOR_PLAY"] === "1"),
   },
   build: {
     // The oldest web view the client runs in is Safari 15, the iOS app's lowest version

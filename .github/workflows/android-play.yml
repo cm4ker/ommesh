@@ -123,6 +123,9 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      # Play's "What's new" comes from this version's news file: a version without one stops here, not after the build.
+      - name: Check this version's news
+        run: node scripts/news.mjs play "$RUNNER_TEMP/play-notes"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -180,13 +183,12 @@ jobs:
         with:
           name: ommesh-google-play-${{ inputs.version_code }}
           path: play-bundle
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # From the news file of package.json's version (scripts/news.mjs), so run this workflow from the version's tag.
       - name: Prepare localized release notes
-        shell: bash
-        run: |
-          mkdir -p play-notes
-          cp docs/google-play/en-US/release-notes.txt play-notes/whatsnew-en-GB
-          cp docs/google-play/en-US/release-notes.txt play-notes/whatsnew-en-US
-          cp docs/google-play/ru-RU/release-notes.txt play-notes/whatsnew-ru-RU
+        run: node scripts/news.mjs play play-notes
       - name: Upload bundle and release notes
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1, node24
         with:

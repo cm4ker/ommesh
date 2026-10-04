@@ -1,9 +1,0 @@
-• Pin a chat or a channel to the top of the list.
-• Send a place in a chat; a place shows as a small map.
-• A coverage survey goes on with the phone locked, with a large count and a sound.
-• Tablets turn with the screen and lay out as on a computer.
-• A channel shows who wrote in it; a private one has a lock.
-• A sound of its own for any chat.
-• The date floats over a chat while you scroll.
-• Routes through repeaters with no position.
-• Privacy on one page, with trusted contacts.

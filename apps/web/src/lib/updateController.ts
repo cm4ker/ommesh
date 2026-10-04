@@ -1,6 +1,7 @@
 /** The update lifecycle, independent of the native shell so failures can be tested. */
 import { errorText } from "../i18n/errors.js";
 import { t } from "../i18n/index.js";
+import { parseRelease, type Release } from "./news.js";
 
 export type UpdateChannel = "stable" | "dev";
 export type UpdatePhase = "idle" | "checking" | "current" | "available" | "downloading" | "ready" | "installing";
@@ -8,6 +9,8 @@ export type Progress = { event: "Started"; data: { contentLength?: number } } | 
 export interface UpdateHandle {
   version: string;
   body?: string;
+  /** The whole feed: its `news` say what the version brings (scripts/release.mjs). */
+  rawJson?: Record<string, unknown>;
   download(onProgress: (event: Progress) => void, options: { timeout: number }): Promise<void>;
   install(options: { restartAfterInstall: boolean }): Promise<void>;
   close(): Promise<void>;
@@ -17,6 +20,8 @@ export interface UpdateState {
   phase: UpdatePhase;
   version: string | null;
   notes: string;
+  /** What the version found brings, when its feed says. */
+  news: Release | null;
   downloaded: number;
   total: number | null;
   checkedAt: number | null;
@@ -31,7 +36,7 @@ export class UpdateController {
   private handle: UpdateHandle | null = null;
   private listeners = new Set<() => void>();
   constructor(private readonly checkNative: (channel: UpdateChannel) => Promise<UpdateHandle | null>, channel: UpdateChannel) {
-    this.state = { channel, phase: "idle", version: null, notes: "", downloaded: 0, total: null, checkedAt: null, error: null };
+    this.state = { channel, phase: "idle", version: null, notes: "", news: null, downloaded: 0, total: null, checkedAt: null, error: null };
   }
   getState = (): UpdateState => this.state;
   subscribe = (listener: () => void): (() => void) => {
@@ -47,7 +52,7 @@ export class UpdateController {
     if (channel === this.state.channel) return true;
     void this.handle?.close().catch(() => undefined);
     this.handle = null;
-    this.set({ channel, phase: "idle", version: null, notes: "", error: null, checkedAt: null, downloaded: 0, total: null });
+    this.set({ channel, phase: "idle", version: null, notes: "", news: null, error: null, checkedAt: null, downloaded: 0, total: null });
     return true;
   }
   async check(): Promise<void> {
@@ -57,7 +62,7 @@ export class UpdateController {
     try {
       const next = await this.checkNative(this.state.channel);
       this.handle = next;
-      this.set({ phase: next ? "available" : "current", version: next?.version ?? null, notes: next?.body ?? "", checkedAt: Date.now(), downloaded: 0, total: null });
+      this.set({ phase: next ? "available" : "current", version: next?.version ?? null, notes: next?.body ?? "", news: parseRelease(next?.rawJson?.["news"]), checkedAt: Date.now(), downloaded: 0, total: null });
       await previous?.close().catch(() => undefined);
     } catch (error) {
       this.set({ phase: previous ? "available" : "idle", error: t("app.update.error.check", { reason: errorText(error) }) });
@@ -73,7 +78,7 @@ export class UpdateController {
     try {
       const next = await this.checkNative(this.state.channel);
       this.handle = next;
-      this.set({ version: next?.version ?? null, notes: next?.body ?? "", checkedAt: Date.now() });
+      this.set({ version: next?.version ?? null, notes: next?.body ?? "", news: parseRelease(next?.rawJson?.["news"]), checkedAt: Date.now() });
       if (update !== next) await update.close().catch(() => undefined);
       if (!next) {
         this.set({ phase: "current" });

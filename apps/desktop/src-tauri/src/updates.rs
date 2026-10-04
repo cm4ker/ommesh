@@ -16,10 +16,10 @@ pub enum Channel {
 #[tauri::command]
 pub fn desktop_update_info(app: tauri::AppHandle) -> serde_json::Value {
     let version = &app.package_info().version;
+    // No channel: every build starts on Stable until its user picks Dev (updates.ts).
     serde_json::json!({
         "version": version.to_string(),
         "supported": cfg!(windows),
-        "channel": if version.pre.is_empty() { "stable" } else { "dev" },
     })
 }
 

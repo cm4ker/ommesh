@@ -1,6 +1,6 @@
 {
   "name": "meshnet",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.17.1",
@@ -9,6 +9,7 @@
     "icons": "node scripts/icons.mjs",
     "sounds": "node scripts/sounds.mjs",
     "people": "node scripts/people.mjs",
+    "news": "node scripts/news.mjs",
     "//": "@meshnet/meshcore is consumed through its dist, so every entry point that loads it rebuilds it first. Without this an edit to the protocol is invisible to the web app until someone remembers to build by hand.",
     "meshcore": "pnpm --filter @meshnet/meshcore build",
     "pretypecheck": "pnpm run meshcore",

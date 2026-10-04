@@ -15,6 +15,10 @@ if (release) {
   }
   // The web About page and Android versionName must agree, including when invoked after a dev build.
   env.MESHNET_VERSION = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url))).version;
+  // Play updates the app itself and allows no other way, so this build never looks for an APK.
+  env.MESHNET_FOR_PLAY = '1';
+} else {
+  delete env.MESHNET_FOR_PLAY;
 }
 
 function run(command, args, cwd) {

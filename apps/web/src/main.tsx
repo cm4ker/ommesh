@@ -5,6 +5,7 @@ import { goBack } from "./lib/back.js";
 import { followKeyboard, watchKeyboard } from "./lib/keyboard.js";
 import { autoConnect, connectWith, disconnect, getLink } from "./lib/link.js";
 import { linkBook, startLinks } from "./lib/links.js";
+import { registerNews } from "./lib/news.js";
 import { getPing } from "./lib/ping.js";
 import { isCapacitor, nativePlatform } from "./lib/platform.js";
 import { initSendTries } from "./lib/sendTries.js";
@@ -23,6 +24,10 @@ Object.assign(window, { meshnet: { session, getLink, connectWith, disconnect, co
 
 // Who hears whom, from every packet the radio hands up, for finding a way through the mesh.
 startLinks();
+
+// What each version brought, carried with the app. Before anything is drawn or moved about in, so a first
+// launch is told from an update (news.ts) and an update puts its strip over the chats.
+registerNews(Object.values(import.meta.glob("./news/*.json", { eager: true, import: "default" })));
 
 // How many times a direct message goes before it is given up on: the session needs it before the first send.
 initSendTries();

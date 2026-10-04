@@ -43,6 +43,7 @@ import { useDesktopUpdateInfo } from "../lib/updates.js";
 import { PeoplePage, PeopleRow, ReportRow } from "./People.js";
 import { PrivacyButton } from "./Privacy.js";
 import { NewBuildRow } from "./NewBuild.js";
+import { NewsPage, NewsRow } from "./News.js";
 import { getLanguagePreference, languageName, languages, setLanguagePreference, subscribeLanguage, systemLanguage, t, type Key } from "../i18n/index.js";
 import { errorText } from "../i18n/errors.js";
 
@@ -56,6 +57,7 @@ export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = {
   soundChats: "notifications",
   soundNodes: "notifications",
   people: "about",
+  news: "about",
   trusted: "privacy",
 };
 
@@ -86,6 +88,7 @@ export const RADIO_TITLES: Record<RadioPage, Key> = {
   power: "radio.titles.power",
   about: "radio.titles.about",
   people: "radio.titles.people",
+  news: "radio.titles.news",
 };
 
 /** A Radio page's title in the reader's language. */
@@ -264,6 +267,8 @@ function PageBody({ page }: { page: RadioPage }) {
       return <AboutPage />;
     case "people":
       return <PeoplePage />;
+    case "news":
+      return <NewsPage />;
     default:
       return null;
   }
@@ -985,6 +990,7 @@ function AboutPage() {
   return <>
     <Group note={t("radio.about.note")}>
       <InfoRow label="Ommesh" icon={<img src="./icon.svg" alt="" width={24} height={24} />}>{info.version}</InfoRow>
+      <NewsRow />
       <NewBuildRow />
       <InfoRow label={t("radio.about.runningIn")}>{shell() === "tauri" ? t("radio.about.desktop") : shell() === "capacitor" ? t("radio.about.phone") : t("radio.about.browser")}</InfoRow>
       <PrivacyButton row />

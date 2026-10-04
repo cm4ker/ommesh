@@ -6,9 +6,9 @@
   <p>
     <a href="https://play.google.com/store/apps/details?id=dev.cm4ker.meshnet"><img src="docs/badges/google-play-ru.png" height="56" alt="Скачать из Google Play" /></a>
     &nbsp;
-    <a href="https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-setup-x64.exe"><img src="docs/badges/windows-ru.svg" height="56" alt="Скачать для Windows" /></a>
+    <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x64.exe"><img src="docs/badges/windows-ru.svg" height="56" alt="Скачать для Windows" /></a>
   </p>
-  <p><sub>Windows на <a href="https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-setup-arm64.exe">ARM</a> · <a href="https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-setup-x86.exe">32-битная Windows</a> · <a href="#установка">другие способы</a> · iPhone: скоро в App Store</sub></p>
+  <p><sub>Windows на <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-arm64.exe">ARM</a> · <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x86.exe">32-битная Windows</a> · <a href="#установка">другие способы</a> · iPhone: скоро в App Store</sub></p>
   <p><a href="README.md">English</a> · <strong>Русский</strong></p>
   <p>
     <a href="https://github.com/cm4ker/ommesh/actions/workflows/build.yml"><img src="https://github.com/cm4ker/ommesh/actions/workflows/build.yml/badge.svg" alt="Статус сборки" /></a>
@@ -26,12 +26,12 @@
 | Устройство | Где взять |
 | :--- | :--- |
 | **Android** | [Google Play](https://play.google.com/store/apps/details?id=dev.cm4ker.meshnet). Обновления приходят через магазин. |
-| **Windows 10 и 11** | Установщик для [x64](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-setup-x64.exe), [ARM](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-setup-arm64.exe) или [32-bit](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-setup-x86.exe). Каждую новую сборку приложение предложит само. |
+| **Windows 10 и 11** | Установщик для [x64](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x64.exe), [ARM](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-arm64.exe) или [32-bit](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x86.exe). Каждую новую версию приложение предложит само. |
 | **iPhone** | Скоро в App Store. |
 | **macOS и Linux** | Соберите приложение из исходников, см. [Разработку](#разработка). |
 | **Браузер** | Chrome и Edge подключаются к радио по Bluetooth и USB. Запустите веб-клиент из исходников, см. [Разработку](#разработка). |
 
-Установщики для Windows — это свежая Dev-сборка: она выходит после каждого изменения, и приложение само предлагает следующую (**Настройки → О приложении** или **Обновления приложения** на экране подключения). Компьютеру без WebView2 и без интернета (Windows 10 LTSC, чистый образ) нужен офлайн-установщик со [страницы Dev-релиза](https://github.com/cm4ker/ommesh/releases/tag/dev): в нём есть WebView2, и он больше примерно на 190 МБ. В Windows 11 WebView2 уже есть. Тестировщики могут поставить и [Dev APK для Android](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh_android-debug.apk); он подписан другим ключом, поэтому сначала удалите версию из Google Play. Подробнее — в [каналах обновлений и подписи](docs/desktop-updates.md).
+Ommesh выходит раз в неделю. Установщики для Windows — это свежая версия, и приложение само предлагает следующую (**Настройки → О приложении** или **Обновления приложения** на экране подключения); после обновления **Что нового** расскажет, что она принесла. Тестировщики, которым нужна каждая правка сразу, могут выбрать канал **Dev** в **Обновлениях приложения**. Компьютеру без WebView2 и без интернета (Windows 10 LTSC, чистый образ) нужен офлайн-установщик со [страницы последнего релиза](https://github.com/cm4ker/ommesh/releases/latest): в нём есть WebView2, и он больше примерно на 190 МБ. В Windows 11 WebView2 уже есть. Тестировщики могут поставить и [Dev APK для Android](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh_android-debug.apk); он подписан другим ключом, поэтому сначала удалите версию из Google Play. Подробнее — в [каналах обновлений и подписи](docs/desktop-updates.md).
 
 ### Подключение радио
 

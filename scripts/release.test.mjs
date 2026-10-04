@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename, dirname } from "node:path";
-import { makeManifest, newerBuild, pruneDevReleases, publish, releaseInfo } from "./release.mjs";
+import { makeManifest, newerBuild, pruneDevReleases, publish, releaseInfo, releaseNews } from "./release.mjs";
 
 const env = { GITHUB_REF: "refs/heads/master", GITHUB_EVENT_NAME: "push", GITHUB_RUN_NUMBER: "42", GITHUB_RUN_ATTEMPT: "2" };
 test("stable tags must match the shared version; dev runs and retries have unique versions", () => {
@@ -132,4 +132,52 @@ test("only the two newest dev builds keep their releases", () => {
   const removed = calls.filter((call) => call[1] === "delete");
   assert.deepEqual(removed.map((call) => call[2]), ["dev-0.3.0-dev.110.2", "dev-0.3.0-dev.110.1", "dev-0.3.0-dev.9.1"]);
   assert.ok(removed.every((call) => call.includes("--cleanup-tag") && call.includes("--yes")));
+});
+
+const news = {
+  version: "0.2.0",
+  date: "2026-09-24",
+  items: [
+    { kind: "new", en: { title: "Pins", text: "A chat can be pinned." }, ru: { title: "Закрепы", text: "Чат можно закрепить." } },
+    { kind: "fix", en: "Apply keeps repeat on.", ru: "«Применить» не выключает ретрансляцию." },
+  ],
+};
+
+test("the feed carries the version's news, and notes in both languages for older clients", () => {
+  const manifest = makeManifest({ ...options, news });
+  assert.deepEqual(manifest.news, news);
+  assert.equal(manifest.notes, "• Pins\nFixed: 1\n\n• Закрепы\nИсправлено: 1");
+  assert.equal("news" in makeManifest(options), false);
+  assert.match(makeManifest(options).notes, /^Ommesh 0\.2\.0\nRelease details: /);
+});
+
+test("a stable release needs its news, and a Dev build takes them once written", () => {
+  const stable = { version: "0.2.0", channel: "stable" };
+  const dev = { version: "0.2.0-dev.42.1", channel: "dev" };
+  assert.throws(() => releaseNews(stable, () => null), /Write apps\/web\/src\/news\/0\.2\.0\.json/);
+  assert.throws(() => releaseNews(stable, () => ({ ...news, items: [{ kind: "fix", en: "Only English." }] })), /no ru line/);
+  assert.deepEqual(releaseNews(stable, () => news), news);
+  assert.deepEqual(releaseNews(dev, (version) => (version === "0.2.0" ? news : null)), news);
+  assert.equal(releaseNews(dev, () => null), null);
+  assert.equal(releaseNews(dev, () => ({ version: "0.2.0" })), null);
+});
+
+test("a stable release's page says what it brings", (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "meshnet-release-test-"));
+  t.after(() => {
+    assert.equal(dirname(directory), tmpdir());
+    assert.ok(basename(directory).startsWith("meshnet-release-test-"));
+    rmSync(directory, { recursive: true });
+  });
+  writeFileSync(join(directory, "latest.json"), JSON.stringify(makeManifest({ ...options, news })));
+  const calls = [];
+  publish({ version: "0.2.0", channel: "stable", tag: "v0.2.0", publish: true }, directory, { GITHUB_REPOSITORY: "cm4ker/ommesh", GITHUB_SHA: "abc" }, (...args) => {
+    calls.push(args);
+    return "";
+  });
+  const notes = readFileSync(join(directory, "release-notes.md"), "utf8");
+  assert.match(notes, /^## What's new\n\n- \*\*Pins\.\*\* A chat can be pinned\./);
+  assert.match(notes, /## Что нового/);
+  assert.match(notes, /Built from abc\.\n$/);
+  assert.ok(calls[0].includes("--notes-file"));
 });

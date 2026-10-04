@@ -14,7 +14,7 @@ test("builds are ordered as SemVer orders them, a Dev build's run by its number"
   assert.equal(compareVersions("0.4.0-dev.2+abc", "0.4.0-dev.2"), 0);
 });
 
-const empty: NewBuildState = { latest: null, checkedAt: 0, checking: false, hiddenUntil: 0 };
+const empty: NewBuildState = { latest: null, news: null, checkedAt: 0, checking: false, hiddenUntil: 0 };
 const noon = Date.UTC(2026, 8, 28, 12);
 
 test("only a later build puts the strip up, and a closed strip stays away until its day is out", () => {

@@ -31,6 +31,8 @@ class ScriptedRadio extends BaseTransport {
   /** How many contacts it has room for. */
   capacity = 100;
   autoAdd = { config: 0, maxHops: 0 };
+  /** Firmware v10's last two device bytes, repeat and path hash mode; null for firmware that sends neither. */
+  network: { repeat: boolean; hashMode: number } | null = null;
 
   async send(frame: Uint8Array): Promise<void> {
     this.sent.push(frame);
@@ -42,19 +44,19 @@ class ScriptedRadio extends BaseTransport {
 
   private answer(frame: Uint8Array): Uint8Array[] {
     switch (frame[0]) {
-      case Cmd.DeviceQuery:
-        return [
-          new ByteWriter()
-            .u8(Resp.DeviceInfo)
-            .u8(13)
-            .u8(50)
-            .u8(2)
-            .u32(0)
-            .fixedString("d", 12)
-            .fixedString("m", 40)
-            .fixedString("v1.17.1", 20)
-            .toBytes(),
-        ];
+      case Cmd.DeviceQuery: {
+        const w = new ByteWriter().u8(Resp.DeviceInfo).u8(13).u8(50).u8(2).u32(0).fixedString("d", 12).fixedString("m", 40).fixedString("v1.17.1", 20);
+        if (this.network) w.u8(this.network.repeat ? 1 : 0).u8(this.network.hashMode);
+        return [w.toBytes()];
+      }
+      case Cmd.GetAllowedRepeatFreq:
+        return this.network ? [new ByteWriter().u8(Resp.AllowedRepeatFreq).u32(433_000).u32(433_000).u32(869_495).u32(869_495).toBytes()] : [new Uint8Array([Resp.Err, 1])];
+      case Cmd.SetRadioParams:
+        if (this.network) this.network.repeat = frame.length > 11 && frame[11] !== 0;
+        return [new Uint8Array([Resp.Ok])];
+      case Cmd.SetPathHashMode:
+        if (this.network) this.network.hashMode = frame[2]!;
+        return [new Uint8Array([Resp.Ok])];
       case Cmd.AppStart:
         return [
           new ByteWriter()
@@ -1174,6 +1176,34 @@ test("the radio's auto-add setting is read at connect and written back", async (
   await session.setAutoAdd(0x03, 0);
   assert.deepEqual(radio.autoAdd, { config: 0x03, maxHops: 0 });
   assert.deepEqual(session.getState().autoAdd, { config: 0x03, maxHops: 0 });
+});
+
+test("where the radio may repeat is read at connect, and repeat and the hash are written back", async () => {
+  const radio = new ScriptedRadio();
+  radio.network = { repeat: false, hashMode: 0 };
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  assert.deepEqual(session.getState().repeatFreqs, [
+    { lowerKhz: 433_000, upperKhz: 433_000 },
+    { lowerKhz: 869_495, upperKhz: 869_495 },
+  ]);
+  await session.setRadioParams({ frequencyKhz: 869_495, bandwidthHz: 62_500, spreadingFactor: 7, codingRate: 7, repeat: true });
+  assert.equal(radio.network.repeat, true);
+  assert.equal(session.getState().device?.repeatEnabled, true);
+  await session.setPathHashMode(1);
+  assert.equal(radio.network.hashMode, 1);
+  assert.equal(session.getState().device?.pathHashMode, 1);
+});
+
+test("firmware that does not say whether it repeats is not asked where it may", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  assert.equal(session.getState().repeatFreqs, null);
+  assert.equal(
+    radio.sent.some((f) => f[0] === Cmd.GetAllowedRepeatFreq),
+    false,
+  );
 });
 
 test("the sender of a channel message is the name before the colon", () => {

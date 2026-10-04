@@ -320,6 +320,8 @@ export interface SessionState {
   removed: Record<string, RemovedContact>;
   /** Which new nodes the radio keeps by itself and how far away; null when its firmware does not say. */
   autoAdd: { config: number; maxHops: number } | null;
+  /** Where the radio lets itself repeat for others, kHz ranges; null when its firmware does not say. */
+  repeatFreqs: { lowerKhz: number; upperKhz: number }[] | null;
   /** The radio said its memory is full and it dropped a node; cleared once there is room. */
   contactsFull: boolean;
   /** Contacts being taken off the radio one by one, while that runs. */
@@ -793,6 +795,7 @@ const EMPTY: SessionState = {
   contactsCursor: 0,
   removed: {},
   autoAdd: null,
+  repeatFreqs: null,
   contactsFull: false,
   removing: null,
   channels: [],
@@ -1198,7 +1201,7 @@ export class MeshSession {
       this.set({ connectStep: "history" });
       const persisted = this.held?.key === key ? this.held.history : await this.readHistory(key);
       this.held = null;
-      this.set({ device, self, ...this.restored(persisted), autoAdd: null, contactsFull: false, removing: null });
+      this.set({ device, self, ...this.restored(persisted), autoAdd: null, repeatFreqs: null, contactsFull: false, removing: null });
       this.log("link", `connected to ${self.name} (${device.firmwareVersion})`);
 
       await this.syncClock();
@@ -1224,6 +1227,7 @@ export class MeshSession {
       await this.refreshContacts();
       await this.refreshChannels();
       await this.readAutoAdd(client);
+      await this.readRepeatFreqs(client);
       void this.refreshBattery();
       void this.sweepRoutes();
     } catch (error) {
@@ -1323,7 +1327,10 @@ export class MeshSession {
     const contactsBefore = new Set(Object.keys(this.state.contacts));
     const messagesBefore = new Set(this.state.messages.filter((m) => m.direction === "in").map((m) => m.id));
     const run: Record<ResyncStep, () => Promise<unknown>> = {
-      device: async () => this.set({ device: await client.deviceQuery() }),
+      device: async () => {
+        this.set({ device: await client.deviceQuery() });
+        await this.readRepeatFreqs(client);
+      },
       self: async () => {
         const { publicKey, ...rest } = await client.appStart(this.appName);
         const key = toHex(publicKey);
@@ -1472,6 +1479,25 @@ export class MeshSession {
       // Firmware before 1.10 has no such setting.
       if (!(error instanceof MeshCoreError)) throw error;
       this.set({ autoAdd: null });
+    }
+  }
+
+  /**
+   * The frequencies on which the radio may repeat for others. The firmware
+   * keeps client repeat to a few frequencies set aside for meshes away from the
+   * public one, and refuses radio settings that turn it on anywhere else.
+   */
+  private async readRepeatFreqs(client: MeshCoreClient): Promise<void> {
+    // Firmware that does not say whether it repeats has no such list either.
+    if (this.state.device?.repeatEnabled == null) {
+      this.set({ repeatFreqs: null });
+      return;
+    }
+    try {
+      this.set({ repeatFreqs: await client.getAllowedRepeatFreq() });
+    } catch (error) {
+      if (!(error instanceof MeshCoreError)) throw error;
+      this.set({ repeatFreqs: null });
     }
   }
 
@@ -2696,6 +2722,8 @@ export class MeshSession {
 
   async setRadioParams(params: RadioParams): Promise<void> {
     await this.need().setRadioParams(params);
+    const device = this.state.device;
+    if (device && params.repeat !== undefined) this.set({ device: { ...device, repeatEnabled: params.repeat } });
     if (this.state.self) {
       this.set({
         self: {
@@ -2707,6 +2735,13 @@ export class MeshSession {
         },
       });
     }
+  }
+
+  /** How many bytes each repeater adds to the path of what this radio floods: the firmware's mode, 0 to 2, is one less. */
+  async setPathHashMode(mode: number): Promise<void> {
+    await this.need().setPathHashMode(mode);
+    const device = this.state.device;
+    if (device) this.set({ device: { ...device, pathHashMode: mode } });
   }
 
   async setTxPower(dbm: number): Promise<void> {

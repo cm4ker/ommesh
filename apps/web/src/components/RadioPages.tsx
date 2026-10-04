@@ -1,7 +1,8 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { AdvertLocPolicy, AdvType, isTrusted, TelemMode, type ContactRecord, type SessionState } from "@meshnet/meshcore";
 import { autostartEnabled, autostartLabel, hasAutostart, setAutostart } from "../lib/autostart.js";
-import { agoPhrase, bandwidth, dayLabel, frequency, timeOfDay } from "../lib/format.js";
+import { agoPhrase, dayLabel, timeOfDay } from "../lib/format.js";
+import { HASH_MODES, hashHops, repeatAllowed, repeatFreqsText } from "../lib/radioNetwork.js";
 import { setFollowPhone, useFollowStatus } from "../lib/followPhone.js";
 import { parseLatLon, pointDecimal } from "../lib/geo.js";
 import { disconnect, useLink } from "../lib/link.js";
@@ -417,8 +418,23 @@ function TrustedPage({ online }: { online: boolean }) {
   );
 }
 
+/**
+ * The radio's frequency and power, and below them its place in the mesh:
+ * whether it repeats for others and how long a hash repeaters write into its
+ * paths. The firmware takes repeat in the same command as the frequency, so
+ * the whole page goes to the radio with one Apply.
+ */
 function FrequencyPage({ self, online }: { self: Self; online: boolean }) {
-  const initial = () => ({ frequency: (self.frequencyKhz / 1000).toFixed(3), bandwidth: (self.bandwidthHz / 1000).toString(), sf: String(self.spreadingFactor), cr: String(self.codingRate), tx: String(self.txPower) });
+  const { device, repeatFreqs } = useSession();
+  const initial = () => ({
+    frequency: (self.frequencyKhz / 1000).toFixed(3),
+    bandwidth: (self.bandwidthHz / 1000).toString(),
+    sf: String(self.spreadingFactor),
+    cr: String(self.codingRate),
+    tx: String(self.txPower),
+    repeat: device?.repeatEnabled ?? false,
+    hash: String(device?.pathHashMode ?? 0),
+  });
   const [values, setValues] = useState(initial);
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -428,17 +444,27 @@ function FrequencyPage({ self, online }: { self: Self; online: boolean }) {
   useEffect(() => {
     if (!dirty) setValues(initial());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [self.frequencyKhz, self.bandwidthHz, self.spreadingFactor, self.codingRate, self.txPower]);
+  }, [self.frequencyKhz, self.bandwidthHz, self.spreadingFactor, self.codingRate, self.txPower, device?.repeatEnabled, device?.pathHashMode]);
   const update = (patch: Partial<typeof values>) => setValues((v) => ({ ...v, ...patch }));
   const freq = Number(values.frequency);
   const tx = Number(values.tx);
   const valid = Number.isFinite(freq) && freq >= 150 && freq <= 2500 && Number.isInteger(tx) && tx >= -9 && tx <= self.maxTxPower;
+  const params = { frequencyKhz: Math.round(freq * 1000), bandwidthHz: Math.round(Number(values.bandwidth) * 1000), spreadingFactor: Number(values.sf), codingRate: Number(values.cr) };
+  const radioChanged = params.frequencyKhz !== self.frequencyKhz || params.bandwidthHz !== self.bandwidthHz || params.spreadingFactor !== self.spreadingFactor || params.codingRate !== self.codingRate;
+  const canRepeat = repeatAllowed(params.frequencyKhz, repeatFreqs);
+  // Off a frequency that allows it, repeat goes off, so the radio is never sent settings it would refuse.
+  const repeat = values.repeat && canRepeat;
+  const repeatChanged = device?.repeatEnabled != null && repeat !== device.repeatEnabled;
+  const hash = Number(values.hash);
+  const hashChanged = device?.pathHashMode != null && hash !== device.pathHashMode;
 
   const apply = async () => {
     setBusy(true);
     const ok = await act(async () => {
-      await session.setRadioParams({ frequencyKhz: Math.round(freq * 1000), bandwidthHz: Math.round(Number(values.bandwidth) * 1000), spreadingFactor: Number(values.sf), codingRate: Number(values.cr) });
+      // Firmware that knows repeat takes a missing flag as off, so it always goes with the frequency.
+      if (radioChanged || repeatChanged) await session.setRadioParams(device?.repeatEnabled != null ? { ...params, repeat } : params);
       if (tx !== self.txPower) await session.setTxPower(tx);
+      if (hashChanged) await session.setPathHashMode(hash);
     }, t("radio.frequency.applied"));
     setBusy(false);
     setAsking(false);
@@ -511,9 +537,28 @@ function FrequencyPage({ self, online }: { self: Self; online: boolean }) {
           </div>
         </Block>
       </Group>
-      <p className="group-note">
-        {t("radio.frequency.now", { frequency: frequency(self.frequencyKhz), bandwidth: bandwidth(self.bandwidthHz), sf: self.spreadingFactor, cr: self.codingRate, tx: self.txPower })}
-      </p>
+      {device?.repeatEnabled != null || device?.pathHashMode != null ? (
+        <Group title={t("radio.frequency.network")}>
+          {device.repeatEnabled != null ? (
+            <SwitchRow
+              label={t("radio.frequency.repeat")}
+              hint={canRepeat ? undefined : t("radio.frequency.repeatOnly", { list: repeatFreqsText(repeatFreqs ?? []) })}
+              checked={repeat}
+              disabled={!online || !canRepeat}
+              onChange={(v) => update({ repeat: v })}
+            />
+          ) : null}
+          {device.pathHashMode != null ? (
+            <SelectRow
+              label={t("radio.frequency.hash")}
+              value={values.hash}
+              options={HASH_MODES.map((m) => ({ value: String(m), label: `${t("radio.frequency.hashBytes", { count: m + 1 })} · ${t("radio.frequency.hashHops", { count: hashHops(m) })}` }))}
+              disabled={!online}
+              onChange={(v) => update({ hash: v })}
+            />
+          ) : null}
+        </Group>
+      ) : null}
       <div className="page-actions">
         {dirty ? <Button onClick={() => setValues(initial())}>{t("radio.frequency.revert")}</Button> : null}
         <Button variant="primary" size="lg" disabled={!dirty || !valid || !online} busy={busy} onClick={() => setAsking(true)}>
@@ -523,13 +568,24 @@ function FrequencyPage({ self, online }: { self: Self; online: boolean }) {
       <Confirm
         open={asking}
         title={t("radio.frequency.confirmTitle")}
-        body={<p>{t("radio.frequency.confirmBody")}</p>}
+        body={confirmNotes({ radioChanged, repeatChanged, repeat, hashChanged, hash }).map((note) => (
+          <p key={note}>{note}</p>
+        ))}
         confirmLabel={t("radio.frequency.apply")}
         onCancel={() => setAsking(false)}
         onConfirm={apply}
       />
     </>
   );
+}
+
+/** What the confirm says will change, one line per kind of change; power alone says what a frequency change does, as it always has. */
+function confirmNotes(c: { radioChanged: boolean; repeatChanged: boolean; repeat: boolean; hashChanged: boolean; hash: number }): string[] {
+  const notes: string[] = [];
+  if (c.radioChanged) notes.push(t("radio.frequency.confirmBody"));
+  if (c.repeatChanged) notes.push(c.repeat ? t("radio.frequency.repeatOn") : t("radio.frequency.repeatOff"));
+  if (c.hashChanged) notes.push(c.hash > 0 ? t("radio.frequency.hashLonger", { size: t("radio.frequency.hashBytes", { count: c.hash + 1 }) }) : t("radio.frequency.hashShorter"));
+  return notes.length ? notes : [t("radio.frequency.confirmBody")];
 }
 
 /**

@@ -339,6 +339,9 @@ function neighboursOf(p: Person): [string, number, number][] {
   );
 }
 
+/** Where the firmware's default build lets a client repeat (`repeat_freq_ranges` in `companion_radio/MyMesh.cpp`), kHz. */
+const DEMO_REPEAT_KHZ = [433_000, 869_495, 918_000];
+
 class DemoRadio extends BaseTransport {
   readonly kind = "ble" as const;
   readonly label = "MeshCore-demo";
@@ -346,6 +349,8 @@ class DemoRadio extends BaseTransport {
   private timers: ReturnType<typeof setTimeout>[] = [];
   private chatter: ReturnType<typeof setInterval> | null = null;
   private acks = 0x1000;
+  /** The radio's own settings, kept as the firmware keeps them so a re-read brings back what was set. */
+  private radio = { frequencyKhz: 869_161, bandwidthHz: 62_500, spreadingFactor: 7, codingRate: 7, repeat: false, pathHashMode: 0 };
   private prefs = new Map<Person, Record<string, string>>(PEOPLE.filter((p) => p.type >= 2).map((p) => [p, nodePrefs(p)]));
   /** Nodes that took our admin password; only they answer the console. */
   private admins = new Set<Person>();
@@ -690,8 +695,8 @@ class DemoRadio extends BaseTransport {
             .fixedString("14 Aug 2026", 12)
             .fixedString("Demo board", 40)
             .fixedString("v1.17.1", 20)
-            .u8(0)
-            .u8(0)
+            .u8(this.radio.repeat ? 1 : 0)
+            .u8(this.radio.pathHashMode)
             .toBytes(),
         ];
       case Cmd.AppStart:
@@ -708,10 +713,10 @@ class DemoRadio extends BaseTransport {
             .u8(1)
             .u8(2)
             .u8(0)
-            .u32(869_161)
-            .u32(62_500)
-            .u8(7)
-            .u8(7)
+            .u32(this.radio.frequencyKhz)
+            .u32(this.radio.bandwidthHz)
+            .u8(this.radio.spreadingFactor)
+            .u8(this.radio.codingRate)
             .string("Demo radio")
             .toBytes(),
         ];
@@ -990,6 +995,24 @@ class DemoRadio extends BaseTransport {
         }
         return [new Uint8Array([Resp.Ok])];
       }
+      case Cmd.SetRadioParams: {
+        const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
+        const frequencyKhz = view.getUint32(1, true);
+        // As the firmware: a missing repeat byte is "off", and repeat is refused off its frequencies.
+        const repeat = frame.length > 11 && frame[11] !== 0;
+        if (repeat && !DEMO_REPEAT_KHZ.includes(frequencyKhz)) return [new Uint8Array([Resp.Err, 6])];
+        this.radio = { ...this.radio, frequencyKhz, bandwidthHz: view.getUint32(5, true), spreadingFactor: frame[9]!, codingRate: frame[10]!, repeat };
+        return [new Uint8Array([Resp.Ok])];
+      }
+      case Cmd.GetAllowedRepeatFreq: {
+        const w = new ByteWriter().u8(Resp.AllowedRepeatFreq);
+        for (const khz of DEMO_REPEAT_KHZ) w.u32(khz).u32(khz);
+        return [w.toBytes()];
+      }
+      case Cmd.SetPathHashMode:
+        if (frame[1] !== 0 || frame[2]! >= 3) return [new Uint8Array([Resp.Err, 6])];
+        this.radio = { ...this.radio, pathHashMode: frame[2]! };
+        return [new Uint8Array([Resp.Ok])];
       case Cmd.Reboot:
         // A radio that reboots says nothing more on this link.
         this.timers.push(

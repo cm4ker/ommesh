@@ -48,6 +48,7 @@ function initial(messages: MessageRecord[] = [], unread: Record<string, number> 
     contactsCursor: 0,
     removed: {},
     autoAdd: null,
+    repeatFreqs: null,
     contactsFull: false,
     removing: null,
     channels: [

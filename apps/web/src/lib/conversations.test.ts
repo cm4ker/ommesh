@@ -56,6 +56,7 @@ function state(messages: MessageRecord[]): SessionState {
     contactsCursor: 0,
     removed: {},
     autoAdd: null,
+    repeatFreqs: null,
     contactsFull: false,
     removing: null,
     channels: [

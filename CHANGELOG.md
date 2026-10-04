@@ -11,6 +11,9 @@
 - A far repeater, room or sensor has time to answer. The app waited as long as the radio guessed, and for a request sent to the whole mesh the radio guesses about 6 seconds however far the node is; an answer from five or six hops away comes later, so the app said "No reply" and the answer arrived after it. Now the wait counts the hops there and back and the size of the answer: along a route, the route's hops; to the whole mesh, as far as the farthest route your radio holds. Neighbours, the access list, a sensor's history and the owner's details that still come late are kept, and the "No reply" under them goes.
 
 ### Settings
+- Frequency and power has a Mesh group with two settings the MeshCore app keeps beside the frequency. Repeat makes your radio pass on other people's messages like a repeater; the firmware allows it only on a few frequencies set aside for meshes away from the public one (433.000, 869.495 and 918.000 MHz by default), so elsewhere the switch is off and says where it works. Route hash sets how many bytes of its key each repeater writes into the path of what your radio sends to the whole mesh: 1 byte reaches 64 hops, 2 bytes 32 and 3 bytes 21, and repeaters on firmware before 1.14 drop messages with 2 or 3 bytes. Both go to the radio with Apply, and the confirm says what each change does.
+- Apply on Frequency and power no longer turns off repeat. The radio takes repeat in the same command as the frequency and reads a missing flag as off, and the app never sent it.
+- The line under the frequency fields that repeated their values is gone.
 - Use this device's position is back on a radio with GPS of its own, and its latitude and longitude can be typed again. In 0.6.0 the button was gone there and the numbers were read-only, so a radio whose GPS was slow to pick up satellites stayed where it last was. A position set this way holds until the GPS picks them up.
 
 ## 0.6.0 — 2026-10-03

@@ -8,7 +8,10 @@
 pub const CMD_SEND_TXT_MSG: u8 = 2;
 pub const CMD_SEND_CHANNEL_TXT_MSG: u8 = 3;
 pub const CMD_GET_CONTACTS: u8 = 4;
+pub const CMD_ADD_UPDATE_CONTACT: u8 = 9;
 pub const CMD_SYNC_NEXT_MESSAGE: u8 = 10;
+pub const CMD_RESET_PATH: u8 = 13;
+pub const CMD_REMOVE_CONTACT: u8 = 15;
 pub const CMD_REBOOT: u8 = 19;
 pub const CMD_SEND_TELEMETRY_REQ: u8 = 39;
 pub const CMD_FACTORY_RESET: u8 = 51;

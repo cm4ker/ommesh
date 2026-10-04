@@ -66,11 +66,22 @@ interface Pending {
 export interface ClientOptions {
   /** How long a command may go unanswered. Streaming answers restart it per frame. */
   timeoutMs?: number;
+  /** How long a command that rewrites the radio's contacts file may go unanswered. */
+  savingTimeoutMs?: number;
   /** Every frame in either direction, for a log pane. */
   trace?: (direction: "in" | "out", bytes: Uint8Array, frame?: Frame) => void;
 }
 
 const single: Completion = () => "done";
+
+/**
+ * Some firmware (Smart UI 0.05 on a Heltec) writes its whole contacts file to
+ * flash before it answers a command that changes a contact, and 350 contacts on
+ * SPIFFS can take longer than the usual wait. An answer that comes after the
+ * wait goes to the next command instead: a status request was once answered by
+ * a forgotten route's "ok" (#78). The radio core on phones waits as long.
+ */
+const SAVING_TIMEOUT_MS = 30_000;
 
 export interface TextSendResult {
   /** Whether the packet went out as a flood (no known route) or direct. */
@@ -90,11 +101,13 @@ export class MeshCoreClient {
   private closeListeners = new Set<(reason: Error | null) => void>();
   private closedWith: Error | null | undefined;
   private readonly timeoutMs: number;
+  private readonly savingTimeoutMs: number;
   private readonly trace: ClientOptions["trace"];
   private readonly unsubscribe: (() => void)[] = [];
 
   constructor(readonly transport: Transport, options: ClientOptions = {}) {
     this.timeoutMs = options.timeoutMs ?? 8000;
+    this.savingTimeoutMs = options.savingTimeoutMs ?? Math.max(SAVING_TIMEOUT_MS, this.timeoutMs);
     this.trace = options.trace;
     this.unsubscribe.push(transport.onFrame((bytes) => this.onBytes(bytes)));
     this.unsubscribe.push(transport.onClose((reason) => this.onClosed(reason)));
@@ -262,8 +275,8 @@ export class MeshCoreClient {
     return frame as Extract<ResponseFrame, { kind: K }>;
   }
 
-  private async ok(name: string, bytes: Uint8Array): Promise<void> {
-    await this.one(name, bytes, "ok");
+  private async ok(name: string, bytes: Uint8Array, timeoutMs?: number): Promise<void> {
+    await this.one(name, bytes, "ok", timeoutMs);
   }
 
   // ---- the commands, typed ----
@@ -352,15 +365,15 @@ export class MeshCoreClient {
   }
 
   addUpdateContact(contact: cmd.ContactRecordInput): Promise<void> {
-    return this.ok("addUpdateContact", cmd.addUpdateContact(contact));
+    return this.ok("addUpdateContact", cmd.addUpdateContact(contact), this.savingTimeoutMs);
   }
 
   removeContact(publicKey: Uint8Array): Promise<void> {
-    return this.ok("removeContact", cmd.removeContact(publicKey));
+    return this.ok("removeContact", cmd.removeContact(publicKey), this.savingTimeoutMs);
   }
 
   resetPath(publicKey: Uint8Array): Promise<void> {
-    return this.ok("resetPath", cmd.resetPath(publicKey));
+    return this.ok("resetPath", cmd.resetPath(publicKey), this.savingTimeoutMs);
   }
 
   shareContact(publicKey: Uint8Array): Promise<void> {

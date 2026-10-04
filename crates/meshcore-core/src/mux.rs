@@ -400,6 +400,9 @@ pub fn patience(frame: &[u8]) -> (i64, bool) {
         // About this radio (no key after the code and three zeros): only a push answers it.
         Some(&CMD_SEND_TELEMETRY_REQ) if frame.len() <= 4 => (300, true),
         Some(&CMD_GET_CONTACTS) => (20000, false),
+        // Some firmware writes its whole contacts file to flash before it answers these; an
+        // answer after the wait would go to the next command (#78). The page waits as long.
+        Some(&CMD_ADD_UPDATE_CONTACT | &CMD_RESET_PATH | &CMD_REMOVE_CONTACT) => (30000, false),
         _ => (8000, false),
     }
 }
@@ -819,6 +822,17 @@ mod tests {
         assert_eq!(rig.computer.len(), 2);
         assert_eq!(rig.computer[0][0], 0xf0, "a mirror");
         assert_eq!(rig.computer[1], NO_MORE, "then no more");
+    }
+
+    #[test]
+    fn a_command_that_saves_contacts_is_waited_on_longer() {
+        for code in [9, 13, 15] {
+            assert!(
+                patience(&[code]).0 >= 30000,
+                "command {code} rewrites the contacts file"
+            );
+        }
+        assert_eq!(patience(&[27]).0, 8000, "a status request does not");
     }
 
     #[test]

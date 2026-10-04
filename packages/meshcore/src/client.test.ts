@@ -146,6 +146,19 @@ test("silence is a timeout, and the next command still goes out", async () => {
   assert.equal(await client.getDeviceTime(), 7);
 });
 
+test("a command that rewrites the contacts file waits longer, so its late answer is not the next command's", async () => {
+  const radio = new FakeRadio();
+  radio.script.set(Cmd.ResetPath, () => []);
+  radio.script.set(Cmd.SendStatusReq, () => [new ByteWriter().u8(Resp.Sent).u8(0).u32(9).u32(5000).toBytes()]);
+  const client = new MeshCoreClient(radio, { timeoutMs: 20, savingTimeoutMs: 500 });
+  const forgetting = client.resetPath(KEY);
+  const status = client.sendStatusReq(KEY);
+  // The radio saves for longer than the usual wait, then answers.
+  setTimeout(() => radio.push(new Uint8Array([Resp.Ok])), 60);
+  await forgetting;
+  assert.equal((await status).ackTag, 9);
+});
+
 test("a dropped link rejects what is in flight and what is queued, and closes the client", async () => {
   const radio = new FakeRadio();
   radio.delayMs = 1000;

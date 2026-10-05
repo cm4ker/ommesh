@@ -144,9 +144,11 @@ export type BatteryType = "liion" | "lifepo4" | "naion" | "lto2s";
 const BATTERY_CURVES: Record<BatteryType, readonly number[]> = {
   liion: [4190, 4050, 3990, 3890, 3800, 3720, 3650, 3580, 3530, 3420, 3100],
   lifepo4: [3400, 3350, 3320, 3290, 3270, 3260, 3250, 3230, 3200, 3120, 3000],
-  // A sodium cell slopes nearly straight from 4.0 V to 1.8 V, with no flat middle: read off
-  // Faradion's discharge at C/5 and 30 °C (3rd International Meeting on Sodium Batteries, 2016).
-  naion: [3950, 3870, 3730, 3560, 3400, 3210, 3000, 2750, 2450, 2150, 1800],
+  // A sodium cell's resting voltage slopes nearly straight from 4.0 V to 1.8 V, with no flat
+  // middle: halfway between Faradion's slow charge and discharge (3rd International Meeting on
+  // Sodium Batteries, 2016, slide 17). Frost pulls a cell's voltage down only under a heavy load,
+  // and a node draws too little for that, so one curve serves summer and winter.
+  naion: [3950, 3830, 3670, 3530, 3380, 3220, 3020, 2780, 2510, 2200, 1800],
   // Two titanate cells in series, each charged to 2.8 V and resting near 2.35 V for most of its charge.
   lto2s: [5400, 5120, 5000, 4920, 4840, 4780, 4720, 4660, 4580, 4440, 3600],
 };

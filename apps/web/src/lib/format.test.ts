@@ -57,7 +57,7 @@ test("a cell is low at 20% of its own curve and below", () => {
 
 test("a sodium cell and two titanate cells in series read off their own curves", () => {
   assert.equal(batteryPercent(4000, "naion"), 100);
-  assert.equal(batteryPercent(3210, "naion"), 50);
+  assert.equal(batteryPercent(3220, "naion"), 50);
   assert.equal(lowCharge(2450, "naion"), true);
   assert.equal(batteryPercent(1800, "naion"), 0);
   assert.equal(batteryPercent(5600, "lto2s"), 100);

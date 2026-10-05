@@ -17,6 +17,7 @@ import { Avatar } from "./Avatar.js";
 import { ChatNotices } from "./ChatNotices.js";
 import { AirIcon, ChartIcon, ChatIcon, CheckIcon, CopyIcon, EditIcon, LockIcon, MapIcon, MoreIcon, PowerIcon, ShieldIcon, SlidersIcon, StarFilledIcon, StarIcon, TerminalIcon, TrashIcon, UsersIcon, CloseIcon } from "./Icons.js";
 import { NodeReadings } from "./NodeReadings.js";
+import { ClockRow } from "./node/Clock.js";
 import { QueuePill } from "./node/QueuePill.js";
 import { SignIn } from "./node/SignIn.js";
 import { NotOnRadio } from "./ContactsPages.js";
@@ -216,6 +217,7 @@ export function Profile({ contactKey, chrome }: { contactKey: string; chrome: Ch
 
         {node ? (
           <Group title={t("mesh.profile.manage")} note={signedIn ? (admin ? undefined : t("mesh.profile.needAdmin")) : t("mesh.profile.signInToSee")}>
+            <ClockRow contact={contact} />
             {nodePages(contact.type).map((page) => {
               const locked = !signedIn || (PAGES[page].admin && !admin);
               return (

@@ -1,26 +1,22 @@
 import { useEffect, useState } from "react";
-import { AdvType, ClockAheadError, NoReplyError, NodeCommandError, TelemMode, type BatterySample, type ContactRecord, type CoreStats, type LppReading, type NodeStats, type RadioStats } from "@meshnet/meshcore";
+import { AdvType, NoReplyError, TelemMode, type BatterySample, type ContactRecord, type CoreStats, type LppReading, type NodeStats, type RadioStats } from "@meshnet/meshcore";
 import { errorText } from "../i18n/errors.js";
 import { locale, t } from "../i18n/index.js";
 import { BATTERY_TYPES, batteryTypeLabel, setBatteryType, useChosenBatteryType } from "../lib/batteryType.js";
-import { ago, agoPhrase, batteryPercent, errorShare, fullDate, lowCharge, span } from "../lib/format.js";
+import { ago, agoPhrase, batteryPercent, errorShare, lowCharge } from "../lib/format.js";
 import { openNodePage, push, showOnMap } from "../lib/nav.js";
-import { isAdmin, nodeClock, type NodeClock } from "../lib/nodes.js";
 import { session, useSession } from "../lib/session.js";
 import { reach } from "../lib/privacy.js";
 import { useFollowStatus } from "../lib/followPhone.js";
 import { act, toast } from "../lib/toast.js";
-import { Confirm } from "../ui/Dialog.js";
-import { ActionRow, AirMark, ChoiceRow, Group, InfoRow, LinkRow } from "../ui/List.js";
+import { ActionRow, ChoiceRow, Group, InfoRow, LinkRow } from "../ui/List.js";
 import { Sheet } from "../ui/Sheet.js";
-import { AlertIcon, CheckIcon } from "./Icons.js";
+import { AlertIcon } from "./Icons.js";
 import { numberText, Readings } from "./Readings.js";
 import { Sparkline } from "./node/Sparkline.js";
 
 /** A week's fall this large says the battery is going down, and the week reads as from → to. */
 const FALLING_MV = 50;
-/** A node's clock this far off ours is worth setting. */
-const DRIFT_WORTH_FIXING_S = 30;
 /** How often the readings page asks this radio again while it is open. */
 const OWN_EVERY_MS = 30_000;
 
@@ -143,53 +139,25 @@ function airTiles(stats: NodeStats, noise: { values: number[]; times: number[] }
     });
   }
   tiles.push({ id: "uptime", label: t("node.readings.uptime"), value: duration(stats.upTimeSecs) });
+  // Receive errors as their share of everything heard, the figure people judge a repeater's spot by.
+  if (stats.recvErrors !== null) {
+    const share = errorShare(stats.recvErrors, stats.packetsRecv);
+    tiles.push({
+      id: "errors",
+      label: t("node.status.recvErrors"),
+      value: share === null ? "0" : share < 0.1 ? `< ${numberText(0.1, 1)}` : numberText(share, 1),
+      unit: t("node.unit.percent"),
+      sub: stats.recvErrors > 0 ? t("node.readings.errorsOf", { errors: n(stats.recvErrors), total: n(stats.packetsRecv + stats.recvErrors) }) : undefined,
+    });
+  }
   return tiles;
 }
 
 /**
- * Where the node's clock stands. The sign-in's word stays "in sync" when close, since it may be
- * hours old; a reading since gives the seconds. A clock a day or more off says its date instead.
- */
-function ClockPill({ clock, checking }: { clock: NodeClock; checking: boolean }) {
-  if (checking)
-    return (
-      <span className="pill">
-        <span className="spinner" aria-hidden="true" />
-        {t("node.status.checking")}
-      </span>
-    );
-  const shows = fullDate(clock.at / 1000 - clock.drift);
-  const off = Math.abs(clock.drift) > DRIFT_WORTH_FIXING_S;
-  const text =
-    clock.from === "reset"
-      ? t("node.status.resetTo", { date: shows })
-      : Math.abs(clock.drift) >= 86_400
-        ? t("node.status.shows", { date: shows })
-        : !off && clock.from === "login"
-          ? t("node.status.inSync")
-          : Math.abs(clock.drift) <= 1
-            ? t("node.status.onTime")
-            : t(clock.drift > 0 ? "node.status.behind" : "node.status.ahead", { span: span(clock.drift) });
-  return (
-    <span className={off ? "pill warn" : "pill ok"}>
-      {off ? <AlertIcon size={11} /> : <CheckIcon size={11} />}
-      {text}
-    </span>
-  );
-}
-
-function clockHint(clock: NodeClock, admin: boolean): string {
-  const time = agoPhrase(clock.at);
-  if (clock.from === "reset") return t("node.status.clockResetAgo", { time });
-  if (clock.from === "reply") return t("node.status.clockChecked", { time });
-  return t(admin ? "node.status.clockHintTap" : "node.status.clockHint", { time });
-}
-
-/**
- * How a node is doing, the same for a person, a repeater, a room or a sensor: its battery first,
- * then for a repeater or a room the air it sits on, then its board, its position and whatever is
- * wired to it. "Refresh" asks what the node answers: a repeater or a room its status, anyone else
- * its telemetry. A repeater's or a room's telemetry is its own request, a row of its own.
+ * How a node is doing. A repeater or a room answers two requests, each with a group and a button
+ * of its own: its telemetry (battery, board, position and whatever is wired to it) and its status
+ * (the air it sits on and its packets). Both answers carry the battery, so it stands with the
+ * sensors and shows whichever answer came last. Anyone else answers telemetry alone, one group.
  */
 export function NodeReadings({ contact }: { contact: ContactRecord }) {
   const state = useSession();
@@ -202,21 +170,19 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
   const telemetry = state.telemetry[key];
   const login = state.logins[key];
   const chosen = useChosenBatteryType(key);
-  const [busy, setBusy] = useState<"refresh" | "more" | null>(null);
+  const [busy, setBusy] = useState<"status" | "telemetry" | null>(null);
   // When the node last let a request go unanswered; an answer that comes after, however late, ends it.
   const [silentAt, setSilentAt] = useState<number | null>(null);
   const [picking, setPicking] = useState(false);
-  const [clockBusy, setClockBusy] = useState<"check" | "set" | "reset" | null>(null);
-  const [askReset, setAskReset] = useState(false);
 
   const history: BatterySample[] = statusNode ? (state.statusHistory[key] ?? []).map((s) => ({ at: s.at, mv: s.batteryMv })) : (state.batteryHistory[key] ?? []);
-  const mv = stats?.batteryMv ?? selfVolts(telemetry?.readings);
-  const noiseHistory = statusNode ? (state.statusHistory[key] ?? []) : [];
-  const tiles: Tile[] = [];
-  if (mv !== null && mv > 0) tiles.push(batteryTile(mv, history, chosen, false, () => setPicking(true)));
-  if (stats) tiles.push(...airTiles(stats, { values: noiseHistory.map((s) => s.noiseFloor), times: noiseHistory.map((s) => s.at) }, contact.type === AdvType.Room));
+  const fromStatus = status && stats && stats.batteryMv > 0 ? { mv: stats.batteryMv, at: status.at } : null;
+  const telemetryMv = selfVolts(telemetry?.readings);
+  const fromTelemetry = telemetry && telemetryMv !== null && telemetryMv > 0 ? { mv: telemetryMv, at: telemetry.at } : null;
+  const battery = fromStatus && fromTelemetry ? (fromStatus.at >= fromTelemetry.at ? fromStatus : fromTelemetry) : (fromStatus ?? fromTelemetry);
+  const batteryTiles: Tile[] = battery ? [batteryTile(battery.mv, history, chosen, false, () => setPicking(true))] : [];
 
-  const ask = (what: "refresh" | "more", request: () => Promise<unknown>) => async () => {
+  const ask = (what: "status" | "telemetry", request: () => Promise<unknown>) => async () => {
     setBusy(what);
     try {
       await request();
@@ -228,120 +194,54 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
       setBusy(null);
     }
   };
-  const refresh = ask("refresh", () => (statusNode ? session.requestStatus(key) : session.requestTelemetry(key)));
-  const answeredAt = statusNode ? status?.at : telemetry?.at;
-  const clock = nodeClock(login);
-  const admin = isAdmin(login);
-  const clockOff = clock !== null && Math.abs(clock.drift) > DRIFT_WORTH_FIXING_S;
+  const askTelemetry = ask("telemetry", () => session.requestTelemetry(key));
+  const askStatus = ask("status", () => session.requestStatus(key));
+  const sheet = battery ? <BatterySheet open={picking} onClose={() => setPicking(false)} nodeKey={key} name={name} mv={battery.mv} /> : null;
 
-  // Each clock command is one send on a tap. The node stamps its reply with its clock, which
-  // moves the reading in the session, so the row redraws from there and says nothing more.
-  const checkClock = async () => {
-    setClockBusy("check");
-    try {
-      await session.checkNodeClock(key);
-    } catch (e) {
-      toast(e instanceof NodeCommandError ? t("node.nodeSaid", { reply: e.reply }) : errorText(e), "error");
-    } finally {
-      setClockBusy(null);
-    }
-  };
-  // The node answers `clock sync` whatever it did, so its reply decides what is said. A clock
-  // that runs ahead stays there: its reading then offers the reset that brings it back.
-  const syncClock = async () => {
-    setClockBusy("set");
-    try {
-      await session.syncNodeClock(key);
-      toast(t("node.status.clockSet"));
-    } catch (e) {
-      if (e instanceof ClockAheadError) toast(t("node.status.clockAhead", { name }), "error", undefined, t("node.status.clockAheadDetail"));
-      else toast(e instanceof NodeCommandError ? t("node.nodeSaid", { reply: e.reply }) : errorText(e), "error");
-    } finally {
-      setClockBusy(null);
-    }
-  };
-  const resetClock = async () => {
-    setAskReset(false);
-    setClockBusy("reset");
-    try {
-      await session.resetNodeClock(key);
-      toast(t("node.status.clockReset", { name }), "", undefined, t("node.status.clockResetDetail"));
-    } catch (e) {
-      toast(errorText(e), "error");
-    } finally {
-      setClockBusy(null);
-    }
-  };
+  if (!statusNode)
+    return (
+      <>
+        <Group title={telemetry ? t("node.readings.titleAgo", { time: ago(telemetry.at) }) : t("node.readings.title")} note={silentAt !== null && (telemetry?.at ?? 0) < silentAt ? t("mesh.profile.readingsSilent") : contact.type === AdvType.Sensor ? (contact.name ? t("node.status.alerts", { name: contact.name }) : t("node.status.alertsUnnamed")) : undefined}>
+          <TileGrid tiles={batteryTiles} />
+          {telemetry ? <Readings readings={telemetry.readings} history={state.readingHistory[key]} skipBattery titled from={state.self} onMap={() => showOnMap(key, true)} /> : null}
+          {contact.type === AdvType.Sensor && login?.ok ? <LinkRow label={t("node.page.history")} value={t("node.readings.historyHint")} onClick={() => openNodePage(key, "history")} /> : null}
+          <ActionRow label={t("node.readings.refresh")} air busy={busy === "telemetry"} disabled={!online || busy !== null} onClick={askTelemetry} />
+        </Group>
+        {sheet}
+      </>
+    );
 
+  // The sensors' group dates from its own answer; before one, from the status that brought the battery.
+  const sensorsAt = telemetry?.at ?? battery?.at;
+  const noiseHistory = state.statusHistory[key] ?? [];
   return (
     <>
-      <Group title={answeredAt ? t("node.readings.titleAgo", { time: ago(answeredAt) }) : t("node.readings.title")} note={silentAt !== null && (answeredAt ?? 0) < silentAt ? t("mesh.profile.readingsSilent") : contact.type === AdvType.Sensor ? (contact.name ? t("node.status.alerts", { name: contact.name }) : t("node.status.alertsUnnamed")) : undefined}>
-        {tiles.length ? (
-          <div className="line-block readings">
-            <div className="reading-tiles">
-              {tiles.map((tile) => (
-                <TileView key={tile.id} tile={tile} />
-              ))}
-            </div>
-          </div>
-        ) : null}
-        {status && !stats ? <InfoRow label={t("node.readings.answer")}>{t("node.status.unreadBytes", { count: status.raw.length / 2 })}</InfoRow> : null}
-        {telemetry ? (
-          <>
-            {statusNode ? (
-              <div className="reading-part-head">
-                <span>{t("node.readings.moreAgo", { time: ago(telemetry.at) })}</span>
-                <button type="button" className="link" disabled={!online || busy !== null} onClick={ask("more", () => session.requestTelemetry(key))}>
-                  {t("node.readings.refresh")}
-                </button>
-              </div>
-            ) : null}
-            <Readings readings={telemetry.readings} history={state.readingHistory[key]} skipBattery titled from={state.self} onMap={() => showOnMap(key, true)} />
-          </>
-        ) : statusNode ? (
-          <ActionRow label={t("node.readings.more")} hint={t("node.readings.moreHint")} air busy={busy === "more"} disabled={!online || busy !== null} onClick={ask("more", () => session.requestTelemetry(key))} />
-        ) : null}
-        {stats ? <PacketsAndSignal stats={stats} /> : null}
-        {clock ? (
-          <>
-            {/* An admin reads the clock again with a tap; a guest has no console, so only the sign-in says. */}
-            {admin && online ? (
-              <LinkRow label={t("node.status.clock")} hint={clockHint(clock, admin)} value={<ClockPill clock={clock} checking={clockBusy === "check"} />} trailing={<AirMark />} disabled={clockBusy !== null} onClick={() => void checkClock()} />
-            ) : (
-              <InfoRow label={t("node.status.clock")} hint={clockHint(clock, admin)}>
-                <ClockPill clock={clock} checking={false} />
-              </InfoRow>
-            )}
-            {admin && clockOff ? (
-              // Behind, our time sets it. Ahead, it will not go back, and only the reset does.
-              clock.drift < 0 ? (
-                <ActionRow label={t("node.status.resetClock")} hint={t("node.status.resetClockHint")} air danger busy={clockBusy === "reset"} disabled={!online || clockBusy !== null} onClick={() => setAskReset(true)} />
-              ) : (
-                <ActionRow label={t("node.status.setClock")} air busy={clockBusy === "set"} disabled={!online || clockBusy !== null} onClick={() => void syncClock()} />
-              )
-            ) : null}
-          </>
-        ) : null}
-        {contact.type === AdvType.Sensor && login?.ok ? <LinkRow label={t("node.page.history")} value={t("node.readings.historyHint")} onClick={() => openNodePage(key, "history")} /> : null}
-        <ActionRow label={t("node.readings.refresh")} hint={statusNode ? t("node.readings.refreshStatus") : undefined} air busy={busy === "refresh"} disabled={!online || busy !== null} onClick={refresh} />
+      <Group title={sensorsAt ? t("node.readings.sensorsAgo", { time: ago(sensorsAt) }) : t("node.readings.sensors")}>
+        <TileGrid tiles={batteryTiles} />
+        {telemetry ? <Readings readings={telemetry.readings} history={state.readingHistory[key]} skipBattery titled from={state.self} onMap={() => showOnMap(key, true)} /> : null}
+        <ActionRow label={telemetry ? t("node.readings.refresh") : t("node.readings.ask")} hint={t("node.readings.sensorsHint")} air busy={busy === "telemetry"} disabled={!online || busy !== null} onClick={askTelemetry} />
       </Group>
-      {mv !== null ? <BatterySheet open={picking} onClose={() => setPicking(false)} nodeKey={key} name={name} mv={mv} /> : null}
-      <Confirm
-        open={askReset}
-        title={t("node.status.resetTitle", { name })}
-        body={
-          <>
-            {clock && clock.drift < 0 ? <p>{t("node.status.resetLead", { span: span(clock.drift) })}</p> : null}
-            <p>{t("node.status.resetBody")}</p>
-            {clock && clock.drift < 0 ? <p>{t("node.status.resetAdverts", { span: span(clock.drift) })}</p> : null}
-          </>
-        }
-        confirmLabel={t("node.status.resetConfirm")}
-        danger
-        onCancel={() => setAskReset(false)}
-        onConfirm={() => void resetClock()}
-      />
+      <Group title={status ? t("node.readings.statsAgo", { time: ago(status.at) }) : t("node.readings.stats")}>
+        {stats ? <TileGrid tiles={airTiles(stats, { values: noiseHistory.map((s) => s.noiseFloor), times: noiseHistory.map((s) => s.at) }, contact.type === AdvType.Room)} /> : null}
+        {status && !stats ? <InfoRow label={t("node.readings.answer")}>{t("node.status.unreadBytes", { count: status.raw.length / 2 })}</InfoRow> : null}
+        {stats ? <PacketsAndSignal stats={stats} /> : null}
+        <ActionRow label={status ? t("node.readings.refresh") : t("node.readings.ask")} hint={t("node.readings.statsHint")} air busy={busy === "status"} disabled={!online || busy !== null} onClick={askStatus} />
+      </Group>
+      {sheet}
     </>
+  );
+}
+
+function TileGrid({ tiles }: { tiles: Tile[] }) {
+  if (tiles.length === 0) return null;
+  return (
+    <div className="line-block readings">
+      <div className="reading-tiles">
+        {tiles.map((tile) => (
+          <TileView key={tile.id} tile={tile} />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -395,15 +295,7 @@ export function OwnReadings() {
   return (
     <>
       <Group title={at ? t("node.readings.titleAgo", { time: ago(at) }) : t("node.readings.title")} note={t("radio.sensors.read", { time: agoPhrase(at || null) })}>
-        {tiles.length ? (
-          <div className="line-block readings">
-            <div className="reading-tiles">
-              {tiles.map((tile) => (
-                <TileView key={tile.id} tile={tile} />
-              ))}
-            </div>
-          </div>
-        ) : null}
+        <TileGrid tiles={tiles} />
         {telemetry ? <Readings readings={telemetry.readings} history={state.readingHistory["self"]} skipBattery titled onCopy={(text) => void navigator.clipboard?.writeText(text).then(() => toast(t("common.copied")))} /> : null}
         <ActionRow label={t("node.readings.refresh")} disabled={!online} onClick={() => void act(() => Promise.all([session.refreshBattery(), session.requestTelemetry(), session.radioStats().then(setRadio), session.coreStats().then(setCore)]))} />
       </Group>
@@ -434,10 +326,9 @@ function telemetryModes(): { value: number; label: string }[] {
 }
 
 /**
- * A node's counters since it last started, by direction: what it received, what it heard but
- * could not make out, what it sent and what it dropped as heard before, each total over its split
- * by flood and direct. Receive errors carry their share of everything heard, a figure people ask
- * for when they judge a repeater's spot.
+ * A node's counters since it last started, by direction: what it received, what it sent and what
+ * it dropped as heard before, each total over its split by flood and direct. What it heard but
+ * could not make out has a tile of its own above.
  */
 function PacketsAndSignal({ stats }: { stats: NodeStats }) {
   const split = (flood: number, direct: number) => t("node.status.floodDirectSplit", { flood: n(flood), direct: n(direct) });
@@ -448,11 +339,6 @@ function PacketsAndSignal({ stats }: { stats: NodeStats }) {
         <Kv label={t("node.status.received")} sub={split(stats.recvFlood, stats.recvDirect)}>
           {n(stats.packetsRecv)}
         </Kv>
-        {stats.recvErrors !== null ? (
-          <Kv label={t("node.status.recvErrors")} sub={stats.recvErrors > 0 ? t("node.status.heard", { total: n(stats.packetsRecv + stats.recvErrors) }) : undefined}>
-            {errorsText(stats.recvErrors, stats.packetsRecv)}
-          </Kv>
-        ) : null}
         <Kv label={t("node.status.sent")} sub={split(stats.sentFlood, stats.sentDirect)}>
           {n(stats.packetsSent)}
         </Kv>
@@ -464,13 +350,6 @@ function PacketsAndSignal({ stats }: { stats: NodeStats }) {
       </div>
     </details>
   );
-}
-
-/** The errors with their share in brackets; a share under a tenth of a percent reads "< 0.1". */
-function errorsText(errors: number, received: number): string {
-  const share = errorShare(errors, received);
-  if (share === null) return n(errors);
-  return t("node.status.errorsShare", { errors: n(errors), share: share < 0.1 ? `< ${numberText(0.1, 1)}` : numberText(share, 1) });
 }
 
 function Kv({ label, sub, children }: { label: string; sub?: string | undefined; children: React.ReactNode }) {

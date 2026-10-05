@@ -89,6 +89,8 @@
   "frequency.confirmBody": "Radios still on the old settings stop hearing this one until they change too.",
   "battery.liionHint": "3.0–4.2 V · most boards",
   "battery.lifepo4Hint": "2.5–3.65 V · solar builds",
+  "battery.naionHint": "1.8–4.0 V · sodium cells",
+  "battery.lto2sHint": "3.6–5.6 V · two titanate cells in series",
   "advanced.device": "Device",
   "advanced.firmware": "Firmware",
   "advanced.firmwareValue": "{version} · {date} · protocol {protocol}",

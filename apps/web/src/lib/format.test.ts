@@ -55,6 +55,20 @@ test("a cell is low at 20% of its own curve and below", () => {
   assert.equal(lowCharge(0), false);
 });
 
+test("a sodium cell and two titanate cells in series read off their own curves", () => {
+  assert.equal(batteryPercent(4000, "naion"), 100);
+  assert.equal(batteryPercent(3210, "naion"), 50);
+  assert.equal(lowCharge(2450, "naion"), true);
+  assert.equal(batteryPercent(1800, "naion"), 0);
+  assert.equal(batteryPercent(5600, "lto2s"), 100);
+  assert.equal(batteryPercent(4780, "lto2s"), 50);
+  assert.equal(batteryPercent(3600, "lto2s"), 0);
+  // Read as Li-ion, a titanate pack at a quarter of its charge would look full.
+  assert.equal(batteryPercent(4600), 100);
+  assert.equal(batteryPercent(4600, "lto2s"), 23);
+  assert.equal(lowCharge(4440, "lto2s"), true);
+});
+
 test("a charge is read off the curve, straight between its points, and kept within 0 to 100", () => {
   assert.equal(batteryPercent(3890), 70);
   assert.equal(batteryPercent(3940), 75);

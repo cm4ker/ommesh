@@ -89,6 +89,8 @@
   "frequency.confirmBody": "Радио со старыми настройками перестанут слышать это, пока их тоже не поменяют.",
   "battery.liionHint": "3,0–4,2 В · большинство плат",
   "battery.lifepo4Hint": "2,5–3,65 В · солнечные сборки",
+  "battery.naionHint": "1,8–4,0 В · натриевые банки",
+  "battery.lto2sHint": "3,6–5,6 В · две титанатные банки последовательно",
   "advanced.device": "Устройство",
   "advanced.firmware": "Прошивка",
   "advanced.firmwareValue": "{version} · {date} · протокол {protocol}",

@@ -16,12 +16,17 @@ const KEY = "meshnet.batteryTypes";
 export const BATTERY_TYPES: { value: BatteryType; label: string; hint: Key }[] = [
   { value: "liion", label: "Li-ion / LiPo", hint: "radio.battery.liionHint" },
   { value: "lifepo4", label: "LiFePO4", hint: "radio.battery.lifepo4Hint" },
+  { value: "naion", label: "Na-ion", hint: "radio.battery.naionHint" },
+  { value: "lto2s", label: "LTO 2S", hint: "radio.battery.lto2sHint" },
 ];
 
 function restore(saved: unknown): Record<string, BatteryType> {
   if (!saved || typeof saved !== "object") return {};
   const types: Record<string, BatteryType> = {};
-  for (const [key, type] of Object.entries(saved)) if (type === "lifepo4" || type === "liion") types[key] = type;
+  for (const [key, type] of Object.entries(saved)) {
+    const known = BATTERY_TYPES.find((t) => t.value === type);
+    if (known) types[key] = known.value;
+  }
   return types;
 }
 

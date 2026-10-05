@@ -210,6 +210,13 @@
     "many": "{count} изменений сохранено на {name}.",
     "other": "{count} изменения сохранено на {name}."
   },
+  "settings.placeAdvert": "Другие увидят новое место с его следующим анонсом: Ещё › Отправить анонс на всю сеть.",
+  "settings.pickOnMap": "Указать на карте",
+  "place.title": "Где стоит узел",
+  "place.put": "Поставить сюда",
+  "place.moved": "в {distance} от прежнего места",
+  "place.same": "на прежнем месте",
+  "place.none": "места ещё не было",
   "settings.passwordChangedSaved": "Пароль администратора изменён, сохранённый — тоже.",
   "settings.passwordChanged": "Пароль администратора изменён.",
   "settings.trialOrSave": "{trial}  или  {save}",

@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { MAX_PASSWORD_LEN, NodeCommandError, isCliError, type ContactRecord } from "@meshnet/meshcore";
 import { errorText } from "../../i18n/errors.js";
 import { t } from "../../i18n/index.js";
 import { tx } from "../../i18n/rich.js";
 import { ago } from "../../lib/format.js";
+import { hasPosition } from "../../lib/geo.js";
+import { pickNodePlace } from "../../lib/nav.js";
 import {
   RADIO_FIELDS,
   displayValue,
@@ -20,12 +22,13 @@ import {
   type SettingField,
   type SettingGroup,
 } from "../../lib/nodes.js";
+import { degreeText, putPickedPlace, usePickedPlace } from "../../lib/nodePlace.js";
 import { hasSavedPassword, savePassword } from "../../lib/secrets.js";
 import { session, useSession } from "../../lib/session.js";
 import { Button } from "../../ui/Button.js";
 import { Confirm } from "../../ui/Dialog.js";
 import { PasswordInput, Section } from "../../ui/Field.js";
-import { AlertIcon } from "../Icons.js";
+import { AlertIcon, LocationIcon } from "../Icons.js";
 
 /** How long a trial of new radio settings lasts before the node falls back by itself. */
 const TRIAL_MINUTES = 10;
@@ -86,6 +89,22 @@ export function Settings({ contact }: { contact: ContactRecord }) {
     });
   };
 
+  // The map opens where the fields say, a change not yet applied included.
+  const shownPlace = () => {
+    const lat = Number(shown("lat"));
+    const lon = Number(shown("lon"));
+    return Number.isFinite(lat) && Number.isFinite(lon) && hasPosition(lat, lon) ? { lat, lon } : null;
+  };
+
+  // A point put on the map comes back as a change to both halves of the position.
+  const picked = usePickedPlace(key);
+  useEffect(() => {
+    if (!picked) return;
+    setField("lat", degreeText(picked.lat));
+    setField("lon", degreeText(picked.lon));
+    putPickedPlace(null);
+  }, [picked]);
+
   const { pending, radioValue, problems } = useMemo(() => {
     const pending: Pending[] = [];
     const problems: Record<string, string> = {};
@@ -138,6 +157,7 @@ export function Settings({ contact }: { contact: ContactRecord }) {
     setApplying(true);
     setError(null);
     setNote(null);
+    const moved = pending.some((p) => p.name === "lat" || p.name === "lon");
     try {
       for (const p of pending) {
         await session.writeNodeSetting(key, p.name, p.value, p.command);
@@ -147,6 +167,14 @@ export function Settings({ contact }: { contact: ContactRecord }) {
           return next;
         });
       }
+      if (moved) {
+        // The map shows the node where its adverts put it, and the next one is hours away: the
+        // radio's contact moves now. Should the radio refuse, the advert still brings it.
+        const values = session.getState().nodeSettings[key];
+        const lat = Number(values?.["lat"]?.value);
+        const lon = Number(values?.["lon"]?.value);
+        if (Number.isFinite(lat) && Number.isFinite(lon)) await session.placeContact(key, lat, lon).catch(() => undefined);
+      }
       if (radioValue && radioMode === "trial") {
         const reply = await session.runCli(key, `tempradio ${radioValue},${TRIAL_MINUTES}`);
         if (isCliError(reply)) throw new NodeCommandError(reply);
@@ -155,7 +183,8 @@ export function Settings({ contact }: { contact: ContactRecord }) {
         await session.writeNodeSetting(key, "radio", radioValue, `set radio ${radioValue}`);
         setNote(t("node.settings.keeps", { name: contact.name }));
       } else {
-        setNote(t("node.settings.saved", { count: pending.length, name: contact.name }));
+        const saved = t("node.settings.saved", { count: pending.length, name: contact.name });
+        setNote(moved ? `${saved} ${t("node.settings.placeAdvert")}` : saved);
       }
       if (radioValue && radioMode) {
         setDirty((d) => {
@@ -242,7 +271,14 @@ export function Settings({ contact }: { contact: ContactRecord }) {
                     {group.fields
                       .filter((f) => stored[f.name] !== undefined)
                       .map((f) => (
-                        <FieldInput key={f.name} nodeKey={key} field={f} value={shown(f.name)} dirty={dirty[f.name] !== undefined} problem={problems[f.name]} onChange={setField} />
+                        <Fragment key={f.name}>
+                          <FieldInput nodeKey={key} field={f} value={shown(f.name)} dirty={dirty[f.name] !== undefined} problem={problems[f.name]} onChange={setField} />
+                          {f.name === "lon" ? (
+                            <Button size="sm" className="pick-on-map" onClick={() => pickNodePlace(key, shownPlace())}>
+                              <LocationIcon size={15} /> {t("node.settings.pickOnMap")}
+                            </Button>
+                          ) : null}
+                        </Fragment>
                       ))}
                   </div>
                   {group.id === "radio" ? (

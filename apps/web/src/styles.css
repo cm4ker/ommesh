@@ -5038,6 +5038,11 @@ button.hop {
 .toggle.wide {
   grid-column: 1 / -1;
 }
+/* Under a node's latitude and longitude, on a line of its own. */
+.form-grid > .pick-on-map {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
 .field-label {
   display: flex;
   align-items: center;

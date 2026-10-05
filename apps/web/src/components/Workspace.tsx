@@ -26,7 +26,7 @@ import { MeshList, MeshMap, MeshPhone, useMeshAttention } from "./Mesh.js";
 import { MessageView } from "./MessageView.js";
 import { NodePageView } from "./node/NodePage.js";
 import { Palette } from "./Palette.js";
-import { PlacePicker, PlaceView } from "./PlaceView.js";
+import { NodePlacePicker, PlacePicker, PlaceView } from "./PlaceView.js";
 import { Profile } from "./Profile.js";
 import { RadioHome } from "./RadioHome.js";
 import { RADIO_PARENTS, RadioPageView } from "./RadioPages.js";
@@ -73,6 +73,8 @@ function ScreenView({ screen, chrome, wide }: { screen: Screen; chrome: Chrome; 
       return <PlaceView text={screen.text} from={screen.from} at={screen.at} chrome={chrome} />;
     case "pickPlace":
       return <PlacePicker conversation={screen.conversation} chrome={chrome} />;
+    case "pickNodePlace":
+      return <NodePlacePicker contactKey={screen.key} at={screen.at} chrome={chrome} />;
     case "profile":
       return <Profile key={screen.key} contactKey={screen.key} chrome={chrome} />;
     case "node":
@@ -390,18 +392,26 @@ function useEdgeSwipe(ref: React.RefObject<HTMLElement | null>, enabled: boolean
 
 // ---- the desktop: the list, what was picked in it, and a panel of details ----
 
+/**
+ * What takes the whole of a desktop's middle: a node's own pages, and the map
+ * one of them opens to put the node on, in place of the page it came from.
+ */
+function fullScreen(top: Screen | null): Extract<Screen, { kind: "node" | "pickNodePlace" }> | null {
+  return top?.kind === "node" || top?.kind === "pickNodePlace" ? top : null;
+}
+
 /** How a desktop lays a section's stack out. */
 function layout(nav: Nav) {
   const stack = nav.stacks[nav.section];
   const top = topOf(nav);
   if (nav.section === "chats") {
     const chat = stack.find((s): s is Extract<Screen, { kind: "chat" }> => s.kind === "chat") ?? null;
-    const full = top?.kind === "node" ? top : null;
+    const full = fullScreen(top);
     const panel = !full && top && top.kind !== "chat" ? top : null;
     return { chat, full, panel, panelDepth: stack.filter((s) => s.kind !== "chat").length };
   }
   if (nav.section === "mesh") {
-    const full = top?.kind === "node" ? top : null;
+    const full = fullScreen(top);
     const panel: Screen | null = full ? null : top ?? (nav.meshFocus ? { kind: "profile", key: nav.meshFocus } : null);
     return { chat: null, full, panel, panelDepth: stack.length };
   }

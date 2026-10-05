@@ -1687,6 +1687,22 @@ export class MeshSession {
     await this.writeContact({ ...contact, name });
   }
 
+  /**
+   * Moves a node to where its admin has just put it. The radio keeps the
+   * position the node's last advert gave, and the next advert brings the new
+   * one; until then the radio's contact is written here. A node the radio does
+   * not keep is moved in this client only.
+   */
+  async placeContact(key: string, lat: number, lon: number): Promise<void> {
+    const contact = this.state.contacts[key];
+    if (!contact) throw new Error("unknown contact");
+    if (contact.unsaved) {
+      this.set({ contacts: { ...this.state.contacts, [key]: { ...contact, lat, lon } } });
+      return;
+    }
+    await this.writeContact({ ...contact, lat, lon });
+  }
+
   private async writeContact(record: ContactRecord): Promise<void> {
     const client = this.need();
     const lastMod = unixNow();

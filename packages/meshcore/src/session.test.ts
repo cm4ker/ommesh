@@ -2342,6 +2342,23 @@ test("trusting a contact sets its three telemetry bits and keeps its favourite m
   assert.ok(!isTrusted(session.getState().contacts[HILL_KEY]!));
 });
 
+test("placing a node writes its new position into the radio's contact and keeps the rest", async () => {
+  const { radio, session } = await nodeSession();
+  const before = session.getState().contacts[HILL_KEY]!;
+  await session.placeContact(HILL_KEY, 55.123456, 73.654321);
+  const write = radio.sent.filter((f) => f[0] === Cmd.AddUpdateContact).at(-1)!;
+  // After the command, key, type, flags, path length, path, name and last advert.
+  const at = 1 + 32 + 3 + 64 + 32 + 4;
+  const view = new DataView(write.buffer, write.byteOffset, write.byteLength);
+  assert.equal(view.getInt32(at, true), 55123456);
+  assert.equal(view.getInt32(at + 4, true), 73654321);
+  const after = session.getState().contacts[HILL_KEY]!;
+  assert.equal(after.lat, 55.123456);
+  assert.equal(after.lon, 73.654321);
+  assert.equal(after.name, before.name);
+  assert.equal(after.lastAdvert, before.lastAdvert);
+});
+
 test("a contact another app trusted with one kind only still counts as trusted", () => {
   const contact = { flags: ContactFlag.TelemetryLocation } as Parameters<typeof isTrusted>[0];
   assert.ok(isTrusted(contact));

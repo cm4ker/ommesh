@@ -31,6 +31,8 @@ export type Screen =
   | { kind: "place"; text: string; from: string | null; at: number }
   /** A point put on the map by hand, for the place in a conversation's message field. */
   | { kind: "pickPlace"; conversation: string }
+  /** Where a repeater, room or sensor stands, put on the map by hand from its settings, which give where to open. */
+  | { kind: "pickNodePlace"; key: string; at: { lat: number; lon: number } | null }
   | { kind: "profile"; key: string }
   | { kind: "node"; key: string; page: NodePage }
   | { kind: "radio"; page: RadioPage };
@@ -179,6 +181,10 @@ export function openPlace(text: string, from: string | null, at: number): void {
 
 export function pickPlace(conversation: string): void {
   push({ kind: "pickPlace", conversation });
+}
+
+export function pickNodePlace(key: string, at: { lat: number; lon: number } | null): void {
+  push({ kind: "pickNodePlace", key, at });
 }
 
 export function openNodePage(key: string, page: NodePage): void {

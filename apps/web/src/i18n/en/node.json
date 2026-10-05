@@ -8,7 +8,7 @@
   "readings.sensorsHint": "battery, board, position, sensors",
   "readings.stats": "Statistics",
   "readings.statsAgo": "Statistics · {time}",
-  "readings.statsHint": "noise, time on air, packets, battery",
+  "readings.statsHint": "noise, time on air, packets",
   "readings.errorsOf": "{errors} of {total}",
   "readings.battery": "Battery",
   "readings.typeUnknown": "type not picked",

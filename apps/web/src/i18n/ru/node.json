@@ -8,7 +8,7 @@
   "readings.sensorsHint": "батарея, плата, место, датчики",
   "readings.stats": "Статистика",
   "readings.statsAgo": "Статистика · {time}",
-  "readings.statsHint": "шум, эфир, пакеты, батарея",
+  "readings.statsHint": "шум, эфир, пакеты",
   "readings.errorsOf": "{errors} из {total}",
   "readings.battery": "Батарея",
   "readings.typeUnknown": "тип не выбран",

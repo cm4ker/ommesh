@@ -5,8 +5,10 @@
 //!
 //! The icon carries a dot while anything is unread, told by the page
 //! (`tray_unread`): red for a message from a person, amber for channels and
-//! rooms only. Its tooltip counts both. Its words are the page's, in the
-//! reader's language (`tray_words`), English until the page has said.
+//! rooms only. Its tooltip names the radio and counts both; the window's
+//! title names the radio too, which is how copies of the app opened for
+//! different radios are told apart (`instance.rs`). Its words are the page's,
+//! in the reader's language (`tray_words`), English until the page has said.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -36,14 +38,15 @@ pub fn install(app: &App) {
     }
 }
 
-fn menu<R: Runtime, M: Manager<R>>(app: &M, open: &str, quit: &str) -> tauri::Result<Menu<R>> {
+fn menu<R: Runtime, M: Manager<R>>(app: &M, open: &str, another: &str, quit: &str) -> tauri::Result<Menu<R>> {
     let open = MenuItem::with_id(app, "open", open, true, None::<&str>)?;
+    let another = MenuItem::with_id(app, "another", another, true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", quit, true, None::<&str>)?;
-    Menu::with_items(app, &[&open, &quit])
+    Menu::with_items(app, &[&open, &another, &quit])
 }
 
 fn build(app: &App) -> tauri::Result<TrayIcon> {
-    let menu = menu(app, "Open Ommesh", "Quit")?;
+    let menu = menu(app, "Open Ommesh", "Another window", "Quit")?;
     TrayIconBuilder::with_id(ID)
         .icon(Image::from_bytes(ICON)?)
         .tooltip(&app.package_info().name)
@@ -51,6 +54,11 @@ fn build(app: &App) -> tauri::Result<TrayIcon> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "open" => bring_back(app),
+            "another" => {
+                if let Err(error) = crate::instance::open_another() {
+                    log::warn!("no other window: {error}");
+                }
+            }
             "quit" => app.exit(0),
             _ => {}
         })
@@ -96,22 +104,29 @@ pub fn bring_back<R: Runtime>(app: &AppHandle<R>) {
 
 /// The menu's words, in the page's language.
 #[tauri::command]
-pub fn tray_words(app: AppHandle, open: String, quit: String) -> Result<(), String> {
+pub fn tray_words(app: AppHandle, open: String, another: String, quit: String) -> Result<(), String> {
     let Some(tray) = app.tray_by_id(ID) else {
         return Ok(());
     };
-    let menu = menu(&app, &open, &quit).map_err(|error| error.to_string())?;
+    let menu = menu(&app, &open, &another, &quit).map_err(|error| error.to_string())?;
     tray.set_menu(Some(menu)).map_err(|error| error.to_string())
 }
 
 /// What is unread, from the page: messages from people, and in channels and rooms,
-/// and how the tooltip says it (`detail`), in the page's words.
+/// and how the tooltip says it (`detail`), in the page's words; and the radio's name,
+/// for the tooltip and the window's title, once the radio has said it.
 #[tauri::command]
-pub fn tray_unread(app: AppHandle, direct: u32, chats: u32, detail: Option<String>) -> Result<(), String> {
+pub fn tray_unread(app: AppHandle, direct: u32, chats: u32, detail: Option<String>, radio: Option<String>) -> Result<(), String> {
+    let name = match radio.as_deref().map(str::trim) {
+        Some(radio) if !radio.is_empty() => format!("{radio} — {}", app.package_info().name),
+        _ => app.package_info().name.clone(),
+    };
+    if let Some(window) = app.get_webview_window(ID) {
+        let _ = window.set_title(&name);
+    }
     let Some(tray) = app.tray_by_id(ID) else {
         return Ok(());
     };
-    let name = &app.package_info().name;
     let detail = detail.unwrap_or_else(|| match (direct, chats) {
         (0, 0) => String::new(),
         (d, 0) => format!("{d} from people"),

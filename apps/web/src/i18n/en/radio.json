@@ -251,6 +251,8 @@
   "connection.share": "Share with a computer",
   "connection.computerConnected": "A computer is connected",
   "connection.waiting": "Waiting for a computer",
+  "connection.another": "Open another window",
+  "connection.anotherNote": "For one more radio. Each window keeps its own radio and opens with it next time.",
   "connection.disconnectNote": "Both lead to the connect screen, where another radio can be picked.",
   "connection.disconnect": "Disconnect",
   "power.reboot": "Reboot the radio",

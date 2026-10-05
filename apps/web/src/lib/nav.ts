@@ -9,6 +9,7 @@
  */
 
 import { useSyncExternalStore } from "react";
+import { ownKey } from "./instance.js";
 import { readSetting, writeSetting } from "./storage.js";
 
 export type Section = "chats" | "mesh" | "radio";
@@ -44,7 +45,8 @@ export interface Nav {
   meshFocus: string | null;
 }
 
-const KEY = "meshnet.nav";
+// Each copy of the desktop app has its own screens open (instance.ts).
+const KEY = ownKey("meshnet.nav");
 const SECTIONS: Section[] = ["chats", "mesh", "radio"];
 const EMPTY: Nav = { section: "chats", stacks: { chats: [], mesh: [], radio: [] }, meshFocus: null };
 

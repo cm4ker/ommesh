@@ -5,6 +5,7 @@ import { agoPhrase, dayLabel, timeOfDay } from "../lib/format.js";
 import { HASH_MODES, hashHops, repeatAllowed, repeatFreqsText } from "../lib/radioNetwork.js";
 import { setFollowPhone, useFollowStatus } from "../lib/followPhone.js";
 import { parseLatLon, pointDecimal } from "../lib/geo.js";
+import { canOpenAnother, openAnother } from "../lib/instance.js";
 import { disconnect, useLink } from "../lib/link.js";
 import { setLookalikePrefs, useLookalikePrefs } from "../lib/lookalikes.js";
 import { setOpenAtUnread, useOpenAtUnread } from "../lib/firstUnread.js";
@@ -1069,6 +1070,14 @@ function ConnectionPage() {
                 toast(t("radio.connection.changeFailed", { error: errorText(err) }), "error");
               }
             }}
+          />
+        </Group>
+      ) : null}
+      {canOpenAnother() ? (
+        <Group note={t("radio.connection.anotherNote")}>
+          <ActionRow
+            label={t("radio.connection.another")}
+            onClick={() => openAnother().catch((err) => toast(t("radio.connection.changeFailed", { error: errorText(err) }), "error"))}
           />
         </Group>
       ) : null}

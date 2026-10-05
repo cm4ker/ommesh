@@ -5,6 +5,7 @@
 
 mod announce;
 mod coverage;
+mod instance;
 mod notices;
 mod secrets;
 mod tcp;
@@ -28,16 +29,29 @@ pub(crate) const WINDOW_STATE: StateFlags =
 pub fn run() {
     // `RUST_LOG=debug` from a terminal shows what the plugins do with the link.
     let _ = env_logger::try_init();
-    let builder = tauri::Builder::default()
-        // The app lives in the tray with its window closed, so starting it
-        // again, from the Start menu say, brings that window back rather
-        // than a second app fighting the first for the radio. Registered first, as the plugin asks.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::bring_back(app)))
+    let context = tauri::generate_context!();
+    let copy = instance::take(&context.config().identifier);
+    let mut builder = tauri::Builder::default();
+    // The app lives in the tray with its window closed, so starting it
+    // again, from the Start menu say, brings that window back rather
+    // than a second app fighting the first for the radio. A copy opened for
+    // another radio is the one start that does not. Registered first, as the plugin asks.
+    if !std::env::args().any(|arg| arg == instance::ANOTHER) {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::bring_back(app)));
+    }
+    let builder = builder
+        .plugin(instance::plugin(copy))
         // Put back as the window is made, before `setup` sends it to the tray at login.
         // The plugin writes it down when the app quits; `tray` and `updates`
         // do so too where the app goes without saying.
         // The notices window places itself in a corner each time; kept, it would come back where it last was.
-        .plugin(tauri_plugin_window_state::Builder::new().with_state_flags(WINDOW_STATE).with_denylist(&[notices::LABEL]).build())
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_filename(instance::window_state_file(copy))
+                .with_state_flags(WINDOW_STATE)
+                .with_denylist(&[notices::LABEL])
+                .build(),
+        )
         // The entry keeps the name it had before the app became Ommesh, so an autostart
         // turned on back then still counts; the installer's hooks remove it by that name.
         .plugin(tauri_plugin_autostart::Builder::new().app_name("Meshnet").arg(MINIMIZED).build())
@@ -73,6 +87,7 @@ pub fn run() {
     let builder = builder.manage(winble::WinBle::default()).invoke_handler(tauri::generate_handler![
         updates::desktop_update_info,
         updates::desktop_check_update,
+        instance::desktop_open_another,
         winble::winble_scan,
         winble::winble_stop_scan,
         winble::winble_pair,
@@ -102,6 +117,7 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         updates::desktop_update_info,
         updates::desktop_check_update,
+        instance::desktop_open_another,
         tcp::tcp_open,
         tcp::tcp_write,
         tcp::tcp_close,
@@ -123,6 +139,6 @@ pub fn run() {
     ]);
 
     builder
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running the desktop shell");
 }

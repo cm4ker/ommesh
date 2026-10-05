@@ -251,6 +251,8 @@
   "connection.share": "Делиться с компьютером",
   "connection.computerConnected": "Компьютер подключён",
   "connection.waiting": "Ожидание компьютера",
+  "connection.another": "Открыть ещё одно окно",
+  "connection.anotherNote": "Для ещё одного радио. У каждого окна своё радио, и в следующий раз окно откроется с ним.",
   "connection.disconnectNote": "Оба ведут на экран подключения, где можно выбрать другое радио.",
   "connection.disconnect": "Отключить",
   "power.reboot": "Перезагрузить радио",

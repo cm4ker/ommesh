@@ -35,22 +35,26 @@ export function unreadDetail({ direct, chats }: UnreadSplit): string {
   return "";
 }
 
-/** Keeps the tray icon in step with the unread counts, and its words with the language, in the desktop shell only. */
+/**
+ * Keeps the tray icon in step with the unread counts and the radio's name (which titles the window too),
+ * and its words with the language, in the desktop shell only.
+ */
 export function startTray(state: () => SessionState, subscribe: (listener: () => void) => () => void): () => void {
   if (shell() !== "tauri") return () => undefined;
   let told = "";
   const update = () => {
     const split = unreadSplit(state());
-    const key = `${split.direct}/${split.chats}/${language()}`;
+    const radio = state().self?.name ?? null;
+    const key = `${split.direct}/${split.chats}/${language()}/${radio}`;
     if (key === told) return;
     told = key;
-    void invoke("tray_unread", { ...split, detail: unreadDetail(split) }).catch(() => undefined);
+    void invoke("tray_unread", { ...split, detail: unreadDetail(split), radio }).catch(() => undefined);
   };
   let spoken = "";
   const words = () => {
     if (spoken === language()) return;
     spoken = language();
-    void invoke("tray_words", { open: t("notices.tray.open"), quit: t("notices.tray.quit") }).catch(() => undefined);
+    void invoke("tray_words", { open: t("notices.tray.open"), another: t("notices.tray.another"), quit: t("notices.tray.quit") }).catch(() => undefined);
     update();
   };
   words();

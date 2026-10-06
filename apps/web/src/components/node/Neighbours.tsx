@@ -4,13 +4,14 @@ import { errorText } from "../../i18n/errors.js";
 import { t, type Key } from "../../i18n/index.js";
 import { ago } from "../../lib/format.js";
 import { quality } from "../../lib/los.js";
-import { keepSearch, searchNeighbours, useNeighbourSearch, type NeighbourSearchState } from "../../lib/neighbourSearch.js";
+import { keepSearch, resetNeighbours, searchNeighbours, useNeighbourSearch, type NeighbourSearchState } from "../../lib/neighbourSearch.js";
 import { isAdmin } from "../../lib/nodes.js";
 import { session, useSession } from "../../lib/session.js";
 import { openNeighbours } from "../../lib/toolActions.js";
 import { Button } from "../../ui/Button.js";
+import { Confirm } from "../../ui/Dialog.js";
 import { Avatar } from "../Avatar.js";
-import { AirIcon, CheckIcon, DownIcon, MapIcon, RefreshIcon } from "../Icons.js";
+import { AirIcon, CheckIcon, DownIcon, MapIcon, RefreshIcon, TrashIcon } from "../Icons.js";
 
 const ORDERS: { order: number; label: Key }[] = [
   { order: NeighbourOrder.Newest, label: "node.neighbours.newest" },
@@ -36,6 +37,8 @@ export function Neighbours({ contact }: { contact: ContactRecord }) {
   const [busy, setBusy] = useState<"page" | "more" | null>(null);
   // An error stands until an answer newer than it comes in: one that came late says the node heard.
   const [error, setError] = useState<{ text: string; at: number } | null>(null);
+  const [askReset, setAskReset] = useState(false);
+  const admin = isAdmin(state.logins[key]);
 
   const fetch = async (nextOrder: number, offset: number) => {
     setBusy(offset > 0 ? "more" : "page");
@@ -51,11 +54,11 @@ export function Neighbours({ contact }: { contact: ContactRecord }) {
     }
   };
 
-  const startSearch = () => {
+  const startSearch = (reset = false) => {
     // The neighbours that answer come first in the list the search reads: they were heard last.
     setOrder(NeighbourOrder.Newest);
     setError(null);
-    void searchNeighbours(key);
+    void (reset ? resetNeighbours(key) : searchNeighbours(key));
   };
 
   const pct = (snr: number) => ((Math.max(SNR_LOW, Math.min(SNR_HIGH, snr)) - SNR_LOW) / (SNR_HIGH - SNR_LOW)) * 100;
@@ -98,13 +101,14 @@ export function Neighbours({ contact }: { contact: ContactRecord }) {
       </div>
 
       {/* The repeater takes the command from an admin only, so a guest is not offered it. */}
-      {isAdmin(state.logins[key]) ? <SearchStrip search={searching ? search : outcome} waitMs={waitMs} disabled={!online || busy !== null} onSearch={startSearch} /> : null}
+      {admin ? <SearchStrip search={searching ? search : outcome} waitMs={waitMs} disabled={!online || busy !== null} onSearch={() => startSearch()} /> : null}
 
       {error && (list?.at ?? 0) < error.at ? <p className="connect-error">{error.text}</p> : null}
 
       {list ? (
         rows.length === 0 ? (
-          <p className="muted">{t("node.neighbours.none")}</p>
+          // A reset empties the list until the neighbours answer; the strip above says so.
+          searching ? null : <p className="muted">{t("node.neighbours.none")}</p>
         ) : (
           <section className="section">
             {/* One row per neighbour rather than a table's columns, which a phone has no room for. */}
@@ -148,8 +152,27 @@ export function Neighbours({ contact }: { contact: ContactRecord }) {
             {t("node.neighbours.loadMore", { count: Math.min(more, 10) })}
           </Button>
         ) : null}
+        {/* Neighbours long gone stay listed for days; a reset clears them, and the search brings the live ones back. */}
+        {admin ? (
+          <Button size="sm" disabled={!online || busy !== null || searching} onClick={() => setAskReset(true)}>
+            <TrashIcon size={13} />
+            {t("node.reset.button")}
+          </Button>
+        ) : null}
         <span className="field-hint">{t("node.neighbours.hint", { low: SNR_LOW, high: SNR_HIGH })}</span>
       </div>
+
+      <Confirm
+        open={askReset}
+        title={t("node.reset.title")}
+        body={<p>{t("node.reset.body", { name: contact.name || contact.prefix, seconds: Math.round(waitMs / 1000) })}</p>}
+        confirmLabel={t("node.reset.confirm")}
+        onCancel={() => setAskReset(false)}
+        onConfirm={() => {
+          setAskReset(false);
+          startSearch(true);
+        }}
+      />
     </div>
   );
 }
@@ -188,7 +211,7 @@ function SearchStrip({ search, waitMs, disabled, onSearch }: { search: Neighbour
 
   if (search.running) {
     const left = search.until === null ? null : search.until - Date.now();
-    const text = left === null ? t("node.search.sending") : left > 0 ? t("node.search.waiting", { seconds: Math.ceil(left / 1000) }) : t("node.search.reading");
+    const text = left === null ? t(search.reset ? "node.reset.sending" : "node.search.sending") : left > 0 ? t("node.search.waiting", { seconds: Math.ceil(left / 1000) }) : t("node.search.reading");
     return (
       <div className="nb-progress" role="status">
         <span className="nb-progress-line">
@@ -215,11 +238,22 @@ function SearchStrip({ search, waitMs, disabled, onSearch }: { search: Neighbour
     );
   }
 
-  if (search.answered.length === 0) {
+  // Firmware before 1.14 forgets its neighbours but cannot call them, so there is nothing to search again with.
+  if (!search.called) {
+    return (
+      <div className="nb-progress quiet" role="status">
+        <span className="nb-progress-line">{t("node.reset.done")}</span>
+        <span className="nb-search-hint">{t("node.reset.notCalled")}</span>
+      </div>
+    );
+  }
+
+  if (search.heard === 0) {
+    const seconds = Math.round(search.waitMs / 1000);
     return (
       <div className="nb-progress quiet" role="status">
         <span className="nb-progress-line">
-          {t("node.search.nobody", { seconds: Math.round(search.waitMs / 1000) })}
+          {search.reset ? t("node.reset.nobody", { seconds }) : t("node.search.nobody", { seconds })}
           {again}
         </span>
         <span className="nb-search-hint">{t("node.search.nobodyWhy")}</span>
@@ -227,17 +261,20 @@ function SearchStrip({ search, waitMs, disabled, onSearch }: { search: Neighbour
     );
   }
 
-  const answered = t("node.search.answered", { count: search.answered.length });
-  const fresh = search.fresh === null ? null : search.fresh.length ? t("node.search.fresh", { count: search.fresh.length }) : t("node.search.noneNew");
+  const answered = t("node.search.answered", { count: search.heard });
+  // After a reset every neighbour in the list is new to it; those new to the mesh are marked in the rows.
+  const fresh = search.reset || search.fresh === null ? null : search.fresh.length ? t("node.search.fresh", { count: search.fresh.length }) : t("node.search.noneNew");
+  const line = search.reset ? t("node.reset.answered", { count: search.heard }) : fresh ? `${answered} · ${fresh}` : answered;
   return (
     <div className="nb-progress good" role="status">
       <span className="nb-progress-line">
         <span className="nb-found">
           <CheckIcon size={14} />
-          {fresh ? `${answered} · ${fresh}` : answered}
+          {line}
         </span>
         {again}
       </span>
+      {search.reset && search.gone ? <span className="nb-search-hint">{t("node.reset.gone", { count: search.gone })}</span> : null}
     </div>
   );
 }

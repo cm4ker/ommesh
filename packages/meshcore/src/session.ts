@@ -480,6 +480,14 @@ export interface NeighbourSearch {
   fresh: string[] | null;
 }
 
+/** What a repeater's list of neighbours held once it was reset and they were called again. */
+export interface NeighbourReset extends NeighbourSearch {
+  /** The neighbours the list held before that did not answer; null when that cannot be told. */
+  gone: number | null;
+  /** False when the firmware forgot them but cannot call them (before 1.14): they come back with their adverts. */
+  called: boolean;
+}
+
 /** One battery reading kept for a node's week. */
 export interface BatterySample {
   at: number;
@@ -3121,14 +3129,7 @@ export class MeshSession {
    */
   async searchNeighbours(key: string, onCalled?: (waitMs: number) => void): Promise<NeighbourSearch> {
     const prior = this.state.neighbours[key];
-    const reply = (await this.runCli(key, "discover.neighbors")).trim();
-    if (!/^ok\b/i.test(reply)) throw new NodeCommandError(reply);
-    const calledAt = this.now();
-    const self = this.state.self;
-    const wait = this.searchWait(self && self.bandwidthHz > 0 ? neighbourSearchMs(self) : 12_000);
-    onCalled?.(wait);
-    await new Promise((resolve) => setTimeout(resolve, wait));
-    const list = await this.requestNeighbours(key, { order: NeighbourOrder.Newest });
+    const { list, calledAt } = await this.callNeighbours(key, onCalled);
     // The repeater says how long ago it heard each, by its own clock. It called them a
     // moment before its reply reached us, however long that reply took on the way back.
     const since = Math.ceil((this.now() - calledAt) / 1000) + 3;
@@ -3141,6 +3142,56 @@ export class MeshSession {
     const fresh = prior && (whole || outside.length <= list.total - prior.total) ? outside : null;
     this.log("neighbours", `${this.state.contacts[key]?.name || key.slice(0, 12)}: ${answered.length} answered a search, ${fresh ? fresh.length : "unknown how many"} new`);
     return { list, answered, fresh };
+  }
+
+  /**
+   * Has a repeater forget all its neighbours, then call them again. It keeps
+   * them in memory only, and `neighbor.remove` forgets those whose key starts
+   * with what follows it: with nothing after it, every key does. The space
+   * after the command is what the firmware matches, so it is sent as is.
+   * Those that answer the call come back with a fresh signal, and the rest
+   * with their next zero-hop advert.
+   */
+  async resetNeighbours(key: string, onCalled?: (waitMs: number) => void): Promise<NeighbourReset> {
+    const prior = this.state.neighbours[key];
+    const reply = (await this.runCli(key, "neighbor.remove ")).trim();
+    if (!/^ok\b/i.test(reply)) throw new NodeCommandError(reply);
+    const empty: NeighbourList = { total: 0, order: prior?.order ?? NeighbourOrder.Newest, neighbours: [], at: this.now() };
+    this.set({ neighbours: { ...this.state.neighbours, [key]: empty } });
+    const name = this.state.contacts[key]?.name || key.slice(0, 12);
+    let list: NeighbourList;
+    try {
+      ({ list } = await this.callNeighbours(key, onCalled));
+    } catch (error) {
+      // Firmware from 1.10 forgets neighbours, but only 1.14 can call them.
+      if (!(error instanceof NodeCommandError && /^unknown/i.test(error.reply))) throw error;
+      this.log("neighbours", `${name}: list reset; the firmware cannot call the neighbours`);
+      return { list: empty, answered: [], fresh: null, gone: null, called: false };
+    }
+    // Everything in the list was heard since the reset.
+    const answered = list.neighbours.map((n) => n.prefix);
+    // Who is new and who went quiet can be told only between whole lists.
+    const before = prior !== undefined && prior.neighbours.length >= prior.total;
+    const after = list.neighbours.length >= list.total;
+    const was = new Set(prior?.neighbours.map((n) => n.prefix));
+    const heard = new Set(answered);
+    const fresh = before ? answered.filter((prefix) => !was.has(prefix)) : null;
+    const gone = before && after ? prior.neighbours.filter((n) => !heard.has(n.prefix)).length : null;
+    this.log("neighbours", `${name}: list reset, ${list.total} answered, ${gone ?? "unknown how many"} gone quiet`);
+    return { list, answered, fresh, gone, called: true };
+  }
+
+  /** Sends `discover.neighbors`, waits for the answers and reads the list newest first. */
+  private async callNeighbours(key: string, onCalled?: (waitMs: number) => void): Promise<{ list: NeighbourList; calledAt: number }> {
+    const reply = (await this.runCli(key, "discover.neighbors")).trim();
+    if (!/^ok\b/i.test(reply)) throw new NodeCommandError(reply);
+    const calledAt = this.now();
+    const self = this.state.self;
+    const wait = this.searchWait(self && self.bandwidthHz > 0 ? neighbourSearchMs(self) : 12_000);
+    onCalled?.(wait);
+    await new Promise((resolve) => setTimeout(resolve, wait));
+    const list = await this.requestNeighbours(key, { order: NeighbourOrder.Newest });
+    return { list, calledAt };
   }
 
   async requestAccessList(key: string): Promise<AccessRecord[]> {

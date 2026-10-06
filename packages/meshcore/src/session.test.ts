@@ -1647,6 +1647,53 @@ test("a neighbour search on firmware that lacks it says what the repeater answer
   assert.ok(!radio.sent.some((f) => f[0] === Cmd.SendBinaryReq));
 });
 
+/** Resets Hill's neighbours after reading `prior`; the repeater answers the reset with `reply`. */
+async function resetHill(prior: [number, [string, number, number][]], reply: string) {
+  const { radio, session } = await nodeSession({ searchWaitMs: () => 5 });
+  const read = session.requestNeighbours(HILL_KEY);
+  await sentOne(radio, Cmd.SendBinaryReq);
+  radio.push(neighboursReply(radio, prior[0], prior[1]));
+  await read;
+  const reset = session.resetNeighbours(HILL_KEY);
+  await sentOne(radio, Cmd.SendTxtMsg);
+  const command = sentText(radio.sent.find((f) => f[0] === Cmd.SendTxtMsg)!);
+  answerCli(radio, reply);
+  return { radio, session, reset, command };
+}
+
+test("a neighbour reset sends neighbor.remove with its trailing space, empties the list, then calls them", async () => {
+  const { radio, session, reset, command } = await resetHill([3, [["aabbccddeeff", 900, 7.25], ["010203040506", 3600, -8.5], ["0d4c7bddeeff", 86400, -14]]], "OK");
+  // Nothing after the space: every key starts with it, so the repeater forgets them all.
+  assert.match(command, /^[0-9a-f]{2}\|neighbor\.remove $/);
+  await sentOne(radio, Cmd.SendTxtMsg, 2);
+  assert.equal(session.getState().neighbours[HILL_KEY]!.total, 0);
+  assert.match(sentText(radio.sent.filter((f) => f[0] === Cmd.SendTxtMsg)[1]!), /^[0-9a-f]{2}\|discover\.neighbors$/);
+  answerCli(radio, "OK - Discover sent");
+  await sentOne(radio, Cmd.SendBinaryReq, 2);
+  radio.push(neighboursReply(radio, 2, [["0a0b0c0d0e0f", 2, -4.75], ["aabbccddeeff", 1, 7.5]]));
+  const found = await reset;
+  assert.deepEqual(found.answered, ["0a0b0c0d0e0f", "aabbccddeeff"]);
+  assert.deepEqual(found.fresh, ["0a0b0c0d0e0f"]);
+  assert.equal(found.gone, 2);
+  assert.equal(found.called, true);
+  assert.equal(session.getState().neighbours[HILL_KEY]!.total, 2);
+});
+
+test("a neighbour reset on firmware that forgets but cannot call says so, with the list left empty", async () => {
+  const { radio, session, reset } = await resetHill([1, [["aabbccddeeff", 900, 7.25]]], "OK");
+  await sentOne(radio, Cmd.SendTxtMsg, 2);
+  answerCli(radio, "Unknown command");
+  const found = await reset;
+  assert.equal(found.called, false);
+  assert.equal(session.getState().neighbours[HILL_KEY]!.total, 0);
+});
+
+test("a neighbour reset the repeater refuses leaves the list as it was", async () => {
+  const { session, reset } = await resetHill([1, [["aabbccddeeff", 900, 7.25]]], "Unknown command");
+  await assert.rejects(reset, (error: Error) => error instanceof NodeCommandError && error.message === "Unknown command");
+  assert.equal(session.getState().neighbours[HILL_KEY]!.total, 1);
+});
+
 test("a console command carries a tag, and its reply goes to the console, not the chat", async () => {
   const { radio, session } = await nodeSession();
   const reply = session.readNodeSetting(HILL_KEY, "tx");

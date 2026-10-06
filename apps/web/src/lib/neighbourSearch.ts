@@ -1,6 +1,7 @@
 /**
  * A repeater's search for its neighbours: the command, the wait while they
- * answer, the list read after. Kept per repeater while the app runs, so the
+ * answer, the list read after. A reset is the same search after the
+ * repeater forgets them all. Kept per repeater while the app runs, so the
  * search goes on and its outcome waits when the reader leaves the page.
  */
 
@@ -12,6 +13,8 @@ import { session } from "./session.js";
 
 export interface NeighbourSearchState {
   running: boolean;
+  /** Whether the list was reset first. */
+  reset: boolean;
   /** Local ms when the neighbours will have had time to answer; null until the repeater says it called them. */
   until: number | null;
   /** How long that wait is, ms. */
@@ -21,6 +24,12 @@ export interface NeighbourSearchState {
   /** The prefixes that answered, and those of them that are new (null when that cannot be told). */
   answered: string[];
   fresh: string[] | null;
+  /** How many answered: after a reset, the whole list, of which only a page is read. */
+  heard: number;
+  /** After a reset, the neighbours held before that did not answer, when that can be told. */
+  gone: number | null;
+  /** False after a reset on firmware that cannot call the neighbours. */
+  called: boolean;
   error: string | null;
 }
 
@@ -48,20 +57,39 @@ export function keepSearch(key: string, at: number): void {
   if (search && !search.running) set(key, { ...search, at });
 }
 
-function failure(error: unknown): string {
+function failure(error: unknown, reset: boolean): string {
   if (error instanceof NoReplyError) return t("node.neighbours.noReply", { seconds: /(\d+) s$/.exec(error.message)?.[1] ?? "?" });
-  if (error instanceof NodeCommandError) return /^unknown/i.test(error.reply.trim()) ? t("node.search.oldFirmware") : t("node.search.refused", { reply: error.reply });
+  if (error instanceof NodeCommandError) {
+    if (/^unknown/i.test(error.reply.trim())) return reset ? t("node.reset.oldFirmware") : t("node.search.oldFirmware");
+    return t("node.search.refused", { reply: error.reply });
+  }
   return errorText(error);
 }
 
-export async function searchNeighbours(key: string): Promise<void> {
+export function searchNeighbours(key: string): Promise<void> {
+  return run(key, false);
+}
+
+/** Has the repeater forget all its neighbours, then call them again. */
+export function resetNeighbours(key: string): Promise<void> {
+  return run(key, true);
+}
+
+async function run(key: string, reset: boolean): Promise<void> {
   if (searches.get(key)?.running || session.getState().status !== "ready") return;
-  const base: NeighbourSearchState = { running: true, until: null, waitMs: 0, at: 0, answered: [], fresh: null, error: null };
+  const base: NeighbourSearchState = { running: true, reset, until: null, waitMs: 0, at: 0, answered: [], fresh: null, heard: 0, gone: null, called: true, error: null };
   set(key, base);
+  const onCalled = (waitMs: number) => set(key, { ...base, until: Date.now() + waitMs, waitMs });
   try {
-    const found = await session.searchNeighbours(key, (waitMs) => set(key, { ...base, until: Date.now() + waitMs, waitMs }));
-    set(key, { ...base, running: false, waitMs: searches.get(key)?.waitMs ?? 0, at: found.list.at, answered: found.answered, fresh: found.fresh });
+    const waited = () => searches.get(key)?.waitMs ?? 0;
+    if (reset) {
+      const found = await session.resetNeighbours(key, onCalled);
+      set(key, { ...base, running: false, waitMs: waited(), at: found.list.at, answered: found.answered, fresh: found.fresh, heard: found.list.total, gone: found.gone, called: found.called });
+    } else {
+      const found = await session.searchNeighbours(key, onCalled);
+      set(key, { ...base, running: false, waitMs: waited(), at: found.list.at, answered: found.answered, fresh: found.fresh, heard: found.answered.length });
+    }
   } catch (error) {
-    set(key, { ...base, running: false, at: Date.now(), error: failure(error) });
+    set(key, { ...base, running: false, at: Date.now(), error: failure(error, reset) });
   }
 }

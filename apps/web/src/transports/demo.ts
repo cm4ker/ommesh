@@ -356,6 +356,8 @@ class DemoRadio extends BaseTransport {
   private admins = new Set<Person>();
   /** When each repeater last called its neighbours, local ms. */
   private searched = new Map<Person, number>();
+  /** What each repeater was told to forget: neighbours whose key starts with `prefix`, heard before `at`. */
+  private forgotten = new Map<Person, { prefix: string; at: number }[]>();
   /**
    * How far each node's clock is behind ours, seconds; negative when it runs ahead. The
    * repeaters run 47 s behind, for the clock card, but Tower runs five minutes ahead, which
@@ -590,6 +592,13 @@ class DemoRadio extends BaseTransport {
       this.searched.set(p, Date.now());
       return "OK - Discover sent";
     }
+    // As the firmware: an even count of hex digits, none at all matching every key.
+    if (command.startsWith("neighbor.remove ")) {
+      const prefix = command.slice(16).toLowerCase();
+      if (prefix.length % 2 || !/^[0-9a-f]*$/.test(prefix)) return "ERR: bad pubkey";
+      this.forgotten.set(p, [...(this.forgotten.get(p) ?? []), { prefix, at: Date.now() }]);
+      return "OK";
+    }
     if (command === "neighbors") return this.neighboursNow(p).slice(0, 5).map(([prefix, secs, snr]) => `${prefix.slice(0, 8)}:${secs}:${snr * 4}`).join("\n");
     if (command === "powersaving") return prefs["powersaving"]!;
     if (command === "powersaving on" || command === "powersaving off") {
@@ -613,19 +622,24 @@ class DemoRadio extends BaseTransport {
   /**
    * A repeater's neighbours as it knows them now. After it calls them, those
    * it heard within the hour answer a second or so apart and are heard anew;
-   * the rest stay silent, and Hill hears two repeaters it did not know.
+   * the rest stay silent, and Hill hears two repeaters it did not know. A
+   * neighbour forgotten is gone until it is heard again.
    */
   private neighboursNow(p: Person): [string, number, number][] {
+    const now = Date.now();
+    const forgotten = this.forgotten.get(p) ?? [];
+    // The listed ones were heard before anything was forgotten.
+    const kept = (prefix: string, heardAt: number) => !forgotten.some((f) => f.at >= heardAt && prefix.startsWith(f.prefix));
     const all = neighboursOf(p);
+    const heard = new Map(all.filter(([prefix]) => kept(prefix, 0)).map((row) => [row[0], row]));
     const at = this.searched.get(p);
-    if (at === undefined) return all;
-    const since = (Date.now() - at) / 1000;
+    if (at === undefined) return [...heard.values()];
+    const since = (now - at) / 1000;
     const answers = all.filter(([, secs]) => secs < 3600);
     if (p.name === "Hill Repeater") answers.splice(1, 0, ["c3a91e7700b2", 0, -4.75], ["5e0f4d21a8c6", 0, 1.5]);
-    const heard = new Map(all.map((row) => [row[0], row]));
     answers.forEach(([prefix, , snr], i) => {
       const delay = 0.8 + i * 0.6;
-      if (since >= delay) heard.set(prefix, [prefix, Math.floor(since - delay), snr]);
+      if (since >= delay && kept(prefix, at + delay * 1000)) heard.set(prefix, [prefix, Math.floor(since - delay), snr]);
     });
     return [...heard.values()];
   }

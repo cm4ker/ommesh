@@ -395,28 +395,32 @@ function useEdgeSwipe(ref: React.RefObject<HTMLElement | null>, enabled: boolean
 
 /**
  * What takes the whole of a desktop's middle: a node's own pages, and the map
- * one of them opens to put the node on, in place of the page it came from.
+ * one of them opens to put the node on, in place of the page it came from. A
+ * profile opened from a node's page, a neighbour's from its list (#83), goes
+ * in the panel beside the page and leaves the page where it was.
  */
-function fullScreen(top: Screen | null): Extract<Screen, { kind: "node" | "pickNodePlace" }> | null {
-  return top?.kind === "node" || top?.kind === "pickNodePlace" ? top : null;
+function fullScreen(stack: Screen[]): Extract<Screen, { kind: "node" | "pickNodePlace" }> | null {
+  const top = stack.at(-1);
+  if (top?.kind === "node" || top?.kind === "pickNodePlace") return top;
+  const under = stack.at(-2);
+  return top?.kind === "profile" && under?.kind === "node" ? under : null;
 }
 
 /** How a desktop lays a section's stack out. */
 function layout(nav: Nav) {
   const stack = nav.stacks[nav.section];
   const top = topOf(nav);
+  if (nav.section === "radio") return { chat: null, full: null, panel: null, beside: false, panelDepth: 0 };
+  const full = fullScreen(stack);
+  // The profile beside a node's page is the panel's only screen: closing it goes back to the page.
+  const beside = full !== null && top !== full;
   if (nav.section === "chats") {
     const chat = stack.find((s): s is Extract<Screen, { kind: "chat" }> => s.kind === "chat") ?? null;
-    const full = fullScreen(top);
-    const panel = !full && top && top.kind !== "chat" ? top : null;
-    return { chat, full, panel, panelDepth: stack.filter((s) => s.kind !== "chat").length };
+    const panel = full ? (beside ? top : null) : top && top.kind !== "chat" ? top : null;
+    return { chat, full, panel, beside, panelDepth: beside ? 1 : stack.filter((s) => s.kind !== "chat").length };
   }
-  if (nav.section === "mesh") {
-    const full = fullScreen(top);
-    const panel: Screen | null = full ? null : top ?? (nav.meshFocus ? { kind: "profile", key: nav.meshFocus } : null);
-    return { chat: null, full, panel, panelDepth: stack.length };
-  }
-  return { chat: null, full: null, panel: null, panelDepth: 0 };
+  const panel: Screen | null = full ? (beside ? top : null) : top ?? (nav.meshFocus ? { kind: "profile", key: nav.meshFocus } : null);
+  return { chat: null, full, panel, beside, panelDepth: beside ? 1 : stack.length };
 }
 
 function Desktop() {
@@ -425,13 +429,16 @@ function Desktop() {
   const [palette, setPalette] = useState(false);
   const [group, setGroup] = useState<string[] | null>(null);
   const tool = useMeshTool();
-  const { chat, full, panel, panelDepth } = layout(nav);
+  const { chat, full, panel, beside, panelDepth } = layout(nav);
   const radioPage = nav.section === "radio" ? (topOf(nav)?.kind === "radio" ? (topOf(nav) as Extract<Screen, { kind: "radio" }>).page : "name") : null;
 
   const closePanel = () => {
-    if (nav.section === "chats") setStack("chats", chat ? [chat] : []);
+    if (beside) back();
+    else if (nav.section === "chats") setStack("chats", chat ? [chat] : []);
     else setStack("mesh", [], { meshFocus: null });
   };
+  // A node's page goes back past the profile beside it.
+  const fullBack = beside ? () => setStack(nav.section, nav.stacks[nav.section].slice(0, -2)) : back;
   const togglePanel = () => {
     if (nav.section !== "chats" || !chat) return;
     if (panel) return closePanel();
@@ -449,17 +456,18 @@ function Desktop() {
   if (nav.section === "chats") {
     list = <ChatList selected={chat?.conversation ?? null} />;
     main = full ? (
-      <ScreenView screen={full} chrome={{ onBack: back }} wide />
+      <ScreenView screen={full} chrome={{ onBack: fullBack }} wide />
     ) : chat ? (
       <ChatView key={chat.conversation} conversation={chat.conversation} chrome={{}} infoOpen={panel !== null} onInfo={togglePanel} />
     ) : (
       <Empty>{t("connect.empty.pickChat")}</Empty>
     );
   } else if (nav.section === "mesh") {
-    const focus = panel?.kind === "profile" ? panel.key : full?.key ?? nav.meshFocus;
+    // The node whose page is open stays picked in the list while a neighbour's profile stands beside it.
+    const focus = full ? full.key : panel?.kind === "profile" ? panel.key : nav.meshFocus;
     list = <MeshList selected={focus ?? null} onOpen={(key) => { setGroup(null); setStack("mesh", [], { meshFocus: key }); }} />;
     main = full ? (
-      <ScreenView screen={full} chrome={{ onBack: back }} wide />
+      <ScreenView screen={full} chrome={{ onBack: fullBack }} wide />
     ) : (
       <MeshMap
         selected={focus ?? null}
@@ -515,7 +523,7 @@ function Desktop() {
             <ToolPanel tool={toolPanel} />
           </div>
         </aside>
-      ) : panel && !full ? (
+      ) : panel ? (
         <aside className="panel">
           <ScreenBoundary key={JSON.stringify(panel)} onBack={closePanel}>
             <ScreenView screen={panel} chrome={panelChrome} wide />

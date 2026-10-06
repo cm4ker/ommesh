@@ -5,13 +5,14 @@ import { t, type Key } from "../../i18n/index.js";
 import { ago } from "../../lib/format.js";
 import { quality } from "../../lib/los.js";
 import { keepSearch, resetNeighbours, searchNeighbours, useNeighbourSearch, type NeighbourSearchState } from "../../lib/neighbourSearch.js";
+import { openProfileFromPage, topOf, useNav } from "../../lib/nav.js";
 import { isAdmin } from "../../lib/nodes.js";
 import { session, useSession } from "../../lib/session.js";
 import { openNeighbours } from "../../lib/toolActions.js";
 import { Button } from "../../ui/Button.js";
 import { Confirm } from "../../ui/Dialog.js";
 import { Avatar } from "../Avatar.js";
-import { AirIcon, CheckIcon, DownIcon, MapIcon, RefreshIcon, TrashIcon } from "../Icons.js";
+import { AirIcon, CheckIcon, ChevronRightIcon, DownIcon, MapIcon, RefreshIcon, TrashIcon } from "../Icons.js";
 
 const ORDERS: { order: number; label: Key }[] = [
   { order: NeighbourOrder.Newest, label: "node.neighbours.newest" },
@@ -39,6 +40,9 @@ export function Neighbours({ contact }: { contact: ContactRecord }) {
   const [error, setError] = useState<{ text: string; at: number } | null>(null);
   const [askReset, setAskReset] = useState(false);
   const admin = isAdmin(state.logins[key]);
+  // On a desktop the profile a row opened stands beside the list, and its row stays marked.
+  const top = topOf(useNav());
+  const beside = top?.kind === "profile" ? top.key : null;
 
   const fetch = async (nextOrder: number, offset: number) => {
     setBusy(offset > 0 ? "more" : "page");
@@ -116,8 +120,9 @@ export function Neighbours({ contact }: { contact: ContactRecord }) {
               {rows.map((r) => {
                 const known = session.contactByPrefix(r.prefix);
                 const isNew = fresh.has(r.prefix);
-                return (
-                  <li key={r.prefix} className={isNew ? "nb-page-row fresh" : "nb-page-row"}>
+                const className = ["nb-page-row", isNew ? "fresh" : "", known && known.key === beside ? "selected" : ""].join(" ");
+                const cells = (
+                  <>
                     <Avatar name={known?.name || r.prefix} type={known?.type ?? 2} size={32} />
                     <span className="row-main">
                       <span className="row-title">
@@ -135,6 +140,23 @@ export function Neighbours({ contact }: { contact: ContactRecord }) {
                         <span className="snr-zero" style={{ left: `${pct(0)}%` }} />
                       </span>
                     </span>
+                  </>
+                );
+                return (
+                  <li key={r.prefix}>
+                    {/* A neighbour in the contacts opens its profile, to sign in and look after it there (#83).
+                        One the radio holds no key of cannot be signed in to, so its row stays still. */}
+                    {known ? (
+                      <button type="button" className={className} onClick={() => openProfileFromPage(known.key)}>
+                        {cells}
+                        <ChevronRightIcon size={14} className="line-chev" />
+                      </button>
+                    ) : (
+                      <div className={className}>
+                        {cells}
+                        <span className="nb-row-end" aria-hidden="true" />
+                      </div>
+                    )}
                   </li>
                 );
               })}

@@ -61,10 +61,10 @@ export function nodePages(type: number): NodePage[] {
 export function Profile({ contactKey, chrome }: { contactKey: string; chrome: Chrome }) {
   const state = useSession();
   const saved = useSavedPasswords();
-  // Beside the map, the node is on it already.
+  // Beside the map, the node is on it already; beside a node's page, which a neighbour's profile opens from, it is not.
   const wide = useWide();
-  const section = useNav().section;
-  const mapBeside = wide && section === "mesh";
+  const nav = useNav();
+  const mapBeside = wide && nav.section === "mesh" && nav.stacks.mesh.at(-2)?.kind !== "node";
   const contact = state.contacts[contactKey];
   const [ask, setAsk] = useState<"rename" | "remove" | "forget" | "reboot" | "signin" | null>(null);
   const online = state.status === "ready";

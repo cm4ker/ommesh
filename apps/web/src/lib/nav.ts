@@ -165,6 +165,17 @@ export function openProfile(key: string, inMesh = false): void {
   else push({ kind: "profile", key });
 }
 
+/**
+ * A node's profile opened from another node's page, a neighbour's from its
+ * list (#83): over the page on a phone, beside it on a desktop, where the
+ * page stays in sight and a second profile takes the place of the first.
+ */
+export function openProfileFromPage(key: string): void {
+  const stack = nav.stacks[nav.section];
+  if (stack.at(-1)?.kind === "profile" && stack.at(-2)?.kind === "node") setStack(nav.section, [...stack.slice(0, -1), { kind: "profile", key }]);
+  else push({ kind: "profile", key });
+}
+
 export function openChannel(index: number): void {
   push({ kind: "channel", index });
 }

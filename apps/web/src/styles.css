@@ -2704,6 +2704,12 @@ html.notices-window #root {
   color: #f1f3f6;
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
   touch-action: none;
+  cursor: pointer;
+}
+/* A sheet too tall to leave room above it: the toast goes to the top of the screen. */
+.toast.top {
+  top: calc(var(--safe-top) + var(--space-3));
+  bottom: auto;
 }
 .toast.short {
   left: 50%;

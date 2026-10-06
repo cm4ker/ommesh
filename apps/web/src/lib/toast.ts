@@ -52,6 +52,28 @@ export function useToast(): Toast | null {
   );
 }
 
+/** The gap between the toast and what it sits by, px. */
+const GAP = 8;
+/** What the top of the screen keeps for a phone's status bar, px. */
+const TOP_ROOM = 56;
+
+/** Where the toast goes: this far from the bottom, px, or the top of the screen. */
+export type ToastSpot = { bottom: number } | "top";
+
+/**
+ * Where the toast sits, from what is on the screen. Over an open sheet it goes above the sheet,
+ * onto the dimmed page, so it covers none of the rows it is about; a sheet too tall to leave
+ * room there sends it to the top of the screen. Else it goes just above a field being typed in
+ * at the bottom of the screen (a chat, a console), so it covers no message. Null leaves it
+ * where the stylesheet puts it, above the tab bar. Tops and heights are px.
+ */
+export function toastSpot(screen: { height: number; toast: number; sheetTop: number | null; fieldTop: number | null }): ToastSpot | null {
+  const { height, toast, sheetTop, fieldTop } = screen;
+  if (sheetTop !== null) return sheetTop - GAP - toast >= TOP_ROOM ? { bottom: height - sheetTop + GAP } : "top";
+  if (fieldTop !== null) return { bottom: height - fieldTop + GAP };
+  return null;
+}
+
 /** Runs an action, says what it did, or why it failed. */
 export async function act(action: () => Promise<unknown>, done?: string): Promise<boolean> {
   try {

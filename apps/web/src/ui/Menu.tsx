@@ -9,7 +9,7 @@ import { createPortal } from "react-dom";
 import { CheckIcon } from "../components/Icons.js";
 import type { MenuAt } from "../lib/press.js";
 import { useWide } from "../lib/layout.js";
-import { dismissToast, useToast } from "../lib/toast.js";
+import { dismissToast, toastSpot, useToast, type ToastSpot } from "../lib/toast.js";
 import { AirMark } from "./List.js";
 import { Sheet } from "./Sheet.js";
 
@@ -180,18 +180,17 @@ function Popover({ menu }: { menu: MenuState }) {
   );
 }
 
-/**
- * Where the toast sits: just above the field being typed in, when one is
- * at the bottom of the screen (a chat, a console), so it covers no message;
- * else where the stylesheet puts it, above the tab bar. A distance from the
- * bottom, px, or null.
- */
-function aboveComposer(): number | null {
-  const fields = [...document.querySelectorAll<HTMLElement>(".compose, .composer")];
-  const low = fields.map((el) => el.getBoundingClientRect()).filter((r) => r.height > 0 && r.bottom > window.innerHeight - 160);
-  if (low.length === 0) return null;
-  const top = Math.min(...low.map((r) => r.top));
-  return window.innerHeight - top + 8;
+/** Sheets on screen, not the one going away. */
+const SHEETS = ".sheet-layer:not(.leaving) > .sheet";
+
+/** Where the toast goes over what is on the screen now; see `toastSpot`. */
+function spotFor(toast: HTMLElement | null): ToastSpot | null {
+  const tops = (selector: string, low = false) => {
+    const rects = [...document.querySelectorAll<HTMLElement>(selector)].map((el) => el.getBoundingClientRect());
+    const shown = rects.filter((r) => r.height > 0 && (!low || r.bottom > window.innerHeight - 160));
+    return shown.length > 0 ? Math.min(...shown.map((r) => r.top)) : null;
+  };
+  return toastSpot({ height: window.innerHeight, toast: toast?.offsetHeight ?? 0, sheetTop: tops(SHEETS), fieldTop: tops(".compose, .composer", true) });
 }
 
 /** Seconds left for the action, and a ring that runs out with them. */
@@ -215,14 +214,30 @@ function Countdown({ ms }: { ms: number }) {
 
 export function ToastHost() {
   const toast = useToast();
-  const [bottom, setBottom] = useState<number | null>(null);
+  const [spot, setSpot] = useState<ToastSpot | null>(null);
+  const box = useRef<HTMLDivElement>(null);
   const start = useRef<number | null>(null);
+  // A sheet that opens, closes, slides in or changes its height under the toast moves it.
   useLayoutEffect(() => {
     if (!toast) return;
-    const place = () => setBottom(aboveComposer());
-    place();
+    const place = () => setSpot(spotFor(box.current));
+    const sizes = new ResizeObserver(place);
+    const watch = () => {
+      sizes.disconnect();
+      for (const sheet of document.querySelectorAll<HTMLElement>(SHEETS)) sizes.observe(sheet);
+      place();
+    };
+    const layers = new MutationObserver(watch);
+    layers.observe(document.body, { childList: true });
+    watch();
     window.addEventListener("resize", place);
-    return () => window.removeEventListener("resize", place);
+    document.addEventListener("animationend", place);
+    return () => {
+      sizes.disconnect();
+      layers.disconnect();
+      window.removeEventListener("resize", place);
+      document.removeEventListener("animationend", place);
+    };
   }, [toast]);
   if (!toast) return null;
   // A short note with nothing more to it hugs its text; the rest take the width.
@@ -230,11 +245,13 @@ export function ToastHost() {
   const icon = toast.tone === "error" ? "!" : toast.action ? "✓" : null;
   return createPortal(
     <div
+      ref={box}
       key={toast.id}
-      className={["toast", toast.tone, short ? "short" : ""].join(" ")}
+      className={["toast", toast.tone, short ? "short" : "", spot === "top" ? "top" : ""].join(" ")}
       role="status"
-      style={bottom !== null ? { bottom } : undefined}
-      // Pulled down, it goes.
+      style={spot && spot !== "top" ? { bottom: spot.bottom } : undefined}
+      // A tap puts it away, and so does a pull down.
+      onClick={dismissToast}
       onPointerDown={(e) => (start.current = e.clientY)}
       onPointerMove={(e) => {
         if (start.current !== null && e.clientY - start.current > 24) {
@@ -258,7 +275,9 @@ export function ToastHost() {
         <button
           type="button"
           className="toast-action"
-          onClick={() => {
+          onClick={(e) => {
+            // The action may say what it did in a toast of its own, which the tap must not put away.
+            e.stopPropagation();
             const run = toast.action!.run;
             dismissToast();
             run();

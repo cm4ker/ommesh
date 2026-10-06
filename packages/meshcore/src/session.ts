@@ -389,6 +389,8 @@ export interface PersistedState {
   readingHistory?: Record<string, Record<string, ReadingSample[]>>;
   /** Absent in history saved before routes could be pinned or timed out. */
   routing?: RoutingSettings;
+  /** Absent in history saved before a node's console was kept over a restart. */
+  consoles?: Record<string, ConsoleEntry[]>;
 }
 
 /** History brought in from a file, as `importHistory` takes it. */
@@ -753,8 +755,20 @@ function guessPathSince(lastMod: number, now: number): number {
 
 /** The part of the state that is kept per radio. */
 function historyOf(state: SessionState): PersistedState {
-  const { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing } = state;
-  return { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing };
+  const { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles } = state;
+  return { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles };
+}
+
+/**
+ * The consoles as they were kept. A command that was still in the queue or on the air when the
+ * app closed will hear nothing now: it shows as gone unanswered, and can be sent again.
+ */
+function restoredConsoles(kept: Record<string, ConsoleEntry[]> | undefined): Record<string, ConsoleEntry[]> {
+  const consoles: Record<string, ConsoleEntry[]> = {};
+  for (const [key, list] of Object.entries(kept ?? {})) {
+    consoles[key] = list.map((e) => (e.status === "queued" || e.status === "waiting" ? { ...e, status: "timeout" } : e));
+  }
+  return consoles;
 }
 
 /** How long a removed contact is kept to be put back. */
@@ -1100,7 +1114,8 @@ export class MeshSession {
       "statusHistory" in patch ||
       "batteryHistory" in patch ||
       "readingHistory" in patch ||
-      "routing" in patch
+      "routing" in patch ||
+      "consoles" in patch
     ) {
       this.scheduleSave();
     }
@@ -1312,6 +1327,7 @@ export class MeshSession {
       batteryHistory: persisted?.batteryHistory ?? {},
       readingHistory: persisted?.readingHistory ?? {},
       routing: persisted?.routing ?? EMPTY.routing,
+      consoles: restoredConsoles(persisted?.consoles),
     };
   }
 
@@ -3494,9 +3510,12 @@ export class MeshSession {
     if (this.remoteEvent({ kind: "cli", prefix, tag, text: body, stamp })) return;
     const contact = this.contactByPrefix(prefix);
     const key = contact?.key ?? prefix;
-    const masked = tag !== null && this.maskedTags.has(`${prefix}:${tag}`);
+    // Tags are drawn afresh each time the app starts, so a tag kept from before can be in the
+    // console twice: a late reply is for the newest.
+    const late = tag === null ? undefined : this.state.consoles[key]?.findLast((e) => e.tag === tag && e.status !== "done");
+    // The masked tags go when the app closes; a command kept from before shows by its text that it was masked.
+    const masked = tag !== null && (this.maskedTags.has(`${prefix}:${tag}`) || !!late?.command.includes("••"));
     const reply = masked ? maskReply(body) : body;
-    const late = tag === null ? undefined : this.state.consoles[key]?.find((e) => e.tag === tag && e.status !== "done");
     if (late) {
       this.patchConsole(key, late.id, { status: "done", reply, repliedAt: this.now(), error: null });
       return;

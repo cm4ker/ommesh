@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { Fragment, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from "react";
 import type { ConsoleEntry, ContactRecord } from "@meshnet/meshcore";
 import { t } from "../../i18n/index.js";
 import { suggest } from "../../lib/cli.js";
-import { timeOfDay } from "../../lib/format.js";
+import { dayLabel, timeOfDay } from "../../lib/format.js";
 import { hasSavedPassword, readPassword } from "../../lib/secrets.js";
 import { session, useSession } from "../../lib/session.js";
 import { toast } from "../../lib/toast.js";
@@ -15,6 +15,13 @@ import { SignIn } from "./SignIn.js";
 
 /** Commands that take a node down, move it, or lock people out. */
 const DANGEROUS = /^(reboot|clkreboot|erase|start ota|poweroff|shutdown|set radio |password |set prv\.key|set guest\.password|setperm |set wifi\.(ssid|pwd) )/;
+
+/** When the app started; the console keeps what came before it. */
+const STARTED = Date.now();
+
+function sameDay(a: number, b: number): boolean {
+  return new Date(a).toDateString() === new Date(b).toDateString();
+}
 
 export function Console({ contact }: { contact: ContactRecord }) {
   const state = useSession();
@@ -30,8 +37,10 @@ export function Console({ contact }: { contact: ContactRecord }) {
   const [asking, setAsking] = useState(false);
   const [relearning, setRelearning] = useState(false);
   const [focused, setFocused] = useState(false);
-  // The last command went unanswered: the node may no longer know its way back to us.
-  const lost = entries.at(-1)?.status === "timeout";
+  // The last command went unanswered: the node may no longer know its way back to us. One kept
+  // from before the app started says nothing of the way now.
+  const last = entries.at(-1);
+  const lost = last?.status === "timeout" && last.at >= STARTED;
 
   /** A sign-in by flood with the saved password, or the sheet to type one. */
   const relearn = async () => {
@@ -123,8 +132,12 @@ export function Console({ contact }: { contact: ContactRecord }) {
   return (
     <>
       <div className="console" ref={log} aria-live="polite">
-        {entries.map((entry) => (
-          <Entry key={entry.id} entry={entry} onRetry={() => again(entry.command)} onMenu={(e) => menuOf(entry, e)} />
+        {entries.map((entry, i) => (
+          <Fragment key={entry.id}>
+            {/* The console is kept from one day to the next: each day opens with its date, as in a chat. */}
+            {i === 0 || !sameDay(entries[i - 1]!.at, entry.at) ? <div className="day">{dayLabel(entry.at / 1000)}</div> : null}
+            <Entry entry={entry} onRetry={() => again(entry.command)} onMenu={(e) => menuOf(entry, e)} />
+          </Fragment>
         ))}
         {lost ? (
           <div className="c-wayback">

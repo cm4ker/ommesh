@@ -5329,6 +5329,13 @@ button.nb-page-row:focus-visible {
   font-size: var(--text-sm);
   line-height: 1.55;
 }
+/* A day's date in the console, written as the chat writes it; the log's gap spaces it. */
+.console .day {
+  flex: none;
+  margin: 0 auto;
+  font-family: var(--font-ui);
+  line-height: normal;
+}
 .c-entry {
   display: flex;
   flex-direction: column;

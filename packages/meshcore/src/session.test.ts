@@ -1844,6 +1844,60 @@ test("a console reply that comes after the wait ran out still lands on its comma
   assert.equal(entry?.reply, "v1.17.1 (Build: 12-Sep-2026)");
 });
 
+/** A session over what `session` has saved so far, as the app finds it when started again. */
+async function restarted(session: MeshSession, storage: MemoryStorage): Promise<{ radio: ScriptedRadio; session: MeshSession }> {
+  await session.flush();
+  // The app is closed with whatever was on the air still on it: what was saved is all the next start has.
+  const kept = new MemoryStorage();
+  kept.saved = structuredClone(storage.saved);
+  await session.disconnect();
+  const radio = new ScriptedRadio();
+  radio.contacts = [contactFrame(HILL, "Hill", 10, 2)];
+  const next = new MeshSession({ storage: kept, now: () => 1_700_000_000_000 });
+  await next.connect(radio);
+  return { radio, session: next };
+}
+
+test("a console is kept over a restart, and a command left on the air comes back unanswered", async () => {
+  const storage = new MemoryStorage();
+  const { radio, session } = await nodeSession({ storage });
+  const ver = session.runCli(HILL_KEY, "ver");
+  await sentOne(radio, Cmd.SendTxtMsg);
+  const tag = sentText(radio.sent.find((f) => f[0] === Cmd.SendTxtMsg)!).slice(0, 2);
+  radio.queue.push(cliFrame(HILL, `${tag}|v1.17.1`));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await ver;
+  void session.runCli(HILL_KEY, "clock").catch(() => undefined);
+  await sentOne(radio, Cmd.SendTxtMsg, 2);
+
+  const next = (await restarted(session, storage)).session;
+  assert.deepEqual(
+    next.getState().consoles[HILL_KEY]?.map((e) => [e.command, e.status, e.reply]),
+    [
+      ["ver", "done", "v1.17.1"],
+      ["clock", "timeout", null],
+    ],
+  );
+});
+
+test("a late reply to a masked command kept over a restart stays masked", async () => {
+  const storage = new MemoryStorage();
+  const { radio, session } = await nodeSession({ storage });
+  void session.writeNodeSetting(HILL_KEY, "password", "hunter22", "password hunter22", { mask: "password ••••••" }).catch(() => undefined);
+  await sentOne(radio, Cmd.SendTxtMsg);
+  const tag = sentText(radio.sent.find((f) => f[0] === Cmd.SendTxtMsg)!).slice(0, 2);
+
+  const next = await restarted(session, storage);
+  // The radio held on to the reply while the app was closed.
+  next.radio.queue.push(cliFrame(HILL, `${tag}|password now: hunter22`));
+  next.radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(5);
+  const entry = next.session.getState().consoles[HILL_KEY]![0]!;
+  assert.equal(entry.command, "password ••••••");
+  assert.equal(entry.status, "done");
+  assert.equal(entry.reply, "password now: ••••••");
+});
+
 test("a password change shows in the console without the password", async () => {
   const { radio, session } = await nodeSession();
   const change = session.writeNodeSetting(HILL_KEY, "password", "hunter22", "password hunter22", { mask: "password ••••••" });

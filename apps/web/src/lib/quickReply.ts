@@ -4,7 +4,7 @@
  * and, when it is too long for one message, in parts.
  */
 
-import { parseConversation } from "@meshnet/meshcore";
+import { AdvType, parseConversation } from "@meshnet/meshcore";
 import { ceilingOf, costOf, headerBytes, pathBytes, splitParts } from "./composer.js";
 import { getLookalikePrefs, packLookalikes } from "./lookalikes.js";
 import { session } from "./session.js";
@@ -18,7 +18,8 @@ export async function quickReply(conversation: string, text: string): Promise<vo
   const pack = (t: string) => packLookalikes(t, getLookalikePrefs());
   const prefix = target.kind === "channel" ? `${state.self?.name ?? ""}: ` : "";
   const header = target.kind === "channel" ? headerBytes("channel") : headerBytes("direct", contact ? pathBytes(contact.outPathLen) : 0);
-  const cost = costOf(body, { pack, prefix, ceiling: ceilingOf(target.kind === "channel" ? "channel" : "direct"), header, radio: null });
+  const kind = target.kind === "channel" ? "channel" : contact?.type === AdvType.Room ? "room" : "direct";
+  const cost = costOf(body, { pack, prefix, ceiling: ceilingOf(kind), header, radio: null });
   if (cost.over <= 0) {
     await session.sendText(conversation, pack(body), { original: body });
     return;

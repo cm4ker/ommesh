@@ -48,6 +48,9 @@ test("block edges sit where the time, the flags and the text cross 16 bytes", ()
   assert.deepEqual(blockEdges(ceilingOf("direct")), [11, 27, 43, 59, 75, 91, 107, 123, 139, 155]);
   // A channel ends where its tenth block does.
   assert.deepEqual(blockEdges(ceilingOf("channel")), [11, 27, 43, 59, 75, 91, 107, 123, 139]);
+  // A room keeps 151 bytes of a post, still within ten blocks.
+  assert.equal(ceilingOf("room"), 151);
+  assert.deepEqual(blockEdges(ceilingOf("room")), [11, 27, 43, 59, 75, 91, 107, 123, 139]);
 });
 
 test("the runs under the field mark mentions and what lies past the budget", () => {

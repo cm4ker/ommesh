@@ -21,6 +21,12 @@ export const MAX_TEXT_LEN = 160;
  * length every attempt is a packet of its own.
  */
 export const DIRECT_TEXT_LEN = MAX_TEXT_LEN - 2;
+/**
+ * `MAX_POST_TEXT_LEN` of the room server (`simple_room_server/MyMesh.h`): the
+ * longest post it keeps, room being left for the stamp, flags and author it
+ * sends each post on with. It cuts a longer one silently, after acknowledging it whole.
+ */
+export const ROOM_TEXT_LEN = MAX_TEXT_LEN - 9;
 export const OUT_PATH_UNKNOWN = 0xff;
 /**
  * The protocol version this client claims in `CMD_DEVICE_QUERY`. Three is where

@@ -1304,6 +1304,12 @@ function sentText(frame: Uint8Array): string {
   return new TextDecoder().decode(frame.subarray(13));
 }
 
+test("a room takes what it keeps of a post, a person room for the attempt number", async () => {
+  const { session } = await nodeSession();
+  assert.equal(session.textBudget(contactConversation(ROOM_KEY)), 151);
+  assert.equal(session.textBudget(contactConversation(bobKey())), 158);
+});
+
 test("remote requests wait their turn: the second goes out only after the first is answered", async () => {
   const { radio, session } = await nodeSession();
   const login = session.login(HILL_KEY, "secret");

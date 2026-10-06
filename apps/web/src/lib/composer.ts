@@ -10,7 +10,7 @@
  * sealed with a two-byte MAC.
  */
 
-import { CHANNEL_TEXT_LEN, DIRECT_TEXT_LEN } from "@meshnet/meshcore";
+import { CHANNEL_TEXT_LEN, DIRECT_TEXT_LEN, ROOM_TEXT_LEN } from "@meshnet/meshcore";
 import { textWithPlaces } from "./place.js";
 
 const encoder = new TextEncoder();
@@ -101,10 +101,10 @@ export function costOf(text: string, options: { pack: (text: string) => string; 
 /**
  * What the prefix and the text may take together. On a channel, ten blocks,
  * so that a repeater's copy can be heard; in a direct message, room for the
- * attempt number later attempts carry.
+ * attempt number later attempts carry; in a room, what the room keeps of a post.
  */
-export function ceilingOf(kind: "direct" | "channel"): number {
-  return kind === "channel" ? CHANNEL_TEXT_LEN : DIRECT_TEXT_LEN;
+export function ceilingOf(kind: "direct" | "room" | "channel"): number {
+  return kind === "channel" ? CHANNEL_TEXT_LEN : kind === "room" ? ROOM_TEXT_LEN : DIRECT_TEXT_LEN;
 }
 
 /** Where on a scale of `ceiling` bytes of prefix and text another block begins: the meter's ticks. */

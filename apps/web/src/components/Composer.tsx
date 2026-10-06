@@ -64,7 +64,7 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   const prefix = (target.kind === "channel" ? `${self?.name ?? ""}: ` : "") + mention + (line ? `${line} ` : "");
   const header = target.kind === "channel" ? headerBytes("channel") : headerBytes("direct", contact ? pathBytes(contact.outPathLen) : 0);
   const shape = self ? { spreadingFactor: self.spreadingFactor, bandwidthHz: self.bandwidthHz, codingRate: self.codingRate } : null;
-  const ceiling = ceilingOf(target.kind === "channel" ? "channel" : "direct");
+  const ceiling = ceilingOf(target.kind === "channel" ? "channel" : contact?.type === AdvType.Room ? "room" : "direct");
   const cost = costOf(text, { pack, prefix, ceiling, header, radio: shape });
   const body = text.trim();
   const head = quoted.current && text.startsWith(quoted.current) ? quoted.current : "";

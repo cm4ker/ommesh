@@ -14,7 +14,7 @@ import { ByteReader, bytesEqual, fromHex, pathByteLength, toHex, unixNow } from 
 import { neighbourSearchMs, replyBudgetMs, sealedBytes, traceBudgetMs, type ReplySize } from "./protocol/airtime.js";
 import { CHANNEL_TEXT_LEN, groupTextPayload, heardGroupTextPayload, relaysAudible } from "./protocol/group.js";
 import { PayloadType, parseRawPacket, type RawPacket } from "./protocol/packet.js";
-import { AclRole, AdvType, Cmd, ContactFlag, ControlType, DIRECT_TEXT_LEN, ErrCode, MAX_TEXT_LEN, NeighbourOrder, PUB_KEY_PREFIX_SIZE, StatsType, TxtType } from "./protocol/codes.js";
+import { AclRole, AdvType, Cmd, ContactFlag, ControlType, DIRECT_TEXT_LEN, ErrCode, MAX_TEXT_LEN, NeighbourOrder, PUB_KEY_PREFIX_SIZE, ROOM_TEXT_LEN, StatsType, TxtType } from "./protocol/codes.js";
 import {
   accessListRequest,
   avgMinMaxRequest,
@@ -2779,6 +2779,7 @@ export class MeshSession {
   /** How many bytes of text a message to this conversation may carry. */
   textBudget(conversation: string): number {
     const target = parseConversation(conversation);
+    if (target.kind === "contact") return this.state.contacts[target.key]?.type === AdvType.Room ? ROOM_TEXT_LEN : DIRECT_TEXT_LEN;
     if (target.kind !== "channel") return DIRECT_TEXT_LEN;
     const name = this.state.self?.name ?? "";
     return CHANNEL_TEXT_LEN - new TextEncoder().encode(name).length - 2;

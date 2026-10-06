@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { channelConversation, contactConversation, isConversationType, type ContactRecord } from "@meshnet/meshcore";
+import { channelConversation, contactConversation, isConversationType, KEYLESS_INDEX, type ContactRecord } from "@meshnet/meshcore";
 import { askChat } from "../lib/chatAsk.js";
 import { messagesIn } from "../lib/conversations.js";
 import { nameOfHash, spreadOf } from "../lib/echoes.js";
@@ -28,7 +28,7 @@ export function ChannelWriters({ index, chrome }: { index: number; chrome: Chrom
   const shown = findWriters(writers, query);
   const now = Date.now();
 
-  if (!channel) return <Gone chrome={chrome} title={t("chats.writers.title")} text={t("chats.channel.gone")} />;
+  if (!channel && index !== KEYLESS_INDEX) return <Gone chrome={chrome} title={t("chats.writers.title")} text={t("chats.channel.gone")} />;
 
   return (
     <div className="screen">

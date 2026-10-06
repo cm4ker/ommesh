@@ -10,6 +10,7 @@ const KNOWN: Record<string, Key> = {
   "not connected": "common.error.notConnected",
   "unknown contact": "common.error.unknownContact",
   "this sender is not in the contacts yet": "common.error.senderNotContact",
+  "this channel is not on the radio": "common.error.channelGone",
 };
 
 /** An error as the reader should read it. */

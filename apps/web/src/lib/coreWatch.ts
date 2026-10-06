@@ -27,6 +27,7 @@ function words() {
     heardFirst: t("notices.heardFirst"),
     unknown: template("notices.unknown"),
     channel: template("notices.channel"),
+    keyless: t("notices.keyless"),
     mentioned: template("notices.mentioned"),
     mentionedIn: template("notices.mentionedIn"),
     inChat: template("notices.inChat"),

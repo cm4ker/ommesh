@@ -8,6 +8,7 @@
   "heardFirstAt": "Слышно впервые: {distance}, {direction}.",
   "unknown": "Неизвестный {prefix}",
   "channel": "Канал {index}",
+  "keyless": "Без ключа",
   "mentioned": "{who} упоминает вас",
   "mentionedIn": "{who} упоминает вас в {chat}",
   "inChat": "{sender} в {chat}",

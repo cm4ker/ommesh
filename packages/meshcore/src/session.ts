@@ -546,6 +546,21 @@ export function channelConversation(index: number): string {
   return `ch:${index}`;
 }
 
+/**
+ * The chat of messages sent without a key. A radio sends with the all-zero
+ * key of an empty slot when somebody writes in a channel it no longer has,
+ * and every radio with a free slot takes such a message in, since the
+ * firmware matches empty slots too (`BaseChatMesh::searchChannelsByHash`).
+ * Each radio names its own first free slot, so they all go to this one chat.
+ */
+export const KEYLESS_INDEX = -1;
+export const KEYLESS_CONVERSATION = channelConversation(KEYLESS_INDEX);
+
+/** A slot that holds no channel: no name and the all-zero key. */
+function isEmptySlot(name: string, secret: string): boolean {
+  return name === "" && /^0+$/.test(secret);
+}
+
 export function parseConversation(id: string): { kind: "contact"; key: string } | { kind: "channel"; index: number } | { kind: "prefix"; prefix: string } {
   if (id.startsWith("c:")) return { kind: "contact", key: id.slice(2) };
   if (id.startsWith("ch:")) return { kind: "channel", index: Number(id.slice(3)) };
@@ -1916,7 +1931,7 @@ export class MeshSession {
       try {
         const ch = await client.getChannel(i);
         const secret = toHex(ch.secret);
-        if (ch.name === "" && /^0+$/.test(secret)) continue;
+        if (isEmptySlot(ch.name, secret)) continue;
         channels.push({ index: i, name: ch.name, secret });
       } catch (error) {
         if (error instanceof MeshCoreError) break;
@@ -2045,7 +2060,7 @@ export class MeshSession {
           }
           retries = 0;
           if (!frame) break;
-          this.receive(frame);
+          await this.receive(frame);
         }
       } while (this.syncQueued);
     } finally {
@@ -2053,7 +2068,7 @@ export class MeshSession {
     }
   }
 
-  private receive(frame: NonNullable<Awaited<ReturnType<MeshCoreClient["syncNextMessage"]>>>): void {
+  private async receive(frame: NonNullable<Awaited<ReturnType<MeshCoreClient["syncNextMessage"]>>>): Promise<void> {
     const now = this.now();
     let message: MessageRecord;
     if (frame.kind === "contactMessage") {
@@ -2103,7 +2118,7 @@ export class MeshSession {
       const { sender, text } = splitChannelText(frame.text);
       message = {
         id: newId(now),
-        conversation: channelConversation(frame.channelIndex),
+        conversation: await this.channelMessageConversation(frame.channelIndex),
         direction: "in",
         text,
         sender,
@@ -2140,10 +2155,39 @@ export class MeshSession {
       }
     }
     if (frame.kind === "channelMessage") {
-      void this.findChannelCopies(message.id, frame.channelIndex, frame.timestamp, frame.txtType, frame.text);
+      void this.findChannelCopies(message.id, parseConversation(message.conversation), frame.timestamp, frame.txtType, frame.text);
     } else if (frame.pathLen !== null && message.senderPrefix) {
       this.findDirectCopies(message.id, toHex(frame.senderPrefix), frame.pathLen);
     }
+  }
+
+  /**
+   * The chat a channel message goes to. The radio names the channel by its
+   * slot; a slot not in the list is read first, since a channel may have been
+   * added while the app was away. An empty one means the message came without
+   * a key (see KEYLESS_INDEX).
+   */
+  private async channelMessageConversation(index: number): Promise<string> {
+    const client = this.client;
+    if (!client || this.state.channels.some((c) => c.index === index)) return channelConversation(index);
+    try {
+      const ch = await client.getChannel(index);
+      const secret = toHex(ch.secret);
+      if (isEmptySlot(ch.name, secret)) return KEYLESS_CONVERSATION;
+      const channels = this.state.channels.filter((c) => c.index !== index).concat({ index, name: ch.name, secret });
+      channels.sort((a, b) => a.index - b.index);
+      this.set({ channels });
+    } catch (error) {
+      this.log("error", `cannot read channel slot ${index}: ${(error as Error).message}`);
+    }
+    return channelConversation(index);
+  }
+
+  /** The key a channel's messages are sealed with: its own, or the empty slot's zeros for the chat without one. */
+  private channelSecret(index: number): Uint8Array | null {
+    if (index === KEYLESS_INDEX) return new Uint8Array(16);
+    const channel = this.state.channels.find((c) => c.index === index);
+    return channel ? fromHex(channel.secret) : null;
   }
 
   // ---- the copies the radio heard ----
@@ -2156,11 +2200,11 @@ export class MeshSession {
   // can be worked out exactly; a direct message, sealed with a key this side
   // does not hold, by who it is to and from and how far it came.
 
-  private async findChannelCopies(id: string, channelIndex: number, timestamp: number, txtType: number, text: string): Promise<void> {
-    const channel = this.state.channels.find((c) => c.index === channelIndex);
-    if (!channel) return;
+  private async findChannelCopies(id: string, target: ReturnType<typeof parseConversation>, timestamp: number, txtType: number, text: string): Promise<void> {
+    const secret = target.kind === "channel" ? this.channelSecret(target.index) : null;
+    if (!secret) return;
     try {
-      const payload = await heardGroupTextPayload(fromHex(channel.secret), timestamp, txtType, text);
+      const payload = await heardGroupTextPayload(secret, timestamp, txtType, text);
       this.adoptCopies(id, toHex(payload));
     } catch (error) {
       this.log("echo", `cannot work out the payload: ${(error as Error).message}`);
@@ -2382,6 +2426,8 @@ export class MeshSession {
   ): Promise<void> {
     try {
       if (target.kind === "channel") {
+        // A slot with no channel sends with the all-zero key, for every radio around to read (see KEYLESS_INDEX).
+        if (!this.state.channels.some((c) => c.index === target.index)) throw new Error("this channel is not on the radio");
         await this.watchEchoes(message, target.index);
         await client.sendChannelTextMessage(target.index, message.text, {
           timestamp: message.timestamp,

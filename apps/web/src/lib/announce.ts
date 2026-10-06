@@ -29,8 +29,8 @@
  * radio or a notification centre.
  */
 
-import { AdvType, channelConversation, type MessageRecord, type SessionState } from "@meshnet/meshcore";
-import { channelAccess, type ChannelAccess } from "./channels.js";
+import { AdvType, type MessageRecord, type SessionState } from "@meshnet/meshcore";
+import { conversationAccess, type ChannelAccess } from "./channels.js";
 import { titleOf } from "./conversations.js";
 import { t } from "../i18n/index.js";
 import { isDirect, mentionsMe, type NoticeKind } from "./noticePrefs.js";
@@ -46,7 +46,7 @@ export interface Face {
   name: string;
   /** The node's advert type; a person's radio when not given. */
   type?: number;
-  /** A channel, drawn as "#" when anyone can read it and as a lock when it is private. */
+  /** A channel, drawn as "#" when anyone can read it, as a lock when it is private and as an open lock without a key. */
   channel?: ChannelAccess;
 }
 
@@ -136,7 +136,7 @@ export function conversationNotice(state: SessionState, conversation: string, ke
 
 /** A chat's own circle: a channel's "#" or lock, a room's or a person's by their advert. */
 function chatFace(state: SessionState, conversation: string, title: string): Face {
-  if (conversation.startsWith("ch:")) return { name: title, channel: channelAccess(state.channels.find((c) => channelConversation(c.index) === conversation)) };
+  if (conversation.startsWith("ch:")) return { name: title, channel: conversationAccess(conversation, state.channels) };
   const contact = conversation.startsWith("c:") ? state.contacts[conversation.slice(2)] : undefined;
   return { name: title, type: contact?.type ?? AdvType.Chat };
 }

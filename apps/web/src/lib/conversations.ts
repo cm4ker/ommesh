@@ -6,6 +6,7 @@
 
 import {
   channelConversation,
+  KEYLESS_INDEX,
   contactConversation,
   parseConversation,
   TxtType,
@@ -74,7 +75,7 @@ export function summarize(state: SessionState): ConversationSummary[] {
       rows.push({
         id,
         kind: "channel",
-        title: t("chats.conversation.channel", { index: target.index }),
+        title: channelTitle(target.index),
         preview: preview(m, "channel"),
         lastAt: placedAt(m),
         unread: state.unread[id] ?? 0,
@@ -204,11 +205,16 @@ function dayNumber(unixSeconds: number): number {
   return date.getFullYear() * 512 + date.getMonth() * 32 + date.getDate();
 }
 
+/** A channel chat's name when its slot holds no channel: its number, or the chat of messages without a key. */
+function channelTitle(index: number): string {
+  return index === KEYLESS_INDEX ? t("chats.conversation.keyless") : t("chats.conversation.channel", { index });
+}
+
 export function titleOf(state: SessionState, conversation: string): string {
   const target = parseConversation(conversation);
   if (target.kind === "channel") {
     const channel = state.channels.find((c) => c.index === target.index);
-    return channel?.name || t("chats.conversation.channel", { index: target.index });
+    return channel?.name || channelTitle(target.index);
   }
   if (target.kind === "contact") return (state.contacts[target.key] ?? state.removed[target.key]?.contact)?.name || target.key.slice(0, 12);
   return t("chats.conversation.unknown", { prefix: target.prefix });

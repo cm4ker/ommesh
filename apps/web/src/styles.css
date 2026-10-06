@@ -7906,6 +7906,10 @@ button.hop {
 .not-on-radio.compact {
   margin: 0;
 }
+/* A chat that cannot be written in (a channel gone, messages without a key): its one action keeps to its own width. */
+.no-channel .button {
+  align-self: flex-start;
+}
 
 /* The head of a way a check found round a break: a line, not a figure. */
 .check-result b.found-head {

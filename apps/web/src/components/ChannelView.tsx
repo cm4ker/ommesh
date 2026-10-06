@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { channelConversation, fromHex } from "@meshnet/meshcore";
+import { channelConversation, fromHex, KEYLESS_CONVERSATION, KEYLESS_INDEX } from "@meshnet/meshcore";
 import { channelAccess } from "../lib/channels.js";
 import { messagesIn } from "../lib/conversations.js";
 import { openConversation, openWriters } from "../lib/nav.js";
 import { session, useSession } from "../lib/session.js";
 import { act, toast } from "../lib/toast.js";
-import { writersIn } from "../lib/writers.js";
+import { writersIn, type Writer } from "../lib/writers.js";
 import { Confirm } from "../ui/Dialog.js";
 import { ActionRow, Block, Group, LinkRow } from "../ui/List.js";
 import { Avatar } from "./Avatar.js";
@@ -25,6 +25,7 @@ export function ChannelView({ index, chrome }: { index: number; chrome: Chrome }
 
   useEffect(() => setName(channel?.name ?? ""), [channel?.name]);
 
+  if (index === KEYLESS_INDEX) return <KeylessView chrome={chrome} writers={writers} />;
   if (!channel) return <Gone chrome={chrome} title={t("chats.channel.title")} text={t("chats.channel.gone")} />;
 
   const rename = () => {
@@ -102,6 +103,63 @@ export function ChannelView({ index, chrome }: { index: number; chrome: Chrome }
         onConfirm={async () => {
           setRemoving(false);
           if (await act(() => session.clearChannel(channel.index), t("chats.channel.removed"))) openConversation(null);
+        }}
+      />
+    </div>
+  );
+}
+
+/** The chat of messages sent without a key: where they come from, its notices, who wrote, and deleting it. */
+function KeylessView({ chrome, writers }: { chrome: Chrome; writers: Writer[] }) {
+  const [deleting, setDeleting] = useState(false);
+  const title = t("chats.conversation.keyless");
+  return (
+    <div className="screen">
+      <ScreenHead chrome={chrome}>
+        <span className="screen-name">{t("chats.keyless.head")}</span>
+      </ScreenHead>
+      <div className="screen-scroll">
+        <div className="hero">
+          <Avatar name={title} channel="keyless" size={68} />
+          <h1>{title}</h1>
+          <span className="muted">{t("chats.keyless.subtitle")}</span>
+        </div>
+        <p className="group-note">{t("chats.keyless.about")}</p>
+        <ChatNotices conversation={KEYLESS_CONVERSATION} direct={false} />
+        {writers.length > 0 ? (
+          <Group>
+            <LinkRow
+              label={t("chats.channel.writers")}
+              value={
+                <span className="writers-row-value">
+                  <span className="faces" aria-hidden="true">
+                    {writers.slice(0, 3).map((w) => (
+                      <Avatar key={`${w.mine}:${w.name}`} name={w.name} size={22} />
+                    ))}
+                  </span>
+                  {writers.length}
+                </span>
+              }
+              onClick={() => openWriters(KEYLESS_INDEX)}
+            />
+          </Group>
+        ) : null}
+        <Group>
+          <ActionRow label={t("chats.row.deleteChat")} danger onClick={() => setDeleting(true)} />
+        </Group>
+      </div>
+      <Confirm
+        open={deleting}
+        title={t("chats.list.dropTitle", { name: title })}
+        body={<p>{t("chats.list.dropBody")}</p>}
+        confirmLabel={t("common.delete")}
+        danger
+        onCancel={() => setDeleting(false)}
+        onConfirm={() => {
+          setDeleting(false);
+          session.deleteConversation(KEYLESS_CONVERSATION);
+          openConversation(null);
+          toast(t("chats.list.deleted"));
         }}
       />
     </div>

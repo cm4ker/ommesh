@@ -8,6 +8,7 @@
   "heardFirstAt": "Heard for the first time, {distance} {direction}.",
   "unknown": "Unknown {prefix}",
   "channel": "Channel {index}",
+  "keyless": "No key",
   "mentioned": "{who} mentioned you",
   "mentionedIn": "{who} mentioned you in {chat}",
   "inChat": "{sender} in {chat}",

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { isFavourite, parseConversation, TxtType, type MessageRecord } from "@meshnet/meshcore";
-import { channelAccess } from "../lib/channels.js";
+import { chatAccess } from "../lib/channels.js";
 import { CHAT_ORDERS, changed, chatGroups, chatsInOrder, getChatOrder, setChatOrder, useChatOrder } from "../lib/chatOrder.js";
 import { pinnedAt, radioPins, setPinned, usePinStore } from "../lib/chatPins.js";
 import { ago } from "../lib/format.js";
@@ -150,24 +150,39 @@ export function ChatList({ selected }: { selected: string | null }) {
       <NewChat open={adding} onClose={() => setAdding(false)} />
       <Confirm
         open={deleting !== null}
-        title={deleting?.kind === "channel" ? t("chats.list.clearTitle", { name: deleting.title }) : t("chats.list.deleteTitle", { name: deleting?.title ?? "" })}
-        body={<p>{deleting?.kind === "channel" ? t("chats.list.clearBody") : t("chats.list.deleteBody")}</p>}
-        confirmLabel={deleting?.kind === "channel" ? t("common.clear") : t("common.delete")}
+        title={
+          deleting && staysListed(deleting)
+            ? t("chats.list.clearTitle", { name: deleting.title })
+            : deleting?.kind === "channel"
+              ? t("chats.list.dropTitle", { name: deleting.title })
+              : t("chats.list.deleteTitle", { name: deleting?.title ?? "" })
+        }
+        body={<p>{deleting && staysListed(deleting) ? t("chats.list.clearBody") : deleting?.kind === "channel" ? t("chats.list.dropBody") : t("chats.list.deleteBody")}</p>}
+        confirmLabel={deleting && staysListed(deleting) ? t("common.clear") : t("common.delete")}
         danger
         onCancel={() => setDeleting(null)}
         onConfirm={() => {
           if (deleting) {
             session.deleteConversation(deleting.id);
             // A person's chat goes from the list, and its pin with it; a cleared channel stays, pinned.
-            if (deleting.kind !== "channel" && pinnedAt(pins, deleting) !== null) setPinned(radio, state.channels, deleting, false);
+            if (!staysListed(deleting) && pinnedAt(pins, deleting) !== null) setPinned(radio, state.channels, deleting, false);
             if (selected === deleting.id) openConversation(null);
-            toast(deleting.kind === "channel" ? t("chats.list.cleared") : t("chats.list.deleted"));
+            toast(staysListed(deleting) ? t("chats.list.cleared") : t("chats.list.deleted"));
           }
           setDeleting(null);
         }}
       />
     </div>
   );
+}
+
+/**
+ * Whether a chat stays in the list with its messages gone: a channel on the
+ * radio does. One whose slot holds no channel, and the chat without a key, go
+ * like a person's.
+ */
+function staysListed(row: ConversationSummary): boolean {
+  return row.kind === "channel" && row.channel !== null;
 }
 
 /** The list's order, named, and the menu that changes it. */
@@ -235,7 +250,7 @@ function FoundRow({ message, row, query }: { message: MessageRecord; row: Conver
           openConversation(message.conversation);
         }}
       >
-        <Avatar name={row.title} type={row.contact?.type} channel={row.kind === "channel" ? channelAccess(row.channel) : undefined} size={44} />
+        <Avatar name={row.title} type={row.contact?.type} channel={row.kind === "channel" ? chatAccess(row.id, row.channel) : undefined} size={44} />
         <span className="row-main">
           <span className="row-top">
             <span className="row-title">{row.title}</span>
@@ -265,7 +280,7 @@ function ChatRow({ row, radio, selected, pinned, onPin, onDelete }: { row: Conve
             : null,
         row.unread > 0 ? { label: t("chats.row.markRead"), icon: <CheckIcon size={17} />, onSelect: () => session.markRead(row.id) } : null,
         pinned ? { label: t("chats.row.unpin"), icon: <PinOffIcon size={17} />, onSelect: onPin } : { label: t("chats.row.pin"), icon: <PinIcon size={17} />, onSelect: onPin },
-        { label: row.kind === "channel" ? t("chats.row.clearMessages") : t("chats.row.deleteChat"), icon: <TrashIcon size={17} />, danger: true, onSelect: onDelete },
+        { label: staysListed(row) ? t("chats.row.clearMessages") : t("chats.row.deleteChat"), icon: <TrashIcon size={17} />, danger: true, onSelect: onDelete },
     ];
     showMenu(items.filter((x): x is MenuItem => x !== null), { title: row.title, at });
   });
@@ -274,10 +289,10 @@ function ChatRow({ row, radio, selected, pinned, onPin, onDelete }: { row: Conve
   return (
     <li className="swipe" ref={swipe.ref}>
       <button type="button" className="swipe-action" tabIndex={-1} onClick={() => { swipe.close(); onDelete(); }}>
-        {row.kind === "channel" ? t("common.clear") : t("common.delete")}
+        {staysListed(row) ? t("common.clear") : t("common.delete")}
       </button>
       <button type="button" className={["row", selected ? "selected" : ""].join(" ")} onClick={() => (swipe.isOpen() ? swipe.close() : openConversation(row.id))} {...press}>
-        <Avatar name={row.title} type={row.contact?.type} channel={row.kind === "channel" ? channelAccess(row.channel) : undefined} size={44} />
+        <Avatar name={row.title} type={row.contact?.type} channel={row.kind === "channel" ? chatAccess(row.id, row.channel) : undefined} size={44} />
         <span className="row-main">
           <span className="row-top">
             <span className="row-title">

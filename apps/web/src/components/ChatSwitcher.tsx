@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { t } from "../i18n/index.js";
-import { channelAccess } from "../lib/channels.js";
+import { chatAccess } from "../lib/channels.js";
 import { chatsInOrder, getChatOrder } from "../lib/chatOrder.js";
 import { getPins } from "../lib/chatPins.js";
 import { summarize } from "../lib/conversations.js";
@@ -119,7 +119,7 @@ function SwitcherRow({ ids, at, onPick }: { ids: string[]; at: number; onPick: (
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => onPick(id)}
             >
-              <Avatar name={row.title} type={row.contact?.type} channel={row.kind === "channel" ? channelAccess(row.channel) : undefined} size={64} />
+              <Avatar name={row.title} type={row.contact?.type} channel={row.kind === "channel" ? chatAccess(row.id, row.channel) : undefined} size={64} />
               <span className="chat-switcher-name">{row.title}</span>
             </button>
           );

@@ -176,6 +176,8 @@ pub struct Words {
     pub heard_first: String,
     pub unknown: String,
     pub channel: String,
+    /// The chat of messages sent without a key, which the radio files in an empty slot.
+    pub keyless: String,
     pub mentioned: String,
     pub mentioned_in: String,
     pub in_chat: String,
@@ -218,6 +220,7 @@ impl Default for Words {
             heard_first: "Heard for the first time.".into(),
             unknown: "Unknown {prefix}".into(),
             channel: "Channel {index}".into(),
+            keyless: "No key".into(),
             mentioned: "{who} mentioned you".into(),
             mentioned_in: "{who} mentioned you in {chat}".into(),
             in_chat: "{sender} in {chat}".into(),
@@ -694,20 +697,28 @@ impl Watch {
                 ..
             } => {
                 let (sender, text) = split_channel_text(&text);
-                let name = self
-                    .config
-                    .channels
-                    .iter()
-                    .find(|c| c.index == index)
-                    .map(|c| c.name.clone())
-                    .filter(|n| !n.is_empty());
-                let chat = Chat {
-                    conversation: format!("ch:{index}"),
-                    title: name.unwrap_or_else(|| {
-                        fill(&self.config.words.channel, &[("index", &index.to_string())])
-                    }),
-                    direct: false,
-                    lines: Vec::new(),
+                let channel = self.config.channels.iter().find(|c| c.index == index);
+                // A slot the page does not list is empty: the message came without a key, and the
+                // page puts it in its one chat for those (`KEYLESS_CONVERSATION` in session.ts).
+                // Before the page has listed any, nothing is known either way.
+                let keyless = channel.is_none() && !self.config.channels.is_empty();
+                let chat = if keyless {
+                    Chat {
+                        conversation: "ch:-1".into(),
+                        title: self.config.words.keyless.clone(),
+                        direct: false,
+                        lines: Vec::new(),
+                    }
+                } else {
+                    let name = channel.map(|c| c.name.clone()).filter(|n| !n.is_empty());
+                    Chat {
+                        conversation: format!("ch:{index}"),
+                        title: name.unwrap_or_else(|| {
+                            fill(&self.config.words.channel, &[("index", &index.to_string())])
+                        }),
+                        direct: false,
+                        lines: Vec::new(),
+                    }
                 };
                 (
                     chat,
@@ -1174,6 +1185,28 @@ mod tests {
         assert_eq!(last.title, "Public · 3 new");
         assert_eq!(last.body, "RM55: first\nWan8: second\nthird");
         assert_eq!(last.kind, NoticeKind::Chats);
+    }
+
+    #[test]
+    fn a_message_in_an_empty_slot_is_in_the_chat_without_a_key() {
+        let mut rig = Rig::new(config());
+        rig.arrives(channel(8, "Stalin_v3: what is this?"))
+            .grace_ends();
+        let last = rig.posted.last().unwrap();
+        assert_eq!(last.tag, "c:ch:-1");
+        assert_eq!(last.title, "Stalin_v3 in No key");
+
+        let mut rig = Rig::new(WatchConfig {
+            channels: Vec::new(),
+            ..config()
+        });
+        rig.arrives(channel(8, "Stalin_v3: what is this?"))
+            .grace_ends();
+        assert_eq!(
+            rig.titles(),
+            vec!["Stalin_v3 in Channel 8"],
+            "with no channels listed yet, the slot keeps its number"
+        );
     }
 
     #[test]

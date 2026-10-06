@@ -1,7 +1,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { AdvType, isConversationType, isDirect, parseConversation, type MessageRecord, type SessionState } from "@meshnet/meshcore";
+import { AdvType, isConversationType, isDirect, KEYLESS_INDEX, parseConversation, type MessageRecord, type SessionState } from "@meshnet/meshcore";
 import { useBackLayer } from "../lib/back.js";
-import { channelAccess } from "../lib/channels.js";
+import { chatAccess } from "../lib/channels.js";
 import { onAsk, takeAsk } from "../lib/chatAsk.js";
 import { MENTION, quoteHeadLength } from "../lib/composer.js";
 import { PLACE_SOURCE, placeMessage, placeOfMark } from "../lib/place.js";
@@ -16,7 +16,7 @@ import { moveForKeyboard } from "../lib/keyboard.js";
 import { onJump, takeJump, type Jump } from "../lib/jump.js";
 import { useWide } from "../lib/layout.js";
 import { findMessages, messagesFrom, searchTerm, type Sender } from "../lib/messageSearch.js";
-import { openChannel, openMessage, openPlace, openProfile } from "../lib/nav.js";
+import { openChannel, openConversation, openMessage, openPlace, openProfile } from "../lib/nav.js";
 import { cameByPull, nextUnreadChat, openNextChat } from "../lib/nextChat.js";
 import { noteShown } from "../lib/recentChats.js";
 import { openRoute } from "../lib/toolActions.js";
@@ -28,6 +28,7 @@ import { sendersOf } from "../lib/senders.js";
 import { session, useSession } from "../lib/session.js";
 import { toast } from "../lib/toast.js";
 import { Button, IconButton } from "../ui/Button.js";
+import { Confirm } from "../ui/Dialog.js";
 import { SearchField } from "../ui/Field.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar, SenderName } from "./Avatar.js";
@@ -90,6 +91,11 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   const many = target.kind === "channel" || contact?.type === AdvType.Room;
   // A room takes posts only from those signed in to it.
   const locked = contact?.type === AdvType.Room && !state.logins[contact.key]?.ok;
+  // Written here, a message would go with an empty slot's all-zero key, for every radio around to read:
+  // the chat of messages that came so, and a chat whose channel the radio no longer has (once its channels are known).
+  const keyless = target.kind === "channel" && target.index === KEYLESS_INDEX;
+  const slotless = target.kind === "channel" && !keyless && state.channels.length > 0 && !state.channels.some((c) => c.index === target.index);
+  const [dropping, setDropping] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
   // Opened by a pull past the end of the chat before, its messages rise in from below.
@@ -507,7 +513,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
           }
         >
           <button type="button" className="chat-who" onClick={details} disabled={!details} aria-label={t("chats.chat.about", { name: title })}>
-            <Avatar name={title} type={contact?.type} channel={target.kind === "channel" ? channelAccess(state.channels.find((c) => c.index === target.index)) : undefined} size={32} />
+            <Avatar name={title} type={contact?.type} channel={target.kind === "channel" ? chatAccess(conversation, state.channels.find((c) => c.index === target.index)) : undefined} size={32} />
           </button>
           <span className="screen-name-stack">
             <button type="button" className="chat-who screen-name" onClick={details} disabled={!details}>
@@ -519,7 +525,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
                 <span>{route.text}</span>
                 <ChevronRightIcon size={11} />
               </button>
-            ) : target.kind === "contact" && (!contact || contact.unsaved) ? (
+            ) : (target.kind === "contact" && (!contact || contact.unsaved)) || slotless ? (
               <span className="chat-route">{t("chats.chat.notOnRadio")}</span>
             ) : null}
           </span>
@@ -626,6 +632,10 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
         <footer className="compose">
           <NotOnRadio contactKey={target.key} compact />
         </footer>
+      ) : keyless || slotless ? (
+        <footer className="compose">
+          <NoChannel keyless={keyless} onAbout={details} onDelete={() => setDropping(true)} />
+        </footer>
       ) : locked && contact ? (
         <footer className="compose">
           <button type="button" className="compose-login" onClick={() => openProfile(contact.key)}>
@@ -645,6 +655,44 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
             stuck.current = true;
           }}
         />
+      )}
+      <Confirm
+        open={dropping}
+        title={t("chats.list.dropTitle", { name: title })}
+        body={<p>{t("chats.list.dropBody")}</p>}
+        confirmLabel={t("common.delete")}
+        danger
+        onCancel={() => setDropping(false)}
+        onConfirm={() => {
+          setDropping(false);
+          session.deleteConversation(conversation);
+          openConversation(null);
+          toast(t("chats.list.deleted"));
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * In place of the field where writing would send without a key: the chat of
+ * messages that came so, with where they come from, and a chat whose channel
+ * the radio no longer has, which is only to be read or deleted.
+ */
+function NoChannel({ keyless, onAbout, onDelete }: { keyless: boolean; onAbout: (() => void) | undefined; onDelete: () => void }) {
+  return (
+    <div className="not-on-radio compact no-channel">
+      <p>
+        <b>{keyless ? t("chats.keyless.title") : t("chats.channel.goneTitle")}</b> {keyless ? t("chats.keyless.text") : t("chats.channel.goneText")}
+      </p>
+      {keyless ? (
+        <Button size="sm" onClick={onAbout} disabled={!onAbout}>
+          <InfoIcon size={14} /> {t("chats.keyless.whence")}
+        </Button>
+      ) : (
+        <Button size="sm" onClick={onDelete}>
+          <TrashIcon size={14} /> {t("chats.row.deleteChat")}
+        </Button>
       )}
     </div>
   );
@@ -1123,7 +1171,7 @@ function NextChat({ conversation, scroller, inner, enabled }: { conversation: st
           {found ? (
             <>
               <span className="chat-next-name">
-                <Avatar name={found.title} type={found.contact?.type} channel={found.kind === "channel" ? channelAccess(found.channel) : undefined} size={22} />
+                <Avatar name={found.title} type={found.contact?.type} channel={found.kind === "channel" ? chatAccess(found.id, found.channel) : undefined} size={22} />
                 <span className="chat-next-title">{found.title}</span>
                 <span className="badge">{found.unread}</span>
               </span>

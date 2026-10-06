@@ -1,12 +1,12 @@
 import { AdvType } from "@meshnet/meshcore";
 import type { ChannelAccess } from "../lib/channels.js";
 import { hue, initials, trailingEmoji } from "../lib/format.js";
-import { LockIcon, RepeaterIcon, RoomIcon, SensorIcon } from "./Icons.js";
+import { LockIcon, RepeaterIcon, RoomIcon, SensorIcon, UnlockIcon } from "./Icons.js";
 
 /**
  * A swatch with initials for a person, or the emoji their name ends with; a
- * glyph for infrastructure; "#" for a channel anyone can read and a lock for
- * a private one. The hue is hashed from the name; lightness and chroma come
+ * glyph for infrastructure; "#" for a channel anyone can read, a lock for
+ * a private one and an open lock for messages sent without a key. The hue is hashed from the name; lightness and chroma come
  * from the stylesheet, so a hashed colour stays inside the palette's range.
  */
 export function Avatar({ name, type = AdvType.Chat, size = 32, channel, icon }: { name: string; type?: number | undefined; size?: number; channel?: ChannelAccess | undefined; icon?: React.ReactNode }) {
@@ -14,6 +14,7 @@ export function Avatar({ name, type = AdvType.Chat, size = 32, channel, icon }: 
   let glyph: React.ReactNode;
   if (icon) glyph = icon;
   else if (channel === "private") glyph = <LockIcon size={size * 0.55} />;
+  else if (channel === "keyless") glyph = <UnlockIcon size={size * 0.55} />;
   else if (channel) glyph = "#";
   else if (type === AdvType.Repeater) glyph = <RepeaterIcon size={size * 0.55} />;
   else if (type === AdvType.Room) glyph = <RoomIcon size={size * 0.55} />;

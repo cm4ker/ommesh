@@ -60,6 +60,7 @@
   "error.notConnected": "Радио не подключено.",
   "error.unknownContact": "Этого контакта больше нет в радио.",
   "error.senderNotContact": "Этого отправителя ещё нет в контактах.",
+  "error.channelGone": "Этого канала нет в радио.",
   "error.tooLong": "В сообщении {bytes} байт, а радио передаёт не больше {max}.",
   "error.passwordTooLong": "Пароль — не больше {max} байт.",
   "error.timedOut": "Радио не ответило вовремя.",

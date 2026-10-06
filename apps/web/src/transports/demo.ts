@@ -385,6 +385,8 @@ class DemoRadio extends BaseTransport {
       this.dm(PEOPLE[0]!, "geo:55.04212,73.39208;u=9 Meet you here"),
       this.channel(0, "Bob (bike)", "Public channel works too"),
       this.channel(0, "Bob (bike)", "geo:55.06,73.43;u=1000 Somewhere round here today"),
+      // Somebody writing in a channel their radio no longer has: the all-zero key, filed in the first empty slot.
+      this.channel(2, "Wanderer", "Anyone else see this channel with no name?"),
     );
     this.chatter = setInterval(() => void this.chat(), 25_000);
     this.murmur = setInterval(() => this.overhear(), 3_500);

@@ -1,6 +1,6 @@
 /** Channels as the chats see them: where a new one goes, the key it starts with, and who can read it. */
 
-import { toHex, type ChannelRecord, type SessionState } from "@meshnet/meshcore";
+import { channelConversation, KEYLESS_CONVERSATION, toHex, type ChannelRecord, type SessionState } from "@meshnet/meshcore";
 import { sha256 } from "./sha256.js";
 
 /** The key of "Public", the channel every radio starts with. */
@@ -46,8 +46,8 @@ export function hashtagSecret(name: string): string {
   return toHex(sha256(new TextEncoder().encode(name)).subarray(0, 16));
 }
 
-/** Who can read a channel: anyone, or only those it was handed to. */
-export type ChannelAccess = "public" | "private";
+/** Who can read a channel: anyone, only those it was handed to, or any radio at all for messages without a key. */
+export type ChannelAccess = "public" | "private" | "keyless";
 
 /**
  * "public" for Public and for a channel keyed by its name, as "#berlin" is,
@@ -63,4 +63,14 @@ export function channelAccess(channel: Pick<ChannelRecord, "name" | "secret"> | 
   const bare = channel.name.trim().replace(/^#+/, "");
   const names = [`#${bare}`, hashtagName(bare)];
   return names.some((name) => name !== null && hashtagSecret(name) === secret) ? "public" : "private";
+}
+
+/** A channel chat's access: by its channel, but for the chat without a key, which has none to tell by. */
+export function chatAccess(conversation: string, channel: Pick<ChannelRecord, "name" | "secret"> | null | undefined): ChannelAccess {
+  return conversation === KEYLESS_CONVERSATION ? "keyless" : channelAccess(channel);
+}
+
+/** The same, the channel looked up among the radio's. */
+export function conversationAccess(conversation: string, channels: readonly ChannelRecord[]): ChannelAccess {
+  return chatAccess(conversation, channels.find((c) => channelConversation(c.index) === conversation));
 }

@@ -60,6 +60,7 @@
   "error.notConnected": "Not connected to the radio.",
   "error.unknownContact": "That contact is no longer on the radio.",
   "error.senderNotContact": "This sender is not in the contacts yet.",
+  "error.channelGone": "This channel is not on the radio.",
   "error.tooLong": "The message is {bytes} bytes; the radio carries at most {max}.",
   "error.passwordTooLong": "A password is at most {max} bytes.",
   "error.timedOut": "The radio did not answer in time.",

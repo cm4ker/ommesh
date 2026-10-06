@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { t } from "../i18n/index.js";
 import { useBackLayer } from "../lib/back.js";
-import { channelAccess } from "../lib/channels.js";
+import { chatAccess } from "../lib/channels.js";
 import { summarize } from "../lib/conversations.js";
 import { disconnect } from "../lib/link.js";
 import { kindLabel } from "../lib/nodes.js";
@@ -43,7 +43,7 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
 
   const items = useMemo<Item[]>(() => {
     const online = state.status === "ready";
-    const chats: Item[] = summarize(state).map((row) => ({ group: t("app.palette.group.chats"), label: row.title, hint: row.preview ?? undefined, icon: <Avatar name={row.title} type={row.contact?.type} channel={row.kind === "channel" ? channelAccess(row.channel) : undefined} size={22} />, run: () => openConversation(row.id) }));
+    const chats: Item[] = summarize(state).map((row) => ({ group: t("app.palette.group.chats"), label: row.title, hint: row.preview ?? undefined, icon: <Avatar name={row.title} type={row.contact?.type} channel={row.kind === "channel" ? chatAccess(row.id, row.channel) : undefined} size={22} />, run: () => openConversation(row.id) }));
     const nodes: Item[] = Object.values(state.contacts).map((c) => ({ group: t("app.palette.group.mesh"), label: c.name || c.prefix, hint: kindLabel(c.type), icon: <Avatar name={c.name || c.prefix} type={c.type} size={22} />, run: () => openProfile(c.key, true) }));
     const pages: Item[] = (Object.keys(RADIO_TITLES) as RadioPage[]).filter((page) => !RADIO_INNER.has(page)).map((page) => ({ group: t("app.palette.group.settings"), label: radioTitle(page), icon: <SlidersIcon size={16} />, run: () => openRadioPage(page) }));
     const commands: Item[] = [

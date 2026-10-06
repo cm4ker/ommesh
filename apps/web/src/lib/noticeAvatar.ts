@@ -16,7 +16,7 @@
 import { AdvType } from "@meshnet/meshcore";
 import type { Face } from "./announce.js";
 import { hue, initials, trailingEmoji } from "./format.js";
-import { LOCK_GLYPH, REPEATER_GLYPH, ROOM_GLYPH, SENSOR_GLYPH } from "./glyphs.js";
+import { LOCK_GLYPH, REPEATER_GLYPH, ROOM_GLYPH, SENSOR_GLYPH, UNLOCK_GLYPH } from "./glyphs.js";
 
 /** Pixels on a side: twice what a notice shows at the most, for a sharp picture on a dense screen. */
 const SIZE = 192;
@@ -85,7 +85,7 @@ async function draw(face: Face, round: boolean): Promise<string | null> {
     g.fillRect(0, 0, SIZE, SIZE);
   }
 
-  const glyph = face.channel === "private" ? LOCK_GLYPH : face.channel ? null : GLYPHS[face.type ?? AdvType.Chat];
+  const glyph = face.channel === "private" ? LOCK_GLYPH : face.channel === "keyless" ? UNLOCK_GLYPH : face.channel ? null : GLYPHS[face.type ?? AdvType.Chat];
   if (glyph) {
     await drawGlyph(g, glyph, ink);
   } else {

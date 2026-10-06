@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { ByteWriter, fromHex } from "./protocol/bytes.js";
 import { Cmd, ContactFlag, Push, Resp, TxtType } from "./protocol/codes.js";
 import { groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
-import { channelConversation, CLOCK_RESET_TIME, ClockAheadError, contactConversation, isTrusted, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
+import { channelConversation, CLOCK_RESET_TIME, ClockAheadError, contactConversation, isTrusted, KEYLESS_CONVERSATION, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
 import { BaseTransport } from "./transport.js";
 import { TimeoutError, TransportClosedError } from "./client.js";
 
@@ -33,6 +33,8 @@ class ScriptedRadio extends BaseTransport {
   autoAdd = { config: 0, maxHops: 0 };
   /** Firmware v10's last two device bytes, repeat and path hash mode; null for firmware that sends neither. */
   network: { repeat: boolean; hashMode: number } | null = null;
+  /** Channels in slots past Public's; every other slot is empty. */
+  slots: Record<number, { name: string; secret: Uint8Array }> = {};
 
   async send(frame: Uint8Array): Promise<void> {
     this.sent.push(frame);
@@ -93,6 +95,8 @@ class ScriptedRadio extends BaseTransport {
         if (index === 0) {
           return [new ByteWriter().u8(Resp.ChannelInfo).u8(0).fixedString("Public", 32).bytes(new Uint8Array(16).fill(1)).toBytes()];
         }
+        const slot = this.slots[index];
+        if (slot) return [new ByteWriter().u8(Resp.ChannelInfo).u8(index).fixedString(slot.name, 32).bytes(slot.secret).toBytes()];
         return [new ByteWriter().u8(Resp.ChannelInfo).u8(index).fixedString("", 32).zeros(16).toBytes()];
       }
       case Cmd.SyncNextMessage: {
@@ -2109,6 +2113,49 @@ test("an incoming channel message gathers every copy the radio heard, before it 
     { path: ["7f", "a3"], snr: 3 },
     { path: ["9d"], snr: -5 },
   ]);
+  await session.disconnect();
+});
+
+test("a message the radio files in an empty slot goes to the chat without a key, its copies found by the zero key", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  const payload = await heardGroupTextPayload(new Uint8Array(16), 1_700_000_060, TxtType.Plain, "Stalin_v3: what is this channel?");
+  radio.push(heardPacket(5, [0xce], payload));
+  radio.queue.push(channelFrame(8, "Stalin_v3: what is this channel?"));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(10);
+  const message = session.getState().messages.find((m) => m.direction === "in")!;
+  assert.equal(message.conversation, KEYLESS_CONVERSATION);
+  assert.equal(message.sender, "Stalin_v3");
+  assert.deepEqual(message.echoes, [{ path: ["ce"], snr: 2 }]);
+  assert.deepEqual(session.getState().unread, { [KEYLESS_CONVERSATION]: 1 });
+  assert.ok(!session.getState().channels.some((c) => c.index === 8));
+  await session.disconnect();
+});
+
+test("a message on a slot not read yet reads it, and a channel there keeps its own chat", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  radio.slots[3] = { name: "#yug", secret: new Uint8Array(16).fill(7) };
+  radio.queue.push(channelFrame(3, "Wan8: hi"));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(10);
+  assert.equal(session.getState().messages.find((m) => m.direction === "in")?.conversation, channelConversation(3));
+  assert.deepEqual(session.getState().channels.map((c) => c.name), ["Public", "#yug"]);
+  await session.disconnect();
+});
+
+test("nothing goes out to a slot that holds no channel, nor to the chat without a key", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  for (const conversation of [channelConversation(8), KEYLESS_CONVERSATION]) {
+    await assert.rejects(session.sendText(conversation, "hello?"), /not on the radio/);
+  }
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.SendChannelTxtMsg).length, 0);
+  assert.deepEqual(session.getState().messages.map((m) => m.status), ["failed", "failed"]);
   await session.disconnect();
 });
 

@@ -3183,6 +3183,86 @@ html.notices-window #root {
     transition: none;
   }
 }
+/* The next chat with unread messages, in the room under the last message as the chat is pulled up past it (#80). */
+.chat-next-slot {
+  flex: none;
+  position: relative;
+  height: 0;
+}
+.chat-next {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--space-3) + 16px);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-top: var(--space-2);
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.chat-next-ring {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+}
+.chat-next-track {
+  position: absolute;
+  inset: 0;
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 2.5;
+  transform: rotate(-90deg);
+}
+.chat-next-track .arc {
+  stroke: var(--accent);
+  stroke-linecap: round;
+}
+.chat-next.ready .chat-next-ring {
+  color: var(--accent);
+}
+.chat-next.none .chat-next-track .arc {
+  stroke: var(--text-faint);
+}
+.chat-next.none.ready .chat-next-ring {
+  color: var(--success);
+}
+.chat-next-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: calc(100% - 2 * var(--space-4));
+  color: var(--text);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+.chat-next-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Opened by that pull, the chat's messages rise in from below, where the finger sent them. */
+.chat-inner.arrive {
+  animation: chat-arrive 0.26s ease-out;
+}
+@keyframes chat-arrive {
+  from {
+    translate: 0 48px;
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-inner.arrive {
+    animation: none;
+  }
+}
 .msg {
   position: relative;
   display: flex;

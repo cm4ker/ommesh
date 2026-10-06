@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { AdvType, isConversationType, isDirect, parseConversation, type MessageRecord, type SessionState } from "@meshnet/meshcore";
 import { useBackLayer } from "../lib/back.js";
 import { channelAccess } from "../lib/channels.js";
@@ -6,7 +6,7 @@ import { onAsk, takeAsk } from "../lib/chatAsk.js";
 import { MENTION, quoteHeadLength } from "../lib/composer.js";
 import { PLACE_SOURCE, placeMessage, placeOfMark } from "../lib/place.js";
 import { LINK, linkOf, openLink } from "../lib/webLinks.js";
-import { daysIn, messagesIn, shownIn, titleOf, type Shown } from "../lib/conversations.js";
+import { daysIn, messagesIn, shownIn, titleOf, type ConversationSummary, type Shown } from "../lib/conversations.js";
 import { nameOfHash, relaysOf } from "../lib/echoes.js";
 import { getOpenAtUnread, takeUnread } from "../lib/firstUnread.js";
 import { useFloatingDay } from "../lib/floatingDay.js";
@@ -14,10 +14,13 @@ import { dayLabel, emojiOnly, timeOfDay } from "../lib/format.js";
 import { useJumboEmoji } from "../lib/jumboEmoji.js";
 import { moveForKeyboard } from "../lib/keyboard.js";
 import { onJump, takeJump, type Jump } from "../lib/jump.js";
+import { useWide } from "../lib/layout.js";
 import { findMessages, messagesFrom, searchTerm, type Sender } from "../lib/messageSearch.js";
 import { openChannel, openMessage, openPlace, openProfile } from "../lib/nav.js";
+import { cameByPull, nextUnreadChat, openNextChat } from "../lib/nextChat.js";
 import { openRoute } from "../lib/toolActions.js";
 import { usePress } from "../lib/press.js";
+import { usePull } from "../lib/pull.js";
 import { routeWords } from "../lib/routes.js";
 import { triesPhrase } from "../lib/sendTries.js";
 import { sendersOf } from "../lib/senders.js";
@@ -52,6 +55,7 @@ import {
   SendIcon,
   StopIcon,
   TrashIcon,
+  UpIcon,
   WavesIcon,
 } from "./Icons.js";
 import { marked } from "./Marked.js";
@@ -87,6 +91,8 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   const locked = contact?.type === AdvType.Room && !state.logins[contact.key]?.ok;
   const scroller = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
+  // Opened by a pull past the end of the chat before, its messages rise in from below.
+  const [arrived] = useState(() => cameByPull(conversation));
   const [reply, setReply] = useState<Reply | null>(null);
   // The message being answered, kept in sight while the keyboard comes up for the answer.
   const answering = useRef<string | null>(null);
@@ -543,7 +549,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
           drawWhenStill();
         }}
       >
-        <div className="chat-inner" ref={inner}>
+        <div className={["chat-inner", arrived ? "arrive" : ""].join(" ")} ref={inner}>
           {messages.length === 0 ? <div className="empty muted">{target.kind === "channel" ? t("chats.chat.emptyChannel") : t("chats.chat.empty")}</div> : null}
           {drawn.map((m, i) => {
             const prev = drawn[i - 1];
@@ -579,6 +585,8 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
           })}
         </div>
       </div>
+
+      <NextChat conversation={conversation} scroller={scroller} inner={inner} enabled={!finding} />
 
       {/* Back to the latest, once scrolled away from it; the count is of the new ones still below. */}
       <div className="chat-jump-slot">
@@ -1058,6 +1066,71 @@ function Status({ message, trying }: { message: MessageRecord; trying: boolean }
     default:
       return null;
   }
+}
+
+/** How far the chat rises before letting go opens the next one; the name and the hint under it need the room. */
+const NEXT_PULL = 88;
+const NEXT_PULL_MAX = 120;
+
+/**
+ * Pulled up past its last message, on a phone, the chat rises and shows under
+ * it the next chat with unread messages, and letting go there opens that one,
+ * as Telegram goes on to the next unread channel (#80). With none left, it
+ * says so and stays.
+ */
+function NextChat({ conversation, scroller, inner, enabled }: { conversation: string; scroller: RefObject<HTMLDivElement | null>; inner: RefObject<HTMLDivElement | null>; enabled: boolean }) {
+  const wide = useWide();
+  const next = useRef<ConversationSummary | null>(null);
+  const pull = usePull(
+    scroller,
+    () => {
+      if (next.current) openNextChat(next.current.id);
+    },
+    enabled && !wide,
+    { edge: "bottom", trigger: NEXT_PULL, max: NEXT_PULL_MAX },
+  );
+  const pulling = pull > 0;
+  // Looked for once, as the pull starts, rather than on every move of the finger.
+  const found = useMemo(() => (pulling ? nextUnreadChat(session.getState(), conversation) : null), [pulling, conversation]);
+  next.current = found;
+  const ready = pull >= NEXT_PULL;
+  // The messages follow the finger up, and settle back if it lets go short.
+  useLayoutEffect(() => {
+    const body = inner.current;
+    if (!body) return;
+    body.style.transition = pulling ? "none" : "";
+    body.style.transform = pulling ? `translateY(${-pull}px)` : "";
+  }, [inner, pull, pulling]);
+  useEffect(() => {
+    if (ready && next.current) navigator.vibrate?.(8);
+  }, [ready]);
+  return (
+    <div className="chat-next-slot">
+      {pulling ? (
+        <div className={["chat-next", ready ? "ready" : "", found ? "" : "none"].join(" ")} style={{ height: pull }} aria-live="polite">
+          <span className="chat-next-ring">
+            <svg className="chat-next-track" viewBox="0 0 36 36" aria-hidden="true">
+              <circle cx="18" cy="18" r="16" pathLength={100} />
+              <circle className="arc" cx="18" cy="18" r="16" pathLength={100} strokeDasharray="100" strokeDashoffset={100 - Math.min(100, (pull / NEXT_PULL) * 100)} />
+            </svg>
+            {found ? <UpIcon size={18} /> : <CheckIcon size={18} />}
+          </span>
+          {found ? (
+            <>
+              <span className="chat-next-name">
+                <Avatar name={found.title} type={found.contact?.type} channel={found.kind === "channel" ? channelAccess(found.channel) : undefined} size={22} />
+                <span className="chat-next-title">{found.title}</span>
+                <span className="badge">{found.unread}</span>
+              </span>
+              <span>{ready ? t("chats.next.release") : t("chats.next.pull")}</span>
+            </>
+          ) : (
+            <span>{t("chats.next.none")}</span>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 /** How far a message is pulled right before letting go answers it. */

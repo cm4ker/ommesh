@@ -78,6 +78,9 @@
     "other": "Latest message, {count} new messages below"
   },
   "chat.toDay": "Go to a day",
+  "next.pull": "Pull up to open it",
+  "next.release": "Let go to open it",
+  "next.none": "No more unread chats",
   "chat.dayCount": {
     "one": "{count} message",
     "other": "{count} messages"

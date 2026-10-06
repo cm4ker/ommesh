@@ -112,6 +112,8 @@
   "console.waiting": "waiting for the reply…",
   "console.noReply": "no reply",
   "console.sendAgain": "Send again",
+  "console.copyCommand": "Copy the command",
+  "console.copyReply": "Copy the answer",
   "console.wayBack": "The commands may have arrived and the answers been lost: the node answers along its own way to you.",
   "console.relearn": "Renew the way back",
   "console.relearned": "{name} knows the way to you again",

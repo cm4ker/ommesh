@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from "react";
 import type { ConsoleEntry, ContactRecord } from "@meshnet/meshcore";
 import { t } from "../../i18n/index.js";
 import { suggest } from "../../lib/cli.js";
@@ -9,7 +9,8 @@ import { toast } from "../../lib/toast.js";
 import { errorText } from "../../i18n/errors.js";
 import { Button } from "../../ui/Button.js";
 import { Confirm } from "../../ui/Dialog.js";
-import { SendIcon } from "../Icons.js";
+import { showMenu, type MenuItem } from "../../ui/Menu.js";
+import { CopyIcon, RefreshIcon, SendIcon } from "../Icons.js";
 import { SignIn } from "./SignIn.js";
 
 /** Commands that take a node down, move it, or lock people out. */
@@ -21,7 +22,8 @@ export function Console({ contact }: { contact: ContactRecord }) {
   const entries = state.consoles[key] ?? [];
   const online = state.status === "ready";
   const [draft, setDraft] = useState("");
-  const [confirming, setConfirming] = useState<string | null>(null);
+  // A command to send once the reader agrees; `typed` when it came from the field, which then empties.
+  const [confirming, setConfirming] = useState<{ command: string; typed: boolean } | null>(null);
   const [recall, setRecall] = useState<number | null>(null);
   const log = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -52,19 +54,50 @@ export function Console({ contact }: { contact: ContactRecord }) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [entries.length, entries[entries.length - 1]?.status]);
 
+  const run = (command: string) => {
+    // The entry shows how it went; nothing to add here.
+    session.runCli(key, command).catch(() => undefined);
+  };
+
   const send = (command: string) => {
     setDraft("");
     setRecall(null);
-    // The entry shows how it went; nothing to add here.
-    session.runCli(key, command).catch(() => undefined);
+    run(command);
   };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const command = draft.trim();
     if (!command) return;
-    if (DANGEROUS.test(command)) setConfirming(command);
+    if (DANGEROUS.test(command)) setConfirming({ command, typed: true });
     else send(command);
+  };
+
+  /** A command from the log sent again: asked about as when typed, and the field left as it is. */
+  const again = (command: string) => {
+    if (DANGEROUS.test(command)) setConfirming({ command, typed: false });
+    else run(command);
+  };
+
+  /** What can be done with an entry, as in the MeshCore app: copy the command or its answer, or send it again. */
+  const menuOf = (entry: ConsoleEntry, e: MouseEvent<HTMLButtonElement>) => {
+    // A masked command's text here is not the command, so it is neither copied nor sent.
+    const command = entry.command && !entry.command.includes("••") ? entry.command : "";
+    const reply = entry.status === "done" ? entry.reply : null;
+    const settled = entry.status !== "queued" && entry.status !== "waiting";
+    const copy = (text: string) => void navigator.clipboard?.writeText(text).then(() => toast(t("common.copied")));
+    const items: (MenuItem | null)[] = [
+      command ? { label: t("node.console.copyCommand"), icon: <CopyIcon size={17} />, onSelect: () => copy(command) } : null,
+      reply ? { label: t("node.console.copyReply"), icon: <CopyIcon size={17} />, onSelect: () => copy(reply) } : null,
+      command && settled ? { label: t("node.console.sendAgain"), icon: <RefreshIcon size={17} />, air: true, group: true, disabled: !online, onSelect: () => again(command) } : null,
+    ];
+    // A click or a right click puts the menu where it was; Enter on the row, under the row.
+    const row = e.currentTarget.getBoundingClientRect();
+    const at = e.detail > 0 || e.type === "contextmenu" ? { x: e.clientX, y: e.clientY } : { x: row.left, y: row.bottom };
+    showMenu(
+      items.filter((x): x is MenuItem => x !== null),
+      { title: command || undefined, at },
+    );
   };
 
   const typed = draft.trim();
@@ -91,7 +124,7 @@ export function Console({ contact }: { contact: ContactRecord }) {
     <>
       <div className="console" ref={log} aria-live="polite">
         {entries.map((entry) => (
-          <Entry key={entry.id} entry={entry} onRetry={() => send(entry.command)} />
+          <Entry key={entry.id} entry={entry} onRetry={() => again(entry.command)} onMenu={(e) => menuOf(entry, e)} />
         ))}
         {lost ? (
           <div className="c-wayback">
@@ -168,12 +201,12 @@ export function Console({ contact }: { contact: ContactRecord }) {
       />
       <Confirm
         open={confirming !== null}
-        title={t("node.console.sendTitle", { command: confirming ?? "" })}
+        title={t("node.console.sendTitle", { command: confirming?.command ?? "" })}
         body={
           <p>
-            {confirming?.startsWith("set radio")
+            {confirming?.command.startsWith("set radio")
               ? t("node.console.radioWarn")
-              : confirming?.startsWith("password") || confirming?.startsWith("set guest.password")
+              : confirming?.command.startsWith("password") || confirming?.command.startsWith("set guest.password")
                 ? t("node.console.passwordWarn")
                 : t("node.console.actsAtOnce", { name: contact.name })}
           </p>
@@ -182,33 +215,51 @@ export function Console({ contact }: { contact: ContactRecord }) {
         danger
         onCancel={() => setConfirming(null)}
         onConfirm={() => {
-          const command = confirming!;
+          const { command, typed } = confirming!;
           setConfirming(null);
-          send(command);
+          if (typed) send(command);
+          else run(command);
         }}
       />
     </>
   );
 }
 
-function Entry({ entry, onRetry }: { entry: ConsoleEntry; onRetry: () => void }) {
+function Entry({ entry, onRetry, onMenu }: { entry: ConsoleEntry; onRetry: () => void; onMenu: (e: MouseEvent<HTMLButtonElement>) => void }) {
+  // The head is a button when its menu has something in it: a command that is not masked, or an answer.
+  const menu = (entry.command !== "" && !entry.command.includes("••")) || (entry.status === "done" && !!entry.reply);
+  const head = entry.command ? (
+    <>
+      <span className="c-prompt">›</span>
+      <span>{entry.command}</span>
+      <span className="c-tag" title={t("node.console.tag")}>
+        {entry.tag}|
+      </span>
+      <span className="c-time">{timeOfDay(entry.at / 1000)}</span>
+    </>
+  ) : (
+    <>
+      <span className="c-prompt">‹</span>
+      <span>{t("node.console.unasked")}</span>
+      <span className="c-time">{timeOfDay(entry.at / 1000)}</span>
+    </>
+  );
   return (
     <div className="c-entry">
-      {entry.command ? (
-        <div className="c-cmd">
-          <span className="c-prompt">›</span>
-          <span>{entry.command}</span>
-          <span className="c-tag" title={t("node.console.tag")}>
-            {entry.tag}|
-          </span>
-          <span className="c-time">{timeOfDay(entry.at / 1000)}</span>
-        </div>
+      {menu ? (
+        <button
+          type="button"
+          className={["c-cmd", entry.command ? "" : "muted"].join(" ")}
+          onClick={onMenu}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            onMenu(e);
+          }}
+        >
+          {head}
+        </button>
       ) : (
-        <div className="c-cmd muted">
-          <span className="c-prompt">‹</span>
-          <span>{t("node.console.unasked")}</span>
-          <span className="c-time">{timeOfDay(entry.at / 1000)}</span>
-        </div>
+        <div className={["c-cmd", entry.command ? "" : "muted"].join(" ")}>{head}</div>
       )}
       {entry.status === "queued" ? (
         <div className="c-out c-wait">{t("node.console.queued")}</div>

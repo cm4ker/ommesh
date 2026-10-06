@@ -122,6 +122,8 @@
   "console.waiting": "ожидание ответа…",
   "console.noReply": "нет ответа",
   "console.sendAgain": "Отправить ещё раз",
+  "console.copyCommand": "Копировать команду",
+  "console.copyReply": "Копировать ответ",
   "console.wayBack": "Команды могли дойти, а ответы потеряться: узел отвечает своим путём к вам.",
   "console.relearn": "Обновить путь назад",
   "console.relearned": "{name} снова знает путь к вам",

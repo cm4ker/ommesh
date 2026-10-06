@@ -80,6 +80,10 @@
     "other": "Все узлы были слышны за последние {count} дня."
   },
   "cleanUp.notHeardFor": "Не слышно",
+  "cleanUp.everyone": "Все",
+  "cleanUp.allKept": "Все узлы, которые хранит радио. Любой из них можно вернуть в разделе Настройки › Контакты › Удалённые.",
+  "cleanUp.noneKept": "Радио не хранит ни одного узла.",
+  "cleanUp.allNodes": "Все узлы",
   "cleanUp.review": "Показать список",
   "cleanUp.hide": "Скрыть список",
   "cleanUp.notHeardDays": { "one": "Не слышно {count}+ день", "few": "Не слышно {count}+ дня", "many": "Не слышно {count}+ дней", "other": "Не слышно {count}+ дня" },

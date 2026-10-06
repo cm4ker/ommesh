@@ -81,6 +81,21 @@ test("a node whose clock runs ahead is judged by when the radio stored its adver
   );
 });
 
+test("a clean-up of every node takes even one heard just now, and still keeps a favourite", () => {
+  // Stamped a minute ahead of us, by a radio clock that runs fast.
+  const now = contact(1, "now", -1 / 1440);
+  const fav = contact(2, "fav", 3, { flags: ContactFlag.Favourite });
+  const plan = tidyPlan(state([contact(3, "old", 40), now, fav, contact(4, "heard", 60, { unsaved: true })]), [], 0, NOW);
+  assert.deepEqual(
+    plan.remove.map((c) => c.name),
+    ["old", "now"],
+  );
+  assert.deepEqual(
+    plan.kept.map((k) => k.contact.name),
+    ["fav"],
+  );
+});
+
 test("a node the radio never kept is not counted and not taken", () => {
   const s = state([contact(1, "heard", 60, { unsaved: true }), contact(2, "kept", 60)], { device: { maxContacts: 2 } as SessionState["device"] });
   assert.deepEqual(

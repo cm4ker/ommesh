@@ -59,12 +59,13 @@ export interface TidyPlan {
   kept: { contact: ContactRecord; reason: KeepReason }[];
 }
 
-/** What a clean-up of the nodes not heard for `days` would take off the radio. */
+/** What a clean-up of the nodes not heard for `days` would take off the radio; 0 days takes every one it keeps. */
 export function tidyPlan(state: SessionState, saved: readonly string[], days: number, now: number): TidyPlan {
   const chats = chatKeys(state);
   const before = now - days * DAY_MS;
+  // With 0 days, every one, even one stamped by a radio clock that runs ahead of ours.
   const quiet = Object.values(state.contacts)
-    .filter((c) => !c.unsaved && heardAt(c) < before)
+    .filter((c) => !c.unsaved && (days === 0 || heardAt(c) < before))
     .sort((a, b) => heardAt(a) - heardAt(b));
   const plan: TidyPlan = { remove: [], kept: [] };
   for (const c of quiet) {

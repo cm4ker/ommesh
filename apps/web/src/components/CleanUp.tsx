@@ -35,7 +35,12 @@ const KEEP_WHY: Record<KeepReason, Key> = {
   chat: "contacts.keepWhy.chat",
 };
 
-/** One sheet for the whole mesh: the nodes not heard for a while, one number, one button; the list behind a tap. */
+/**
+ * One sheet for the whole mesh: the nodes not heard for a while, or every one
+ * the radio keeps, one number, one button; the list behind a tap. "Every one"
+ * is for this sheet only: the protocol removes contacts one at a time, and
+ * the tidy rule never takes them all.
+ */
 export function CleanUpHost() {
   const open = useCleanUpOpen();
   return open ? <CleanUpSheet /> : null;
@@ -73,18 +78,22 @@ function CleanUpSheet() {
   return (
     <Sheet open onClose={closeCleanUp} title={title}>
       <p className="group-note cleanup-note">
-        {plan.remove.length || plan.kept.length
-          ? t("contacts.cleanUp.notHeardOver", { count: days })
-          : t("contacts.cleanUp.allHeard", { count: days })}
+        {days === 0
+          ? plan.remove.length || plan.kept.length
+            ? t("contacts.cleanUp.allKept")
+            : t("contacts.cleanUp.noneKept")
+          : plan.remove.length || plan.kept.length
+            ? t("contacts.cleanUp.notHeardOver", { count: days })
+            : t("contacts.cleanUp.allHeard", { count: days })}
       </p>
       {plan.remove.length ? <p className="group-note cleanup-kinds">{byKind(plan.remove)}</p> : null}
       <Group>
-        <SelectRow label={t("contacts.cleanUp.notHeardFor")} value={String(days)} options={TIDY_DAYS.map((d) => ({ value: String(d), label: t("contacts.days", { count: d }) }))} onChange={(v) => setDays(Number(v))} />
+        <SelectRow label={t("contacts.cleanUp.notHeardFor")} value={String(days)} options={[...TIDY_DAYS.map((d) => ({ value: String(d), label: t("contacts.days", { count: d }) })), { value: "0", label: t("contacts.cleanUp.everyone") }]} onChange={(v) => setDays(Number(v))} />
         {plan.remove.length || plan.kept.length ? <LinkRow label={review ? t("contacts.cleanUp.hide") : t("contacts.cleanUp.review")} value={plan.remove.length + plan.kept.length} onClick={() => setReview(!review)} /> : null}
       </Group>
       {review ? (
         <>
-          {plan.remove.length ? <PickList title={t("contacts.cleanUp.notHeardDays", { count: days })} rows={plan.remove.map((c) => ({ contact: c, reason: null }))} picked={picked} onToggle={toggle} /> : null}
+          {plan.remove.length ? <PickList title={days === 0 ? t("contacts.cleanUp.allNodes") : t("contacts.cleanUp.notHeardDays", { count: days })} rows={plan.remove.map((c) => ({ contact: c, reason: null }))} picked={picked} onToggle={toggle} /> : null}
           {plan.kept.length ? <PickList title={t("contacts.cleanUp.kept")} rows={plan.kept} picked={picked} onToggle={toggle} /> : null}
         </>
       ) : null}

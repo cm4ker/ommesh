@@ -364,6 +364,11 @@ class DemoRadio extends BaseTransport {
    * only a reset brings back.
    */
   private clocks = new Map<Person, number>(PEOPLE.filter((p) => p.type >= 2).map((p) => [p, p.name === "Tower Repeater" ? -300 : p.type === 2 ? 47 : 2]));
+  /**
+   * Ridge is two hops out, and the answer to the first `clock sync` it takes is lost on the way
+   * back: the clock is set, the card still has it 47 s behind, and setting it again is refused.
+   */
+  private lostClockAnswer = new Set<Person>(PEOPLE.filter((p) => p.name === "Ridge Repeater"));
   /** The route this radio holds to each contact, as a hop count; 0xff for none. */
   private routes = new Map<Person, number>(PEOPLE.map((p) => [p, p.hops]));
   /** Contacts taken off this radio, and the flags written to the others. */
@@ -575,10 +580,12 @@ class DemoRadio extends BaseTransport {
     if (command === "ver") return "v1.17.1 (Build: 14-Aug-2026)";
     if (command === "board") return "Demo board";
     if (command === "clock") return clockText(this.clocks.get(p) ?? 0);
-    // Like the firmware: the clock only goes forward.
+    // Like the firmware: the clock only goes forward, to the command's stamp. The command lands
+    // seconds after it was stamped, so a clock behind by less than that is refused too.
     if (command === "clock sync") {
-      if ((this.clocks.get(p) ?? 0) < 0) return "ERR: clock cannot go backwards";
+      if ((this.clocks.get(p) ?? 0) < 3) return "ERR: clock cannot go backwards";
       this.clocks.set(p, 0);
+      if (this.lostClockAnswer.delete(p)) return null;
       return `OK - clock set: ${clockText(0)}`;
     }
     // Back to 15 May 2024, and a restart that leaves no time to answer.

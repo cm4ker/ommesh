@@ -83,16 +83,20 @@ export function ClockRow({ contact }: { contact: ContactRecord }) {
       setBusy(null);
     }
   };
-  // The node answers `clock sync` whatever it did, so its reply decides what is said. A clock
-  // that runs ahead stays there: its reading then offers the reset that brings it back.
+  // The node answers `clock sync` whatever it did, so its reply decides what is said. It takes
+  // only a time later than its clock when the command lands, seconds after we stamped it, so a
+  // clock already right refuses as well as one that runs ahead. The refusal is stamped with the
+  // node's clock, and that reading tells the two apart. Ahead, the sheet has turned Set into the
+  // reset that brings it back, which says why; nothing more is said over it.
   const sync = async () => {
     setBusy("set");
     try {
       await session.syncNodeClock(key);
       toast(t("node.status.clockSet"));
     } catch (e) {
-      if (e instanceof ClockAheadError) toast(t("node.status.clockAhead", { name }), "error", undefined, t("node.status.clockAheadDetail"));
-      else toast(e instanceof NodeCommandError ? t("node.nodeSaid", { reply: e.reply }) : errorText(e), "error");
+      const now = e instanceof ClockAheadError ? nodeClock(session.getState().logins[key]) : null;
+      if (now && Math.abs(now.drift) <= DRIFT_WORTH_FIXING_S) toast(t("node.status.clockRight"));
+      else if (!now || now.drift > 0) toast(e instanceof NodeCommandError ? t("node.nodeSaid", { reply: e.reply }) : errorText(e), "error");
     } finally {
       setBusy(null);
     }

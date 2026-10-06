@@ -1106,7 +1106,7 @@ function Status({ message, trying }: { message: MessageRecord; trying: boolean }
         );
       }
       return (
-        <span title={message.ackTag ? t("chats.status.sentWaiting") : t("chats.status.sent")}>
+        <span title={message.ackTag ? t("chats.status.sentWaiting") : session.canHearRelays(message) ? t("chats.status.sent") : t("chats.status.sentLong")}>
           <CheckIcon size={13} />
         </span>
       );

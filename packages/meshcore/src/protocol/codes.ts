@@ -14,6 +14,13 @@ export const MAX_PATH_SIZE = 64;
 export const MAX_FRAME_SIZE = 176;
 /** `10 * CIPHER_BLOCK_SIZE`: the longest text a packet carries, in bytes, name prefix included on a channel. */
 export const MAX_TEXT_LEN = 160;
+/**
+ * The longest text this client puts in a direct message. From the fifth
+ * attempt the firmware hides the attempt number in two bytes after the text,
+ * and refuses a text with no room for them (`composeMsgPacket`); at this
+ * length every attempt is a packet of its own.
+ */
+export const DIRECT_TEXT_LEN = MAX_TEXT_LEN - 2;
 export const OUT_PATH_UNKNOWN = 0xff;
 /**
  * The protocol version this client claims in `CMD_DEVICE_QUERY`. Three is where

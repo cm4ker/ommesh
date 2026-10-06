@@ -10,7 +10,7 @@
  * sealed with a two-byte MAC.
  */
 
-import { MAX_TEXT_LEN } from "@meshnet/meshcore";
+import { CHANNEL_TEXT_LEN, DIRECT_TEXT_LEN } from "@meshnet/meshcore";
 import { textWithPlaces } from "./place.js";
 
 const encoder = new TextEncoder();
@@ -76,11 +76,12 @@ export interface Cost {
   airMs: number | null;
 }
 
-export function costOf(text: string, options: { pack: (text: string) => string; prefix: string; header: number; radio: RadioShape | null }): Cost {
+/** `ceiling` is what the prefix and the text may take together (`ceilingOf`). */
+export function costOf(text: string, options: { pack: (text: string) => string; prefix: string; ceiling: number; header: number; radio: RadioShape | null }): Cost {
   const typed = bytes(text);
   const used = bytes(options.pack(text));
   const prefix = bytes(options.prefix);
-  const budget = MAX_TEXT_LEN - prefix;
+  const budget = options.ceiling - prefix;
   const plain = STAMP + prefix + used;
   const blocks = Math.ceil(plain / BLOCK);
   const packet = options.header + blocks * BLOCK;
@@ -97,10 +98,19 @@ export function costOf(text: string, options: { pack: (text: string) => string; 
   };
 }
 
-/** Where on a scale of MAX_TEXT_LEN bytes of prefix and text another block begins: the meter's ticks. */
-export function blockEdges(): number[] {
+/**
+ * What the prefix and the text may take together. On a channel, ten blocks,
+ * so that a repeater's copy can be heard; in a direct message, room for the
+ * attempt number later attempts carry.
+ */
+export function ceilingOf(kind: "direct" | "channel"): number {
+  return kind === "channel" ? CHANNEL_TEXT_LEN : DIRECT_TEXT_LEN;
+}
+
+/** Where on a scale of `ceiling` bytes of prefix and text another block begins: the meter's ticks. */
+export function blockEdges(ceiling: number): number[] {
   const edges: number[] = [];
-  for (let at = BLOCK - STAMP; at < MAX_TEXT_LEN; at += BLOCK) edges.push(at);
+  for (let at = BLOCK - STAMP; at < ceiling; at += BLOCK) edges.push(at);
   return edges;
 }
 

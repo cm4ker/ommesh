@@ -12,9 +12,9 @@
 import { MeshCoreClient, MeshCoreError, TimeoutError, type TextSendResult } from "./client.js";
 import { ByteReader, bytesEqual, fromHex, pathByteLength, toHex, unixNow } from "./protocol/bytes.js";
 import { neighbourSearchMs, replyBudgetMs, sealedBytes, traceBudgetMs, type ReplySize } from "./protocol/airtime.js";
-import { groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
+import { CHANNEL_TEXT_LEN, groupTextPayload, heardGroupTextPayload, relaysAudible } from "./protocol/group.js";
 import { PayloadType, parseRawPacket, type RawPacket } from "./protocol/packet.js";
-import { AclRole, AdvType, Cmd, ContactFlag, ControlType, ErrCode, MAX_TEXT_LEN, NeighbourOrder, PUB_KEY_PREFIX_SIZE, StatsType, TxtType } from "./protocol/codes.js";
+import { AclRole, AdvType, Cmd, ContactFlag, ControlType, DIRECT_TEXT_LEN, ErrCode, MAX_TEXT_LEN, NeighbourOrder, PUB_KEY_PREFIX_SIZE, StatsType, TxtType } from "./protocol/codes.js";
 import {
   accessListRequest,
   avgMinMaxRequest,
@@ -2433,8 +2433,14 @@ export class MeshSession {
           timestamp: message.timestamp,
           ...(this.state.self ? { senderName: this.state.self.name } : {}),
         });
-        this.patchMessage(message.id, { status: "sent" });
-        this.armSilence(message.id);
+        // No copy of a message this long can reach us, so silence says nothing of it:
+        // it is neither called unheard nor sent again by a loop (#84).
+        if (this.canHearRelays(message)) {
+          this.patchMessage(message.id, { status: "sent" });
+          this.armSilence(message.id);
+        } else {
+          this.patchMessage(message.id, { status: "sent", retryPlan: null });
+        }
         return;
       }
       if (target.kind !== "contact") throw new Error("unreachable");
@@ -2773,9 +2779,15 @@ export class MeshSession {
   /** How many bytes of text a message to this conversation may carry. */
   textBudget(conversation: string): number {
     const target = parseConversation(conversation);
-    if (target.kind !== "channel") return MAX_TEXT_LEN;
+    if (target.kind !== "channel") return DIRECT_TEXT_LEN;
     const name = this.state.self?.name ?? "";
-    return MAX_TEXT_LEN - new TextEncoder().encode(name).length - 2;
+    return CHANNEL_TEXT_LEN - new TextEncoder().encode(name).length - 2;
+  }
+
+  /** Whether a repeater's copy of this channel message of ours could be heard at all: not when it is too long (#84). */
+  canHearRelays(message: MessageRecord): boolean {
+    if (message.direction !== "out" || parseConversation(message.conversation).kind !== "channel") return true;
+    return relaysAudible(this.state.self?.name ?? "", message.text);
   }
 
   // ---- the radio's own settings ----

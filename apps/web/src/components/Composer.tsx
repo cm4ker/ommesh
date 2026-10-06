@@ -2,16 +2,16 @@
  * Where a message is written: one frame holding the text and its button, the
  * outline of a bubble with nothing painted in it, and no hint text, since the
  * chat above says where the message goes. What the message costs stays in
- * sight: the frame's lower edge fills as the 160 bytes run out, ticked where
+ * sight: the frame's lower edge fills as the bytes run out, ticked where
  * the cipher adds another 16-byte block, and a tag above it gives the bytes
  * and the time on air. What does not fit is marked in the text itself, with
  * two ways out.
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { AdvType, MAX_TEXT_LEN, parseConversation } from "@meshnet/meshcore";
+import { AdvType, parseConversation } from "@meshnet/meshcore";
 import { onAsk, takeAsk } from "../lib/chatAsk.js";
-import { costOf, blockEdges, hasCyrillic, headerBytes, mentionOf, mentionQuery, pathBytes, quoteOf, segments, splitParts, translit } from "../lib/composer.js";
+import { costOf, blockEdges, ceilingOf, hasCyrillic, headerBytes, mentionOf, mentionQuery, pathBytes, quoteOf, segments, splitParts, translit } from "../lib/composer.js";
 import { messagesIn } from "../lib/conversations.js";
 import { getDraft, setDraft } from "../lib/drafts.js";
 import { rememberRough, setPlace, updatePlace, usePlace } from "../lib/placeDraft.js";
@@ -34,8 +34,7 @@ export interface Reply {
   text: string;
 }
 
-const EDGES = blockEdges();
-const share = (n: number) => `${(Math.min(n, MAX_TEXT_LEN) / MAX_TEXT_LEN) * 100}%`;
+const share = (n: number, ceiling: number) => `${(Math.min(n, ceiling) / ceiling) * 100}%`;
 
 export function Composer({ conversation, title, reply, onReplyDone, onSent }: { conversation: string; title: string; reply: Reply | null; onReplyDone: () => void; onSent: () => void }) {
   const state = useSession();
@@ -65,7 +64,8 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   const prefix = (target.kind === "channel" ? `${self?.name ?? ""}: ` : "") + mention + (line ? `${line} ` : "");
   const header = target.kind === "channel" ? headerBytes("channel") : headerBytes("direct", contact ? pathBytes(contact.outPathLen) : 0);
   const shape = self ? { spreadingFactor: self.spreadingFactor, bandwidthHz: self.bandwidthHz, codingRate: self.codingRate } : null;
-  const cost = costOf(text, { pack, prefix, header, radio: shape });
+  const ceiling = ceilingOf(target.kind === "channel" ? "channel" : "direct");
+  const cost = costOf(text, { pack, prefix, ceiling, header, radio: shape });
   const body = text.trim();
   const head = quoted.current && text.startsWith(quoted.current) ? quoted.current : "";
   // A quote with nothing written under it is not a message yet; a place alone is.
@@ -439,9 +439,9 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
           </button>
         </div>
         <div className="compose-meter" aria-hidden="true">
-          <i className={["fill", tone].join(" ")} style={{ width: share(cost.prefix + cost.used) }} />
-          {EDGES.map((edge) => (
-            <span key={edge} className="tick" style={{ left: share(edge) }} />
+          <i className={["fill", tone].join(" ")} style={{ width: share(cost.prefix + cost.used, ceiling) }} />
+          {blockEdges(ceiling).map((edge) => (
+            <span key={edge} className="tick" style={{ left: share(edge, ceiling) }} />
           ))}
         </div>
       </div>

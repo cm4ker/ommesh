@@ -5,7 +5,7 @@ import { ago, utf8Length } from "../lib/format.js";
 import { quality } from "../lib/los.js";
 import { openProfile } from "../lib/nav.js";
 import { heardAt } from "../lib/nodes.js";
-import { useSession } from "../lib/session.js";
+import { session, useSession } from "../lib/session.js";
 import { locale, t } from "../i18n/index.js";
 import { tx } from "../i18n/rich.js";
 
@@ -254,6 +254,8 @@ function Unheard({ message }: { message: MessageRecord }) {
       </>
     );
   }
+  // Too long for any copy of it to reach the app: nobody can be seen sending it on (#84).
+  if (!session.canHearRelays(message)) return <span>{t("chats.details.tooLongToHear")}</span>;
   return <span>{t("chats.details.noRepeater")}</span>;
 }
 

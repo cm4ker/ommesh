@@ -5,7 +5,7 @@
  */
 
 import { parseConversation } from "@meshnet/meshcore";
-import { costOf, headerBytes, pathBytes, splitParts } from "./composer.js";
+import { ceilingOf, costOf, headerBytes, pathBytes, splitParts } from "./composer.js";
 import { getLookalikePrefs, packLookalikes } from "./lookalikes.js";
 import { session } from "./session.js";
 
@@ -18,7 +18,7 @@ export async function quickReply(conversation: string, text: string): Promise<vo
   const pack = (t: string) => packLookalikes(t, getLookalikePrefs());
   const prefix = target.kind === "channel" ? `${state.self?.name ?? ""}: ` : "";
   const header = target.kind === "channel" ? headerBytes("channel") : headerBytes("direct", contact ? pathBytes(contact.outPathLen) : 0);
-  const cost = costOf(body, { pack, prefix, header, radio: null });
+  const cost = costOf(body, { pack, prefix, ceiling: ceilingOf(target.kind === "channel" ? "channel" : "direct"), header, radio: null });
   if (cost.over <= 0) {
     await session.sendText(conversation, pack(body), { original: body });
     return;

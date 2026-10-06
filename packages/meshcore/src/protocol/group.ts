@@ -10,11 +10,39 @@
  * first block of a zero-IV CBC, which is the same thing.
  */
 import { ByteWriter, concat, utf8 } from "./bytes.js";
-import { MAX_TEXT_LEN, TxtType } from "./codes.js";
+import { MAX_FRAME_SIZE, MAX_TEXT_LEN, TxtType } from "./codes.js";
 
 const CIPHER_KEY_SIZE = 16;
 const CIPHER_MAC_SIZE = 2;
 const HMAC_KEY_SIZE = 32;
+
+/**
+ * The longest `name: text` this client puts in a channel message: with the
+ * time and flags before it, ten cipher blocks, where MAX_TEXT_LEN would make
+ * eleven. A repeater's copy of an eleven-block message can never be heard
+ * (see `relaysAudible`), and the message would look unrelayed however far it
+ * went (#84).
+ */
+export const CHANNEL_TEXT_LEN = 155;
+
+/**
+ * A heard packet's frame around its cipher text: the push code, SNR and RSSI;
+ * the header, region codes, path length and one hop of the longest hash; the
+ * channel hash and the MAC.
+ */
+const ECHO_FRAME_HEAD = 3 + 1 + 4 + 1 + 3 + 1 + CIPHER_MAC_SIZE;
+
+/**
+ * Whether a repeater's copy of our channel message could reach the app at
+ * all. The radio hands a heard packet up only whole in one frame
+ * (`MyMesh::logRxRaw`), and drops a longer one without a word. A copy is
+ * reckoned at its longest, so one that fits is seen whatever the mesh's
+ * region and hash settings.
+ */
+export function relaysAudible(senderName: string, text: string): boolean {
+  const plain = 4 + 1 + Math.min(MAX_TEXT_LEN, utf8(`${senderName}: `).length + utf8(text).length);
+  return ECHO_FRAME_HEAD + Math.ceil(plain / 16) * 16 <= MAX_FRAME_SIZE;
+}
 
 /** WebCrypto wants a buffer it can own; a view into the frame is copied out. */
 function own(bytes: Uint8Array): Uint8Array<ArrayBuffer> {

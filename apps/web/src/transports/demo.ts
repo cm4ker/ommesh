@@ -9,7 +9,7 @@
  * turns out to be gone.
  */
 
-import { BaseTransport, ByteWriter, Cmd, fromHex, fromUtf8, groupTextPayload, heardGroupTextPayload, Push, ReqType, Resp, toHex, TxtType, type Transport } from "@meshnet/meshcore";
+import { BaseTransport, ByteWriter, Cmd, fromHex, fromUtf8, groupTextPayload, heardGroupTextPayload, MAX_FRAME_SIZE, Push, ReqType, Resp, toHex, TxtType, type Transport } from "@meshnet/meshcore";
 import type { Connector } from "./types.js";
 import { t } from "../i18n/index.js";
 
@@ -691,6 +691,12 @@ class DemoRadio extends BaseTransport {
       for (const r of replies) this.emitFrame(r);
     }, 15);
     this.timers.push(t);
+  }
+
+  /** A heard packet goes up only whole in one frame, as the firmware's `logRxRaw` sends it; a longer one is dropped (#84). */
+  protected override emitFrame(frame: Uint8Array): void {
+    if (frame[0] === Push.LogRxData && frame.length > MAX_FRAME_SIZE) return;
+    super.emitFrame(frame);
   }
 
   private later(ms: number, frame: Uint8Array | (() => void)): void {

@@ -133,6 +133,7 @@
   },
   "status.sentWaiting": "Sent; waiting for the acknowledgement",
   "status.sent": "Sent",
+  "status.sentLong": "Sent. The radio cannot show repeats of a message this long",
   "status.ackIn": "Acknowledged in {seconds} s",
   "status.ack": "Acknowledged",
   "tries.withinMinute": {
@@ -273,6 +274,7 @@
   "details.noRepeater20": "No repeater sent it on in the first 20 s.",
   "details.mayHaveIt": "A node in direct range may still have it. Repeaters out of range, asleep or busy stay quiet the same way.",
   "details.noRepeater": "No repeater has been heard sending it on.",
+  "details.tooLongToHear": "Too long for the radio to show its repeats, so nobody can be seen sending it on.",
   "newChat.title": "New chat",
   "newChat.people": "Message someone",
   "newChat.peopleHint": "A person or a room the radio has heard",

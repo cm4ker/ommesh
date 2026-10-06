@@ -444,7 +444,7 @@ test("a channel message goes out with the sender's name accounted for, and is 's
   await session.connect(radio);
   const message = await session.sendText(channelConversation(0), "hello channel");
   assert.equal(message.status, "sent");
-  assert.equal(session.textBudget(channelConversation(0)), 160 - 2 - 2);
+  assert.equal(session.textBudget(channelConversation(0)), 155 - 2 - 2);
   const frame = radio.sent.find((f) => f[0] === Cmd.SendChannelTxtMsg)!;
   assert.equal(frame[2], 0);
 });
@@ -752,6 +752,36 @@ test("a channel message nobody sends on is unheard after the window, and an echo
   radio.push(await echoOf(session, "anyone?", sent.timestamp, ["7932"]));
   await settle();
   assert.equal(status(), "sent");
+});
+
+test("a channel message too long for its copies to be heard is never unheard, and a loop on it sends once", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  let clock = 1_700_000_000_000;
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => clock });
+  const connecting = session.connect(radio);
+  await settle();
+  await connecting;
+  assert.equal(session.textBudget("ch:0"), 151);
+  // Over the budget, as one sent before it was cut to ten blocks.
+  const sent = await session.sendText("ch:0", "x".repeat(156));
+  const message = () => session.getState().messages.find((m) => m.id === sent.id)!;
+  const channelSends = () => radio.sent.filter((f) => f[0] === Cmd.SendChannelTxtMsg).length;
+  assert.equal(session.canHearRelays(message()), false);
+
+  t.mock.timers.tick(60_000);
+  assert.equal(message().status, "sent");
+
+  await session.keepTrying(sent.id);
+  assert.equal(channelSends(), 2);
+  assert.equal(message().retryPlan, null);
+  clock += 3_600_000;
+  t.mock.timers.tick(60_000);
+  await settle();
+  assert.equal(channelSends(), 2, "a loop on it stops after its one send");
+
+  const short = await session.sendText("ch:0", "x".repeat(151));
+  assert.equal(session.canHearRelays(session.getState().messages.find((m) => m.id === short.id)!), true);
 });
 
 test("a message that did not get through can be deleted, and one still on its way cannot", async (t) => {

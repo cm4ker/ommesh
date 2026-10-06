@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { airtimeMs, blockEdges, costOf, headerBytes, mentionQuery, quoteHeadLength, quoteOf, segments, splitParts, translit } from "./composer.js";
+import { airtimeMs, blockEdges, ceilingOf, costOf, headerBytes, mentionQuery, quoteHeadLength, quoteOf, segments, splitParts, translit } from "./composer.js";
+import { relaysAudible } from "@meshnet/meshcore";
 import { packLookalikes } from "./lookalikes.js";
 import { utf8Length } from "./format.js";
 
@@ -16,10 +17,10 @@ test("time on air follows Semtech's formula with MeshCore's 32-symbol preamble a
 });
 
 test("a direct message is time, flags and text in 16-byte blocks, behind the header and its path", () => {
-  const cost = costOf("Буду в 10:15 у входа, возьму запасной аккумулятор для T-Echo", { pack, prefix: "", header: headerBytes("direct", 2), radio: PKIO });
+  const cost = costOf("Буду в 10:15 у входа, возьму запасной аккумулятор для T-Echo", { pack, prefix: "", ceiling: ceilingOf("direct"), header: headerBytes("direct", 2), radio: PKIO });
   assert.equal(cost.typed, 99);
   assert.equal(cost.used, 88);
-  assert.equal(cost.budget, 160);
+  assert.equal(cost.budget, 158);
   assert.equal(cost.over, 0);
   assert.equal(cost.plain, 93);
   assert.equal(cost.blocks, 6);
@@ -28,15 +29,25 @@ test("a direct message is time, flags and text in 16-byte blocks, behind the hea
   assert.equal(cost.airMs?.toFixed(0), "535");
 });
 
-test("a channel's name and a reply's mention come out of the same 160 bytes", () => {
-  const cost = costOf("5 из 5", { pack, prefix: "PKIO: @[Dima 🚲] ", header: headerBytes("channel"), radio: null });
+test("a channel's name and a reply's mention come out of the same 155 bytes", () => {
+  const cost = costOf("5 из 5", { pack, prefix: "PKIO: @[Dima 🚲] ", ceiling: ceilingOf("channel"), header: headerBytes("channel"), radio: null });
   assert.equal(cost.prefix, 6 + 13);
-  assert.equal(cost.budget, 160 - 19);
+  assert.equal(cost.budget, 155 - 19);
   assert.equal(cost.airMs, null);
 });
 
+test("a long text on a channel is split into parts of ten blocks, so each one's repeats can be heard", () => {
+  const prefix = "Борис: ";
+  const cost = costOf("слово ".repeat(60), { pack: (t) => t, prefix, ceiling: ceilingOf("channel"), header: headerBytes("channel"), radio: null });
+  const parts = splitParts("слово ".repeat(60).trim(), cost.budget);
+  assert.ok(parts.length > 1);
+  for (const part of parts) assert.ok(relaysAudible("Борис", part), part);
+});
+
 test("block edges sit where the time, the flags and the text cross 16 bytes", () => {
-  assert.deepEqual(blockEdges(), [11, 27, 43, 59, 75, 91, 107, 123, 139, 155]);
+  assert.deepEqual(blockEdges(ceilingOf("direct")), [11, 27, 43, 59, 75, 91, 107, 123, 139, 155]);
+  // A channel ends where its tenth block does.
+  assert.deepEqual(blockEdges(ceilingOf("channel")), [11, 27, 43, 59, 75, 91, 107, 123, 139]);
 });
 
 test("the runs under the field mark mentions and what lies past the budget", () => {

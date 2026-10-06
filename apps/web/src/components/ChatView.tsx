@@ -18,6 +18,7 @@ import { useWide } from "../lib/layout.js";
 import { findMessages, messagesFrom, searchTerm, type Sender } from "../lib/messageSearch.js";
 import { openChannel, openMessage, openPlace, openProfile } from "../lib/nav.js";
 import { cameByPull, nextUnreadChat, openNextChat } from "../lib/nextChat.js";
+import { noteShown } from "../lib/recentChats.js";
 import { openRoute } from "../lib/toolActions.js";
 import { usePress } from "../lib/press.js";
 import { usePull } from "../lib/pull.js";
@@ -93,6 +94,10 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   const inner = useRef<HTMLDivElement>(null);
   // Opened by a pull past the end of the chat before, its messages rise in from below.
   const [arrived] = useState(() => cameByPull(conversation));
+  // The latest on screen comes first in the desktop's Ctrl+Tab row.
+  useEffect(() => {
+    noteShown(conversation);
+  }, [conversation]);
   const [reply, setReply] = useState<Reply | null>(null);
   // The message being answered, kept in sight while the keyboard comes up for the answer.
   const answering = useRef<string | null>(null);

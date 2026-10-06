@@ -19,6 +19,7 @@ import { Button } from "../ui/Button.js";
 import { Prompt } from "../ui/Dialog.js";
 import { ChannelView } from "./ChannelView.js";
 import { ChannelWriters } from "./ChannelWriters.js";
+import { ChatSwitcher } from "./ChatSwitcher.js";
 import { ChatList, NEW_CHAT_EVENT } from "./ChatList.js";
 import { ChatView, FIND_IN_CHAT_EVENT } from "./ChatView.js";
 import { ChatIcon, NodesIcon, SearchIcon, SettingsIcon } from "./Icons.js";
@@ -524,6 +525,7 @@ function Desktop() {
         groupPanel
       )}
       <Palette open={palette} onClose={() => setPalette(false)} />
+      <ChatSwitcher />
     </div>
   );
 }

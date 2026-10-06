@@ -183,6 +183,7 @@ App artwork has one source: `apps/web/public/icon.svg`. After changing it, run `
 | `Alt+1` / `Alt+2` / `Alt+3` | Switch sections in the browser |
 | `Ctrl+1` / `Ctrl+2` / `Ctrl+3` | Switch sections in the desktop shell |
 | `Alt+↑` / `Alt+↓` | Move between chats |
+| `Ctrl+Tab` | Recent chats in the desktop shell: hold Ctrl, press Tab to move on (Shift+Tab back), let go to open |
 | `Ctrl+I` | Toggle the details panel |
 | `Esc` | Close a panel or go back |
 

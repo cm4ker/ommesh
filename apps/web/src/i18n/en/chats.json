@@ -81,6 +81,7 @@
   "next.pull": "Pull up to open it",
   "next.release": "Let go to open it",
   "next.none": "No more unread chats",
+  "switcher.label": "Recent chats",
   "chat.dayCount": {
     "one": "{count} message",
     "other": "{count} messages"

@@ -334,6 +334,8 @@
   "cli.advertInterval": "minutes, up to 240; 0 is off",
   "cli.floodAdvertInterval": "hours, 3–168; 0 is off",
   "cli.name": "name",
+  "cli.pin": "6 digits, or 0 for the default",
+  "cli.tzOffset": "hours from UTC, −12 to 14",
   "cli.degrees": "degrees",
   "cli.ownerInfo": "text; | starts a new line",
   "cli.privateKey": "private key, hex; reboot to apply",

@@ -95,6 +95,8 @@ export const Cmd = {
   SetDefaultFloodScope: 63,
   GetDefaultFloodScope: 64,
   SendRawPacket: 65,
+  /** v14: a console command for this radio itself; the answer is `CliReply`. */
+  RunCliCommand: 66,
 } as const;
 
 /** Radio → app, in answer to a command. Always below 0x80. */
@@ -128,6 +130,7 @@ export const Resp = {
   AllowedRepeatFreq: 26,
   ChannelDataRecv: 27,
   DefaultFloodScope: 28,
+  CliReply: 29,
 } as const;
 
 /** Radio → app, unprompted. Always 0x80 and above, which is how they are told apart. */
@@ -193,6 +196,8 @@ export const TxtType = {
   Plain: 0,
   CliData: 1,
   SignedPlain: 2,
+  /** v14: someone asks this radio to run a console command; never a chat line. */
+  CliCommand: 3,
 } as const;
 
 export const AdvType = {

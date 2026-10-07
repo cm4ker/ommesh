@@ -407,6 +407,11 @@ export function getCustomVars(): Uint8Array {
   return new ByteWriter().u8(Cmd.GetCustomVars).toBytes();
 }
 
+/** A console line for this radio itself (v14), as typed: the radio answers with `CliReply`. */
+export function runCliCommand(text: string): Uint8Array {
+  return new ByteWriter().u8(Cmd.RunCliCommand).string(text).toBytes();
+}
+
 export function setCustomVar(name: string, value: string): Uint8Array {
   return new ByteWriter().u8(Cmd.SetCustomVar).string(`${name}:${value}`).toBytes();
 }

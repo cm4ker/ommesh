@@ -710,6 +710,48 @@ class DemoRadio extends BaseTransport {
     this.timers.push(setTimeout(() => (typeof frame === "function" ? frame() : this.emitFrame(frame)), ms));
   }
 
+  private ownTx = 22;
+
+  /** A few of upstream's companion console commands, word for word; the rest are unknown as they would be there. */
+  private ownCli(command: string): string {
+    const { frequencyKhz, bandwidthHz, spreadingFactor, codingRate, pathHashMode } = this.radio;
+    switch (command) {
+      case "ver":
+        return "v1.17.1 (Build: 14 Aug 2026)";
+      case "board":
+        return "Demo board";
+      case "get name":
+        return "> Demo radio";
+      case "get radio":
+        return `> ${(frequencyKhz / 1000).toFixed(6)},${bandwidthHz / 1000},${spreadingFactor},${codingRate}`;
+      case "get freq":
+        return `> ${(frequencyKhz / 1000).toFixed(6)}`;
+      case "get tx":
+        return `> ${this.ownTx}`;
+      case "get af":
+        return "> 1.0";
+      case "get dutycycle":
+        return "> 50.0%";
+      case "get path.hash.mode":
+        return `> ${pathHashMode}`;
+      case "get multi.acks":
+        return "> 0";
+      case "get radio.rxgain":
+        return "> on";
+    }
+    const tx = /^set tx (-?\d+)$/.exec(command);
+    if (tx) {
+      const dbm = Number(tx[1]);
+      if (dbm < -9 || dbm > 22) return "Error, must be -9 to 22";
+      this.ownTx = dbm;
+      return "OK";
+    }
+    if (command.startsWith("set radio ")) return "OK - reboot to apply";
+    if (/^set (name|af|rxdelay|multi\.acks|path\.hash\.mode|radio\.rxgain) /.test(command)) return "OK";
+    if (command.startsWith("set pin ")) return `> pin is now ${command.slice(8).padStart(6, "0")}`;
+    return "Unknown command";
+  }
+
   private answer(frame: Uint8Array): Uint8Array[] {
     const code = frame[0];
     switch (code) {
@@ -717,7 +759,7 @@ class DemoRadio extends BaseTransport {
         return [
           new ByteWriter()
             .u8(Resp.DeviceInfo)
-            .u8(13)
+            .u8(14)
             .u8(50)
             .u8(8)
             .u32(123456)
@@ -812,6 +854,23 @@ class DemoRadio extends BaseTransport {
       case Cmd.GetCustomVars:
         // The demo radio has no GPS of its own: it is put where the phone is.
         return [new Uint8Array([Resp.CustomVars])];
+      case Cmd.RunCliCommand: {
+        // The radio's own console, answered in upstream MeshCore's words (protocol 14).
+        let text = fromUtf8(frame.subarray(1));
+        let tag = "";
+        if (text.length > 4 && text[2] === "|") [tag, text] = [text.slice(0, 3), text.slice(3)];
+        if (text === "reboot" || text === "poweroff" || text === "shutdown") {
+          // Upstream answers neither: the radio is gone from this link.
+          this.timers.push(
+            setTimeout(() => {
+              void this.shutdown();
+              this.emitClose(new Error("the radio rebooted"));
+            }, 200),
+          );
+          return [];
+        }
+        return [new ByteWriter().u8(Resp.CliReply).string(tag + this.ownCli(text)).toBytes()];
+      }
       case Cmd.SendTxtMsg: {
         if (frame[1] === TxtType.CliData) {
           const p = this.person(frame.subarray(7, 13));

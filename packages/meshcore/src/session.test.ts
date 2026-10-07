@@ -35,6 +35,8 @@ class ScriptedRadio extends BaseTransport {
   network: { repeat: boolean; hashMode: number } | null = null;
   /** Channels in slots past Public's; every other slot is empty. */
   slots: Record<number, { name: string; secret: Uint8Array }> = {};
+  /** Whether it runs console lines of its own (protocol 14); an older radio refuses the command. */
+  console = false;
 
   async send(frame: Uint8Array): Promise<void> {
     this.sent.push(frame);
@@ -159,6 +161,14 @@ class ScriptedRadio extends BaseTransport {
         return [new Uint8Array([Resp.Ok])];
       case Cmd.GetStats:
         return [new ByteWriter().u8(Resp.Stats).u8(1).u16(-115 & 0xffff).i8(-90).i8(28).u32(120).u32(3400).toBytes()];
+      case Cmd.RunCliCommand: {
+        if (!this.console) return [new Uint8Array([Resp.Err, 1])];
+        // Upstream reflects an `XX|` tag on a line longer than four characters.
+        const text = new TextDecoder().decode(frame.subarray(1));
+        const tag = text.length > 4 && text[2] === "|" ? text.slice(0, 3) : "";
+        const command = text.slice(tag.length);
+        return [new ByteWriter().u8(Resp.CliReply).string(tag + (command === "get tx" ? "> 22" : "Unknown command")).toBytes()];
+      }
       default:
         return [new Uint8Array([Resp.Err, 1])];
     }
@@ -2547,4 +2557,43 @@ test("a contact another app trusted with one kind only still counts as trusted",
   const contact = { flags: ContactFlag.TelemetryLocation } as Parameters<typeof isTrusted>[0];
   assert.ok(isTrusted(contact));
   assert.ok(!isTrusted({ ...contact, flags: ContactFlag.Favourite }));
+});
+
+const SELF_KEY = "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf";
+
+test("the radio's own console keeps its lines under the radio's key, tag taken off", async () => {
+  const radio = new ScriptedRadio();
+  radio.console = true;
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  assert.equal(await session.runOwnCli("get tx"), "> 22");
+  const sent = radio.sent.find((f) => f[0] === Cmd.RunCliCommand)!;
+  const line = new TextDecoder().decode(sent.subarray(1));
+  assert.match(line, /^[0-9a-f]{2}\|get tx$/);
+  const entries = session.getState().consoles[SELF_KEY]!;
+  assert.equal(entries.length, 1);
+  assert.deepEqual([entries[0]!.command, entries[0]!.status, entries[0]!.reply, entries[0]!.tag], ["get tx", "done", "> 22", line.slice(0, 2)]);
+  // A line too short to carry a tag comes back without one, and is taken as it is.
+  assert.equal(await session.runOwnCli("x"), "Unknown command");
+});
+
+test("a radio without a console of its own says so on the line", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  await assert.rejects(session.runOwnCli("ver"));
+  const entry = session.getState().consoles[SELF_KEY]![0]!;
+  assert.deepEqual([entry.status, entry.error], ["failed", "This radio has no console."]);
+});
+
+test("someone asking this radio to run a console command is not a chat line", async () => {
+  const radio = new ScriptedRadio();
+  radio.queue.push(
+    new ByteWriter().u8(Resp.ContactMsgRecvV3).i8(20).u16(0).bytes(BOB.subarray(0, 6)).u8(0).u8(TxtType.CliCommand).u32(1_700_000_070).string("reboot").toBytes(),
+    dmFrame(BOB, "hello"),
+  );
+  const session = new MeshSession({ now: () => 1_700_000_100_000 });
+  await session.connect(radio);
+  await until(() => session.getState().messages.length > 0);
+  assert.deepEqual(session.getState().messages.map((m) => m.text), ["hello"]);
 });

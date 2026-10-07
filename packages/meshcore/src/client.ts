@@ -507,6 +507,11 @@ export class MeshCoreClient {
     return this.ok("setCustomVar", cmd.setCustomVar(name, value));
   }
 
+  /** A console line run by this radio itself (protocol 14); an older radio refuses it as unsupported. */
+  runCliCommand(text: string): Promise<string> {
+    return this.one("runCliCommand", cmd.runCliCommand(text), "cliReply").then((f) => f.text);
+  }
+
   setAutoAddConfig(config: number, maxHops?: number): Promise<void> {
     return this.ok("setAutoAddConfig", cmd.setAutoAddConfig(config, maxHops));
   }

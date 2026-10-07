@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { COMMANDS, suggest } from "./cli.js";
+import { COMMANDS, RADIO_COMMANDS, suggest } from "./cli.js";
 
 const labels = (draft: string) => suggest(draft).chips.map((c) => c.label);
 
@@ -41,4 +41,13 @@ test("nothing typed offers the everyday ones; serial-only commands are not offer
   for (const local of ["erase", "log", "stats-packets", "set freq", "get prv.key", "get acl"]) assert.ok(!all.includes(local), local);
   // "gps" asks, "gps " goes on to a value: the same word twice, but each once.
   assert.equal(new Set(COMMANDS.map((c) => c.text)).size, COMMANDS.length);
+});
+
+test("the radio's own console offers the companion's commands, not a repeater's", () => {
+  const radio = (draft: string) => suggest(draft, "radio").chips.map((c) => c.label);
+  assert.deepEqual(radio(""), ["ver", "get radio", "get tx", "get name", "board"]);
+  assert.deepEqual(radio("set p"), ["set path.hash.mode", "set pin"]);
+  assert.ok(!radio("nei").length, "no neighbours on a companion");
+  assert.equal(suggest("set tz.offset ", "radio").hint, "hours from UTC, −12 to 14");
+  assert.equal(new Set(RADIO_COMMANDS.map((c) => c.text)).size, RADIO_COMMANDS.length);
 });

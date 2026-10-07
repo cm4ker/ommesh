@@ -398,6 +398,8 @@
   "cli.advertInterval": "минуты, до 240; 0 — выключено",
   "cli.floodAdvertInterval": "часы, 3–168; 0 — выключено",
   "cli.name": "имя",
+  "cli.pin": "6 цифр или 0 — по умолчанию",
+  "cli.tzOffset": "часы от UTC, от −12 до 14",
   "cli.degrees": "градусы",
   "cli.ownerInfo": "текст; | начинает новую строку",
   "cli.privateKey": "закрытый ключ, hex; применится после перезагрузки",

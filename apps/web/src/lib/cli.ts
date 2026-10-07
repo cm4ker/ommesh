@@ -4,7 +4,8 @@
  * and the MeshCoreTel fork's Wi-Fi, MQTT and web panel. Left out are the
  * ones the firmware takes only from its serial port (`erase`, `log`,
  * `stats-*`, `set freq`, `get prv.key`, `get acl`): over the air they answer
- * "Unknown command".
+ * "Unknown command". The connected radio's own console has a list of its own,
+ * `RADIO_COMMANDS`.
  */
 
 import { t, type Key } from "../i18n/index.js";
@@ -154,14 +155,58 @@ const PLAIN: CliCommand[] = [
   { text: "time.force ", arg: "node.cli.epochSeconds" },
 ];
 
-export const COMMANDS: CliCommand[] = [
-  ...PLAIN,
-  ...SETTINGS.filter((s) => s.get !== false).map((s) => ({ text: `get ${s.key}` })),
-  ...SETTINGS.filter((s) => s.set !== false).map((s): CliCommand => ({ text: `set ${s.key} `, ...(s.arg ? { arg: s.arg } : {}), ...(s.values ? { values: s.values } : {}) })),
+function commandsOf(plain: CliCommand[], settings: Setting[]): CliCommand[] {
+  return [
+    ...plain,
+    ...settings.filter((s) => s.get !== false).map((s) => ({ text: `get ${s.key}` })),
+    ...settings.filter((s) => s.set !== false).map((s): CliCommand => ({ text: `set ${s.key} `, ...(s.arg ? { arg: s.arg } : {}), ...(s.values ? { values: s.values } : {}) })),
+  ];
+}
+
+export const COMMANDS: CliCommand[] = commandsOf(PLAIN, SETTINGS);
+
+/**
+ * What the connected radio itself answers on its own console (protocol 14): upstream
+ * MeshCore's companion `handleCommand` and `CommonRadioPrefs`. A build without Wi-Fi
+ * answers the `wifi.*` ones "Unknown command".
+ */
+const RADIO_SETTINGS: Setting[] = [
+  { key: "radio", arg: "node.cli.radio" },
+  { key: "freq", set: false },
+  { key: "tx", arg: "node.cli.dbm" },
+  { key: "dutycycle", arg: "node.cli.dutycycle" },
+  { key: "af", arg: "node.cli.af" },
+  { key: "radio.rxgain", values: ONOFF },
+  { key: "int.thresh", arg: "node.cli.intThresh" },
+  { key: "cad", values: ONOFF },
+  { key: "agc.reset.interval", arg: "node.cli.agcReset" },
+  { key: "path.hash.mode", values: ["0", "1", "2"], arg: "node.cli.pathHash" },
+  { key: "txdelay", arg: "node.cli.txdelay" },
+  { key: "direct.txdelay", arg: "node.cli.txdelay" },
+  { key: "rxdelay", arg: "node.cli.rxdelay" },
+  { key: "multi.acks", values: ["0", "1"] },
+  { key: "name", arg: "node.cli.name" },
+  { key: "pin", get: false, arg: "node.cli.pin" },
+  { key: "tz.offset", arg: "node.cli.tzOffset" },
+  { key: "wifi.ssid", arg: "node.cli.ssid" },
+  { key: "wifi.pwd", get: false, arg: "node.cli.password" },
+  { key: "wifi.enabled", values: ["0", "1"] },
+  { key: "wifi.status", set: false },
+  { key: "wifi.ip", set: false },
 ];
 
+const RADIO_PLAIN: CliCommand[] = [{ text: "ver" }, { text: "board" }, { text: "set wifi.clear" }, { text: "reboot" }, { text: "poweroff" }];
+
+export const RADIO_COMMANDS: CliCommand[] = commandsOf(RADIO_PLAIN, RADIO_SETTINGS);
+
+/** Which console a suggestion is for: a node's over the air, or the connected radio's own. */
+export type CliTarget = "node" | "radio";
+
 /** Offered before anything is typed. */
-const FIRST = ["ver", "clock", "neighbors", "get radio", "get dutycycle", "advert"];
+const FIRST: Record<CliTarget, string[]> = {
+  node: ["ver", "clock", "neighbors", "get radio", "get dutycycle", "advert"],
+  radio: ["ver", "get radio", "get tx", "get name", "board"],
+};
 
 export interface Suggestion {
   /** What the chip says. */
@@ -176,23 +221,24 @@ export interface Suggestion {
  * that start with it, then those with it anywhere in them, so "duty" finds
  * both `get dutycycle` and `set dutycycle`.
  */
-export function suggest(draft: string, limit = 12): { chips: Suggestion[]; hint: string | null } {
+export function suggest(draft: string, target: CliTarget = "node", limit = 12): { chips: Suggestion[]; hint: string | null } {
+  const list = target === "radio" ? RADIO_COMMANDS : COMMANDS;
   const typed = draft.replace(/^\s+/, "").replace(/\s+/g, " ").toLowerCase();
-  if (typed.trim() === "") return { chips: FIRST.map((c) => ({ label: c, fill: c })), hint: null };
+  if (typed.trim() === "") return { chips: FIRST[target].map((c) => ({ label: c, fill: c })), hint: null };
   // The longest command typed in full, with its value to come or on its way; "set repeat" is as good as "set repeat ".
-  const full = COMMANDS.some((c) => c.values && c.text === `${typed} `) ? `${typed} ` : typed;
-  const at = COMMANDS.filter((c) => c.text.endsWith(" ") && full.startsWith(c.text) && (c.arg || c.values)).sort((a, b) => b.text.length - a.text.length)[0];
+  const full = list.some((c) => c.values && c.text === `${typed} `) ? `${typed} ` : typed;
+  const at = list.filter((c) => c.text.endsWith(" ") && full.startsWith(c.text) && (c.arg || c.values)).sort((a, b) => b.text.length - a.text.length)[0];
   if (at) {
     const rest = full.slice(at.text.length);
-    const deeper = COMMANDS.some((c) => c !== at && c.text.startsWith(full) && c.text.length > full.length);
+    const deeper = list.some((c) => c !== at && c.text.startsWith(full) && c.text.length > full.length);
     if (!deeper || rest.length > 0 || at.values) {
       const chips = (at.values ?? []).filter((v) => v.startsWith(rest) && v !== rest).map((v) => ({ label: v.trim(), fill: at.text + v }));
       return { chips, hint: at.arg ? t(at.arg) : null };
     }
   }
   const word = typed.trim();
-  const starts = COMMANDS.filter((c) => c.text.startsWith(typed) && c.text.trim() !== word);
-  const inside = word.length >= 2 ? COMMANDS.filter((c) => !c.text.startsWith(typed) && c.text.includes(word)) : [];
+  const starts = list.filter((c) => c.text.startsWith(typed) && c.text.trim() !== word);
+  const inside = word.length >= 2 ? list.filter((c) => !c.text.startsWith(typed) && c.text.includes(word)) : [];
   const seen = new Set<string>();
   const chips: Suggestion[] = [];
   for (const c of [...starts, ...inside]) {

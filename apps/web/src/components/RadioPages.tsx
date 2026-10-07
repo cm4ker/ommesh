@@ -16,6 +16,7 @@ import { ChatSoundRow, signalName } from "./ChatNotices.js";
 import { askPermission, hasNoticeSettings, openNoticeSettings } from "../lib/notify.js";
 import { previewSignal } from "../lib/chime.js";
 import { push, type RadioPage } from "../lib/nav.js";
+import { useOwnConsole } from "../lib/ownConsole.js";
 import { canLocate, locateOnce, locateText, phoneLocates } from "../lib/phonePosition.js";
 import { canHover, nativePlatform, shell } from "../lib/platform.js";
 import { reach, trustUsed, withBase } from "../lib/privacy.js";
@@ -34,6 +35,7 @@ import { ActionRow, Block, ChoiceRow, Group, InfoRow, LinkRow, SelectRow, Steppe
 import { Avatar, SenderName } from "./Avatar.js";
 import { CopyIcon } from "./Icons.js";
 import { ContactsPage, RemovedPage } from "./ContactsPages.js";
+import { Console } from "./node/Console.js";
 import { LogView } from "./LogView.js";
 import { AirView } from "./AirView.js";
 import { OwnReadings } from "./NodeReadings.js";
@@ -60,6 +62,7 @@ export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = {
   people: "about",
   news: "about",
   trusted: "privacy",
+  console: "advanced",
 };
 
 /** Pages that read only under their own parent, one kind's sound under Sound: the palette leaves them out. */
@@ -75,6 +78,7 @@ export const RADIO_TITLES: Record<RadioPage, Key> = {
   contacts: "radio.titles.contacts",
   removed: "radio.titles.removed",
   advanced: "radio.titles.advanced",
+  console: "radio.titles.console",
   notifications: "radio.titles.notifications",
   sound: "radio.titles.sound",
   soundDirect: "radio.notifications.direct",
@@ -218,7 +222,7 @@ export function RadioPageView({ page, chrome }: { page: RadioPage; chrome: Chrom
       <ScreenHead chrome={chrome}>
         <span className="screen-name">{radioTitle(page)}</span>
       </ScreenHead>
-      {page === "log" ? <LogView /> : page === "air" ? <AirView /> : <div className="screen-scroll">{<PageBody page={page} />}</div>}
+      {page === "log" ? <LogView /> : page === "air" ? <AirView /> : page === "console" ? <OwnConsole /> : <div className="screen-scroll">{<PageBody page={page} />}</div>}
     </div>
   );
 }
@@ -273,6 +277,11 @@ function PageBody({ page }: { page: RadioPage }) {
     default:
       return null;
   }
+}
+
+function OwnConsole() {
+  const self = useSession().self;
+  return self ? <Console own /> : <Offline />;
 }
 
 function Offline() {
@@ -601,8 +610,14 @@ function confirmNotes(c: { radioChanged: boolean; repeatChanged: boolean; repeat
  */
 function AdvancedPage({ self, online }: { self: Self; online: boolean }) {
   const device = useSession().device;
+  const hasConsole = useOwnConsole();
   return (
     <>
+      {hasConsole ? (
+        <Group title={t("radio.advanced.manage")}>
+          <LinkRow label={t("radio.titles.console")} hint={t("radio.advanced.consoleHint")} onClick={() => push({ kind: "radio", page: "console" })} />
+        </Group>
+      ) : null}
       <Group title={t("radio.advanced.device")}>
         {device ? (
           <>

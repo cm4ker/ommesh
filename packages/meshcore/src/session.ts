@@ -2093,6 +2093,12 @@ export class MeshSession {
         this.receiveCli(prefix, frame.text, frame.timestamp);
         return;
       }
+      if (frame.txtType === TxtType.CliCommand) {
+        // Someone without the right asked this radio to run a console command (protocol 14).
+        // The radio hands it up instead of running it; it is not a chat line.
+        this.log("message", `${this.contactByPrefix(prefix)?.name ?? prefix} asked this radio to run "${frame.text}"; not run`);
+        return;
+      }
       const contact = this.contactByPrefix(prefix);
       if (!contact) this.queueContactsRefresh();
       // A room relays its members' posts signed with the author's key prefix.
@@ -3041,6 +3047,32 @@ export class MeshSession {
   /** The radio's settings for its sensors, such as whether its own GPS is on (`gps` is "1"). Asked of the radio, not of the air. */
   customVars(): Promise<Record<string, string>> {
     return this.need().getCustomVars();
+  }
+
+  /**
+   * Runs a console line on the connected radio itself (protocol 14, or a SmartUI radio that
+   * answers the same command). It keeps the same log as a node's console, under the radio's own
+   * key, so it outlives a restart. The `XX|` tag goes along as with a node: the radio reflects it
+   * on a line long enough to carry one, and the tag is taken off again here.
+   */
+  async runOwnCli(command: string): Promise<string> {
+    const self = this.state.self;
+    if (!self) throw new Error("not connected");
+    const key = self.key;
+    const tag = (this.cliTag++ & 0xff).toString(16).padStart(2, "0");
+    const entry: ConsoleEntry = { id: newId(this.now()), command, tag, at: this.now(), status: "waiting", reply: null, repliedAt: null, error: null };
+    this.appendConsole(key, entry);
+    try {
+      const raw = await this.need().runCliCommand(`${tag}|${command}`);
+      const reply = raw.startsWith(`${tag}|`) ? raw.slice(tag.length + 1) : raw;
+      this.patchConsole(key, entry.id, { status: "done", reply, repliedAt: this.now() });
+      return reply;
+    } catch (error) {
+      // An older radio refuses the command itself: it has no console, rather than this line failing.
+      const unsupported = error instanceof MeshCoreError && error.code === ErrCode.UnsupportedCmd;
+      this.patchConsole(key, entry.id, { status: "failed", error: unsupported ? "This radio has no console." : (error as Error).message });
+      throw error;
+    }
   }
 
   // ---- repeaters, rooms and sensors ----

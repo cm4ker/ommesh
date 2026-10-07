@@ -18,7 +18,7 @@ export type Section = "chats" | "mesh" | "radio";
 export type NodePage = "neighbours" | "history" | "settings" | "access" | "console";
 
 /** The radio section's pages, as a list too: a news file's Show names one (news.ts). */
-export const RADIO_PAGES = ["name", "frequency", "readings", "privacy", "trusted", "contacts", "removed", "advanced", "notifications", "sound", "soundDirect", "soundChats", "soundNodes", "messages", "history", "appearance", "connection", "air", "log", "power", "about", "people", "news"] as const;
+export const RADIO_PAGES = ["name", "frequency", "readings", "privacy", "trusted", "contacts", "removed", "advanced", "console", "notifications", "sound", "soundDirect", "soundChats", "soundNodes", "messages", "history", "appearance", "connection", "air", "log", "power", "about", "people", "news"] as const;
 export type RadioPage = (typeof RADIO_PAGES)[number];
 
 export type Screen =

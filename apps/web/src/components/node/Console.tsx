@@ -14,7 +14,7 @@ import { CopyIcon, RefreshIcon, SendIcon } from "../Icons.js";
 import { SignIn } from "./SignIn.js";
 
 /** Commands that take a node down, move it, or lock people out. */
-const DANGEROUS = /^(reboot|clkreboot|erase|start ota|poweroff|shutdown|set radio |password |set prv\.key|set guest\.password|setperm |set wifi\.(ssid|pwd) )/;
+const DANGEROUS = /^(reboot|clkreboot|erase|start ota|poweroff|shutdown|set radio |set pin |password |set prv\.key|set guest\.password|setperm |set wifi\.(ssid|pwd) )/;
 
 /** When the app started; the console keeps what came before it. */
 const STARTED = Date.now();
@@ -23,9 +23,15 @@ function sameDay(a: number, b: number): boolean {
   return new Date(a).toDateString() === new Date(b).toDateString();
 }
 
-export function Console({ contact }: { contact: ContactRecord }) {
+/**
+ * A node's console over the air, or with `own` the connected radio's own (protocol 14):
+ * the same log and field, sent straight down the link with nothing to sign in to.
+ */
+export function Console(props: { contact: ContactRecord } | { own: true }) {
   const state = useSession();
-  const key = contact.key;
+  const contact = "contact" in props ? props.contact : null;
+  const key = contact?.key ?? state.self?.key ?? "";
+  const name = contact ? contact.name || contact.prefix : (state.self?.name ?? "");
   const entries = state.consoles[key] ?? [];
   const online = state.status === "ready";
   const [draft, setDraft] = useState("");
@@ -40,7 +46,7 @@ export function Console({ contact }: { contact: ContactRecord }) {
   // The last command went unanswered: the node may no longer know its way back to us. One kept
   // from before the app started says nothing of the way now.
   const last = entries.at(-1);
-  const lost = last?.status === "timeout" && last.at >= STARTED;
+  const lost = contact !== null && last?.status === "timeout" && last.at >= STARTED;
 
   /** A sign-in by flood with the saved password, or the sheet to type one. */
   const relearn = async () => {
@@ -50,7 +56,7 @@ export function Console({ contact }: { contact: ContactRecord }) {
     setRelearning(true);
     try {
       const login = await session.relearnReturnPath(key, password);
-      toast(login.ok ? t("node.console.relearned", { name: contact.name || contact.prefix }) : t("node.signIn.refused"), login.ok ? "" : "error");
+      toast(login.ok ? t("node.console.relearned", { name }) : t("node.signIn.refused"), login.ok ? "" : "error");
     } catch (error) {
       toast(errorText(error), "error");
     } finally {
@@ -65,7 +71,7 @@ export function Console({ contact }: { contact: ContactRecord }) {
 
   const run = (command: string) => {
     // The entry shows how it went; nothing to add here.
-    session.runCli(key, command).catch(() => undefined);
+    (contact ? session.runCli(key, command) : session.runOwnCli(command)).catch(() => undefined);
   };
 
   const send = (command: string) => {
@@ -110,7 +116,7 @@ export function Console({ contact }: { contact: ContactRecord }) {
   };
 
   const typed = draft.trim();
-  const { chips, hint } = suggest(draft);
+  const { chips, hint } = suggest(draft, contact ? "node" : "radio");
 
   const past = entries.filter((e) => e.command && !e.command.includes("••")).map((e) => e.command);
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -202,26 +208,28 @@ export function Console({ contact }: { contact: ContactRecord }) {
           </div>
         </div>
       </form>
-      <SignIn
-        open={asking}
-        nodeKey={key}
-        relearn
-        onClose={() => setAsking(false)}
-        onSignedIn={() => {
-          setAsking(false);
-          toast(t("node.console.relearned", { name: contact.name || contact.prefix }));
-        }}
-      />
+      {contact ? (
+        <SignIn
+          open={asking}
+          nodeKey={key}
+          relearn
+          onClose={() => setAsking(false)}
+          onSignedIn={() => {
+            setAsking(false);
+            toast(t("node.console.relearned", { name }));
+          }}
+        />
+      ) : null}
       <Confirm
         open={confirming !== null}
         title={t("node.console.sendTitle", { command: confirming?.command ?? "" })}
         body={
           <p>
             {confirming?.command.startsWith("set radio")
-              ? t("node.console.radioWarn")
+              ? t(contact ? "node.console.radioWarn" : "radio.console.radioWarn")
               : confirming?.command.startsWith("password") || confirming?.command.startsWith("set guest.password")
                 ? t("node.console.passwordWarn")
-                : t("node.console.actsAtOnce", { name: contact.name })}
+                : t("node.console.actsAtOnce", { name })}
           </p>
         }
         confirmLabel={t("common.send")}

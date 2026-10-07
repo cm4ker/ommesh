@@ -197,7 +197,8 @@ export type ResponseFrame =
     }
   | { kind: "autoAddConfig"; config: number; maxHops: number }
   | { kind: "allowedRepeatFreq"; ranges: { lowerKhz: number; upperKhz: number }[] }
-  | { kind: "defaultFloodScope"; name: string | null; key: Uint8Array | null };
+  | { kind: "defaultFloodScope"; name: string | null; key: Uint8Array | null }
+  | { kind: "cliReply"; text: string };
 
 export type PushFrame =
   | { kind: "advert"; publicKey: Uint8Array }
@@ -674,6 +675,8 @@ function decodeResponse(code: number, r: ByteReader): ResponseFrame | null {
     case Resp.DefaultFloodScope:
       if (r.remaining < 31 + 16) return { kind: "defaultFloodScope", name: null, key: null };
       return { kind: "defaultFloodScope", name: r.fixedString(31), key: r.take(16) };
+    case Resp.CliReply:
+      return { kind: "cliReply", text: r.restString() };
     default:
       return null;
   }

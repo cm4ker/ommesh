@@ -2,7 +2,7 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
-## Unreleased
+## 0.7.0 — 2026-10-07
 
 ### Updates
 - Ommesh comes out once a week. After an update a strip over the chats says "Ommesh is updated to 0.7.0" with What's new: each new thing in a line or two, with Show where it has a place in the app, and the fixes folded into one row. Settings › About › What's new keeps every version from 0.7.0 on, and Every change in detail opens this list on GitHub. What's new comes with the app and reads with no network. A version with fixes only puts up no strip, and neither does a first install.

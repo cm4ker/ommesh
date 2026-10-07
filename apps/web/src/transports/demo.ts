@@ -237,7 +237,7 @@ function nodePrefs(p: Person): Record<string, string> {
     lat: String(p.lat),
     lon: String(p.lon),
     "owner.info": p.type === 2 ? "Hill club|ask on #test" : "",
-    radio: "869.161,62.500,7,7",
+    radio: "868.731,62.500,7,7",
     tx: "22",
     repeat: p.type === 2 ? "on" : "off",
     "flood.max": "64",
@@ -350,7 +350,7 @@ class DemoRadio extends BaseTransport {
   private chatter: ReturnType<typeof setInterval> | null = null;
   private acks = 0x1000;
   /** The radio's own settings, kept as the firmware keeps them so a re-read brings back what was set. */
-  private radio = { frequencyKhz: 869_161, bandwidthHz: 62_500, spreadingFactor: 7, codingRate: 7, repeat: false, pathHashMode: 0 };
+  private radio = { frequencyKhz: 868_731, bandwidthHz: 62_500, spreadingFactor: 7, codingRate: 7, repeat: false, pathHashMode: 0 };
   private prefs = new Map<Person, Record<string, string>>(PEOPLE.filter((p) => p.type >= 2).map((p) => [p, nodePrefs(p)]));
   /** Nodes that took our admin password; only they answer the console. */
   private admins = new Set<Person>();

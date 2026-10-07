@@ -10,7 +10,7 @@ const DEFAULT = [
 
 test("repeat is allowed only on the radio's own frequencies", () => {
   assert.equal(repeatAllowed(869_495, DEFAULT), true);
-  assert.equal(repeatAllowed(869_161, DEFAULT), false, "OMS");
+  assert.equal(repeatAllowed(868_731, DEFAULT), false, "OMS");
   assert.equal(repeatAllowed(869_525, DEFAULT), false, "EU/UK is 30 kHz off");
   assert.equal(repeatAllowed(869_500, [{ lowerKhz: 869_400, upperKhz: 869_600 }]), true, "a range takes what is inside it");
 });

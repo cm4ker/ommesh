@@ -116,7 +116,8 @@ const PRESETS: Preset[] = [
   { name: "EU narrow", label: "radio.presets.euNarrow", frequencyKhz: 869_618, bandwidthHz: 62_500, spreadingFactor: 8, codingRate: 8 },
   { name: "US", frequencyKhz: 910_525, bandwidthHz: 62_500, spreadingFactor: 7, codingRate: 5 },
   { name: "ANZ", frequencyKhz: 915_800, bandwidthHz: 250_000, spreadingFactor: 10, codingRate: 5 },
-  { name: "OMS", frequencyKhz: 869_161, bandwidthHz: 62_500, spreadingFactor: 7, codingRate: 7 },
+  // Omsk's mesh moved here from 869.161 MHz on 2026-10-06.
+  { name: "OMS", frequencyKhz: 868_731, bandwidthHz: 62_500, spreadingFactor: 7, codingRate: 7 },
 ];
 
 const BANDWIDTHS = ["7.8", "10.4", "15.6", "20.8", "31.25", "41.7", "62.5", "125", "250", "500"];

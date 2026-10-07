@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { loraAirtimeMs, neighbourSearchMs, replyBudgetMs, sealedBytes, traceBudgetMs } from "./airtime.js";
 
-// The OMS preset: 869.161 MHz, 62.5 kHz, SF7, 4/7.
+// The OMS preset: 868.731 MHz, 62.5 kHz, SF7, 4/7.
 const OMS = { bandwidthHz: 62_500, spreadingFactor: 7, codingRate: 7 };
 
 test("time on air follows Semtech's formula with MeshCore's long preamble at low SF", () => {

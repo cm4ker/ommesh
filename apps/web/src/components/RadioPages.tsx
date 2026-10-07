@@ -10,7 +10,7 @@ import { disconnect, useLink } from "../lib/link.js";
 import { setLookalikePrefs, useLookalikePrefs } from "../lib/lookalikes.js";
 import { setOpenAtUnread, useOpenAtUnread } from "../lib/firstUnread.js";
 import { setJumboEmoji, useJumboEmoji } from "../lib/jumboEmoji.js";
-import { BACKGROUND_NAMES, BACKGROUNDS, setBackground, setBackgroundStrength, useBackgroundPrefs } from "../lib/chatBackground.js";
+import { BACKGROUND_NAMES, BACKGROUNDS, setBackground, setBackgroundScale, setBackgroundStrength, useBackgroundPrefs } from "../lib/chatBackground.js";
 import { isDirect, oneSignal, SIGNALS, setNoticePrefs, useNoticePrefs, type Corner, type NoticeKind, type NoticePrefs } from "../lib/noticePrefs.js";
 import { titleOf } from "../lib/conversations.js";
 import { ChatSoundRow, signalName } from "./ChatNotices.js";
@@ -1036,7 +1036,7 @@ function BackgroundPage() {
           {BACKGROUNDS.map((b) => (
             <button key={b} type="button" className="theme-tile" aria-pressed={prefs.background === b} onClick={() => setBackground(b)}>
               <span className="bg-swatch" aria-hidden="true">
-                <ChatBackdrop background={b} scale={0.5} />
+                <ChatBackdrop background={b} scale={0.5} swatch />
               </span>
               {t(BACKGROUND_NAMES[b])}
             </button>
@@ -1044,7 +1044,8 @@ function BackgroundPage() {
         </Block>
       </Group>
       {shown ? (
-        <Group title={t("radio.background.strength")}>
+        <Group>
+          <Block className="bg-control-label">{t("radio.background.strength")}</Block>
           <Block className="text-size">
             <span className="text-size-a" aria-hidden="true">
               <PictureIcon size={14} />
@@ -1054,6 +1055,13 @@ function BackgroundPage() {
               <PictureIcon size={20} />
             </span>
             <span className="text-size-value">{prefs.strength}%</span>
+          </Block>
+          <Block className="bg-control-label">{t("radio.background.scale")}</Block>
+          <Block className="text-size">
+            <span className="text-size-a" aria-hidden="true"><PictureIcon size={14} /></span>
+            <input type="range" min={80} max={160} step={5} value={prefs.scale} aria-label={t("radio.background.scale")} aria-valuetext={`${prefs.scale}%`} onChange={(e) => setBackgroundScale(Number(e.target.value))} />
+            <span className="text-size-a large" aria-hidden="true"><PictureIcon size={20} /></span>
+            <span className="text-size-value">{prefs.scale}%</span>
           </Block>
         </Group>
       ) : null}

@@ -3051,9 +3051,8 @@ html.notices-window #root {
   isolation: isolate;
 }
 /*
- * The picture behind a chat (ChatBackdrop, `pnpm backgrounds`): a ground tinted from the
- * theme, and a pattern masked out of the theme's text and accent colours, or a picture in
- * its own. It stays still while the messages scroll over it, as in Telegram.
+ * The illustrated tile behind a chat (ChatBackdrop, `pnpm backgrounds`). It stays
+ * still while the messages scroll over it, with the theme's ground underneath.
  */
 .chat-backdrop {
   position: absolute;
@@ -3071,35 +3070,9 @@ html.notices-window #root {
 .screen.chat > .screen-head {
   background: var(--bg);
 }
-.chat-backdrop .bg-base,
-.chat-backdrop .bg-accent {
-  -webkit-mask-repeat: repeat;
-  mask-repeat: repeat;
-  -webkit-mask-position: center;
-  mask-position: center;
-}
-.chat-backdrop .bg-base {
-  background-color: var(--text);
-}
-.chat-backdrop .bg-accent {
-  background-color: var(--accent);
-}
 .chat-backdrop .bg-picture {
   background-repeat: repeat;
   background-position: center;
-}
-/* Each pattern's ground; a WebKit without color-mix keeps the theme's plain one. */
-.chat-backdrop[data-bg="callsigns"] {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, var(--bg)) 0%, var(--bg) 50%, color-mix(in srgb, var(--warning) 7%, var(--bg)) 100%);
-}
-.chat-backdrop[data-bg="network"] {
-  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 14%, var(--bg)) 0%, var(--bg) 55%, color-mix(in srgb, var(--accent) 6%, var(--bg)) 100%);
-}
-.chat-backdrop[data-bg="topo"] {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--success) 10%, var(--bg)) 0%, var(--bg) 100%);
-}
-.chat-backdrop[data-bg="ether"] {
-  background: radial-gradient(circle at 15% 15%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 50%), var(--bg);
 }
 /* The floating date stays where it is, under the head, the top of the list in sight. */
 :root.keyboard-follows .screen.chat > :not(.screen-head, .chat-day-slot, .chat-backdrop) {
@@ -8092,12 +8065,21 @@ button.c-cmd:focus-visible {
   align-self: flex-end;
   background: var(--swatch-out);
 }
-/* A background's tile is a patch of it, at half size, on the theme drawn now. */
+/* Taller swatches leave room to recognise the illustrated motifs. */
+.line-block.bg-tiles {
+  grid-template-columns: repeat(auto-fill, minmax(calc(104px * var(--box-scale)), 1fr));
+}
+.line-block.bg-control-label {
+  padding-bottom: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
 .bg-swatch {
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  height: calc(72px * var(--box-scale));
+  width: 100%;
+  height: calc(136px * var(--box-scale));
   border-radius: 10px;
   background: var(--bg);
 }

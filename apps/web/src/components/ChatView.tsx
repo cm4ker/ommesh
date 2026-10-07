@@ -60,6 +60,7 @@ import {
   UpIcon,
   WavesIcon,
 } from "./Icons.js";
+import { ChatBackdrop } from "./ChatBackdrop.js";
 import { marked } from "./Marked.js";
 import { ScreenHead, type Chrome } from "./ScreenHead.js";
 import { t } from "../i18n/index.js";
@@ -450,6 +451,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
 
   return (
     <div ref={screen} className={["screen chat", finding ? "finding" : ""].join(" ")}>
+      <ChatBackdrop conversation={conversation} />
       {finding ? (
         <header className="screen-head chat-find-head">
           {findFrom !== null ? (

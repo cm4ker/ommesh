@@ -214,6 +214,8 @@
   "notices.default": "Default ({level})",
   "notices.sound": "Sound",
   "notices.soundDefault": "Default ({sound})",
+  "background": "Background",
+  "backgroundDefault": "Default ({background})",
   "notices.all": "All",
   "notices.mentions": "Mentions",
   "message.gone": "This message is gone.",

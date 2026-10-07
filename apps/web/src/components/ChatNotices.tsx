@@ -1,7 +1,8 @@
 import { kindLevel, setChatLevel, setChatSound, SIGNALS, useNoticePrefs, type ChatLevel, type Signal } from "../lib/noticePrefs.js";
 import { previewSignal } from "../lib/chime.js";
+import { BACKGROUND_NAMES, BACKGROUNDS, setChatBackground, useBackgroundPrefs, type Background } from "../lib/chatBackground.js";
 import { Group, SelectRow } from "../ui/List.js";
-import { BellIcon, SpeakerIcon } from "./Icons.js";
+import { BellIcon, PictureIcon, SpeakerIcon } from "./Icons.js";
 import { t, type Key } from "../i18n/index.js";
 
 const WORD: Record<ChatLevel, Key> = { all: "chats.notices.all", mentions: "chats.notices.mentions", off: "common.off" };
@@ -9,9 +10,9 @@ const WORD: Record<ChatLevel, Key> = { all: "chats.notices.all", mentions: "chat
 const DIRECT_WORD: Record<ChatLevel, Key> = { all: "common.on", mentions: "common.on", off: "common.off" };
 
 /**
- * A chat's own notification level and sound, on its channel page or its
- * profile; "Default" follows Settings › Notifications. A chat with no notices
- * has no sound to pick.
+ * A chat's own notification level, sound and background, on its channel page or
+ * its profile; "Default" follows Settings › Notifications or › Appearance. A
+ * chat with no notices has no sound to pick.
  */
 export function ChatNotices({ conversation, direct }: { conversation: string; direct: boolean }) {
   const prefs = useNoticePrefs();
@@ -29,7 +30,22 @@ export function ChatNotices({ conversation, direct }: { conversation: string; di
         onChange={(v) => setChatLevel(conversation, v === "default" ? null : (v as ChatLevel))}
       />
       {(own ?? kindLevel(prefs, direct)) !== "off" ? <ChatSoundRow conversation={conversation} direct={direct} /> : null}
+      <ChatBackgroundRow conversation={conversation} />
     </Group>
+  );
+}
+
+/** A chat's own background; "Default" is the one every chat has. */
+function ChatBackgroundRow({ conversation }: { conversation: string }) {
+  const prefs = useBackgroundPrefs();
+  return (
+    <SelectRow
+      label={t("chats.background")}
+      icon={<PictureIcon size={17} />}
+      value={prefs.chat[conversation] ?? "default"}
+      options={[{ value: "default", label: t("chats.backgroundDefault", { background: t(BACKGROUND_NAMES[prefs.background]) }) }, ...BACKGROUNDS.map((b) => ({ value: b, label: t(BACKGROUND_NAMES[b]) }))]}
+      onChange={(v) => setChatBackground(conversation, v === "default" ? null : (v as Background))}
+    />
   );
 }
 

@@ -2147,6 +2147,19 @@ button.line:disabled,
 .text-sample .jumbo {
   cursor: default;
 }
+/* The sample sits on the chats' background, which stays inside its corners. */
+.line-block.text-sample {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.line-block.bg-sample {
+  margin-top: var(--space-3);
+  padding-block: var(--space-4);
+}
+.text-size-a svg {
+  display: block;
+}
 .air-mark {
   flex: none;
   display: inline-flex;
@@ -3033,9 +3046,63 @@ html.notices-window #root {
 }
 .screen.chat {
   --chat-room: max(0px, calc(var(--home-bar) - var(--space-2)));
+  /* A layer of its own, so the picture behind the chat (below) sits under everything in it. */
+  position: relative;
+  isolation: isolate;
+}
+/*
+ * The picture behind a chat (ChatBackdrop, `pnpm backgrounds`): a ground tinted from the
+ * theme, and a pattern masked out of the theme's text and accent colours, or a picture in
+ * its own. It stays still while the messages scroll over it, as in Telegram.
+ */
+.chat-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--bg);
+}
+.chat-backdrop i {
+  position: absolute;
+  inset: 0;
+}
+/* The head is solid, as the composer is, so the chat's name never sits on the picture. */
+.screen.chat > .screen-head {
+  background: var(--bg);
+}
+.chat-backdrop .bg-base,
+.chat-backdrop .bg-accent {
+  -webkit-mask-repeat: repeat;
+  mask-repeat: repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+.chat-backdrop .bg-base {
+  background-color: var(--text);
+}
+.chat-backdrop .bg-accent {
+  background-color: var(--accent);
+}
+.chat-backdrop .bg-picture {
+  background-repeat: repeat;
+  background-position: center;
+}
+/* Each pattern's ground; a WebKit without color-mix keeps the theme's plain one. */
+.chat-backdrop[data-bg="callsigns"] {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, var(--bg)) 0%, var(--bg) 50%, color-mix(in srgb, var(--warning) 7%, var(--bg)) 100%);
+}
+.chat-backdrop[data-bg="network"] {
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 14%, var(--bg)) 0%, var(--bg) 55%, color-mix(in srgb, var(--accent) 6%, var(--bg)) 100%);
+}
+.chat-backdrop[data-bg="topo"] {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--success) 10%, var(--bg)) 0%, var(--bg) 100%);
+}
+.chat-backdrop[data-bg="ether"] {
+  background: radial-gradient(circle at 15% 15%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 50%), var(--bg);
 }
 /* The floating date stays where it is, under the head, the top of the list in sight. */
-:root.keyboard-follows .screen.chat > :not(.screen-head, .chat-day-slot) {
+:root.keyboard-follows .screen.chat > :not(.screen-head, .chat-day-slot, .chat-backdrop) {
   transform: translateY(min(0px, calc(var(--chat-room) - var(--chat-keyboard, 0px))));
   transition: transform 0.25s cubic-bezier(0.38, 0.7, 0.125, 1);
 }
@@ -8025,17 +8092,36 @@ button.c-cmd:focus-visible {
   align-self: flex-end;
   background: var(--swatch-out);
 }
+/* A background's tile is a patch of it, at half size, on the theme drawn now. */
+.bg-swatch {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  height: calc(72px * var(--box-scale));
+  border-radius: 10px;
+  background: var(--bg);
+}
+.bg-swatch .chat-backdrop {
+  border-radius: inherit;
+}
+.bg-swatch::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
 .theme-tile[aria-pressed="true"] {
   font-weight: 600;
 }
-.theme-tile[aria-pressed="true"] .theme-swatch {
+.theme-tile[aria-pressed="true"] :is(.theme-swatch, .bg-swatch) {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 .theme-tile:focus-visible {
   outline: 0;
 }
-.theme-tile:focus-visible .theme-swatch {
+.theme-tile:focus-visible :is(.theme-swatch, .bg-swatch) {
   outline: 2px dashed var(--accent);
   outline-offset: 2px;
 }

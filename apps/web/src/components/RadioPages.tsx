@@ -10,6 +10,7 @@ import { disconnect, useLink } from "../lib/link.js";
 import { setLookalikePrefs, useLookalikePrefs } from "../lib/lookalikes.js";
 import { setOpenAtUnread, useOpenAtUnread } from "../lib/firstUnread.js";
 import { setJumboEmoji, useJumboEmoji } from "../lib/jumboEmoji.js";
+import { BACKGROUND_NAMES, BACKGROUNDS, setBackground, setBackgroundStrength, useBackgroundPrefs } from "../lib/chatBackground.js";
 import { isDirect, oneSignal, SIGNALS, setNoticePrefs, useNoticePrefs, type Corner, type NoticeKind, type NoticePrefs } from "../lib/noticePrefs.js";
 import { titleOf } from "../lib/conversations.js";
 import { ChatSoundRow, signalName } from "./ChatNotices.js";
@@ -33,7 +34,8 @@ import { Confirm } from "../ui/Dialog.js";
 import { SearchField } from "../ui/Field.js";
 import { ActionRow, Block, ChoiceRow, Group, InfoRow, LinkRow, SelectRow, StepperRow, SwitchRow } from "../ui/List.js";
 import { Avatar, SenderName } from "./Avatar.js";
-import { CopyIcon } from "./Icons.js";
+import { ChatBackdrop } from "./ChatBackdrop.js";
+import { CopyIcon, PictureIcon } from "./Icons.js";
 import { ContactsPage, RemovedPage } from "./ContactsPages.js";
 import { Console } from "./node/Console.js";
 import { LogView } from "./LogView.js";
@@ -63,6 +65,7 @@ export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = {
   news: "about",
   trusted: "privacy",
   console: "advanced",
+  background: "appearance",
 };
 
 /** Pages that read only under their own parent, one kind's sound under Sound: the palette leaves them out. */
@@ -87,6 +90,7 @@ export const RADIO_TITLES: Record<RadioPage, Key> = {
   messages: "radio.titles.messages",
   history: "radio.titles.history",
   appearance: "radio.titles.appearance",
+  background: "radio.titles.background",
   connection: "radio.titles.connection",
   air: "radio.titles.air",
   log: "radio.titles.log",
@@ -265,6 +269,8 @@ function PageBody({ page }: { page: RadioPage }) {
       return self ? <HistoryPage self={self} /> : <Offline />;
     case "appearance":
       return <AppearancePage />;
+    case "background":
+      return <BackgroundPage />;
     case "connection":
       return <ConnectionPage />;
     case "power":
@@ -900,6 +906,7 @@ function AppearancePage() {
   const scale = useSyncExternalStore(subscribeTextSize, getTextScale);
   const system = useSyncExternalStore(subscribeTextSize, getSystemTextScale);
   const largeEmoji = useJumboEmoji();
+  const background = useBackgroundPrefs().background;
   // The step nearest the size drawn now; the system's own size may fall between two.
   const step = TEXT_STEPS.reduce((best, s, i) => (Math.abs(s - scale) < Math.abs((TEXT_STEPS[best] ?? 1) - scale) ? i : best), 0);
   const percent = (s: number) => `${Math.round(s * 100)}%`;
@@ -927,6 +934,7 @@ function AppearancePage() {
             </button>
           ))}
         </Block>
+        <LinkRow label={radioTitle("background")} value={t(BACKGROUND_NAMES[background])} onClick={() => push({ kind: "radio", page: "background" })} />
       </Group>
       <Group title={t("radio.appearance.textSize")}>
         {hasSystemTextSize() ? (
@@ -953,30 +961,8 @@ function AppearancePage() {
         </Block>
         {/* What a chat looks like at this size, drawn by the chat's own rules. */}
         <Block className="text-sample">
-          <div className="msg in">
-            <span className="msg-avatar">
-              <Avatar name="Ridge" size={28} />
-            </span>
-            <div className="msg-col">
-              <div className="bubble">
-                <SenderName name="Ridge" />
-                <span className="msg-text">{t("radio.appearance.sampleIn")}</span>
-                <span className="msg-meta">
-                  <span>18:04</span>
-                </span>
-              </div>
-            </div>
-          </div>
-          <div className="msg out">
-            <div className="msg-col">
-              <div className="bubble">
-                <span className="msg-text">{t("radio.appearance.sampleOut")}</span>
-                <span className="msg-meta">
-                  <span>18:05</span>
-                </span>
-              </div>
-            </div>
-          </div>
+          <ChatBackdrop />
+          <SampleMessages />
           <div className="msg in">
             <span className="msg-avatar">
               <Avatar name="Ridge" size={28} />
@@ -994,6 +980,83 @@ function AppearancePage() {
         </Block>
         <SwitchRow label={t("radio.appearance.largeEmoji")} hint={t("radio.appearance.largeEmojiHint")} checked={largeEmoji} onChange={setJumboEmoji} />
       </Group>
+    </>
+  );
+}
+
+/** Someone's message and an answer, as a chat draws them, for a sample of how chats look. */
+function SampleMessages() {
+  return (
+    <>
+      <div className="msg in">
+        <span className="msg-avatar">
+          <Avatar name="Ridge" size={28} />
+        </span>
+        <div className="msg-col">
+          <div className="bubble">
+            <SenderName name="Ridge" />
+            <span className="msg-text">{t("radio.appearance.sampleIn")}</span>
+            <span className="msg-meta">
+              <span>18:04</span>
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className="msg out">
+        <div className="msg-col">
+          <div className="bubble">
+            <span className="msg-text">{t("radio.appearance.sampleOut")}</span>
+            <span className="msg-meta">
+              <span>18:05</span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/**
+ * The picture behind every chat, as in Telegram: a sample chat on top, then the pictures,
+ * each a patch of itself in the theme drawn now. A chat picks its own on its page.
+ */
+function BackgroundPage() {
+  const prefs = useBackgroundPrefs();
+  const shown = prefs.background !== "none" || Object.values(prefs.chat).some((b) => b !== "none");
+  return (
+    <>
+      <Group>
+        <Block className="text-sample bg-sample">
+          <ChatBackdrop />
+          <SampleMessages />
+        </Block>
+      </Group>
+      <Group note={t("radio.background.chatNote")}>
+        <Block className="theme-tiles bg-tiles">
+          {BACKGROUNDS.map((b) => (
+            <button key={b} type="button" className="theme-tile" aria-pressed={prefs.background === b} onClick={() => setBackground(b)}>
+              <span className="bg-swatch" aria-hidden="true">
+                <ChatBackdrop background={b} scale={0.5} />
+              </span>
+              {t(BACKGROUND_NAMES[b])}
+            </button>
+          ))}
+        </Block>
+      </Group>
+      {shown ? (
+        <Group title={t("radio.background.strength")}>
+          <Block className="text-size">
+            <span className="text-size-a" aria-hidden="true">
+              <PictureIcon size={14} />
+            </span>
+            <input type="range" min={0} max={100} step={5} value={prefs.strength} aria-label={t("radio.background.strength")} aria-valuetext={`${prefs.strength}%`} onChange={(e) => setBackgroundStrength(Number(e.target.value))} />
+            <span className="text-size-a large" aria-hidden="true">
+              <PictureIcon size={20} />
+            </span>
+            <span className="text-size-value">{prefs.strength}%</span>
+          </Block>
+        </Group>
+      ) : null}
     </>
   );
 }

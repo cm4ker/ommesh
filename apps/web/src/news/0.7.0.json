@@ -1,6 +1,6 @@
 {
   "version": "0.7.0",
-  "date": "2026-10-08",
+  "date": "2026-10-07",
   "items": [
     {
       "kind": "new",
@@ -15,48 +15,75 @@
     },
     {
       "kind": "new",
-      "show": "radio/frequency",
+      "show": "radio/background",
       "en": {
-        "title": "Repeat and the route hash beside the frequency",
-        "text": "Repeat lets your radio pass on others' messages like a repeater. Route hash sets how many bytes of its key each repeater writes into the path."
+        "title": "Put a picture behind your chats",
+        "text": "Eight illustrated wallpapers, from planets to a paper garden, each light or dark with the theme. A chat can have its own through Background on its page."
       },
       "ru": {
-        "title": "Ретрансляция и хеш маршрута рядом с частотой",
-        "text": "«Ретрансляция» передаёт чужие сообщения дальше, как репитер. «Хеш маршрута» задаёт, сколько байт ключа каждый репитер пишет в путь."
+        "title": "Картинка за сообщениями чата",
+        "text": "Восемь рисованных обоев, от планет до бумажного сада, светлые или тёмные вместе с темой. У чата могут быть свои: «Фон» на его странице."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "chats",
+      "en": {
+        "title": "Pull up for the next unread chat",
+        "text": "On a phone, pull a chat further up at its end and the next chat with unread messages opens, as in Telegram. On a PC, Ctrl+Tab brings up your recent chats."
+      },
+      "ru": {
+        "title": "Потяните вверх к следующему чату",
+        "text": "На телефоне потяните дочитанный чат дальше вверх, и откроется следующий с непрочитанными, как в Telegram. На ПК Ctrl+Tab показывает недавние чаты."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "radio/connection",
+      "en": {
+        "title": "Several radios at once on a PC",
+        "text": "Open another window in Connection opens one more window with a radio of its own. Each window remembers its radio and connects to it again."
+      },
+      "ru": {
+        "title": "Несколько радио сразу на ПК",
+        "text": "«Открыть ещё одно окно» в «Подключении» открывает ещё одно окно со своим радио. Каждое окно помнит своё радио и подключается к нему снова."
       }
     },
     {
       "kind": "new",
       "en": {
-        "title": "A far node has time to answer",
-        "text": "The wait counts the hops there and back, so a repeater five or six hops away no longer gets \"No reply\" before its answer comes."
+        "title": "Put a repeater on the map and reset its neighbours",
+        "text": "Pick its place on the map, make it call its neighbours afresh, and tap a neighbour to open its profile. The console keeps yesterday's commands."
       },
       "ru": {
-        "title": "Далёкий узел успевает ответить",
-        "text": "Ожидание считает хопы туда и обратно, и репитер за пять-шесть хопов больше не получает «Нет ответа» раньше, чем придёт ответ."
-      }
-    },
-    {
-      "kind": "new",
-      "show": "radio/privacy",
-      "en": {
-        "title": "This device's position for a radio with GPS",
-        "text": "Use this device's position is back on a radio with GPS of its own, and its latitude and longitude can be typed while the GPS looks for satellites."
-      },
-      "ru": {
-        "title": "Местоположение устройства и для радио с GPS",
-        "text": "«Взять местоположение этого устройства» вернулось у радио со своим GPS, а широту и долготу снова можно ввести, пока GPS ищет спутники."
+        "title": "Репитер на карте и сброс его соседей",
+        "text": "Укажите его место на карте, заставьте заново позвать соседей и откройте профиль соседа нажатием. Консоль помнит вчерашние команды."
       }
     },
     {
       "kind": "fix",
-      "en": "Forget the route works with a radio that is slow to save its contacts, such as a Heltec on Smart UI.",
-      "ru": "«Забыть маршрут» работает с радио, которое долго сохраняет контакты, например с Heltec на Smart UI."
+      "en": "A long channel message no longer turns red once it went through.",
+      "ru": "Длинное сообщение в канале больше не краснеет, когда оно дошло."
+    },
+    {
+      "kind": "fix",
+      "en": "A far repeater has time to answer before \"No reply\".",
+      "ru": "Далёкий репитер успевает ответить раньше «Нет ответа»."
+    },
+    {
+      "kind": "fix",
+      "en": "Use this device's position is back on a radio with GPS.",
+      "ru": "«Взять местоположение этого устройства» вернулось у радио с GPS."
+    },
+    {
+      "kind": "fix",
+      "en": "Forget the route works with a radio slow to save contacts.",
+      "ru": "«Забыть маршрут» работает с радио, которое долго сохраняет контакты."
     },
     {
       "kind": "fix",
       "en": "Apply on Frequency and power no longer turns repeat off.",
-      "ru": "«Применить» на странице «Частота и мощность» больше не выключает ретрансляцию."
+      "ru": "«Применить» в «Частоте и мощности» не выключает ретрансляцию."
     }
   ]
 }

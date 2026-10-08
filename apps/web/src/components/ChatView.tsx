@@ -1127,6 +1127,8 @@ function Status({ message, trying }: { message: MessageRecord; trying: boolean }
 /** How far the chat rises before letting go opens the next one; the name and the hint under it need the room. */
 const NEXT_PULL = 88;
 const NEXT_PULL_MAX = 120;
+/** The room kept between the last message and the next chat once it is full size, so the two do not touch. */
+const NEXT_GAP = 20;
 
 /**
  * Pulled up past its last message, on a phone, the chat rises, and in the room
@@ -1152,20 +1154,21 @@ function NextChat({ conversation, scroller, inner, enabled }: { conversation: st
   next.current = found;
   const ready = pull >= NEXT_PULL;
   const grown = Math.min(1, pull / NEXT_PULL);
-  // The messages follow the finger up, and settle back if it lets go short.
+  // The messages follow the finger up, a little further than the next chat grows, and settle back if it lets go short.
+  const rise = pull + NEXT_GAP * grown;
   useLayoutEffect(() => {
     const body = inner.current;
     if (!body) return;
     body.style.transition = pulling ? "none" : "";
-    body.style.transform = pulling ? `translateY(${-pull}px)` : "";
-  }, [inner, pull, pulling]);
+    body.style.transform = pulling ? `translateY(${-rise}px)` : "";
+  }, [inner, rise, pulling]);
   useEffect(() => {
     if (ready && next.current) haptic();
   }, [ready]);
   return (
     <div className="chat-next-slot">
       {pulling ? (
-        <div className={["chat-next", ready ? "ready" : "", found ? "" : "none"].join(" ")} style={{ height: pull }} aria-live="polite">
+        <div className={["chat-next", ready ? "ready" : "", found ? "" : "none"].join(" ")} style={{ height: rise }} aria-live="polite">
           <div className="chat-next-body" style={{ scale: String(grown), opacity: Math.min(1, grown * 2) }}>
             <span className="chat-next-ring">
               <svg className="chat-next-track" viewBox="0 0 36 36" aria-hidden="true">

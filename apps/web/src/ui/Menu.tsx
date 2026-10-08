@@ -1,17 +1,19 @@
 /**
  * What else can be done with a row or a message: one menu, asked for by a
  * long press, a right click or a "More" button. With a mouse it opens where
- * the click was; on a phone it is a sheet of rows.
+ * the click was; on a phone it is a sheet of rows, or, for a message held,
+ * a card right under the message, as in Telegram.
  */
 
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { CheckIcon } from "../components/Icons.js";
+import { useBackLayer } from "../lib/back.js";
 import type { MenuAt } from "../lib/press.js";
 import { useWide } from "../lib/layout.js";
 import { dismissToast, toastSpot, useToast, type ToastSpot } from "../lib/toast.js";
 import { AirMark } from "./List.js";
-import { Sheet, type Hole } from "./Sheet.js";
+import { Sheet } from "./Sheet.js";
 
 export interface MenuItem {
   label: string;
@@ -34,7 +36,7 @@ interface MenuState {
   items: MenuItem[];
   title?: string | undefined;
   at: MenuAt;
-  /** What the menu is for, such as the message held: lit while the menu is open, and left bright in the sheet's dimming. */
+  /** What the menu is for, such as the message held: lit while the menu is open, and on a touch screen left bright over the dimmed screen with the menu under it. */
   lift: HTMLElement | null;
 }
 
@@ -56,34 +58,6 @@ export function closeMenu(): void {
   current?.lift?.classList.remove("held");
   current = null;
   emit();
-}
-
-/**
- * The place left undimmed for what the menu is for, just around it.
- * Followed while the menu is open: the held message rises a little, and the
- * keyboard going down as the sheet takes the focus moves the chat under it.
- */
-function useHole(lift: HTMLElement | null): Hole | null {
-  const [hole, setHole] = useState<Hole | null>(null);
-  useLayoutEffect(() => {
-    if (!lift) return;
-    const radius = (parseFloat(getComputedStyle(lift).borderTopLeftRadius) || 16) + 1;
-    let last = "";
-    let frame = 0;
-    const follow = () => {
-      const box = lift.isConnected ? lift.getBoundingClientRect() : null;
-      const next = box ? { x: Math.floor(box.left) - 1, y: Math.floor(box.top) - 1, width: Math.ceil(box.width) + 2, height: Math.ceil(box.height) + 2, radius } : null;
-      const key = next ? `${next.x} ${next.y} ${next.width} ${next.height}` : "";
-      if (key !== last) {
-        last = key;
-        setHole(next);
-      }
-      frame = requestAnimationFrame(follow);
-    };
-    follow();
-    return () => cancelAnimationFrame(frame);
-  }, [lift]);
-  return lift ? hole : null;
 }
 
 function useMenuState(): MenuState | null {
@@ -121,12 +95,11 @@ function groups(items: MenuItem[]): { at: number; items: MenuItem[] }[] {
 export function MenuHost() {
   const menu = useMenuState();
   const wide = useWide();
-  const popover = menu !== null && wide && menu.at !== null;
-  const hole = useHole(popover ? null : (menu?.lift ?? null));
-  if (popover) return <Popover menu={menu} />;
+  if (menu && wide && menu.at) return <Popover menu={menu} />;
+  if (menu?.lift) return <HoldMenu menu={menu} lift={menu.lift} />;
   // Mounted while closed too, so the sheet can slide away with the menu it held.
   return (
-    <Sheet open={menu !== null} onClose={closeMenu} title={menu?.title} hole={hole}>
+    <Sheet open={menu !== null} onClose={closeMenu} title={menu?.title}>
       {groups(menu?.items ?? []).map((g) => (
         <div key={g.at} className="group-body">
           {g.items.map((item, i) => (
@@ -210,6 +183,139 @@ function Popover({ menu }: { menu: MenuState }) {
           </button>
         </Fragment>
       ))}
+    </div>,
+    document.body,
+  );
+}
+
+/** Room kept between the message held and its menu, and from the screen's top and foot, px. */
+const HOLD_GAP = 8;
+const HOLD_EDGE = 12;
+
+interface HoldPlace {
+  /** The message as it is on screen, risen included: left bright in the dimming. */
+  hole: { left: number; top: number; width: number; height: number };
+  left: number;
+  top: number;
+  /** Which side the menu lines up with: the message's own. */
+  right: boolean;
+}
+
+/**
+ * A held message's menu on a touch screen, as Telegram lays it out: the
+ * message stays bright over the dimmed screen, risen a little, with its menu
+ * right under it. Held near the foot of the screen, the message moves up to
+ * make room, so the menu never covers it.
+ */
+function HoldMenu({ menu, lift }: { menu: MenuState; lift: HTMLElement }) {
+  const card = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState<HoldPlace | null>(null);
+  const radius = useRef(16);
+  // The press that opened the menu ends over it, on the scrim or, with the message risen, on an item under the
+  // finger. Only a press that began over the menu counts: a tap past it, or on an item (a key's click has no detail).
+  const pressed = useRef(false);
+  const fresh = (e: { detail: number }) => pressed.current || e.detail === 0;
+  useBackLayer(true, closeMenu);
+
+  useLayoutEffect(() => {
+    pressed.current = false;
+    // The keyboard goes down, as for a sheet; the chat moves under the message as it does, and the menu follows.
+    if (document.activeElement instanceof HTMLElement && document.activeElement.closest("input, textarea")) document.activeElement.blur();
+    radius.current = (parseFloat(getComputedStyle(lift).borderTopLeftRadius) || 16) + 1;
+    // The home bar's strip at the foot, which the menu keeps clear of.
+    const probe = document.createElement("div");
+    probe.style.cssText = "position:fixed;visibility:hidden;height:var(--home-bar,0px)";
+    document.body.append(probe);
+    const foot = probe.offsetHeight;
+    probe.remove();
+    let last = "";
+    let frame = 0;
+    const follow = () => {
+      const el = card.current;
+      if (lift.isConnected && el) {
+        const box = lift.getBoundingClientRect();
+        // Where the message stands in the chat, without the rise this menu gives it.
+        const shift = new DOMMatrixReadOnly(getComputedStyle(lift).transform === "none" ? undefined : getComputedStyle(lift).transform);
+        const height = box.height / (shift.d || 1);
+        const top = box.top + box.height / 2 - shift.f - height / 2;
+        const room = window.innerHeight - foot - HOLD_EDGE - (top + height + HOLD_GAP + el.offsetHeight);
+        // Up as far as the menu needs, but not so far that the top of a tall message leaves the screen.
+        const rise = room >= 0 ? 0 : Math.min(-room, Math.max(0, top - HOLD_EDGE));
+        lift.style.setProperty("--lift-y", `${-rise}px`);
+        const right = box.left + box.width / 2 > window.innerWidth / 2;
+        const width = el.offsetWidth;
+        const left = Math.min(window.innerWidth - width - HOLD_GAP, Math.max(HOLD_GAP, right ? box.right - width : box.left));
+        const next: HoldPlace = {
+          hole: { left: Math.floor(box.left) - 1, top: Math.floor(box.top) - 1, width: Math.ceil(box.width) + 2, height: Math.ceil(box.height) + 2 },
+          left: Math.round(left),
+          top: Math.round(Math.min(top - rise + height + HOLD_GAP, window.innerHeight - foot - HOLD_EDGE - el.offsetHeight)),
+          right,
+        };
+        const key = JSON.stringify(next);
+        if (key !== last) {
+          last = key;
+          setPlace(next);
+        }
+      }
+      frame = requestAnimationFrame(follow);
+    };
+    follow();
+    return () => {
+      cancelAnimationFrame(frame);
+      lift.style.removeProperty("--lift-y");
+    };
+  }, [lift]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      closeMenu();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
+  return createPortal(
+    <div className="hold-layer" onPointerDownCapture={() => (pressed.current = true)}>
+      <div
+        className="hold-scrim"
+        onClick={(e) => {
+          if (fresh(e)) closeMenu();
+        }}
+      >
+        {place ? <div className="hold-hole" style={{ ...place.hole, borderRadius: radius.current }} /> : null}
+      </div>
+      <div
+        ref={card}
+        className={["hold-menu", place ? "" : "unplaced", place?.right ? "right" : ""].join(" ")}
+        role="menu"
+        style={place ? { left: place.left, top: place.top } : undefined}
+      >
+        {menu.items.map((item, i) => (
+          <Fragment key={i}>
+            {item.group && i > 0 ? <div className="hold-menu-sep" role="separator" /> : null}
+            <button
+              type="button"
+              role={item.toggle ? "menuitemcheckbox" : item.checked === undefined ? "menuitem" : "menuitemradio"}
+              aria-checked={item.checked === undefined && !item.toggle ? undefined : !!item.checked}
+              className={item.danger ? "danger" : ""}
+              disabled={item.disabled}
+              onClick={(e) => {
+                if (fresh(e)) pick(item);
+              }}
+            >
+              {item.icon ? <span className="hold-menu-icon">{item.icon}</span> : null}
+              <span className="hold-menu-text">
+                <span>{item.label}</span>
+                {item.hint ? <small>{item.hint}</small> : null}
+              </span>
+              <Trailing item={item} />
+            </button>
+          </Fragment>
+        ))}
+      </div>
     </div>,
     document.body,
   );

@@ -11,36 +11,13 @@ function reducedMotion(): boolean {
   return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-/** A place on the screen the scrim leaves undimmed, in the window's pixels: the message a menu is for. */
-export interface Hole {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  radius: number;
-}
-
 /**
  * A sheet from the bottom of a phone's screen, pulled down by its handle or
  * title, or tapped past, to close; on a wide screen the same content in a
  * dialog in the middle. On a phone it slides away when it closes, showing
- * what it last held while it goes. A `hole` stays bright in the dimming.
+ * what it last held while it goes.
  */
-export function Sheet({
-  open,
-  onClose,
-  title,
-  children,
-  className,
-  hole,
-}: {
-  open: boolean;
-  onClose: () => void;
-  title?: string | undefined;
-  children: ReactNode;
-  className?: string | undefined;
-  hole?: Hole | null | undefined;
-}) {
+export function Sheet({ open, onClose, title, children, className }: { open: boolean; onClose: () => void; title?: string | undefined; children: ReactNode; className?: string | undefined }) {
   const wide = useWide();
   const box = useRef<HTMLDivElement>(null);
   // Callers pass a fresh closure every render; the effect below runs once per opening.
@@ -54,8 +31,8 @@ export function Sheet({
 
   // Still on screen for its slide down after the caller has closed it, with what it held.
   const [present, setPresent] = useState(open);
-  const kept = useRef<{ title: string | undefined; children: ReactNode; hole: Hole | null }>({ title, children, hole: hole ?? null });
-  if (open) kept.current = { title, children, hole: hole ?? null };
+  const kept = useRef<{ title: string | undefined; children: ReactNode }>({ title, children });
+  if (open) kept.current = { title, children };
   if (open && !present) setPresent(true);
   const leaving = !open && present;
   useEffect(() => {
@@ -121,21 +98,17 @@ export function Sheet({
     },
   };
 
-  const shown = open ? { title, children, hole: hole ?? null } : kept.current;
+  const shown = open ? { title, children } : kept.current;
   return createPortal(
     <div className={["sheet-layer", wide ? "wide" : "", leaving ? "leaving" : ""].join(" ")}>
       <div
-        className={["sheet-scrim", shown.hole ? "holed" : ""].join(" ")}
+        className="sheet-scrim"
         onPointerDown={() => (pressedScrim.current = true)}
         onClick={() => {
           if (pressedScrim.current && open) onClose();
           pressedScrim.current = false;
         }}
-      >
-        {shown.hole ? (
-          <div className="sheet-hole" style={{ left: shown.hole.x, top: shown.hole.y, width: shown.hole.width, height: shown.hole.height, borderRadius: shown.hole.radius }} />
-        ) : null}
-      </div>
+      />
       <div
         ref={box}
         tabIndex={-1}

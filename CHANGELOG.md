@@ -8,6 +8,9 @@
 - Pulling up at the end of a chat, the next chat with unread messages grows from a dot under the last message, as in Telegram, and the phone gives a light tap once it is full size: let go then to open it. It used to slide up from below with no tap on an iPhone. The iPhone now taps as well when a long press opens a menu and when a message is pulled far enough to answer it.
 - A chat with a background scrolls smoothly and opens without a stall, on an old phone too. The picture was drawn from its thousands of shapes every time the chat was painted: on a phone over a tenth of a second a frame while scrolling, and about a second when a chat opened. The pictures now come with the app ready drawn, in a size for each kind of screen.
 
+### Mesh and the map
+- Who hears me brings its answers into view, as a survey and a repeater's neighbours do. Ask now puts the map on your radio, and once the answers are in, it moves out as far as the farthest repeater that answered, so every line is on the screen. The map used to stay where it was, and the lines ran off its edge.
+
 ### Fixes
 - A battery's charge no longer leaps up and down from one reading to the next. Many radios read their own battery a tenth of a volt off from one time to the next, and on a LiFePO4 cell, whose voltage hardly moves through most of its charge, a tenth of a volt is half the charge: one radio's read 23%, then 78% as its readings opened, then 26% a minute later. The charge and the volts beside it are now the mean of the readings over the last half hour, and the week's line draws the mean of each ten minutes.
 - On a phone, "No answer to 2 tries · Send again" under a red direct message fits inside the message. Under a short message it ran past the right edge, cut off in the middle of "Send again", and its warning sign was squeezed out. It now takes a second line where it needs one.

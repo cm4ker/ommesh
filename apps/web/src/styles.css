@@ -3229,7 +3229,7 @@ html.notices-window #root {
     transition: none;
   }
 }
-/* The next chat with unread messages, in the room under the last message as the chat is pulled up past it (#80). */
+/* The next chat with unread messages, in the room under the last message as the chat is pulled up past it (#80). It grows from a dot in the middle of that room, and pops once full size, as the phone taps. */
 .chat-next-slot {
   flex: none;
   position: relative;
@@ -3242,14 +3242,31 @@ html.notices-window #root {
   bottom: calc(var(--space-3) + 16px);
   box-sizing: border-box;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding-top: var(--space-2);
-  overflow: hidden;
   pointer-events: none;
   color: var(--text-muted);
   font-size: var(--text-sm);
+}
+.chat-next-body {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+.chat-next.ready .chat-next-body {
+  animation: chat-next-pop 0.24s ease-out;
+}
+@keyframes chat-next-pop {
+  40% {
+    transform: scale(1.1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-next.ready .chat-next-body {
+    animation: none;
+  }
 }
 .chat-next-ring {
   position: relative;

@@ -10,6 +10,7 @@ import { daysIn, messagesIn, shownIn, titleOf, type ConversationSummary, type Sh
 import { nameOfHash, relaysOf } from "../lib/echoes.js";
 import { getOpenAtUnread, takeUnread } from "../lib/firstUnread.js";
 import { useFloatingDay } from "../lib/floatingDay.js";
+import { haptic } from "../lib/haptic.js";
 import { dayLabel, emojiOnly, timeOfDay } from "../lib/format.js";
 import { useJumboEmoji } from "../lib/jumboEmoji.js";
 import { moveForKeyboard } from "../lib/keyboard.js";
@@ -1128,10 +1129,11 @@ const NEXT_PULL = 88;
 const NEXT_PULL_MAX = 120;
 
 /**
- * Pulled up past its last message, on a phone, the chat rises and shows under
- * it the next chat with unread messages, and letting go there opens that one,
- * as Telegram goes on to the next unread channel (#80). With none left, it
- * says so and stays.
+ * Pulled up past its last message, on a phone, the chat rises, and in the room
+ * under it the next chat with unread messages grows from a dot to full size.
+ * Full size is far enough: it pops, the phone taps, and letting go opens that
+ * one, as Telegram goes on to the next unread channel (#80). With none left,
+ * it says so and stays.
  */
 function NextChat({ conversation, scroller, inner, enabled }: { conversation: string; scroller: RefObject<HTMLDivElement | null>; inner: RefObject<HTMLDivElement | null>; enabled: boolean }) {
   const wide = useWide();
@@ -1149,6 +1151,7 @@ function NextChat({ conversation, scroller, inner, enabled }: { conversation: st
   const found = useMemo(() => (pulling ? nextUnreadChat(session.getState(), conversation) : null), [pulling, conversation]);
   next.current = found;
   const ready = pull >= NEXT_PULL;
+  const grown = Math.min(1, pull / NEXT_PULL);
   // The messages follow the finger up, and settle back if it lets go short.
   useLayoutEffect(() => {
     const body = inner.current;
@@ -1157,31 +1160,33 @@ function NextChat({ conversation, scroller, inner, enabled }: { conversation: st
     body.style.transform = pulling ? `translateY(${-pull}px)` : "";
   }, [inner, pull, pulling]);
   useEffect(() => {
-    if (ready && next.current) navigator.vibrate?.(8);
+    if (ready && next.current) haptic();
   }, [ready]);
   return (
     <div className="chat-next-slot">
       {pulling ? (
         <div className={["chat-next", ready ? "ready" : "", found ? "" : "none"].join(" ")} style={{ height: pull }} aria-live="polite">
-          <span className="chat-next-ring">
-            <svg className="chat-next-track" viewBox="0 0 36 36" aria-hidden="true">
-              <circle cx="18" cy="18" r="16" pathLength={100} />
-              <circle className="arc" cx="18" cy="18" r="16" pathLength={100} strokeDasharray="100" strokeDashoffset={100 - Math.min(100, (pull / NEXT_PULL) * 100)} />
-            </svg>
-            {found ? <UpIcon size={18} /> : <CheckIcon size={18} />}
-          </span>
-          {found ? (
-            <>
-              <span className="chat-next-name">
-                <Avatar name={found.title} type={found.contact?.type} channel={found.kind === "channel" ? chatAccess(found.id, found.channel) : undefined} size={22} />
-                <span className="chat-next-title">{found.title}</span>
-                <span className="badge">{found.unread}</span>
-              </span>
-              <span>{ready ? t("chats.next.release") : t("chats.next.pull")}</span>
-            </>
-          ) : (
-            <span>{t("chats.next.none")}</span>
-          )}
+          <div className="chat-next-body" style={{ scale: String(grown), opacity: Math.min(1, grown * 2) }}>
+            <span className="chat-next-ring">
+              <svg className="chat-next-track" viewBox="0 0 36 36" aria-hidden="true">
+                <circle cx="18" cy="18" r="16" pathLength={100} />
+                <circle className="arc" cx="18" cy="18" r="16" pathLength={100} strokeDasharray="100" strokeDashoffset={100 - grown * 100} />
+              </svg>
+              {found ? <UpIcon size={18} /> : <CheckIcon size={18} />}
+            </span>
+            {found ? (
+              <>
+                <span className="chat-next-name">
+                  <Avatar name={found.title} type={found.contact?.type} channel={found.kind === "channel" ? chatAccess(found.id, found.channel) : undefined} size={22} />
+                  <span className="chat-next-title">{found.title}</span>
+                  <span className="badge">{found.unread}</span>
+                </span>
+                <span>{ready ? t("chats.next.release") : t("chats.next.pull")}</span>
+              </>
+            ) : (
+              <span>{t("chats.next.none")}</span>
+            )}
+          </div>
         </div>
       ) : null}
     </div>
@@ -1237,7 +1242,7 @@ function useReveal(scroller: React.RefObject<HTMLDivElement | null>, inner: Reac
         return;
       }
       const reach = Math.max(0, Math.min(REPLY_PULL + 16, dx));
-      if (reach >= REPLY_PULL && pulled < REPLY_PULL) navigator.vibrate?.(8);
+      if (reach >= REPLY_PULL && pulled < REPLY_PULL) haptic();
       pulled = reach;
       row!.style.transform = `translateX(${reach}px)`;
       row!.style.setProperty("--pull", String(Math.min(1, reach / REPLY_PULL)));

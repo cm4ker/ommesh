@@ -6,6 +6,7 @@
  */
 
 import { useRef, type MouseEvent, type PointerEvent } from "react";
+import { haptic } from "./haptic.js";
 
 export type MenuAt = { x: number; y: number } | null;
 
@@ -29,7 +30,7 @@ export function usePress(onMenu: (at: MenuAt) => void) {
       timer.current = setTimeout(() => {
         timer.current = null;
         fired.current = true;
-        navigator.vibrate?.(8);
+        haptic();
         onMenu(null);
       }, HOLD_MS);
     },

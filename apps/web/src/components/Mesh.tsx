@@ -703,7 +703,22 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
   // A place from a chat is brought into view each time it is shown.
   const place = useMeshPlace();
   const placeFit = place ? { id: `place:${place.id}`, points: [[place.lat, place.lon]] as [number, number][] } : null;
-  const fit = hub ? { id: `${hub}:${whole ? "all" : "part"}:${refit}`, points: fitPoints } : (surveyFit ?? routeFit ?? placeFit);
+  // "Who hears me" asked: the map goes to where the ask went out from, and once the answers are in, out as far
+  // as the farthest repeater that answered (#87). Not while a survey runs: it asks by itself and keeps its own view.
+  const hears = useHears();
+  let hearsFit: { id: string; points: [number, number][] } | null = null;
+  if (tool?.kind === "hears" && !surveying && hears.at !== null) {
+    const me = selfEnd(state);
+    const points: [number, number][] = me ? [[me.lat, me.lon]] : [];
+    if (!hears.listening) {
+      for (const reply of hears.replies) {
+        const c = state.contacts[reply.key];
+        if (c && hasPosition(c.lat, c.lon)) points.push([c.lat, c.lon]);
+      }
+    }
+    hearsFit = { id: `hears:${hears.at}:${hears.listening ? "asked" : "answered"}`, points };
+  }
+  const fit = hub ? { id: `${hub}:${whole ? "all" : "part"}:${refit}`, points: fitPoints } : (surveyFit ?? routeFit ?? hearsFit ?? placeFit);
   // A point of it opened, the map goes on following: the answers there are read with the phone still in sight.
   const running = tool?.kind === "survey" && tool.view === "run" && surveying;
   // A new list only when a repeater answers for the first time or one of them moves, so the map is not fitted on every render.

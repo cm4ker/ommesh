@@ -10,6 +10,8 @@ import { disconnect, useLink } from "../lib/link.js";
 import { setLookalikePrefs, useLookalikePrefs } from "../lib/lookalikes.js";
 import { setOpenAtUnread, useOpenAtUnread } from "../lib/firstUnread.js";
 import { setJumboEmoji, useJumboEmoji } from "../lib/jumboEmoji.js";
+import { linkFetchAvailable } from "../lib/linkFetch.js";
+import { setPreviewMode, usePreviewMode, type PreviewMode } from "../lib/linkPreview.js";
 import { BACKGROUND_NAMES, BACKGROUNDS, setBackground, setBackgroundScale, setBackgroundStrength, useBackgroundPrefs } from "../lib/chatBackground.js";
 import { isDirect, oneSignal, SIGNALS, setNoticePrefs, useNoticePrefs, type Corner, type NoticeKind, type NoticePrefs } from "../lib/noticePrefs.js";
 import { titleOf } from "../lib/conversations.js";
@@ -836,6 +838,26 @@ function triesHint(n: number): string {
   return span < 60_000 ? t("radio.messages.triesMinute", { count: n }) : t("radio.messages.triesOver", { count: n, minutes: Math.round(span / 60_000) });
 }
 
+/**
+ * Link previews: off by default, since each one is a visit to a stranger's
+ * site from this device. "At once" says what it gives away in its hint.
+ */
+function PreviewGroup() {
+  const mode = usePreviewMode();
+  const choices: { mode: PreviewMode; label: Key; hint: Key }[] = [
+    { mode: "off", label: "radio.messages.previewsOff", hint: "radio.messages.previewsOffHint" },
+    { mode: "tap", label: "radio.messages.previewsTap", hint: "radio.messages.previewsTapHint" },
+    { mode: "auto", label: "radio.messages.previewsAuto", hint: "radio.messages.previewsAutoHint" },
+  ];
+  return (
+    <Group title={t("radio.messages.previews")} note={t("radio.messages.previewsNote")}>
+      {choices.map((c) => (
+        <ChoiceRow key={c.mode} label={t(c.label)} hint={t(c.hint)} checked={mode === c.mode} onSelect={() => setPreviewMode(c.mode)} />
+      ))}
+    </Group>
+  );
+}
+
 function MessagesPage() {
   const state = useSession();
   const lookalikes = useLookalikePrefs();
@@ -860,6 +882,7 @@ function MessagesPage() {
         />
         {lookalikes.on ? <SwitchRow label={t("radio.messages.near")} hint={t("radio.messages.nearHint")} checked={lookalikes.near} onChange={(v) => setLookalikePrefs({ near: v })} /> : null}
       </Group>
+      {linkFetchAvailable() ? <PreviewGroup /> : null}
       <Group note={t("radio.messages.triesNote")}>
         <StepperRow
           label={t("radio.messages.sendTries")}

@@ -3,7 +3,8 @@
 # simulator, as the XCFramework and Swift bindings that the local package
 # ios/MeshcoreCore links into the app. Run by ios.sh before Xcode builds; needs
 # cargo with the aarch64-apple-ios, aarch64-apple-ios-sim and x86_64-apple-ios
-# targets (a simulator build is for both kinds of Mac).
+# targets (a simulator build is for both kinds of Mac). It carries the link
+# preview's fetch (`link-fetch`), which `LinkFetchPlugin.swift` calls.
 #
 # Written for the bash macOS ships, which is 3.2.
 
@@ -17,9 +18,9 @@ out=$here/ios/MeshcoreCore/build
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 
 cd "$core"
-cargo build --release --locked --target aarch64-apple-ios
-cargo build --release --locked --target aarch64-apple-ios-sim
-cargo build --release --locked --target x86_64-apple-ios
+cargo build --release --locked --features link-fetch --target aarch64-apple-ios
+cargo build --release --locked --features link-fetch --target aarch64-apple-ios-sim
+cargo build --release --locked --features link-fetch --target x86_64-apple-ios
 
 rm -rf "$out"
 mkdir -p "$out/Sources/MeshcoreCore" "$out/headers" "$out/simulator"

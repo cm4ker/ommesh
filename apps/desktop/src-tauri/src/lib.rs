@@ -7,6 +7,7 @@ mod announce;
 mod coverage;
 mod instance;
 mod notices;
+mod preview;
 mod secrets;
 mod tcp;
 mod tray;
@@ -112,6 +113,7 @@ pub fn run() {
         secrets::secret_set,
         secrets::secret_delete,
         coverage::coverage_upload,
+        preview::link_fetch,
     ]);
     #[cfg(not(windows))]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -136,6 +138,7 @@ pub fn run() {
         secrets::secret_set,
         secrets::secret_delete,
         coverage::coverage_upload,
+        preview::link_fetch,
     ]);
 
     builder

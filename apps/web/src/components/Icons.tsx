@@ -123,6 +123,8 @@ export const SpeakerIcon = icon('<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path
 export const PaletteIcon = icon('<path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.7-.8 1.4-1.8-.4-1.2.4-2.2 1.6-2.2H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3z"/><circle cx="8" cy="11" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="11" r="1"/>');
 /** A picture in a frame: a chat's background. */
 export const PictureIcon = icon('<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 16.5l5-5 4 4 2.5-2.5 5.5 5"/><circle cx="15.5" cy="9" r="1.5"/>');
+/** A link's preview, after the link in a message: a card with lines of text. */
+export const PreviewIcon = icon('<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 9h6M7 13h10M7 17h7"/>');
 export const ShieldIcon = icon('<path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"/>');
 export const SlidersIcon = icon('<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>');
 export const TextIcon = icon('<path d="M5 6h14M12 6v13M8 19h8"/>');

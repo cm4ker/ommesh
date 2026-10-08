@@ -13,6 +13,8 @@ import { useFloatingDay } from "../lib/floatingDay.js";
 import { haptic } from "../lib/haptic.js";
 import { dayLabel, emojiOnly, fullDate, timeOfDay } from "../lib/format.js";
 import { useJumboEmoji } from "../lib/jumboEmoji.js";
+import { usePreviewMode } from "../lib/linkPreview.js";
+import { linkAllowed } from "../lib/linkPreviewParse.js";
 import { moveForKeyboard } from "../lib/keyboard.js";
 import { onJump, takeJump, type Jump } from "../lib/jump.js";
 import { useWide } from "../lib/layout.js";
@@ -39,6 +41,7 @@ import { PickBar, PickHead, usePickGestures } from "./ChatPick.js";
 import { Composer, type Reply } from "./Composer.js";
 import { NotOnRadio } from "./ContactsPages.js";
 import { PlaceBody } from "./PlaceCard.js";
+import { LinkCards, LinkMark } from "./LinkPreview.js";
 import {
   AlertIcon,
   CheckIcon,
@@ -791,9 +794,10 @@ function NoChannel({ keyless, onAbout, onDelete }: { keyless: boolean; onAbout: 
 /**
  * A message's text, with mentions, positions and web addresses picked out; a mention of this radio
  * stands out more, and an address opens in the browser. Searched, the words found are marked in
- * the text between them and in the addresses.
+ * the text between them and in the addresses. With previews on, `linkMark` draws what follows a
+ * link that may have one.
  */
-function richText(text: string, me: string | null, mark: string | undefined, onPlace?: (mark: string) => void): ReactNode {
+function richText(text: string, me: string | null, mark: string | undefined, onPlace?: (mark: string) => void, linkMark?: (href: string) => ReactNode): ReactNode {
   const pattern = new RegExp(`${MENTION.source}|(${PLACE_SOURCE})|(${LINK.source})`, "gi");
   const out: ReactNode[] = [];
   let at = 0;
@@ -830,6 +834,8 @@ function richText(text: string, me: string | null, mark: string | undefined, onP
             {marked(link.text, mark)}
           </a>,
         );
+        // A word joiner keeps the mark on the line its link ends on.
+        if (linkMark && linkAllowed(link.href)) out.push(<Fragment key={`${start}m`}>{"⁠"}{linkMark(link.href)}</Fragment>);
       } else {
         out.push(marked(m[0], mark));
       }
@@ -920,6 +926,8 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
   const [busy, setBusy] = useState(false);
   const bubble = useRef<HTMLDivElement>(null);
   const large = useJumboEmoji();
+  const previews = usePreviewMode() !== "off";
+  const linkMark = useCallback((href: string) => <LinkMark href={href} message={message.id} />, [message.id]);
   const onReply = replyTo ? () => replyTo(message) : undefined;
   const relays = out && contacts ? relaysOf(message.echoes, contacts) : [];
   const tech = techOf(message);
@@ -1036,8 +1044,9 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
           {placed ? (
             placed.place.label || placed.caption ? <span className="msg-text place-caption">{richText([placed.place.label, placed.caption].filter(Boolean).join("\n"), me, mark, showPlace)}</span> : null
           ) : (
-            <span className="msg-text">{richText(message.text, me, mark, showPlace)}</span>
+            <span className="msg-text">{richText(message.text, me, mark, showPlace, previews ? linkMark : undefined)}</span>
           )}
+          {previews && !placed && !jumbo ? <LinkCards text={message.text} message={message.id} /> : null}
           <span className="msg-meta">
             {tech ? <span className="msg-tech">{tech} ·</span> : null}
             <span>{timeOfDay(at)}</span>

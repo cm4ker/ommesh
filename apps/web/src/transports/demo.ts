@@ -384,12 +384,16 @@ class DemoRadio extends BaseTransport {
   start(): void {
     // Queued before the app connected: their packets were never heard, so their routes are unknown.
     // A place each: Alice's exact, sent from her phone, and a rough one on Public.
+    // Links to real pages and a picture, for the previews to be tried on.
     this.queue.push(
       this.dm(PEOPLE[0]!, "Welcome to the demo mesh"),
       this.dm(PEOPLE[0]!, "👋"),
       this.dm(PEOPLE[0]!, "geo:55.04212,73.39208;u=9 Meet you here"),
+      this.dm(PEOPLE[0]!, "The firmware is here: https://github.com/meshcore-dev/MeshCore"),
+      this.dm(PEOPLE[0]!, "And a picture to try: https://upload.wikimedia.org/wikipedia/commons/4/47/PNG_transparency_demonstration_1.png"),
       this.channel(0, "Bob (bike)", "Public channel works too"),
       this.channel(0, "Bob (bike)", "geo:55.06,73.43;u=1000 Somewhere round here today"),
+      this.channel(0, "Bob (bike)", "What LoRa is, for the newcomers: https://en.wikipedia.org/wiki/LoRa"),
       // Somebody writing in a channel their radio no longer has: the all-zero key, filed in the first empty slot.
       this.channel(2, "Wanderer", "Anyone else see this channel with no name?"),
     );

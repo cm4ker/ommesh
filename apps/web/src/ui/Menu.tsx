@@ -11,7 +11,7 @@ import type { MenuAt } from "../lib/press.js";
 import { useWide } from "../lib/layout.js";
 import { dismissToast, toastSpot, useToast, type ToastSpot } from "../lib/toast.js";
 import { AirMark } from "./List.js";
-import { Sheet } from "./Sheet.js";
+import { Sheet, type Hole } from "./Sheet.js";
 
 export interface MenuItem {
   label: string;
@@ -34,6 +34,8 @@ interface MenuState {
   items: MenuItem[];
   title?: string | undefined;
   at: MenuAt;
+  /** What the menu is for, such as the message held: lit while the menu is open, and left bright in the sheet's dimming. */
+  lift: HTMLElement | null;
 }
 
 let current: MenuState | null = null;
@@ -43,14 +45,45 @@ function emit(): void {
   for (const listener of listeners) listener();
 }
 
-export function showMenu(items: MenuItem[], options: { title?: string | undefined; at?: MenuAt } = {}): void {
-  current = { items: items.filter(Boolean), title: options.title, at: options.at ?? null };
+export function showMenu(items: MenuItem[], options: { title?: string | undefined; at?: MenuAt; lift?: HTMLElement | null | undefined } = {}): void {
+  current?.lift?.classList.remove("held");
+  current = { items: items.filter(Boolean), title: options.title, at: options.at ?? null, lift: options.lift ?? null };
+  current.lift?.classList.add("held");
   emit();
 }
 
 export function closeMenu(): void {
+  current?.lift?.classList.remove("held");
   current = null;
   emit();
+}
+
+/**
+ * The place left undimmed for what the menu is for, just around it.
+ * Followed while the menu is open: the held message rises a little, and the
+ * keyboard going down as the sheet takes the focus moves the chat under it.
+ */
+function useHole(lift: HTMLElement | null): Hole | null {
+  const [hole, setHole] = useState<Hole | null>(null);
+  useLayoutEffect(() => {
+    if (!lift) return;
+    const radius = (parseFloat(getComputedStyle(lift).borderTopLeftRadius) || 16) + 1;
+    let last = "";
+    let frame = 0;
+    const follow = () => {
+      const box = lift.isConnected ? lift.getBoundingClientRect() : null;
+      const next = box ? { x: Math.floor(box.left) - 1, y: Math.floor(box.top) - 1, width: Math.ceil(box.width) + 2, height: Math.ceil(box.height) + 2, radius } : null;
+      const key = next ? `${next.x} ${next.y} ${next.width} ${next.height}` : "";
+      if (key !== last) {
+        last = key;
+        setHole(next);
+      }
+      frame = requestAnimationFrame(follow);
+    };
+    follow();
+    return () => cancelAnimationFrame(frame);
+  }, [lift]);
+  return lift ? hole : null;
 }
 
 function useMenuState(): MenuState | null {
@@ -88,10 +121,12 @@ function groups(items: MenuItem[]): { at: number; items: MenuItem[] }[] {
 export function MenuHost() {
   const menu = useMenuState();
   const wide = useWide();
-  if (menu && wide && menu.at) return <Popover menu={menu} />;
+  const popover = menu !== null && wide && menu.at !== null;
+  const hole = useHole(popover ? null : (menu?.lift ?? null));
+  if (popover) return <Popover menu={menu} />;
   // Mounted while closed too, so the sheet can slide away with the menu it held.
   return (
-    <Sheet open={menu !== null} onClose={closeMenu} title={menu?.title}>
+    <Sheet open={menu !== null} onClose={closeMenu} title={menu?.title} hole={hole}>
       {groups(menu?.items ?? []).map((g) => (
         <div key={g.at} className="group-body">
           {g.items.map((item, i) => (

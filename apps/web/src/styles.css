@@ -2310,6 +2310,16 @@ details.more .kv-grid {
   inset: 0;
   background: rgb(0 0 0 / 0.4);
 }
+/* A menu for a message held: the dimming is the hole's shadow, so the message stays bright in it. */
+.sheet-scrim.holed {
+  overflow: hidden;
+  background: transparent;
+}
+.sheet-hole {
+  position: absolute;
+  box-shadow: 0 0 0 200vmax rgb(0 0 0 / 0.4);
+  pointer-events: none;
+}
 .sheet {
   position: relative;
   max-height: 88%;
@@ -3663,6 +3673,23 @@ html.notices-window #root {
     animation: none;
   }
 }
+/* A message held for its menu rises a little, lit, while the rest of the chat is dimmed (Menu.tsx). */
+.bubble,
+.jumbo {
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+.bubble.held,
+.jumbo.held {
+  transform: scale(1.02);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.28);
+}
+.jumbo.held {
+  border-radius: 16px;
+  background: var(--panel);
+}
+
 /* Messages picked to copy or delete, as Telegram shows them (ChatPick.tsx): a ring by every message, at the
    right edge with a mouse and the left on a phone, filled for those picked; a picked bubble takes the accent. */
 .msg.selecting {

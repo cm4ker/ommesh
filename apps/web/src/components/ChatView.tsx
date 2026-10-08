@@ -918,6 +918,7 @@ interface MessageProps {
 const Message = memo(function Message({ message, at, lead, showSender, avatar, me, peer, onReply: replyTo, onWho, contacts, mark, current, faded, flash, selecting, picked, onPick }: MessageProps) {
   const out = message.direction === "out";
   const [busy, setBusy] = useState(false);
+  const bubble = useRef<HTMLDivElement>(null);
   const large = useJumboEmoji();
   const onReply = replyTo ? () => replyTo(message) : undefined;
   const relays = out && contacts ? relaysOf(message.echoes, contacts) : [];
@@ -979,7 +980,8 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
     ];
     showMenu(
       items.filter((x): x is MenuItem => x !== null),
-      { at },
+      // The message itself lights up while its menu is open, and stays bright over the sheet's dimming.
+      { at, lift: bubble.current },
     );
   });
 
@@ -1006,6 +1008,7 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
       <div className="msg-col">
         {/* A div, not a button: its text stays selectable for copying with a mouse. */}
         <div
+          ref={bubble}
           role="button"
           tabIndex={0}
           className={[jumbo ? `jumbo jumbo-${jumbo}` : "bubble", placed ? "place-msg" : "", bad ? "bad" : "", current ? "msg-current" : "", flash ? "msg-flash" : ""].join(" ")}

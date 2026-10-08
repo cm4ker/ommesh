@@ -1,6 +1,6 @@
 /** Small formatters shared by the views. */
 
-import { lppTypeName, type LppReading, type SeriesSummary } from "@meshnet/meshcore";
+import { lppTypeName, type LppReading, type SeriesSummary, type SessionState } from "@meshnet/meshcore";
 import { locale, t } from "../i18n/index.js";
 
 /*
@@ -165,6 +165,32 @@ export function batteryPercent(mv: number, type: BatteryType = "liion"): number 
     return Math.round(100 - i * step + ((mv - low) / (high - low)) * step);
   }
   return 0;
+}
+
+/** How far back a battery's readings count toward its charge; a cell's voltage hardly moves in that time. */
+const STEADY_MS = 30 * 60 * 1000;
+
+/**
+ * A battery's voltage, mV, as the mean of its readings over the half hour up to the last one,
+ * or `latest` with none kept. A radio's reading of its own battery can wander a tenth of a volt
+ * from one to the next, and on LiFePO4's flat middle a tenth of a volt is half the charge: by
+ * the latest reading alone the percent leapt from 23 to 78 and back within a minute.
+ */
+export function steadyMv(samples: readonly { at: number; mv: number; n?: number | undefined }[], latest: number): number {
+  const since = (samples.at(-1)?.at ?? 0) - STEADY_MS;
+  let sum = 0;
+  let count = 0;
+  for (const s of samples) {
+    if (s.at < since || s.mv <= 0) continue;
+    sum += s.mv * (s.n ?? 1);
+    count += s.n ?? 1;
+  }
+  return count > 0 ? Math.round(sum / count) : latest;
+}
+
+/** This radio's battery, mV, steadied over its last readings; none before one is read. */
+export function ownBatteryMv(state: Pick<SessionState, "battery" | "batteryHistory">): number | null {
+  return state.battery ? steadyMv(state.batteryHistory["self"] ?? [], state.battery.mv) : null;
 }
 
 /** At or below this charge a cell wants charging soon, whatever it is made of. */

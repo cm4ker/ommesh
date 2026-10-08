@@ -9,7 +9,7 @@ import { AdvertLocPolicy, AdvType, isFavourite, type ContactRecord, type Session
 import { t, type Key } from "../i18n/index.js";
 import { useBackLayer } from "../lib/back.js";
 import { useBatteryTypes } from "../lib/batteryType.js";
-import { ago, batteryPercent, lowCharge, type BatteryType } from "../lib/format.js";
+import { ago, batteryPercent, lowCharge, steadyMv, type BatteryType } from "../lib/format.js";
 import { bearingDeg, compass, destination, distanceKm, formatDistance, formatLatLon, hasPosition } from "../lib/geo.js";
 import { useHears } from "../lib/hears.js";
 import { legId, useLegVerdicts } from "../lib/legVerdicts.js";
@@ -119,10 +119,17 @@ function matcher(state: SessionState, saved: readonly string[], kind: Kind, quer
   };
 }
 
-/** A node of yours in trouble: its last status says its battery is low, by the cell picked for it. */
+/** A node's battery by its status answers, steadied over the last half hour of them as its readings show it. */
+function statusMv(history: SessionState["statusHistory"][string] | undefined): number | null {
+  const last = history?.at(-1);
+  if (!last) return null;
+  return last.batteryMv > 0 ? steadyMv(history!.map((s) => ({ at: s.at, mv: s.batteryMv })), last.batteryMv) : last.batteryMv;
+}
+
+/** A node of yours in trouble: its last statuses say its battery is low, by the cell picked for it. */
 function lowBattery(state: SessionState, key: string, types: Readonly<Record<string, BatteryType>>): boolean {
-  const last = state.statusHistory[key]?.at(-1);
-  return !!last && lowCharge(last.batteryMv, types[key]);
+  const mv = statusMv(state.statusHistory[key]);
+  return mv !== null && lowCharge(mv, types[key]);
 }
 
 /** Whether any node of yours needs a look, for the dot on the Mesh tab. */
@@ -324,7 +331,7 @@ function MeshListBody({ selected, onOpen, hideSearch = false, only }: { selected
                   yours={mine(c)}
                   onOpen={open}
                   login={state.logins[c.key]}
-                  last={state.statusHistory[c.key]?.at(-1)}
+                  mv={statusMv(state.statusHistory[c.key])}
                   cell={cells[c.key]}
                   self={state.self}
                   minute={minute}
@@ -384,7 +391,8 @@ interface NodeRowProps {
   yours: boolean;
   onOpen: (key: string) => void;
   login: SessionState["logins"][string] | undefined;
-  last: SessionState["statusHistory"][string][number] | undefined;
+  /** The node's battery by its status answers, steadied; none before one. */
+  mv: number | null;
   /** The cell picked for the node, which its charge is counted by. */
   cell: BatteryType | undefined;
   self: SessionState["self"];
@@ -396,15 +404,15 @@ interface NodeRowProps {
  * One node in the list. Memoised: an advert changes one contact, and the other rows,
  * eighty of them in a busy mesh, have nothing new to draw.
  */
-const NodeRow = memo(function NodeRow({ contact: c, selected, yours, onOpen, login, last, cell, self }: NodeRowProps) {
+const NodeRow = memo(function NodeRow({ contact: c, selected, yours, onOpen, login, mv, cell, self }: NodeRowProps) {
   // Most nodes have no route and flood, and many no position: said on every row it says nothing, so the profile says it.
   const route = yours ? null : routeWords(c);
   const bits = yours
     ? [kindLabel(c.type), login?.ok ? t("mesh.row.signedIn") : t("mesh.row.notSignedIn")]
     : [kindLabel(c.type), c.unsaved ? t("mesh.row.notOnRadio") : whereFrom(self, c)];
   // A node of yours says its charge as its readings do: by its cell, "≈" by Li-ion until one is picked.
-  const percent = yours && last && last.batteryMv > 0 ? batteryPercent(last.batteryMv, cell) : null;
-  const low = !!last && lowCharge(last.batteryMv, cell);
+  const percent = yours && mv !== null && mv > 0 ? batteryPercent(mv, cell) : null;
+  const low = mv !== null && lowCharge(mv, cell);
   return (
     <li>
       <button type="button" className={["row", selected ? "selected" : ""].join(" ")} onClick={() => onOpen(c.key)}>

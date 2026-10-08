@@ -1,5 +1,5 @@
 import { useBatteryType } from "../lib/batteryType.js";
-import { batteryPercent, lowCharge } from "../lib/format.js";
+import { batteryPercent, lowCharge, ownBatteryMv } from "../lib/format.js";
 import { useWide } from "../lib/layout.js";
 import { goSection, openRadioPage } from "../lib/nav.js";
 import { useSelector } from "../lib/session.js";
@@ -15,7 +15,7 @@ export function RadioTag() {
   // Values rather than the state, so the head is drawn again only when one of them changes.
   const key = useSelector((state) => state.self?.key);
   const name = useSelector((state) => state.self?.name);
-  const mv = useSelector((state) => state.battery?.mv ?? null);
+  const mv = useSelector(ownBatteryMv);
   const online = useSelector((state) => state.status === "ready");
   const cell = useBatteryType(key);
   const wide = useWide();

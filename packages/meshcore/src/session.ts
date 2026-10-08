@@ -490,10 +490,12 @@ export interface NeighbourReset extends NeighbourSearch {
   called: boolean;
 }
 
-/** One battery reading kept for a node's week. */
+/** One battery reading kept for a node's week, or the mean of those taken within ten minutes. */
 export interface BatterySample {
   at: number;
   mv: number;
+  /** How many readings the mean is of; one when absent. */
+  n?: number;
 }
 
 /** One reading kept for a node's day, in the reading's own unit: volts, amperes. */
@@ -3710,11 +3712,18 @@ export class MeshSession {
     this.publishRemote();
   }
 
-  /** A battery reading into its node's week: one sample per ten minutes, carrying the latest value. */
+  /**
+   * A battery reading into its node's week: one sample per ten minutes, the mean of the readings
+   * in them. A radio's reading of its own battery can wander a tenth of a volt from one to the
+   * next, and the latest alone would draw that wander as the battery's line.
+   */
   private noteBattery(key: string, mv: number): Partial<SessionState> {
     const at = this.now();
     const kept = (this.state.batteryHistory[key] ?? []).filter((s) => at - s.at < HISTORY_MS);
-    return { batteryHistory: { ...this.state.batteryHistory, [key]: spaced(kept, { at, mv }).slice(-HISTORY_LIMIT) } };
+    const last = kept.at(-1);
+    const n = last?.n ?? 1;
+    const history = last && at - last.at < SAMPLE_SPACING_MS ? [...kept.slice(0, -1), { at: last.at, mv: Math.round((last.mv * n + mv) / (n + 1)), n: n + 1 }] : [...kept, { at, mv }];
+    return { batteryHistory: { ...this.state.batteryHistory, [key]: history.slice(-HISTORY_LIMIT) } };
   }
 
   /**

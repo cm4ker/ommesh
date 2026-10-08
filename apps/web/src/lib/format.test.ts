@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { LppReading, SeriesSummary } from "@meshnet/meshcore";
-import { batteryPercent, emojiOnly, errorShare, lowCharge, powerSummary, powerWatts, span, trailingEmoji } from "./format.js";
+import { batteryPercent, emojiOnly, errorShare, lowCharge, powerSummary, powerWatts, span, steadyMv, trailingEmoji } from "./format.js";
 
 test("the emoji a name ends with goes on its circle", () => {
   assert.equal(trailingEmoji("Fox 🦊"), "🦊");
@@ -76,6 +76,21 @@ test("a charge is read off the curve, straight between its points, and kept with
   assert.equal(batteryPercent(3100), 0);
   assert.equal(batteryPercent(2800), 0);
   assert.equal(batteryPercent(2500, "lifepo4"), 0);
+});
+
+test("a battery reads as the mean of its last half hour, so one wandering reading does not swing the charge", () => {
+  const min = 60 * 1000;
+  // A LiFePO4 whose radio read 3.21, 3.31 and 3.22 V: 23, 77 and 27% one by one.
+  const samples = [
+    { at: 0, mv: 3330 },
+    { at: 50 * min, mv: 3210 },
+    { at: 60 * min, mv: 3310, n: 2 },
+    { at: 70 * min, mv: 3220 },
+  ];
+  assert.equal(steadyMv(samples, 3220), 3263);
+  assert.equal(batteryPercent(steadyMv(samples, 3220), "lifepo4"), 53);
+  assert.equal(steadyMv([], 3220), 3220);
+  assert.equal(steadyMv([{ at: 0, mv: 3300 }], 3220), 3300);
 });
 
 test("power comes from the channel's voltage and current, not the whole watts it is sent in", () => {

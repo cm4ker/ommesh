@@ -1353,7 +1353,7 @@ test("remote requests wait their turn: the second goes out only after the first 
   assert.equal(session.getState().remote.active, null);
 });
 
-test("a telemetry answer's battery joins the node's week, once per ten minutes", async () => {
+test("a telemetry answer's battery joins the node's week, as the mean of each ten minutes", async () => {
   let now = 1_700_000_000_000;
   const radio = new ScriptedRadio();
   radio.contacts = [contactFrame(BOB, "Bob", 12)];
@@ -1366,12 +1366,15 @@ test("a telemetry answer's battery joins the node's week, once per ten minutes",
   now += 5 * 60 * 1000;
   radio.push(answer(412));
   await tick();
+  now += 4 * 60 * 1000;
+  radio.push(answer(406));
+  await tick();
   now += 20 * 60 * 1000;
   radio.push(answer(402));
   await tick();
   assert.deepEqual(session.getState().batteryHistory[bobKey()], [
-    { at: 1_700_000_000_000, mv: 4120 },
-    { at: 1_700_001_500_000, mv: 4020 },
+    { at: 1_700_000_000_000, mv: 4110, n: 3 },
+    { at: 1_700_001_740_000, mv: 4020 },
   ]);
 });
 

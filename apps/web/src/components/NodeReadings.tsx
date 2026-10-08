@@ -3,7 +3,7 @@ import { AdvType, NoReplyError, TelemMode, type BatterySample, type ContactRecor
 import { errorText } from "../i18n/errors.js";
 import { locale, t } from "../i18n/index.js";
 import { BATTERY_TYPES, batteryTypeLabel, setBatteryType, useChosenBatteryType } from "../lib/batteryType.js";
-import { ago, agoPhrase, batteryPercent, errorShare, lowCharge } from "../lib/format.js";
+import { ago, agoPhrase, batteryPercent, errorShare, lowCharge, steadyMv } from "../lib/format.js";
 import { openNodePage, push, showOnMap } from "../lib/nav.js";
 import { session, useSession } from "../lib/session.js";
 import { reach } from "../lib/privacy.js";
@@ -60,7 +60,7 @@ function volts(mv: number): string {
 
 /**
  * The battery, as a charge by the cell someone picked for this node, or "≈" by Li-ion when
- * nobody did; this radio's own reads without "≈". A low charge colours the number, judged by
+ * nobody did; this radio's own reads without "≈". `mv` is steadied over the last half hour. A low charge colours the number, judged by
  * the same cell. A week of answers draws its line, and a tap picks the cell.
  */
 function batteryTile(mv: number, history: BatterySample[], chosen: ReturnType<typeof useChosenBatteryType>, own: boolean, onClick: () => void): Tile {
@@ -175,12 +175,15 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
   const [silentAt, setSilentAt] = useState<number | null>(null);
   const [picking, setPicking] = useState(false);
 
-  const history: BatterySample[] = statusNode ? (state.statusHistory[key] ?? []).map((s) => ({ at: s.at, mv: s.batteryMv })) : (state.batteryHistory[key] ?? []);
+  const statusSamples: BatterySample[] = (state.statusHistory[key] ?? []).map((s) => ({ at: s.at, mv: s.batteryMv }));
+  const history: BatterySample[] = statusNode ? statusSamples : (state.batteryHistory[key] ?? []);
   const fromStatus = status && stats && stats.batteryMv > 0 ? { mv: stats.batteryMv, at: status.at } : null;
   const telemetryMv = selfVolts(telemetry?.readings);
   const fromTelemetry = telemetry && telemetryMv !== null && telemetryMv > 0 ? { mv: telemetryMv, at: telemetry.at } : null;
   const battery = fromStatus && fromTelemetry ? (fromStatus.at >= fromTelemetry.at ? fromStatus : fromTelemetry) : (fromStatus ?? fromTelemetry);
-  const batteryTiles: Tile[] = battery ? [batteryTile(battery.mv, history, chosen, false, () => setPicking(true))] : [];
+  // Steadied over the answers of the kind that brought it, which are the ones kept with it.
+  const mv = battery ? steadyMv(battery === fromTelemetry ? (state.batteryHistory[key] ?? []) : statusSamples, battery.mv) : null;
+  const batteryTiles: Tile[] = mv !== null ? [batteryTile(mv, history, chosen, false, () => setPicking(true))] : [];
 
   const ask = (what: "status" | "telemetry", request: () => Promise<unknown>) => async () => {
     setBusy(what);
@@ -196,7 +199,7 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
   };
   const askTelemetry = ask("telemetry", () => session.requestTelemetry(key));
   const askStatus = ask("status", () => session.requestStatus(key));
-  const sheet = battery ? <BatterySheet open={picking} onClose={() => setPicking(false)} nodeKey={key} name={name} mv={battery.mv} /> : null;
+  const sheet = mv !== null ? <BatterySheet open={picking} onClose={() => setPicking(false)} nodeKey={key} name={name} mv={mv} /> : null;
 
   if (!statusNode)
     return (
@@ -275,7 +278,9 @@ export function OwnReadings() {
 
   if (!self) return null;
   const telemetry = state.telemetry["self"];
-  const mv = state.battery?.mv ?? selfVolts(telemetry?.readings);
+  const latest = state.battery?.mv ?? selfVolts(telemetry?.readings);
+  // Both the battery question and the radio's own telemetry are kept in its week.
+  const mv = latest !== null && latest > 0 ? steadyMv(state.batteryHistory["self"] ?? [], latest) : latest;
   const tiles: Tile[] = [];
   if (mv !== null && mv > 0) tiles.push(batteryTile(mv, state.batteryHistory["self"] ?? [], chosen, true, () => setPicking(true)));
   if (radio) tiles.push({ id: "noise", label: t("node.readings.noise"), value: String(radio.noiseFloor), unit: t("node.unit.dbm"), sub: t("node.readings.quieter") });

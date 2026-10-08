@@ -2,7 +2,7 @@ import { useRef, useSyncExternalStore } from "react";
 import { useBatteryType } from "../lib/batteryType.js";
 import { useFollowStatus } from "../lib/followPhone.js";
 import { t } from "../i18n/index.js";
-import { battery, batteryPercent, lowCharge } from "../lib/format.js";
+import { battery, batteryPercent, lowCharge, ownBatteryMv } from "../lib/format.js";
 import { disconnect, useLink } from "../lib/link.js";
 import { useLookalikePrefs } from "../lib/lookalikes.js";
 import { openRadioPage, type RadioPage } from "../lib/nav.js";
@@ -50,7 +50,8 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
   const self = state.self;
   const online = state.status === "ready";
   const cell = useBatteryType(self?.key);
-  const low = !!state.battery && lowCharge(state.battery.mv, cell);
+  const mv = ownBatteryMv(state);
+  const low = mv !== null && lowCharge(mv, cell);
   const own = state.telemetry["self"];
   const gps = useFollowStatus(self?.key).gps;
   const row = (page: RadioPage, icon: React.ReactNode, value?: string) => (
@@ -106,13 +107,13 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
               </span>
             </span>
             <button type="button" className="radio-battery" disabled={!self} title={t("radio.titles.readings")} onClick={() => openRadioPage("readings")}>
-              {state.battery ? (
+              {mv !== null ? (
                 <>
                   <b className={low ? "low" : undefined} title={low ? t("node.readings.lowCharge") : undefined}>
                     {low ? <AlertIcon size={13} role="img" aria-hidden={false} aria-label={t("node.readings.lowCharge")} /> : null}
-                    {batteryPercent(state.battery.mv, cell)}%
+                    {batteryPercent(mv, cell)}%
                   </b>
-                  <small>{battery(state.battery.mv)}</small>
+                  <small>{battery(mv)}</small>
                 </>
               ) : (
                 <b>—</b>
@@ -133,7 +134,7 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
         <Group title={t("radio.home.thisRadio")}>
           {row("name", <PersonIcon size={17} />, self?.name)}
           {row("frequency", <RadioIcon size={17} />, self ? t("radio.home.presetPower", { preset: presetName(self), tx: self.txPower }) : undefined)}
-          {row("readings", <GaugeIcon size={17} />, [state.battery ? `${batteryPercent(state.battery.mv, cell)}%` : null, own ? readingsSummary(own.readings) : null].filter(Boolean).join(" · ") || undefined)}
+          {row("readings", <GaugeIcon size={17} />, [mv !== null ? `${batteryPercent(mv, cell)}%` : null, own ? readingsSummary(own.readings) : null].filter(Boolean).join(" · ") || undefined)}
           {row("contacts", <UsersIcon size={17} />, contactsValue)}
           {row("privacy", <ShieldIcon size={17} />, self ? (placeOpen(self, gps) ? t("radio.privacy.placeShown") : t("radio.privacy.placeHidden")) : undefined)}
           {row("advanced", <SlidersIcon size={17} />)}

@@ -54,6 +54,7 @@ export const PlayIcon = icon('<path d="M8 5.5v13l10.5-6.5z"/>');
 export const CloseIcon = icon('<path d="M6 6l12 12M18 6L6 18"/>');
 export const ReplyIcon = icon('<path d="M9.5 15L4 9.5 9.5 4"/><path d="M4 9.5h10a6 6 0 0 1 6 6V20"/>');
 export const CheckIcon = icon('<path d="M5 12.5l4.5 4.5L19 7"/>');
+export const SelectIcon = icon('<circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>');
 export const DoubleCheckIcon = icon('<path d="M3 12.5l4.5 4.5L14 10.5"/><path d="M10 12.5l4.5 4.5L21 10.5"/>');
 export const AlertIcon = icon('<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17v.5"/>');
 export const ClockIcon = icon('<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>');

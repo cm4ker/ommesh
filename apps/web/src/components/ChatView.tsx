@@ -11,11 +11,12 @@ import { nameOfHash, relaysOf } from "../lib/echoes.js";
 import { getOpenAtUnread, takeUnread } from "../lib/firstUnread.js";
 import { useFloatingDay } from "../lib/floatingDay.js";
 import { haptic } from "../lib/haptic.js";
-import { dayLabel, emojiOnly, timeOfDay } from "../lib/format.js";
+import { dayLabel, emojiOnly, fullDate, timeOfDay } from "../lib/format.js";
 import { useJumboEmoji } from "../lib/jumboEmoji.js";
 import { moveForKeyboard } from "../lib/keyboard.js";
 import { onJump, takeJump, type Jump } from "../lib/jump.js";
 import { useWide } from "../lib/layout.js";
+import { copiedText, toggled } from "../lib/messagePick.js";
 import { findMessages, messagesFrom, searchTerm, type Sender } from "../lib/messageSearch.js";
 import { openChannel, openConversation, openMessage, openPlace, openProfile } from "../lib/nav.js";
 import { cameByPull, nextUnreadChat, openNextChat } from "../lib/nextChat.js";
@@ -34,6 +35,7 @@ import { SearchField } from "../ui/Field.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar, SenderName } from "./Avatar.js";
 import { pickProfile } from "./ChannelWriters.js";
+import { PickBar, PickHead, usePickGestures } from "./ChatPick.js";
 import { Composer, type Reply } from "./Composer.js";
 import { NotOnRadio } from "./ContactsPages.js";
 import { PlaceBody } from "./PlaceCard.js";
@@ -55,6 +57,7 @@ import {
   RefreshIcon,
   ReplyIcon,
   SearchIcon,
+  SelectIcon,
   SendIcon,
   StopIcon,
   TrashIcon,
@@ -440,10 +443,86 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     [conversation, closeFind],
   );
 
-  useReveal(scroller, inner, (id) => {
-    const message = messages.find((m) => m.id === id);
-    if (message) answer(message);
-  });
+  // Messages picked to copy or delete, as Telegram picks them (ChatPick.tsx).
+  const wide = useWide();
+  const [chosen, setChosen] = useState<string[]>([]);
+  useEffect(() => setChosen([]), [conversation]);
+  const byId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
+  // One deleted or gone meanwhile is no longer picked.
+  const pickedIds = useMemo(() => chosen.filter((id) => byId.has(id)), [chosen, byId]);
+  const pickedSet = useMemo(() => new Set(pickedIds), [pickedIds]);
+  const selecting = pickedIds.length > 0;
+  const clearPick = useCallback(() => setChosen([]), []);
+  useBackLayer(selecting, clearPick);
+  const order = useRef<string[]>([]);
+  order.current = drawn.map((m) => m.id);
+  const pickedNow = useRef(pickedIds);
+  pickedNow.current = pickedIds;
+  const wideNow = useRef(wide);
+  wideNow.current = wide;
+  usePickGestures(scroller, { order: () => order.current, picked: () => pickedNow.current, set: setChosen, ringsLeft: () => !wideNow.current });
+  const pick = useCallback((id: string) => setChosen((now) => toggled(order.current, now, id)), []);
+  const copyPicked = (done: boolean) => {
+    const list = pickedNow.current.map((id) => byId.get(id)).filter((m): m is MessageRecord => m !== undefined);
+    const text = copiedText(list, (m) => {
+      const at = shown.get(m.id)?.at ?? m.timestamp;
+      const name = m.direction === "out" ? (state.self?.name ?? t("chats.pick.you")) : m.sender || title;
+      return t("chats.pick.copyHead", { name, day: fullDate(at), time: timeOfDay(at) });
+    });
+    void navigator.clipboard?.writeText(text).then(() => toast(t("chats.pick.copied", { count: list.length })));
+    if (done) setChosen([]);
+  };
+  const deletePicked = () => {
+    const gone = session.deleteMessages(pickedNow.current);
+    setChosen([]);
+    if (gone.length) toast(t("chats.pick.deleted", { count: gone.length }), "", { label: t("common.undo"), run: () => session.restoreMessages(gone) });
+  };
+  const one = pickedIds.length === 1 ? byId.get(pickedIds[0]!) : undefined;
+  const replyPicked =
+    one && many && one.direction === "in" && one.sender
+      ? () => {
+          answer(one);
+          setChosen([]);
+        }
+      : undefined;
+  // With a keyboard: Escape lets go, Ctrl+C copies, Delete deletes. On the document, so a menu or a
+  // sheet open over the chat has had its Escape first, and the desktop's own Escape comes after.
+  const keys = useRef({ copy: copyPicked, remove: deletePicked });
+  keys.current = { copy: copyPicked, remove: deletePicked };
+  useEffect(() => {
+    if (!selecting) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        clearPick();
+        return;
+      }
+      if (e.target instanceof Element && e.target.closest("input, textarea, [contenteditable]")) return;
+      if ((e.ctrlKey || e.metaKey) && e.code === "KeyC" && !String(window.getSelection() ?? "")) {
+        e.preventDefault();
+        keys.current.copy(false);
+      } else if (e.key === "Delete") {
+        e.preventDefault();
+        keys.current.remove();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [selecting, clearPick]);
+  const pickingNow = useRef(selecting);
+  pickingNow.current = selecting;
+
+  useReveal(
+    scroller,
+    inner,
+    (id) => {
+      const message = messages.find((m) => m.id === id);
+      if (message) answer(message);
+    },
+    pickingNow,
+  );
 
   // Who this is: the profile of the person or room, the page of the channel.
   const details = onInfo ?? (target.kind === "contact" ? () => openProfile(target.key) : target.kind === "channel" ? () => openChannel(target.index) : undefined);
@@ -451,9 +530,11 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   const me = state.self?.name ?? null;
 
   return (
-    <div ref={screen} className={["screen chat", finding ? "finding" : ""].join(" ")}>
+    <div ref={screen} className={["screen chat", finding ? "finding" : "", selecting ? "selecting" : ""].join(" ")}>
       <ChatBackdrop conversation={conversation} />
-      {finding ? (
+      {selecting ? (
+        <PickHead count={pickedIds.length} wide={wide} onCopy={() => copyPicked(true)} onDelete={deletePicked} onCancel={clearPick} />
+      ) : finding ? (
         <header className="screen-head chat-find-head">
           {findFrom !== null ? (
             <button
@@ -593,6 +674,9 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
                   current={m.id === current}
                   faded={finding && findFrom !== null && !matched.has(m.id)}
                   flash={m.id === flashing}
+                  selecting={selecting}
+                  picked={pickedSet.has(m.id)}
+                  onPick={pick}
                 />
               </div>
             );
@@ -600,7 +684,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
         </div>
       </div>
 
-      <NextChat conversation={conversation} scroller={scroller} inner={inner} enabled={!finding} />
+      <NextChat conversation={conversation} scroller={scroller} inner={inner} enabled={!finding && !selecting} />
 
       {/* Back to the latest, once scrolled away from it; the count is of the new ones still below. */}
       <div className="chat-jump-slot">
@@ -630,6 +714,9 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
           </IconButton>
         </footer>
       ) : null}
+
+      {/* On a phone, while messages are picked, their actions take the field's place (styles.css hides it). */}
+      {selecting && !wide ? <PickBar onCopy={() => copyPicked(true)} onReply={replyPicked} onDelete={deletePicked} /> : null}
 
       {target.kind === "contact" && (contact?.unsaved || (!contact && state.removed[target.key])) ? (
         <footer className="compose">
@@ -817,13 +904,18 @@ interface MessageProps {
   faded: boolean;
   /** Just opened from a search result. */
   flash: boolean;
+  /** Messages are being picked: each shows its ring, and a tap picks rather than opens. */
+  selecting: boolean;
+  picked: boolean;
+  /** Picks the message or lets it go. */
+  onPick: (id: string) => void;
 }
 
 /**
  * One bubble. Memoised: a message arriving, or an echo of one, changes one record, and the
  * other bubbles of a long conversation have nothing new to draw.
  */
-const Message = memo(function Message({ message, at, lead, showSender, avatar, me, peer, onReply: replyTo, onWho, contacts, mark, current, faded, flash }: MessageProps) {
+const Message = memo(function Message({ message, at, lead, showSender, avatar, me, peer, onReply: replyTo, onWho, contacts, mark, current, faded, flash, selecting, picked, onPick }: MessageProps) {
   const out = message.direction === "out";
   const [busy, setBusy] = useState(false);
   const large = useJumboEmoji();
@@ -874,6 +966,7 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
     const items: (MenuItem | null)[] = [
       onReply ? { label: t("chats.message.reply"), icon: <ReplyIcon size={17} />, onSelect: onReply } : null,
       { label: t("chats.message.copyText"), icon: <CopyIcon size={17} />, onSelect: () => void navigator.clipboard?.writeText(message.text).then(() => toast(t("common.copied"))) },
+      { label: t("chats.message.select"), icon: <SelectIcon size={17} />, onSelect: () => onPick(message.id) },
       retryable && !looping ? { label: flood ? t("chats.message.sendAgainFlood") : t("chats.message.sendAgain"), icon: <AlertIcon size={17} />, air: true, onSelect: () => void retry() } : null,
       // A direct message has its tries from the settings; this is for one sent once.
       (message.status === "unheard" || message.status === "unconfirmed") && !looping && !(direct && plan)
@@ -890,13 +983,17 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
     );
   });
 
-  const relayTitle = relays.length && contacts ? t("chats.chat.relayedBy", { count: relays.length, names: relays.map((r) => nameOfHash(r.hash, contacts) ?? r.hash).join(", ") }) : undefined;
+  // While messages are picked a hold or a right click opens no menu, the app's or the browser's: a press only picks.
+  const holdOff = { onContextMenu: (e: React.MouseEvent) => e.preventDefault() };
+
+  const relayTitle = relays.length && contacts ?t("chats.chat.relayedBy", { count: relays.length, names: relays.map((r) => nameOfHash(r.hash, contacts) ?? r.hash).join(", ") }) : undefined;
 
   return (
-    <div className={["msg", out ? "out" : "in", lead ? "lead" : "", faded ? "msg-faded" : ""].join(" ")} data-reply={onReply ? message.id : undefined}>
+    <div className={["msg", out ? "out" : "in", lead ? "lead" : "", faded ? "msg-faded" : "", selecting ? "selecting" : "", picked ? "picked" : ""].join(" ")} data-reply={onReply ? message.id : undefined}>
       <span className="msg-reply-cue" aria-hidden="true">
         <ReplyIcon size={16} />
       </span>
+      {selecting ? <span className="msg-ring" aria-hidden="true">{picked ? <CheckIcon size={14} strokeWidth={2.5} /> : null}</span> : null}
       {avatar ? (
         <span className="msg-avatar">
           {avatar === "show" && message.sender ? (
@@ -922,12 +1019,14 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
-              if (placed) showPlace(message.text);
+              if (selecting) onPick(message.id);
+              else if (placed) showPlace(message.text);
               else openMessage(message.conversation, message.id);
             }
           }}
+          aria-pressed={selecting ? picked : undefined}
           title={relayTitle}
-          {...press}
+          {...(selecting ? holdOff : press)}
         >
           {showSender && message.sender ? <SenderName name={message.sender} /> : null}
           {placed ? <PlaceBody place={placed.place} mine={out} /> : null}
@@ -1218,9 +1317,10 @@ const EDGE = 24;
 /**
  * Pulling the conversation left, on a touch screen, shows every message's
  * signal and hops at once; letting go hides them again. Pulling one message
- * right, in a channel or a room, answers it.
+ * right, in a channel or a room, answers it. Neither while `off` holds:
+ * messages are being picked.
  */
-function useReveal(scroller: React.RefObject<HTMLDivElement | null>, inner: React.RefObject<HTMLDivElement | null>, onReply: (id: string) => void) {
+function useReveal(scroller: React.RefObject<HTMLDivElement | null>, inner: React.RefObject<HTMLDivElement | null>, onReply: (id: string) => void, off: React.RefObject<boolean>) {
   const replyRef = useRef(onReply);
   replyRef.current = onReply;
   useEffect(() => {
@@ -1234,7 +1334,7 @@ function useReveal(scroller: React.RefObject<HTMLDivElement | null>, inner: Reac
     const down = (e: TouchEvent) => {
       const t = e.touches[0];
       // From the edge, the pull is Back's; the bubble under it stays put.
-      start = t && e.touches.length === 1 && t.clientX >= EDGE ? { x: t.clientX, y: t.clientY } : null;
+      start = t && e.touches.length === 1 && t.clientX >= EDGE && !off.current ? { x: t.clientX, y: t.clientY } : null;
       row = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-reply]") : null;
       mode = null;
       pulled = 0;

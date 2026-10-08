@@ -3663,6 +3663,119 @@ html.notices-window #root {
     animation: none;
   }
 }
+/* Messages picked to copy or delete, as Telegram shows them (ChatPick.tsx): a ring by every message, at the
+   right edge with a mouse and the left on a phone, filled for those picked; a picked bubble takes the accent. */
+.msg.selecting {
+  transition: padding 0.15s ease;
+}
+.app.wide .msg.selecting {
+  padding-right: 34px;
+}
+.app.narrow .msg.selecting {
+  padding-left: 34px;
+}
+.msg-ring {
+  position: absolute;
+  bottom: 3px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  box-sizing: border-box;
+  border: 1.5px solid color-mix(in oklab, var(--text) 40%, transparent);
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--bg) 55%, transparent);
+  color: var(--accent-contrast);
+  pointer-events: none;
+}
+.app.wide .msg-ring {
+  right: 4px;
+}
+.app.narrow .msg-ring {
+  left: 4px;
+}
+.msg.picked {
+  --pick: var(--accent);
+}
+.msg.picked .msg-ring {
+  border-color: var(--pick);
+  background: var(--pick);
+}
+/* Inside, the text and its marks take the accent's contrast, as the bubbles of another kind do theirs. */
+.chat-inner .msg.picked .bubble {
+  background: var(--pick);
+  --text: var(--accent-contrast);
+  --text-muted: color-mix(in oklab, var(--accent-contrast) 80%, var(--pick));
+  --text-faint: color-mix(in oklab, var(--accent-contrast) 70%, var(--pick));
+  --accent: var(--accent-contrast);
+  --danger: var(--accent-contrast);
+}
+.chat-inner .msg.picked .msg-sender {
+  color: var(--accent-contrast);
+}
+.chat-inner .msg.picked .jumbo {
+  border-radius: 16px;
+  background: color-mix(in oklab, var(--pick) 35%, transparent);
+}
+/* While picking, a press picks: no words are selected, and nothing under the pointer looks like a link. */
+.chat.selecting .chat-inner,
+.chat-scroll.picking .chat-inner {
+  -webkit-user-select: none;
+  user-select: none;
+}
+.chat.selecting .bubble,
+.chat.selecting .jumbo {
+  cursor: default;
+}
+.app.narrow .chat.selecting > .compose,
+.app.narrow .chat.selecting > .chat-find-bar {
+  display: none;
+}
+.chat-pick-n {
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+.chat-pick-cancel {
+  margin-left: auto;
+}
+.chat-pick-count {
+  padding: 0 var(--space-1);
+}
+/* A phone's actions on the picked, in the field's place: an icon over a word each, within reach of the thumb. */
+.chat-pick-bar {
+  flex: none;
+  display: flex;
+  padding: var(--space-1) var(--space-2) max(var(--space-1), var(--safe-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.chat-pick-bar > button {
+  flex: 1;
+  min-height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.chat-pick-bar > button.danger {
+  color: var(--danger);
+}
+.chat-pick-bar > button:active {
+  background: var(--hover);
+}
+.chat-pick-bar > button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 /* Signal and hops: with a mouse they come with the pointer, on a touch screen with a pull of the list to the left. */
 .msg-tech {
   display: none;

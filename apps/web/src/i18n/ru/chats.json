@@ -119,6 +119,30 @@
   "chat.relayedBy": "Ретрансляторов: {count} — {names}",
   "message.reply": "Ответить",
   "message.copyText": "Копировать текст",
+  "message.select": "Выбрать",
+  "pick.count": {
+    "one": "{count} сообщение",
+    "few": "{count} сообщения",
+    "many": "{count} сообщений",
+    "other": "{count} сообщения"
+  },
+  "pick.copy": "Копировать",
+  "pick.delete": "Удалить",
+  "pick.clear": "Снять выделение",
+  "pick.copied": {
+    "one": "Скопировано {count} сообщение",
+    "few": "Скопировано {count} сообщения",
+    "many": "Скопировано {count} сообщений",
+    "other": "Скопировано {count} сообщения"
+  },
+  "pick.deleted": {
+    "one": "{count} сообщение удалено с этого устройства",
+    "few": "{count} сообщения удалены с этого устройства",
+    "many": "{count} сообщений удалено с этого устройства",
+    "other": "{count} сообщения удалено с этого устройства"
+  },
+  "pick.copyHead": "{name}, [{day} {time}]",
+  "pick.you": "Я",
   "message.sendAgainFlood": "Отправить ещё раз по всей сети",
   "message.sendAgain": "Отправить ещё раз",
   "message.keepTrying": "Повторять",

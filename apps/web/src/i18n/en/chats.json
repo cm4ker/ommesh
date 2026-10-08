@@ -103,6 +103,24 @@
   "chat.relayedBy": "Relayed by {count}: {names}",
   "message.reply": "Reply",
   "message.copyText": "Copy the text",
+  "message.select": "Select",
+  "pick.count": {
+    "one": "{count} message",
+    "other": "{count} messages"
+  },
+  "pick.copy": "Copy",
+  "pick.delete": "Delete",
+  "pick.clear": "Clear the selection",
+  "pick.copied": {
+    "one": "Copied {count} message",
+    "other": "Copied {count} messages"
+  },
+  "pick.deleted": {
+    "one": "{count} message deleted from this device",
+    "other": "{count} messages deleted from this device"
+  },
+  "pick.copyHead": "{name}, [{day} {time}]",
+  "pick.you": "Me",
   "message.sendAgainFlood": "Send again by flood",
   "message.sendAgain": "Send again",
   "message.keepTrying": "Keep trying",

@@ -812,6 +812,35 @@ test("a message that did not get through can be deleted, and one still on its wa
   );
 });
 
+test("messages deleted on this device come back as they were, and a deleted one waits for no answer", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  const connecting = session.connect(radio);
+  await settle();
+  await connecting;
+  const first = await session.sendText("ch:0", "first");
+  const second = await session.sendText("ch:0", "second");
+  await session.sendText("ch:0", "third");
+  const gone = session.deleteMessages([first.id, second.id, "no such id"]);
+  assert.deepEqual(
+    gone.map((m) => m.text),
+    ["first", "second"],
+  );
+  assert.deepEqual(
+    session.getState().messages.map((m) => m.text),
+    ["third"],
+  );
+  t.mock.timers.tick(20_000);
+  session.restoreMessages(gone);
+  session.restoreMessages(gone);
+  assert.deepEqual(session.getState().messages.map((m) => m.text).sort(), ["first", "second", "third"]);
+  const status = (text: string) => session.getState().messages.find((m) => m.text === text)!.status;
+  assert.equal(status("third"), "unheard");
+  assert.equal(status("first"), gone[0]!.status, "its wait for an echo ended when it was deleted");
+  assert.deepEqual(session.deleteMessages([]), []);
+});
+
 test("an echo inside the window keeps a channel message sent", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
   const radio = new ScriptedRadio();

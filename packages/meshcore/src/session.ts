@@ -2389,6 +2389,33 @@ export class MeshSession {
   }
 
   /**
+   * Forgets messages on this device only: what went over the air stays with
+   * whoever heard it. One of ours still waiting for an answer, or tried in a
+   * loop, stops with it. Returns what was taken out, for `restoreMessages`.
+   */
+  deleteMessages(ids: readonly string[]): MessageRecord[] {
+    const drop = new Set(ids);
+    const gone = this.state.messages.filter((m) => drop.has(m.id));
+    if (!gone.length) return [];
+    for (const message of gone) {
+      for (const timers of [this.ackTimers, this.silenceTimers]) {
+        const timer = timers.get(message.id);
+        if (timer) clearTimeout(timer);
+        timers.delete(message.id);
+      }
+    }
+    this.set({ messages: this.state.messages.filter((m) => !drop.has(m.id)) });
+    return gone;
+  }
+
+  /** Puts back what `deleteMessages` took out, as it was; one that is here again already stays as it is. */
+  restoreMessages(messages: readonly MessageRecord[]): void {
+    const here = new Set(this.state.messages.map((m) => m.id));
+    const back = messages.filter((m) => !here.has(m.id));
+    if (back.length) this.set({ messages: [...this.state.messages, ...back] });
+  }
+
+  /**
    * Sends an unheard, unconfirmed or failed message again, one attempt up. A direct
    * message that went unacknowledged along a learned route floods this time:
    * the route is the likeliest thing to have broken.

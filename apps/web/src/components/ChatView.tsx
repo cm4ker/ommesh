@@ -1063,10 +1063,24 @@ function Unrelayed({ message, busy, onRetry, onKeepTrying }: { message: MessageR
       }}
     >
       {icon}
-      <span>{label}</span>
+      <span className="msg-strip-label">{stripParts(label)}</span>
       {looping ? <StopIcon size={12} fill="currentColor" className="msg-strip-stop" /> : null}
     </button>
   );
+}
+
+/**
+ * A strip's label is a few parts joined by " · ". On a narrow bubble it takes
+ * a second line, and it breaks only between those parts, so "Send again" is
+ * never split from its last word.
+ */
+function stripParts(label: string): ReactNode[] {
+  const parts = label.split(" · ");
+  return parts.flatMap((part, i) => {
+    const last = i === parts.length - 1;
+    const span = <span key={i}>{last ? part : `${part} ·`}</span>;
+    return last ? [span] : [span, " "];
+  });
 }
 
 function Status({ message, trying }: { message: MessageRecord; trying: boolean }) {

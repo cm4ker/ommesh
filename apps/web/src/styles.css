@@ -3473,8 +3473,18 @@ html.notices-window #root {
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   text-align: left;
-  white-space: nowrap;
+  white-space: normal;
   cursor: pointer;
+}
+/* The bubble stops at 80 % of the row, and a label kept to one line ran past its edge and squeezed the icon to nothing: it wraps instead, between its parts only. */
+.msg-strip > svg {
+  flex: none;
+}
+.msg-strip-label {
+  min-width: 0;
+}
+.msg-strip-label > span {
+  white-space: nowrap;
 }
 .msg-strip:hover {
   background: color-mix(in oklab, var(--danger) 9%, transparent);

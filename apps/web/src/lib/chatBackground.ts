@@ -113,6 +113,10 @@ export function setChatBackground(conversation: string, background: Background |
   save({ ...prefs, chat });
 }
 
+export function backgroundPrefs(): BackgroundPrefs {
+  return prefs;
+}
+
 export function useBackgroundPrefs(): BackgroundPrefs {
   return useSyncExternalStore(
     (listener) => {

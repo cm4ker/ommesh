@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.js";
+import { warmBackdrop } from "./components/ChatBackdrop.js";
 import { goBack } from "./lib/back.js";
 import { followKeyboard, watchKeyboard } from "./lib/keyboard.js";
 import { autoConnect, connectWith, disconnect, getLink } from "./lib/link.js";
@@ -75,3 +76,7 @@ createRoot(root).render(
     <App />
   </StrictMode>,
 );
+
+// The chat picture takes a few hundred milliseconds to draw on a phone: done once the app
+// has settled, not while the first chat slides in.
+setTimeout(warmBackdrop, 1500);

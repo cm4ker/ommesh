@@ -6,6 +6,7 @@
 
 ### Chats
 - Pulling up at the end of a chat, the next chat with unread messages grows from a dot under the last message, as in Telegram, and the phone gives a light tap once it is full size: let go then to open it. It used to slide up from below with no tap on an iPhone. The iPhone now taps as well when a long press opens a menu and when a message is pulled far enough to answer it.
+- A chat with a background scrolls smoothly and opens without a stall. The picture was drawn again from its thousands of shapes every time the chat was painted, which on a phone took over a tenth of a second a frame while scrolling and about a second when a chat opened. Now it is drawn once and then reused.
 
 ## 0.7.0 — 2026-10-07
 

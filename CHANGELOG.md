@@ -10,6 +10,7 @@
 
 ### Fixes
 - A battery's charge no longer leaps up and down from one reading to the next. Many radios read their own battery a tenth of a volt off from one time to the next, and on a LiFePO4 cell, whose voltage hardly moves through most of its charge, a tenth of a volt is half the charge: one radio's read 23%, then 78% as its readings opened, then 26% a minute later. The charge and the volts beside it are now the mean of the readings over the last half hour, and the week's line draws the mean of each ten minutes.
+- On a phone, "No answer to 2 tries · Send again" under a red direct message fits inside the message. Under a short message it ran past the right edge, cut off in the middle of "Send again", and its warning sign was squeezed out. It now takes a second line where it needs one.
 
 ## 0.7.0 — 2026-10-07
 

@@ -2,7 +2,8 @@
 # Windows installers for x64, 32-bit x86 and ARM64, a debug Android APK and the web
 # bundle. Each push gets its own pre-release, and only the newest two are kept;
 # `dev/latest.json` points to the newest one. A matching `vX.Y.Z` tag makes a stable release. PRs get
-# workflow artifacts. iOS is left out: it is built on a Mac and uploaded to
+# workflow artifacts. The web bundle of every published push also goes to
+# https://ommesh.cm4ker.ru. iOS is left out: it is built on a Mac and uploaded to
 # TestFlight by hand (apps/mobile/README.md).
 name: Build
 
@@ -47,6 +48,50 @@ jobs:
           name: meshnet-web
           path: apps/web/dist
           if-no-files-found: error
+
+  # The web version people open without installing anything, on the reg.ru hosting.
+  # Its FTP user sees only the site's folder. The hashed assets go up first, so a
+  # visitor never gets a new index.html that names files not there yet; the second
+  # pass uploads the rest and removes what the new build no longer has.
+  # The FTP server sends its certificate without the intermediate one, which lftp
+  # does not fetch by itself, so it is fetched from the address the certificate
+  # names and the whole chain is still checked against the system's roots.
+  web-site:
+    name: Web site
+    needs: check
+    if: needs.check.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: web-site
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: meshnet-web
+          path: web
+      - run: sudo apt-get install -y -qq lftp
+      - name: Upload to ommesh.cm4ker.ru
+        env:
+          FTP_USER: ${{ secrets.WEB_FTP_USER }}
+          LFTP_PASSWORD: ${{ secrets.WEB_FTP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          host=server223.hosting.reg.ru
+          echo | openssl s_client -starttls ftp -connect "$host:21" -servername "$host" 2>/dev/null | openssl x509 > leaf.pem
+          issuer=$(openssl x509 -in leaf.pem -noout -ext authorityInfoAccess | sed -n 's/.*CA Issuers - URI://p')
+          curl -fsS "$issuer" -o issuer.crt
+          openssl x509 -in issuer.crt -inform DER -out issuer.pem 2>/dev/null || openssl x509 -in issuer.crt -out issuer.pem
+          cat /etc/ssl/certs/ca-certificates.crt issuer.pem > ca.pem
+          lftp -c "
+            set ssl:ca-file ca.pem
+            set ftp:ssl-force true
+            set ftp:ssl-protect-data true
+            set net:max-retries 3
+            set net:timeout 30
+            open --env-password -u $FTP_USER ftp://$host
+            mirror -R --no-perms --parallel=4 --verbose web/assets assets
+            mirror -R --no-perms --parallel=4 --verbose --delete web .
+          "
 
   desktop-windows:
     name: Windows ${{ matrix.arch }}

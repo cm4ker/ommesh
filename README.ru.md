@@ -29,7 +29,7 @@
 | **Windows 10 и 11** | Установщик для [x64](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x64.exe), [ARM](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-arm64.exe) или [32-bit](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x86.exe). Каждую новую версию приложение предложит само. |
 | **iPhone** | Скоро в App Store. |
 | **macOS и Linux** | Соберите приложение из исходников, см. [Разработку](#разработка). |
-| **Браузер** | Chrome и Edge подключаются к радио по Bluetooth и USB. Запустите веб-клиент из исходников, см. [Разработку](#разработка). |
+| **Браузер** | Откройте [ommesh.cm4ker.ru](https://ommesh.cm4ker.ru) в Chrome или Edge, ничего не устанавливая; они подключаются к радио по Bluetooth и USB. Сайт получает каждую правку сразу, как канал Dev. |
 
 Ommesh выходит раз в неделю. Установщики для Windows — это свежая версия, и приложение само предлагает следующую (**Настройки → О приложении** или **Обновления приложения** на экране подключения); после обновления **Что нового** расскажет, что она принесла. Тестировщики, которым нужна каждая правка сразу, могут выбрать канал **Dev** в **Обновлениях приложения**. Компьютеру без WebView2 и без интернета (Windows 10 LTSC, чистый образ) нужен офлайн-установщик со [страницы последнего релиза](https://github.com/cm4ker/ommesh/releases/latest): в нём есть WebView2, и он больше примерно на 190 МБ. В Windows 11 WebView2 уже есть. Тестировщики могут поставить и [Dev APK для Android](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh_android-debug.apk); он подписан другим ключом, поэтому сначала удалите версию из Google Play. Подробнее — в [каналах обновлений и подписи](docs/desktop-updates.md).
 
@@ -47,7 +47,7 @@ Ommesh выходит раз в неделю. Установщики для Wind
 
 ¹ Chrome или Edge, если система поддерживает Web Bluetooth и Web Serial. Сначала подключите радио в настройках Bluetooth системы.
 
-**Радио пока нет?** На телефоне выберите **Демо** на экране подключения. В браузере запустите веб-клиент и откройте [localhost:5180/?demo](http://localhost:5180/?demo).
+**Радио пока нет?** На телефоне выберите **Демо** на экране подключения. В браузере откройте [ommesh.cm4ker.ru/?demo](https://ommesh.cm4ker.ru/?demo).
 
 ## Возможности
 

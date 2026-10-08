@@ -77,6 +77,6 @@ createRoot(root).render(
   </StrictMode>,
 );
 
-// The chat picture takes a few hundred milliseconds to draw on a phone: done once the app
-// has settled, not while the first chat slides in.
+// The chat picture takes a moment to decode on an old phone: done once the app has settled,
+// not while the first chat slides in.
 setTimeout(warmBackdrop, 1500);

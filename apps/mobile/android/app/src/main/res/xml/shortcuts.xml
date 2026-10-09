@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The chats the share sheet offers by name (#88): the page names them, ShareInPlugin.offer makes them
+     shortcuts of this category, and a share to one of them comes to MainActivity's SEND filter. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <share-target android:targetClass="dev.cm4ker.meshnet.MainActivity">
+        <data android:mimeType="text/plain" />
+        <category android:name="dev.cm4ker.meshnet.SHARE_TARGET" />
+    </share-target>
+</shortcuts>

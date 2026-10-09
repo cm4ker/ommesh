@@ -165,6 +165,17 @@ App Store"), has no screen of its own: it opens the app at
 that until the page asks. iOS gives an extension no way to open its app, so it
 asks the application object up its responder chain by the method's name.
 
+The sheet also offers four chats by name, the pinned ones and the ones last
+written in (`apps/web/src/lib/shareTargets.ts`), with their avatars drawn by the
+page as PNGs (`avatarImage.ts`); a share to one opens that chat with no
+picking. The page hands them to `ShareInPlugin.offer`. Android makes them
+long-lived sharing shortcuts of the category `res/xml/shortcuts.xml` names; a
+share to one carries the shortcut's id, and the launcher lists them on a long
+press of the icon, where a tap opens the chat. iOS is told each as a message
+sent to that conversation (`INSendMessageIntent`, `NSUserActivityTypes` in the
+app, `IntentsSupported` in the extension), and the extension finds the
+conversation's id in the intent its share brings.
+
 It needs a Mac with Xcode. The Mac here is `server.lan`, the same one the Sovabox
 phone app is built on, and the same Apple team (8CNDTQVA32). The build keeps its
 derived data under `~/Library/Caches/meshnet-ios` and the tree under

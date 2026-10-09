@@ -1,10 +1,11 @@
+import Intents
 import UIKit
 import UniformTypeIdentifiers
 
 /// Ommesh in the share sheet (#88). It has no screen of its own: it reads the link or the
-/// text shared, opens the app at `ommesh://share` with them, and goes. The app puts what
-/// came over its chat list, where the reader picks the chat it goes to (`ShareInPlugin`,
-/// the web client's `lib/shareIn.ts`).
+/// text shared, opens the app at `ommesh://share` with them, and goes. Shared to a chat the
+/// sheet suggested, the app opens that chat; shared to the app, it puts what came over its
+/// chat list, where the reader picks the chat (`ShareInPlugin`, the web client's `lib/shareIn.ts`).
 class ShareViewController: UIViewController {
     private var started = false
 
@@ -24,9 +25,11 @@ class ShareViewController: UIViewController {
         }
     }
 
-    /// The title, the text and the web address, as the sharing app gave them.
+    /// The title, the text and the web address, as the sharing app gave them, and the chat
+    /// when one the app suggested (`ShareInPlugin.offer`) was picked in the share sheet.
     private func read() async -> [String: String] {
         var shared: [String: String] = [:]
+        if let chat = (extensionContext?.intent as? INSendMessageIntent)?.conversationIdentifier { shared["chat"] = chat }
         for case let item as NSExtensionItem in extensionContext?.inputItems ?? [] {
             if shared["title"] == nil, let title = item.attributedTitle?.string, !title.isEmpty { shared["title"] = title }
             if shared["text"] == nil, let text = item.attributedContentText?.string, !text.isEmpty { shared["text"] = text }

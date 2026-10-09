@@ -25,6 +25,11 @@
 	<dict>
 		<key>NSExtensionAttributes</key>
 		<dict>
+			<!-- The chats the app suggests in the share sheet (ShareInPlugin.offer). -->
+			<key>IntentsSupported</key>
+			<array>
+				<string>INSendMessageIntent</string>
+			</array>
 			<key>NSExtensionActivationRule</key>
 			<dict>
 				<key>NSExtensionActivationSupportsText</key>

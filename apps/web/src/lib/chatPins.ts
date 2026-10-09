@@ -60,6 +60,11 @@ export function setPinned(radio: string, channels: readonly ChannelRecord[], row
   for (const listener of listeners) listener();
 }
 
+export function subscribePins(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
 /** Every radio's pins as written down; `radioPins` reads one radio's out of them. */
 export function usePinStore(): Record<string, RadioPins> {
   return useSyncExternalStore(

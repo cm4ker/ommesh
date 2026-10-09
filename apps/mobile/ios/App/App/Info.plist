@@ -37,6 +37,11 @@
 			</array>
 		</dict>
 	</array>
+	<!-- The chats suggested in the share sheet are told to iOS as messages sent (ShareInPlugin.offer). -->
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>INSendMessageIntent</string>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>

@@ -106,6 +106,7 @@
   "message.reply": "Reply",
   "message.copyText": "Copy the text",
   "message.select": "Select",
+  "react.pick": "Put a reaction on",
   "pick.count": {
     "one": "{count} message",
     "other": "{count} messages"

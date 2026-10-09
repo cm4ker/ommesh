@@ -13,6 +13,7 @@ import { MeshCoreClient, MeshCoreError, TimeoutError, type TextSendResult } from
 import { ByteReader, bytesEqual, fromHex, pathByteLength, toHex, unixNow } from "./protocol/bytes.js";
 import { neighbourSearchMs, replyBudgetMs, sealedBytes, traceBudgetMs, type ReplySize } from "./protocol/airtime.js";
 import { CHANNEL_TEXT_LEN, groupTextPayload, heardGroupTextPayload, relaysAudible } from "./protocol/group.js";
+import { REACTION_DATA_TYPE, decodeReaction, encodeReaction, messageHash, parseTextReaction } from "./protocol/reaction.js";
 import { PayloadType, parseRawPacket, type RawPacket } from "./protocol/packet.js";
 import { AclRole, AdvType, Cmd, ContactFlag, ControlType, DIRECT_TEXT_LEN, ErrCode, MAX_TEXT_LEN, NeighbourOrder, PUB_KEY_PREFIX_SIZE, ROOM_TEXT_LEN, StatsType, TxtType } from "./protocol/codes.js";
 import {
@@ -169,7 +170,47 @@ export interface MessageRecord {
    * (`made` equals `total`), so the chat can say how many went unanswered.
    */
   retryPlan: RetryPlan | null;
+  /** Emoji put on a channel message, in the order they came. */
+  reactions?: MessageReaction[];
+  /**
+   * Our channel message sent again: the stamps the earlier copies went with.
+   * Each copy is a message of its own to whoever heard it, and a reaction to
+   * one names it by its stamp.
+   */
+  pastStamps?: number[];
 }
+
+/** An emoji someone put on a message. */
+export interface MessageReaction {
+  emoji: string;
+  /** The name they go by on the channel; null for ours. */
+  by: string | null;
+  /** Local clock, ms. */
+  at: number;
+}
+
+/** A reaction heard, on its way to the message it names. */
+interface IncomingReaction {
+  conversation: string;
+  /** The message's hash, hex. */
+  target: string;
+  /** Empty: taken back. */
+  emoji: string;
+  by: string;
+  /** Whose message it is on, when the reaction says. */
+  to: string | null;
+  /** Ommesh's stand for all the sender put on the message; MeshCore One's add up. */
+  replaces: boolean;
+}
+
+/** One still looking for its message, since when (local ms). */
+type PendingReaction = IncomingReaction & { at: number };
+
+/** How long a reaction waits for its message, and how many wait at most. */
+const REACTION_WAIT_MS = 60 * 60_000;
+const MAX_PENDING_REACTIONS = 100;
+/** How far back in a chat a reaction's message is looked for. */
+const REACTION_REACH = 2000;
 
 /** How direct messages to one contact are routed; unset fields follow the defaults. */
 export interface RoutePolicy {
@@ -1016,6 +1057,10 @@ export class MeshSession {
   private contactsRefreshQueued = false;
   private focused: string | null = null;
   private ackTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Reactions to messages not here yet: a mesh does not keep order, and the message may come next. */
+  private pendingReactions: PendingReaction[] = [];
+  /** Messages' hashes, by id and stamp: a reaction is matched by working them out. */
+  private hashes = new Map<string, string>();
   /** How many tries a direct message gets before it is given up on; 1 leaves the next to the user. */
   private sendTries = 1;
   /** Channel messages waiting to hear a repeater send them on, by message id. */
@@ -2140,9 +2185,16 @@ export class MeshSession {
       };
     } else if (frame.kind === "channelMessage") {
       const { sender, text } = splitChannelText(frame.text);
+      const conversation = await this.channelMessageConversation(frame.channelIndex);
+      // MeshCore One sends a reaction as text: shown on its message, not as a line of its own.
+      const reaction = sender ? parseTextReaction(text) : null;
+      if (reaction && sender) {
+        await this.takeReaction({ conversation, target: toHex(reaction.target), emoji: reaction.emoji, by: sender, to: reaction.to, replaces: false });
+        return;
+      }
       message = {
         id: newId(now),
-        conversation: await this.channelMessageConversation(frame.channelIndex),
+        conversation,
         direction: "in",
         text,
         sender,
@@ -2163,7 +2215,13 @@ export class MeshSession {
         retryPlan: null,
       };
     } else {
-      this.log("channelData", `channel ${frame.channelIndex} type ${frame.dataType}: ${toHex(frame.data)}`);
+      const reaction = frame.dataType === REACTION_DATA_TYPE ? decodeReaction(frame.data) : null;
+      if (reaction) {
+        const conversation = await this.channelMessageConversation(frame.channelIndex);
+        await this.takeReaction({ conversation, target: toHex(reaction.target), emoji: reaction.emoji, by: reaction.by, to: null, replaces: true });
+      } else {
+        this.log("channelData", `channel ${frame.channelIndex} type ${frame.dataType}: ${toHex(frame.data)}`);
+      }
       return;
     }
     const unread =
@@ -2180,9 +2238,98 @@ export class MeshSession {
     }
     if (frame.kind === "channelMessage") {
       void this.findChannelCopies(message.id, parseConversation(message.conversation), frame.timestamp, frame.txtType, frame.text);
+      if (this.pendingReactions.length) await this.adoptReactions(message);
     } else if (frame.pathLen !== null && message.senderPrefix) {
       this.findDirectCopies(message.id, toHex(frame.senderPrefix), frame.pathLen);
     }
+  }
+
+  // ---- reactions ----
+  //
+  // An emoji on a channel message names the message by a hash of its text
+  // and stamp (see protocol/reaction.ts), which is worked out here for each
+  // message in the chat until one matches.
+
+  /** Whether an emoji can be put on this message: a channel's, on the radio, and gone out if it is ours. */
+  canReact(message: MessageRecord): boolean {
+    const target = parseConversation(message.conversation);
+    if (target.kind !== "channel" || !this.state.channels.some((c) => c.index === target.index)) return false;
+    return message.direction === "in" || (message.status !== "queued" && message.status !== "sending" && message.status !== "failed");
+  }
+
+  /** Puts an emoji on a channel message, replacing ours; null takes ours back. One flood, like a message. */
+  async react(id: string, emoji: string | null): Promise<void> {
+    const message = this.state.messages.find((m) => m.id === id);
+    if (!message || !this.canReact(message)) throw new Error("only a channel message can take a reaction");
+    const target = parseConversation(message.conversation);
+    if (target.kind !== "channel") return;
+    const client = this.need();
+    const self = this.state.self;
+    if (!self) throw new Error("not connected");
+    const hash = await messageHash(message.text, message.timestamp);
+    await client.sendChannelData(target.index, REACTION_DATA_TYPE, encodeReaction({ target: hash, emoji: emoji ?? "", by: self.name }));
+    this.putReaction(id, emoji ?? "", null, true);
+  }
+
+  /** A reaction heard: put on its message, or kept for a while in case the message comes after it. */
+  private async takeReaction(reaction: IncomingReaction): Promise<void> {
+    const found = await this.reactedMessage(reaction);
+    if (found) {
+      this.putReaction(found.id, reaction.emoji, reaction.by, reaction.replaces);
+      return;
+    }
+    const now = this.now();
+    this.pendingReactions = [...this.pendingReactions.filter((p) => now - p.at < REACTION_WAIT_MS), { ...reaction, at: now }].slice(-MAX_PENDING_REACTIONS);
+    this.log("message", `a reaction from ${reaction.by} to a message not here yet`);
+  }
+
+  /** The newest message in the chat a reaction names. */
+  private async reactedMessage(reaction: IncomingReaction): Promise<MessageRecord | null> {
+    let looked = 0;
+    for (let i = this.state.messages.length - 1; i >= 0 && looked < REACTION_REACH; i--) {
+      const m = this.state.messages[i]!;
+      if (m.conversation !== reaction.conversation) continue;
+      looked++;
+      if (await this.names(m, reaction)) return m;
+    }
+    return null;
+  }
+
+  /** Whether a reaction is to this message, by any stamp it went out with. */
+  private async names(message: MessageRecord, reaction: IncomingReaction): Promise<boolean> {
+    if (reaction.to !== null && message.sender !== reaction.to) return false;
+    for (const stamp of [message.timestamp, ...(message.pastStamps ?? [])]) {
+      const key = `${message.id}:${stamp}`;
+      let hash = this.hashes.get(key);
+      if (hash === undefined) {
+        hash = toHex(await messageHash(message.text, stamp));
+        this.hashes.set(key, hash);
+      }
+      if (hash === reaction.target) return true;
+    }
+    return false;
+  }
+
+  /** Reactions that came before this message, put on it now. */
+  private async adoptReactions(message: MessageRecord): Promise<void> {
+    const now = this.now();
+    const waiting = this.pendingReactions.filter((p) => p.conversation === message.conversation && now - p.at < REACTION_WAIT_MS);
+    for (const reaction of waiting) {
+      if (!(await this.names(message, reaction))) continue;
+      this.pendingReactions = this.pendingReactions.filter((p) => p !== reaction);
+      this.putReaction(message.id, reaction.emoji, reaction.by, reaction.replaces);
+    }
+  }
+
+  /** `replaces`: the sender's other emoji on the message go. An empty emoji only takes theirs back. */
+  private putReaction(id: string, emoji: string, by: string | null, replaces: boolean): void {
+    const message = this.state.messages.find((m) => m.id === id);
+    if (!message) return;
+    let reactions = message.reactions ?? [];
+    if (replaces) reactions = reactions.filter((r) => r.by !== by);
+    else if (reactions.some((r) => r.by === by && r.emoji === emoji)) return;
+    if (emoji) reactions = [...reactions, { emoji, by, at: this.now() }];
+    this.patchMessage(id, { reactions });
   }
 
   /**
@@ -2353,7 +2500,9 @@ export class MeshSession {
         const keep = next.attempt > 0 && parseConversation(next.conversation).kind !== "channel";
         const timestamp = keep ? next.timestamp : Math.max(Math.floor(this.now() / 1000), last + 1, next.timestamp + (next.attempt > 0 ? 1 : 0));
         last = timestamp;
-        this.patchMessage(next.id, { status: "sending", timestamp, ...(next.attempt > 0 ? { sentAt: Math.max(Math.floor(this.now() / 1000), timestamp) } : {}) });
+        // A copy that went before was stamped otherwise: a reaction to it names that stamp.
+        const stamps = next.attempt > 0 && timestamp !== next.timestamp ? { pastStamps: [...(next.pastStamps ?? []), next.timestamp] } : {};
+        this.patchMessage(next.id, { status: "sending", timestamp, ...(next.attempt > 0 ? { sentAt: Math.max(Math.floor(this.now() / 1000), timestamp) } : {}), ...stamps });
         try {
           await this.transmit(client, { ...next, timestamp }, parseConversation(next.conversation), next.flood === true ? "flood asked for" : false);
         } catch {
@@ -2439,7 +2588,8 @@ export class MeshSession {
     // repeater that did hear the first one.
     const timestamp = target.kind === "channel" ? Math.max(Math.floor(this.now() / 1000), message.timestamp + 1) : message.timestamp;
     const sentAt = Math.max(Math.floor(this.now() / 1000), timestamp);
-    this.patchMessage(id, { status: "sending", error: null, attempt, timestamp, sentAt, ackTag: null, roundTripMs: null, route: null, ...past });
+    const stamps = timestamp === message.timestamp ? {} : { pastStamps: [...(message.pastStamps ?? []), message.timestamp] };
+    this.patchMessage(id, { status: "sending", error: null, attempt, timestamp, sentAt, ackTag: null, roundTripMs: null, route: null, ...past, ...stamps });
     await this.transmit(client, { ...message, attempt, timestamp }, target, flood ? "no acknowledgement" : false);
   }
 

@@ -42,6 +42,7 @@ import { Composer, type Reply } from "./Composer.js";
 import { NotOnRadio } from "./ContactsPages.js";
 import { PlaceBody } from "./PlaceCard.js";
 import { LinkCards, LinkMark } from "./LinkPreview.js";
+import { Reactions, ReactStrip } from "./Reactions.js";
 import {
   AlertIcon,
   CheckIcon,
@@ -951,6 +952,7 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
   const placed = useMemo(() => (jumbo ? null : placeMessage(message.text, quoteHeadLength(message.text))), [jumbo, message.text]);
   const from = out ? null : message.sender || peer;
   const showPlace = (text: string) => openPlace(text, from, at);
+  const reactable = session.canReact(message);
 
   const retry = async () => {
     setBusy(true);
@@ -989,7 +991,7 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
     showMenu(
       items.filter((x): x is MenuItem => x !== null),
       // The message itself lights up while its menu is open, and stays bright over the sheet's dimming.
-      { at, lift: bubble.current },
+      { at, lift: bubble.current, head: reactable ? <ReactStrip message={message} /> : undefined },
     );
   });
 
@@ -1047,6 +1049,13 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
             <span className="msg-text">{richText(message.text, me, mark, showPlace, previews ? linkMark : undefined)}</span>
           )}
           {previews && !placed && !jumbo ? <LinkCards text={message.text} message={message.id} /> : null}
+          {message.reactions?.length ? (
+            <>
+              {/* The emoji start a line of their own, and the time floats in at its end. */}
+              <span className="msg-break" />
+              <Reactions message={message} live={reactable && !selecting} />
+            </>
+          ) : null}
           <span className="msg-meta">
             {tech ? <span className="msg-tech">{tech} ·</span> : null}
             <span>{timeOfDay(at)}</span>

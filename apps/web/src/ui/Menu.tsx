@@ -42,6 +42,8 @@ interface MenuState {
   hints: boolean;
   /** At least as wide as the field it opens from, px. */
   minWidth: number | undefined;
+  /** Above the items, such as a held message's emoji: its buttons close the menu themselves. */
+  head: ReactNode;
 }
 
 let current: MenuState | null = null;
@@ -53,7 +55,7 @@ function emit(): void {
 
 export function showMenu(
   items: MenuItem[],
-  options: { title?: string | undefined; at?: MenuAt; lift?: HTMLElement | null | undefined; hints?: boolean; minWidth?: number } = {},
+  options: { title?: string | undefined; at?: MenuAt; lift?: HTMLElement | null | undefined; hints?: boolean; minWidth?: number; head?: ReactNode } = {},
 ): void {
   current?.lift?.classList.remove("held");
   current = {
@@ -63,6 +65,7 @@ export function showMenu(
     lift: options.lift ?? null,
     hints: options.hints ?? false,
     minWidth: options.minWidth,
+    head: options.head,
   };
   current.lift?.classList.add("held");
   emit();
@@ -114,6 +117,7 @@ export function MenuHost() {
   // Mounted while closed too, so the sheet can slide away with the menu it held.
   return (
     <Sheet open={menu !== null} onClose={closeMenu} title={menu?.title}>
+      {menu?.head ? <div className="menu-head">{menu.head}</div> : null}
       {groups(menu?.items ?? []).map((g) => (
         <div key={g.at} className="group-body">
           {g.items.map((item, i) => (
@@ -180,6 +184,12 @@ function Popover({ menu }: { menu: MenuState }) {
 
   return createPortal(
     <div ref={box} className={["popover", menu.hints ? "with-hints" : ""].join(" ")} role="menu" style={{ ...pos, minWidth: menu.minWidth }}>
+      {menu.head ? (
+        <>
+          <div className="menu-head">{menu.head}</div>
+          <div className="popover-sep" role="separator" />
+        </>
+      ) : null}
       {menu.items.map((item, i) => (
         <Fragment key={i}>
           {item.group && i > 0 ? <div className="popover-sep" role="separator" /> : null}
@@ -310,6 +320,22 @@ function HoldMenu({ menu, lift }: { menu: MenuState; lift: HTMLElement }) {
         role="menu"
         style={place ? { left: place.left, top: place.top } : undefined}
       >
+        {menu.head ? (
+          <>
+            <div
+              className="menu-head"
+              onClickCapture={(e) => {
+                // The release of the hold that opened the menu is no choice.
+                if (fresh(e)) return;
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+            >
+              {menu.head}
+            </div>
+            <div className="hold-menu-sep" role="separator" />
+          </>
+        ) : null}
         {menu.items.map((item, i) => (
           <Fragment key={i}>
             {item.group && i > 0 ? <div className="hold-menu-sep" role="separator" /> : null}

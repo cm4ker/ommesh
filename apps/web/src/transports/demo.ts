@@ -9,7 +9,26 @@
  * turns out to be gone.
  */
 
-import { BaseTransport, ByteWriter, Cmd, fromHex, fromUtf8, groupTextPayload, heardGroupTextPayload, MAX_FRAME_SIZE, Push, ReqType, Resp, toHex, TxtType, type Transport } from "@meshnet/meshcore";
+import {
+  BaseTransport,
+  ByteWriter,
+  Cmd,
+  crockford,
+  encodeReaction,
+  fromHex,
+  fromUtf8,
+  groupTextPayload,
+  heardGroupTextPayload,
+  MAX_FRAME_SIZE,
+  messageHash,
+  Push,
+  REACTION_DATA_TYPE,
+  ReqType,
+  Resp,
+  toHex,
+  TxtType,
+  type Transport,
+} from "@meshnet/meshcore";
 import type { Connector } from "./types.js";
 import { t } from "../i18n/index.js";
 
@@ -380,6 +399,8 @@ class DemoRadio extends BaseTransport {
   /** Texts on Friends whose first send the repeaters already missed. */
   private missed = new Set<string>();
   private murmur: ReturnType<typeof setInterval> | null = null;
+  /** When the demo radio came up, unix seconds: the stamp the queued messages are dated from. */
+  private readonly started = Math.floor(Date.now() / 1000);
 
   start(): void {
     // Queued before the app connected: their packets were never heard, so their routes are unknown.
@@ -391,12 +412,17 @@ class DemoRadio extends BaseTransport {
       this.dm(PEOPLE[0]!, "geo:55.04212,73.39208;u=9 Meet you here"),
       this.dm(PEOPLE[0]!, "The firmware is here: https://github.com/meshcore-dev/MeshCore"),
       this.dm(PEOPLE[0]!, "And a picture to try: https://upload.wikimedia.org/wikipedia/commons/4/47/PNG_transparency_demonstration_1.png"),
-      this.channel(0, "Bob (bike)", "Public channel works too"),
+      this.channel(0, "Bob (bike)", "Public channel works too", this.started - 120),
       this.channel(0, "Bob (bike)", "geo:55.06,73.43;u=1000 Somewhere round here today"),
       this.channel(0, "Bob (bike)", "What LoRa is, for the newcomers: https://en.wikipedia.org/wiki/LoRa"),
       // Somebody writing in a channel their radio no longer has: the all-zero key, filed in the first empty slot.
       this.channel(2, "Wanderer", "Anyone else see this channel with no name?"),
     );
+    // Reactions to Bob's first line: Alice's from Ommesh, and Kolya's as MeshCore One sends one, in text.
+    void messageHash("Public channel works too", this.started - 120).then((hash) => {
+      this.queue.push(this.reaction(0, hash, "👍", "Alice"), this.channel(0, "Kolya ⛺", `@[Bob (bike)]❤️\n${crockford(hash)}`));
+      this.emitFrame(new Uint8Array([Push.MsgWaiting]));
+    });
     this.chatter = setInterval(() => void this.chat(), 25_000);
     this.murmur = setInterval(() => this.overhear(), 3_500);
     // The town's floods: every link once at first, so there is something to look through from the start.
@@ -537,6 +563,22 @@ class DemoRadio extends BaseTransport {
       .u8(TxtType.Plain)
       .u32(timestamp)
       .string(`${sender}: ${text}`)
+      .toBytes();
+  }
+
+  /** An emoji put on a channel message from Ommesh: a datagram, as the radio hands one up. */
+  private reaction(index: number, target: Uint8Array, emoji: string, by: string): Uint8Array {
+    const data = encodeReaction({ target, emoji, by });
+    return new ByteWriter()
+      .u8(Resp.ChannelDataRecv)
+      .i8(Math.round((Math.random() * 20 - 5) * 4))
+      .u8(0)
+      .u8(0)
+      .u8(index)
+      .u8(1)
+      .u16(REACTION_DATA_TYPE)
+      .u8(data.length)
+      .bytes(data)
       .toBytes();
   }
 
@@ -841,8 +883,19 @@ class DemoRadio extends BaseTransport {
         void groupTextPayload(fromHex(CHANNELS[index] ?? CHANNELS[0]!), timestamp, "Demo radio", text).then((payload) => {
           [[0x03], [0x03, 0x94], [0x2c]].forEach((path, i) => this.later(600 * (i + 1), this.heard(5, path, payload)));
         });
+        // Alice likes whatever is said on Public.
+        if (index === 0) {
+          void messageHash(text, timestamp).then((hash) =>
+            this.later(2500, () => {
+              this.queue.push(this.reaction(0, hash, "👍", "Alice"));
+              this.emitFrame(new Uint8Array([Push.MsgWaiting]));
+            }),
+          );
+        }
         return [new Uint8Array([Resp.Ok])];
       }
+      case Cmd.SendChannelData:
+        return [new Uint8Array([Resp.Ok])];
       case Cmd.GetChannel: {
         const index = frame[1] ?? 0;
         if (index === 0) return [new ByteWriter().u8(Resp.ChannelInfo).u8(0).fixedString("Public", 32).bytes(fromHex(CHANNELS[0]!)).toBytes()];

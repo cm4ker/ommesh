@@ -122,6 +122,7 @@
   "message.reply": "Ответить",
   "message.copyText": "Копировать текст",
   "message.select": "Выбрать",
+  "react.pick": "Поставить реакцию",
   "pick.count": {
     "one": "{count} сообщение",
     "few": "{count} сообщения",

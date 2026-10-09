@@ -6,6 +6,7 @@ import { quality } from "../lib/los.js";
 import { openProfile } from "../lib/nav.js";
 import { heardAt } from "../lib/nodes.js";
 import { session, useSession } from "../lib/session.js";
+import { ReactionNames } from "./Reactions.js";
 import { locale, t } from "../i18n/index.js";
 import { tx } from "../i18n/rich.js";
 
@@ -96,6 +97,7 @@ export function MessageDetails({ message, peer, clockOff = false }: { message: M
           ))}
         </div>
       ) : null}
+      <ReactionNames message={message} />
       <span className="details-meta">{facts.filter(Boolean).join(" · ")}</span>
     </div>
   );

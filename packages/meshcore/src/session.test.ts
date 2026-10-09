@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { ByteWriter, fromHex } from "./protocol/bytes.js";
 import { Cmd, ContactFlag, Push, Resp, TxtType } from "./protocol/codes.js";
 import { groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
+import { crockford, decodeReaction, encodeReaction, messageHash, REACTION_DATA_TYPE } from "./protocol/reaction.js";
 import { channelConversation, CLOCK_RESET_TIME, ClockAheadError, contactConversation, isTrusted, KEYLESS_CONVERSATION, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
 import { BaseTransport } from "./transport.js";
 import { TimeoutError, TransportClosedError } from "./client.js";
@@ -119,6 +120,7 @@ class ScriptedRadio extends BaseTransport {
         return [found ?? new Uint8Array([Resp.Err, 2])];
       }
       case Cmd.SendChannelTxtMsg:
+      case Cmd.SendChannelData:
         return [new Uint8Array([Resp.Ok])];
       case Cmd.SendLogin:
         // The radio names a login by the first four bytes of the node's key.
@@ -252,6 +254,11 @@ class MemoryStorage {
   async save(key: string, state: PersistedState): Promise<void> {
     this.saved.set(key, structuredClone(state));
   }
+}
+
+/** A datagram heard on a channel, as the radio hands it up: flooded, two hops. */
+function channelDataFrame(index: number, dataType: number, data: Uint8Array): Uint8Array {
+  return new ByteWriter().u8(Resp.ChannelDataRecv).i8(0).u8(0).u8(0).u8(index).u8(2).u16(dataType).u8(data.length).bytes(data).toBytes();
 }
 
 function tick(ms = 0): Promise<void> {
@@ -2288,6 +2295,110 @@ test("nothing goes out to a slot that holds no channel, nor to the chat without 
   }
   assert.equal(radio.sent.filter((f) => f[0] === Cmd.SendChannelTxtMsg).length, 0);
   assert.deepEqual(session.getState().messages.map((m) => m.status), ["failed", "failed"]);
+  await session.disconnect();
+});
+
+/** Alice's "who hears me?" on Public, read from the radio's queue. */
+async function withAlice(): Promise<{ radio: ScriptedRadio; session: MeshSession; id: string; hash: Uint8Array }> {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  radio.queue.push(channelFrame(0, "Alice: who hears me?"));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(10);
+  const id = session.getState().messages.find((m) => m.sender === "Alice")!.id;
+  return { radio, session, id, hash: await messageHash("who hears me?", 1_700_000_060) };
+}
+
+function reactionsOf(session: MeshSession, id: string): [string, string | null][] {
+  return (session.getState().messages.find((m) => m.id === id)?.reactions ?? []).map((r) => [r.emoji, r.by]);
+}
+
+test("a reaction goes out as a channel datagram naming the message by its hash, and ours is one at a time", async () => {
+  const { radio, session, id, hash } = await withAlice();
+  assert.ok(session.canReact(session.getState().messages.find((m) => m.id === id)!));
+  await session.react(id, "👍");
+  const sent = () => radio.sent.filter((f) => f[0] === Cmd.SendChannelData).map((f) => ({ channel: f[1], path: f[2], type: f[3]! | (f[4]! << 8), reaction: decodeReaction(f.subarray(5)) }));
+  assert.deepEqual(sent(), [{ channel: 0, path: 0xff, type: REACTION_DATA_TYPE, reaction: { target: hash, emoji: "👍", by: "Me" } }]);
+  assert.deepEqual(reactionsOf(session, id), [["👍", null]]);
+  await session.react(id, "❤️");
+  assert.deepEqual(reactionsOf(session, id), [["❤️", null]]);
+  await session.react(id, null);
+  assert.equal(sent().at(-1)?.reaction?.emoji, "");
+  assert.deepEqual(reactionsOf(session, id), []);
+  await session.disconnect();
+});
+
+test("a reaction heard lands on its message, one per sender, and one that comes first waits for it", async () => {
+  const { radio, session, id, hash } = await withAlice();
+  const hear = async (data: Uint8Array, type = REACTION_DATA_TYPE) => {
+    radio.queue.push(channelDataFrame(0, type, data));
+    radio.push(new Uint8Array([Push.MsgWaiting]));
+    await tick(10);
+  };
+  await hear(encodeReaction({ target: hash, emoji: "👍", by: "Bob" }));
+  await hear(encodeReaction({ target: hash, emoji: "👍", by: "Carol" }));
+  await hear(encodeReaction({ target: hash, emoji: "😂", by: "Bob" }));
+  assert.deepEqual(reactionsOf(session, id), [["👍", "Carol"], ["😂", "Bob"]]);
+  await hear(encodeReaction({ target: hash, emoji: "", by: "Carol" }));
+  assert.deepEqual(reactionsOf(session, id), [["😂", "Bob"]]);
+  // Somebody else's datagram under the type, or another type altogether, is no reaction.
+  await hear(new Uint8Array([9, 9, 9]));
+  await hear(encodeReaction({ target: hash, emoji: "🔥", by: "Dan" }), 0xff01);
+  assert.deepEqual(reactionsOf(session, id), [["😂", "Bob"]]);
+  // A reaction to a message the radio has not handed up yet.
+  await hear(encodeReaction({ target: await messageHash("late", 1_700_000_060), emoji: "🙏", by: "Bob" }));
+  radio.queue.push(channelFrame(0, "Alice: late"));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(10);
+  const late = session.getState().messages.find((m) => m.text === "late")!;
+  assert.deepEqual(reactionsOf(session, late.id), [["🙏", "Bob"]]);
+  assert.equal(session.getState().messages.length, 2);
+  await session.disconnect();
+});
+
+test("MeshCore One's text reaction goes on its message instead of into the chat", async () => {
+  const { radio, session, id, hash } = await withAlice();
+  for (const text of [`Bob: @[Alice]👍\n${crockford(hash)}`, `Bob: @[Alice]👍\n${crockford(hash)}`, `Carol: ❤️@[Alice]\n${crockford(hash).toUpperCase()}`]) {
+    radio.queue.push(channelFrame(0, text));
+  }
+  // Named as somebody else's message: not this one.
+  radio.queue.push(channelFrame(0, `Dan: @[Eve]🔥\n${crockford(hash)}`));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(20);
+  assert.deepEqual(reactionsOf(session, id), [["👍", "Bob"], ["❤️", "Carol"]]);
+  assert.equal(session.getState().messages.length, 1);
+  assert.deepEqual(session.getState().unread, { [channelConversation(0)]: 1 });
+  await session.disconnect();
+});
+
+test("a reaction to a copy of ours that went out before a resend still finds it", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  const message = await session.sendText(channelConversation(0), "anyone?");
+  await session.retry(message.id);
+  const again = session.getState().messages.find((m) => m.id === message.id)!;
+  assert.deepEqual(again.pastStamps, [message.timestamp]);
+  assert.equal(again.timestamp, message.timestamp + 1);
+  radio.queue.push(channelDataFrame(0, REACTION_DATA_TYPE, encodeReaction({ target: await messageHash("anyone?", message.timestamp), emoji: "👍", by: "Bob" })));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(10);
+  assert.deepEqual(reactionsOf(session, message.id), [["👍", "Bob"]]);
+  await session.disconnect();
+});
+
+test("reactions are for channel messages only", async () => {
+  const { radio, session } = await withAlice();
+  radio.queue.push(dmFrame(BOB, "hi"), channelFrame(8, "Stalin_v3: what is this channel?"));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(10);
+  const dm = session.getState().messages.find((m) => m.text === "hi")!;
+  const keyless = session.getState().messages.find((m) => m.conversation === KEYLESS_CONVERSATION)!;
+  assert.ok(!session.canReact(dm));
+  assert.ok(!session.canReact(keyless));
+  await assert.rejects(session.react(dm.id, "👍"));
+  assert.ok(!radio.sent.some((f) => f[0] === Cmd.SendChannelData));
   await session.disconnect();
 });
 

@@ -2788,6 +2788,42 @@ details.more .kv-grid {
   margin: 4px 0;
   background: var(--hover);
 }
+/* A held message's emoji, over its menu: one row, each a round target. */
+.react-strip {
+  display: flex;
+  gap: 2px;
+  padding: 0 6px;
+}
+.sheet .menu-head {
+  margin-bottom: var(--space-3);
+}
+.menu-head .react-strip button {
+  flex: 1;
+  min-width: 0;
+  height: calc(42px * var(--box-scale));
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  font-size: calc(24px * var(--text-scale));
+  line-height: 1;
+  cursor: pointer;
+}
+.menu-head .react-strip button.on {
+  background: var(--accent-subtle);
+}
+@media (hover: hover) {
+  .menu-head .react-strip button:hover {
+    background: var(--hover);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .menu-head .react-strip button:active {
+    transform: scale(1.18);
+  }
+}
 @media (prefers-reduced-motion: no-preference) {
   .hold-scrim {
     animation: fade-in 0.2s;
@@ -4132,6 +4168,52 @@ html.notices-window #root {
 }
 .msg-meta .ok {
   color: var(--accent);
+}
+.msg-break {
+  display: block;
+}
+/* The emoji on a message, under its text: each with its count, ours lit. */
+.msg-reacts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+  vertical-align: bottom;
+  white-space: normal;
+}
+.react-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: calc(24px * var(--box-scale));
+  padding: 0 8px 0 6px;
+  border: 0;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+button.react-chip {
+  cursor: pointer;
+}
+.react-chip.mine {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+.react-emoji {
+  font-size: calc(15px * var(--text-scale));
+  line-height: 1;
+}
+.jumbo .msg-break {
+  display: none;
+}
+/* Who put what on a message, in its details. */
+.details-reacts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 /* Copies of a channel message heard sent on, counted beside the double tick. */
 .msg-meta .heard {

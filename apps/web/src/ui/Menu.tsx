@@ -44,6 +44,8 @@ interface MenuState {
   minWidth: number | undefined;
   /** Above the items, such as a held message's emoji: its buttons close the menu themselves. */
   head: ReactNode;
+  /** The head has opened out, such as into every emoji: the items step aside and the menu widens. */
+  expanded: boolean;
 }
 
 let current: MenuState | null = null;
@@ -66,8 +68,16 @@ export function showMenu(
     hints: options.hints ?? false,
     minWidth: options.minWidth,
     head: options.head,
+    expanded: false,
   };
   current.lift?.classList.add("held");
+  emit();
+}
+
+/** Opens the head out over the whole menu, or folds it back. */
+export function setMenuExpanded(on: boolean): void {
+  if (!current || current.expanded === on) return;
+  current = { ...current, expanded: on };
   emit();
 }
 
@@ -118,7 +128,7 @@ export function MenuHost() {
   return (
     <Sheet open={menu !== null} onClose={closeMenu} title={menu?.title}>
       {menu?.head ? <div className="menu-head">{menu.head}</div> : null}
-      {groups(menu?.items ?? []).map((g) => (
+      {groups(menu?.expanded ? [] : (menu?.items ?? [])).map((g) => (
         <div key={g.at} className="group-body">
           {g.items.map((item, i) => (
             // By place: two nodes of one name make two items of one label.
@@ -183,14 +193,14 @@ function Popover({ menu }: { menu: MenuState }) {
   }, []);
 
   return createPortal(
-    <div ref={box} className={["popover", menu.hints ? "with-hints" : ""].join(" ")} role="menu" style={{ ...pos, minWidth: menu.minWidth }}>
+    <div ref={box} className={["popover", menu.hints ? "with-hints" : "", menu.expanded ? "expanded" : ""].join(" ")} role="menu" style={{ ...pos, minWidth: menu.minWidth }}>
       {menu.head ? (
         <>
           <div className="menu-head">{menu.head}</div>
-          <div className="popover-sep" role="separator" />
+          {menu.expanded ? null : <div className="popover-sep" role="separator" />}
         </>
       ) : null}
-      {menu.items.map((item, i) => (
+      {(menu.expanded ? [] : menu.items).map((item, i) => (
         <Fragment key={i}>
           {item.group && i > 0 ? <div className="popover-sep" role="separator" /> : null}
           <button
@@ -316,7 +326,7 @@ function HoldMenu({ menu, lift }: { menu: MenuState; lift: HTMLElement }) {
       </div>
       <div
         ref={card}
-        className={["hold-menu", place ? "" : "unplaced", place?.right ? "right" : ""].join(" ")}
+        className={["hold-menu", place ? "" : "unplaced", place?.right ? "right" : "", menu.expanded ? "expanded" : ""].join(" ")}
         role="menu"
         style={place ? { left: place.left, top: place.top } : undefined}
       >
@@ -333,10 +343,10 @@ function HoldMenu({ menu, lift }: { menu: MenuState; lift: HTMLElement }) {
             >
               {menu.head}
             </div>
-            <div className="hold-menu-sep" role="separator" />
+            {menu.expanded ? null : <div className="hold-menu-sep" role="separator" />}
           </>
         ) : null}
-        {menu.items.map((item, i) => (
+        {(menu.expanded ? [] : menu.items).map((item, i) => (
           <Fragment key={i}>
             {item.group && i > 0 ? <div className="hold-menu-sep" role="separator" /> : null}
             <button

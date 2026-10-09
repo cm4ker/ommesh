@@ -1,9 +1,10 @@
+import { useRef, useState } from "react";
 import type { MessageRecord } from "@meshnet/meshcore";
-import { groupReactions, ownReaction, QUICK_REACTIONS, type ReactionGroup } from "../lib/reactions.js";
+import { EMOJI_GROUPS, groupReactions, noteReaction, ownReaction, stripReactions, type EmojiGroup, type ReactionGroup } from "../lib/reactions.js";
 import { session } from "../lib/session.js";
 import { toast } from "../lib/toast.js";
-import { closeMenu } from "../ui/Menu.js";
-import { RefreshIcon } from "./Icons.js";
+import { closeMenu, setMenuExpanded } from "../ui/Menu.js";
+import { ChevronDownIcon, ChevronUpIcon, RefreshIcon } from "./Icons.js";
 import { errorText } from "../i18n/errors.js";
 import { t } from "../i18n/index.js";
 
@@ -17,25 +18,80 @@ export function whoReacted(group: ReactionGroup): string {
   return [...(group.mine ? [t("chats.details.you")] : []), ...group.names].join(", ");
 }
 
-/** The row of emoji over a held message's menu; ours is lit, and choosing it again takes it back. */
+function groupName(id: EmojiGroup): string {
+  switch (id) {
+    case "radio":
+      return t("chats.react.groupRadio");
+    case "faces":
+      return t("chats.react.groupFaces");
+    case "hands":
+      return t("chats.react.groupHands");
+    case "hearts":
+      return t("chats.react.groupHearts");
+    case "other":
+      return t("chats.react.groupOther");
+  }
+}
+
+/**
+ * The emoji over a held message's menu: the ones chosen lately, and a button
+ * that opens the same card out into every emoji, the menu's items stepping
+ * aside. Ours is lit, and choosing it again takes it back.
+ */
 export function ReactStrip({ message }: { message: MessageRecord }) {
   const mine = ownReaction(message.reactions);
+  const [open, setOpen] = useState(false);
+  const grid = useRef<HTMLDivElement>(null);
+  const button = (emoji: string) => (
+    <button
+      key={emoji}
+      type="button"
+      className={emoji === mine ? "on" : ""}
+      aria-pressed={emoji === mine}
+      onClick={() => {
+        closeMenu();
+        if (emoji !== mine) noteReaction(emoji);
+        react(message, emoji === mine ? null : emoji);
+      }}
+    >
+      {emoji}
+    </button>
+  );
+  const toggle = () => {
+    setOpen(!open);
+    setMenuExpanded(!open);
+  };
+  const jump = (id: EmojiGroup) => {
+    const section = grid.current?.querySelector<HTMLElement>(`[data-group="${id}"]`);
+    if (section) grid.current!.scrollTo({ top: section.offsetTop, behavior: "smooth" });
+  };
   return (
-    <div className="react-strip" role="group" aria-label={t("chats.react.pick")}>
-      {QUICK_REACTIONS.map((emoji) => (
-        <button
-          key={emoji}
-          type="button"
-          className={emoji === mine ? "on" : ""}
-          aria-pressed={emoji === mine}
-          onClick={() => {
-            closeMenu();
-            react(message, emoji === mine ? null : emoji);
-          }}
-        >
-          {emoji}
+    <div className="react-picker">
+      <div className="react-strip" role="group" aria-label={t("chats.react.pick")}>
+        {stripReactions().map(button)}
+        <button type="button" className="react-more" aria-label={open ? t("chats.react.less") : t("chats.react.more")} aria-expanded={open} onClick={toggle}>
+          <span>{open ? <ChevronUpIcon size={18} strokeWidth={2.2} /> : <ChevronDownIcon size={18} strokeWidth={2.2} />}</span>
         </button>
-      ))}
+      </div>
+      {open ? (
+        <>
+          <div className="react-tabs">
+            {EMOJI_GROUPS.map((g) => (
+              <button key={g.id} type="button" onClick={() => jump(g.id)}>
+                {groupName(g.id)}
+              </button>
+            ))}
+          </div>
+          <div ref={grid} className="react-grid-scroll">
+            {EMOJI_GROUPS.map((g) => (
+              <section key={g.id} data-group={g.id} aria-label={groupName(g.id)}>
+                <div className="react-group-name">{groupName(g.id)}</div>
+                <div className="react-grid">{g.items.map(button)}</div>
+              </section>
+            ))}
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

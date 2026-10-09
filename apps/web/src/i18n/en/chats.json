@@ -107,6 +107,13 @@
   "message.copyText": "Copy the text",
   "message.select": "Select",
   "react.pick": "Put a reaction on",
+  "react.more": "All emoji",
+  "react.less": "Fewer",
+  "react.groupRadio": "Radio",
+  "react.groupFaces": "Faces",
+  "react.groupHands": "Hands",
+  "react.groupHearts": "Hearts",
+  "react.groupOther": "Other",
   "react.unheard": "No repeater was heard sending it on. Tap to send it again",
   "pick.count": {
     "one": "{count} message",

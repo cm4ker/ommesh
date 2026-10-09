@@ -2814,6 +2814,91 @@ details.more .kv-grid {
 .menu-head .react-strip button.on {
   background: var(--accent-subtle);
 }
+/* The button that opens the strip out into every emoji. */
+.menu-head .react-strip button.react-more {
+  flex: none;
+  width: calc(36px * var(--box-scale));
+  color: var(--text-muted);
+}
+.react-more > span {
+  width: calc(30px * var(--box-scale));
+  height: calc(30px * var(--box-scale));
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--panel);
+}
+.hold-menu.expanded {
+  width: min(380px, calc(100vw - 16px));
+}
+.popover.expanded {
+  width: 344px;
+}
+.react-tabs {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.menu-head .react-tabs button {
+  flex: none;
+  width: auto;
+  display: inline-block;
+  padding: 5px 11px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  cursor: pointer;
+}
+/* Every emoji, in groups, scrolling inside the card. */
+.react-grid-scroll {
+  position: relative;
+  max-height: min(420px, 50vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 6px 8px;
+}
+.react-group-name {
+  padding: 10px 6px 4px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.react-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 2px;
+}
+.menu-head .react-grid button {
+  width: 100%;
+  height: calc(40px * var(--box-scale));
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font-size: calc(24px * var(--text-scale));
+  line-height: 1;
+  cursor: pointer;
+}
+.menu-head .react-grid button.on {
+  background: var(--accent-subtle);
+}
+@media (hover: hover) {
+  .menu-head .react-grid button:hover {
+    background: var(--hover);
+  }
+}
 @media (hover: hover) {
   .menu-head .react-strip button:hover {
     background: var(--hover);

@@ -15,7 +15,7 @@
 </head>
 <body>
   <h1>Ommesh privacy policy</h1>
-  <p>Updated October 5, 2026.</p>
+  <p>Updated October 9, 2026.</p>
   <p>Ommesh is a companion for MeshCore radios maintained by
     <a href="https://github.com/cm4ker/ommesh" target="_blank" rel="noopener noreferrer">cm4ker and the Ommesh project</a>.
     This policy describes the data handled by the app. No Ommesh account is required.</p>
@@ -50,6 +50,18 @@
     These HTTPS requests do not include your conversations, node passwords or radio contact list.
     Provider logs and retention are governed by the providers' policies.</p>
 
+  <h2>Link previews</h2>
+  <p>A link in a message can show a preview: the page's title, description and picture, a picture,
+    or a file's name and size. Previews come at once by default; Settings → Messages and routes →
+    Link previews can show them only on a tap, or turn them off. To make a preview, the app sends
+    the link's address, and nothing else of the message, to the Ommesh project's preview server
+    (preview.cm4ker.ru) over HTTPS. That server visits the link, so the site sees the server and not
+    your device. The server receives your IP address with the request; it keeps the address in memory
+    for a minute to limit how fast one address may ask, and keeps each link with its preview in memory
+    for a day, so that a link many people see is visited once. It keeps no log of the links asked about
+    and writes neither to disk. It never visits addresses in a home or local network. The preview is
+    kept on your device for a day. Previews never go on air.</p>
+
   <h2>Coverage surveys</h2>
   <p>A coverage survey, which you start from "Who hears me" on the map, reads the phone's precise
     position while it runs. On a phone connected to its radio over Bluetooth it goes on with the phone
@@ -76,14 +88,15 @@
       or entered manually.</li>
     <li>Notifications: optional local notices for messages and discovered nodes. A notice
       can show a contact name and message preview on your lock screen, subject to your device settings.</li>
-    <li>Network access: connecting to a Wi-Fi radio and loading map or elevation tiles.</li>
+    <li>Network access: connecting to a Wi-Fi radio, loading map or elevation tiles, and link previews.</li>
   </ul>
   <p>You can change permissions in your device settings. Denying Bluetooth access prevents
     Bluetooth connections; demo mode does not require a radio.</p>
 
   <h2>Analytics, advertising and updates</h2>
   <p>The app contains no advertising SDK, analytics SDK or automatic crash-reporting service.
-    The project does not operate an account or message-storage server. Google Play may process
+    The project does not operate an account or message-storage server; its one server makes link
+    previews, as described above. Google Play may process
     installation and diagnostic information according to Google's settings and policies.
     Desktop builds can also contact GitHub for update checks and downloads; these requests expose
     the IP address and normal request information to GitHub. Android updates from Google Play are

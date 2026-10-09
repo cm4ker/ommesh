@@ -138,6 +138,7 @@
   "preview.timeout": "The site did not answer",
   "preview.status": "The site answered with error {code}",
   "preview.network": "No connection to the site",
+  "preview.busy": "The preview server is busy, try again in a minute",
   "preview.kb": "{size} KB",
   "preview.mb": "{size} MB",
   "message.failedRetry": "Failed · retry",

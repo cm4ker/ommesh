@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { locale, t } from "../i18n/index.js";
 import { markSeen, tapLink, useLinkPreview, usePreviewMode } from "../lib/linkPreview.js";
-import { autoAllowed, durationLabel, linkAllowed, type Preview } from "../lib/linkPreviewParse.js";
+import { durationLabel, linkAllowed, type Preview } from "../lib/linkPreviewParse.js";
 import { LINK, linkOf, openLink } from "../lib/webLinks.js";
 import { PreviewIcon, RefreshIcon } from "./Icons.js";
 
@@ -17,9 +17,9 @@ export function LinkMark({ href, message }: { href: string; message: string }) {
   const { entry, folded } = useLinkPreview(href, message);
   const mode = usePreviewMode();
   // With previews at once there is nothing to tap while one comes by itself:
-  // only a link it leaves alone (plain http) or one that failed keeps a mark.
-  // An empty spot stays to tell when the link is on screen.
-  const quiet = mode === "auto" && entry?.state !== "failed" && (autoAllowed(href) || entry?.state === "loading" || entry?.state === "shown");
+  // only a link whose preview failed keeps a mark, to try again. An empty spot
+  // stays to tell when the link is on screen.
+  const quiet = mode === "auto" && entry?.state !== "failed";
   const gone = entry?.state === "none";
   const self = useRef<HTMLElement | null>(null);
 

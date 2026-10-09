@@ -160,6 +160,7 @@
   "preview.timeout": "Сайт не ответил",
   "preview.status": "Сайт ответил ошибкой {code}",
   "preview.network": "Нет связи с сайтом",
+  "preview.busy": "Сервер превью занят, попробуйте через минуту",
   "preview.kb": "{size} КБ",
   "preview.mb": "{size} МБ",
   "message.failedRetry": "Ошибка · повторить",

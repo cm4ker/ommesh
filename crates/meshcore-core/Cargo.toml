@@ -14,15 +14,10 @@ crate-type = ["lib", "cdylib", "staticlib"]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uniffi = "0.32"
-# The fetch behind a link preview, which the phones' native code reaches through
-# these bindings; not radio logic, and so behind a feature of its own.
-link-fetch = { path = "../link-fetch", optional = true }
 
 [features]
 # The Kotlin and Swift bindings' generator (`cargo run --features bindgen --bin uniffi-bindgen`).
 bindgen = ["uniffi/cli"]
-# `link_fetch` for the phone that builds with it (iOS, see scripts/core-ios.sh).
-link-fetch = ["dep:link-fetch"]
 
 [[bin]]
 name = "uniffi-bindgen"

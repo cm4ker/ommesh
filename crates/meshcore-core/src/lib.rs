@@ -11,8 +11,6 @@
 //! - [`watch`]: notices for what the page leaves unread while it sleeps.
 //! - [`survey`]: a coverage survey, asking who hears the radio as the phone moves.
 //! - [`frames`]: the few frames they read.
-//! - `fetch` (with the `link-fetch` feature): a link preview's fetch, for the
-//!   phone's native code; the one part that is not the radio's.
 //!
 //! No Bluetooth, no clock, no threads. The owner (a shell's native code) hands
 //! frames and events in, carries out the [`Effect`]s each call returns, runs
@@ -22,8 +20,6 @@
 
 pub mod codes;
 mod ffi;
-#[cfg(feature = "link-fetch")]
-pub mod fetch;
 pub mod frames;
 pub mod mux;
 pub mod survey;

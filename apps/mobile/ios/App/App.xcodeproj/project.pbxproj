@@ -21,7 +21,6 @@
 		7E5A1C012F9A00000000A003 /* MeshViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A1C012F9A00000000A004 /* MeshViewController.swift */; };
 		7E5A1C012F9A00000000A005 /* MeshWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A1C012F9A00000000A006 /* MeshWatch.swift */; };
 		7E5A1C012F9A00000000A007 /* MeshRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A1C012F9A00000000A008 /* MeshRelay.swift */; };
-		7E5A1C012F9A00000000A009 /* LinkFetchPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A1C012F9A00000000A00A /* LinkFetchPlugin.swift */; };
 		7E5A1C012F9A00000000C001 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 7E5A1C012F9A00000000C002 /* InfoPlist.strings */; };
 		7E5A1C012F9A00000000D001 /* SurveyAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A1C012F9A00000000D010 /* SurveyAttributes.swift */; };
 		7E5A1C012F9A00000000D002 /* SurveyAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A1C012F9A00000000D010 /* SurveyAttributes.swift */; };
@@ -69,7 +68,6 @@
 		7E5A1C012F9A00000000A004 /* MeshViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshViewController.swift; sourceTree = "<group>"; };
 		7E5A1C012F9A00000000A006 /* MeshWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshWatch.swift; sourceTree = "<group>"; };
 		7E5A1C012F9A00000000A008 /* MeshRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshRelay.swift; sourceTree = "<group>"; };
-		7E5A1C012F9A00000000A00A /* LinkFetchPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkFetchPlugin.swift; sourceTree = "<group>"; };
 		7E5A1C012F9A00000000C003 /* ru */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = ru.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		7E5A1C012F9A00000000D010 /* SurveyAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurveyAttributes.swift; sourceTree = "<group>"; };
@@ -128,7 +126,6 @@
 				7E5A1C012F9A00000000A002 /* MeshTcpPlugin.swift */,
 				7E5A1C012F9A00000000A006 /* MeshWatch.swift */,
 				7E5A1C012F9A00000000A008 /* MeshRelay.swift */,
-				7E5A1C012F9A00000000A00A /* LinkFetchPlugin.swift */,
 				7E5A1C012F9A00000000D014 /* SurveyGlance.swift */,
 				7E5A1C012F9A00000000D010 /* SurveyAttributes.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -272,7 +269,6 @@
 				7E5A1C012F9A00000000A003 /* MeshViewController.swift in Sources */,
 				7E5A1C012F9A00000000A005 /* MeshWatch.swift in Sources */,
 				7E5A1C012F9A00000000A007 /* MeshRelay.swift in Sources */,
-				7E5A1C012F9A00000000A009 /* LinkFetchPlugin.swift in Sources */,
 				7E5A1C012F9A00000000D005 /* SurveyGlance.swift in Sources */,
 				7E5A1C012F9A00000000D001 /* SurveyAttributes.swift in Sources */,
 			);

@@ -10,7 +10,6 @@ import { disconnect, useLink } from "../lib/link.js";
 import { setLookalikePrefs, useLookalikePrefs } from "../lib/lookalikes.js";
 import { setOpenAtUnread, useOpenAtUnread } from "../lib/firstUnread.js";
 import { setJumboEmoji, useJumboEmoji } from "../lib/jumboEmoji.js";
-import { linkFetchAvailable } from "../lib/linkFetch.js";
 import { setPreviewMode, usePreviewMode, type PreviewMode } from "../lib/linkPreview.js";
 import { BACKGROUND_NAMES, BACKGROUNDS, setBackground, setBackgroundScale, setBackgroundStrength, useBackgroundPrefs } from "../lib/chatBackground.js";
 import { isDirect, oneSignal, SIGNALS, setNoticePrefs, useNoticePrefs, type Corner, type NoticeKind, type NoticePrefs } from "../lib/noticePrefs.js";
@@ -839,8 +838,8 @@ function triesHint(n: number): string {
 }
 
 /**
- * Link previews: off by default, since each one is a visit to a stranger's
- * site from this device. "At once" says what it gives away in its hint.
+ * Link previews: at once by default, since the preview server, not this
+ * device, visits the links; the note says so, and that the server sees them.
  */
 function PreviewGroup() {
   const mode = usePreviewMode();
@@ -882,7 +881,7 @@ function MessagesPage() {
         />
         {lookalikes.on ? <SwitchRow label={t("radio.messages.near")} hint={t("radio.messages.nearHint")} checked={lookalikes.near} onChange={(v) => setLookalikePrefs({ near: v })} /> : null}
       </Group>
-      {linkFetchAvailable() ? <PreviewGroup /> : null}
+      <PreviewGroup />
       <Group note={t("radio.messages.triesNote")}>
         <StepperRow
           label={t("radio.messages.sendTries")}

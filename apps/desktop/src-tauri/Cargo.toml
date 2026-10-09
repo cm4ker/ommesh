@@ -49,8 +49,6 @@ reqwest = { version = "0.13", default-features = false, features = ["socks"] }
 # Starting with the computer, switched from the client's Connection page: a
 # Run key on Windows, a launch agent on macOS, an autostart entry on Linux.
 tauri-plugin-autostart = "2"
-# A link preview's fetch, with the rules of what it may reach; shared with the iPhone (crates/link-fetch).
-link-fetch = { path = "../../../crates/link-fetch" }
 # One app at a time: a second start brings the first one's window back.
 tauri-plugin-single-instance = "2"
 # The window opens where it was left and at the size it was, maximised or not.

@@ -1,21 +1,21 @@
 /**
  * Link previews: what a link in a message leads to, shown as a card under the
- * text. The app fetches it, not the sender's, and nothing of it goes on air,
- * so each reader decides: never (the default), on a tap of the mark after the
- * link, or at once for every link that comes on screen. The last tells a site
- * the reader's address and that they are reading now, and is chosen by hand.
+ * text. The Ommesh preview server makes them (`linkFetch.ts`), so this device
+ * never visits a stranger's link, and nothing of them goes on air. They come
+ * at once for every link on screen unless the reader chose a tap of the mark
+ * after the link, or none at all.
  *
- * A preview once made is kept on the device for a week (IndexedDB), so the
- * same link in another message, or after a restart, shows without asking the
- * site again. Fetches go one at a time; those made by themselves at most
- * twenty a minute, only over HTTPS, and only for links still on screen, so a
- * channel flooded with links costs little and makes the readers no crowd.
+ * A preview once made is kept on the device for a day (IndexedDB), as long as
+ * the server keeps it, so the same link in another message, or after a
+ * restart, shows without asking again. Asks go one at a time; those made by
+ * themselves at most twenty a minute, and only for links still on screen, so
+ * a channel flooded with links costs little.
  */
 
 import { useSyncExternalStore } from "react";
 import { t } from "../i18n/index.js";
-import { linkFetch, linkFetchAvailable, Refused } from "./linkFetch.js";
-import { autoAllowed, decodePage, fileOf, isPage, isPicture, linkAllowed, mimeOf, pictureFits, pictureSize, type Preview, readHead, shownHost } from "./linkPreviewParse.js";
+import { askPreview, Refused } from "./linkFetch.js";
+import { linkAllowed, type Preview } from "./linkPreviewParse.js";
 import { readSetting, writeSetting } from "./storage.js";
 import { toast } from "./toast.js";
 
@@ -31,7 +31,7 @@ export type Entry =
 
 const MODE_KEY = "meshnet.linkPreview";
 const AUTO_PER_MINUTE = 20;
-const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const DB_NAME = "meshnet-previews";
 const STORE = "previews";
 const LIMIT = 500;
@@ -48,7 +48,7 @@ const visible = new Map<string, number>();
 const peeked = new Set<string>();
 
 export function previewMode(): PreviewMode {
-  mode ??= linkFetchAvailable() ? readSetting<PreviewMode>(MODE_KEY, "off") : "off";
+  mode ??= readSetting<PreviewMode>(MODE_KEY, "auto");
   return mode;
 }
 
@@ -126,11 +126,11 @@ export function markSeen(href: string, on: boolean): void {
   if (count > 0) visible.set(href, count);
   else visible.delete(href);
   if (!on) return;
-  if (previewMode() === "auto" && autoAllowed(href)) void request(href, false);
+  if (previewMode() === "auto") void request(href, false);
   else peek(href);
 }
 
-/** Shows a preview this device already has, without asking the site. */
+/** Shows a preview this device already has, without asking the server. */
 function peek(href: string): void {
   if (peeked.has(href) || entries.has(href)) return;
   peeked.add(href);
@@ -219,35 +219,24 @@ function pictureUrl(picture: Picture): string {
   return URL.createObjectURL(new Blob([picture.bytes], { type: picture.type }));
 }
 
-/** A picture's own bytes, if they are a picture small enough to decode; its kind from the bytes, never from what the site says. */
-function pictureOf(body: Uint8Array): Picture | null {
-  const size = body.length ? pictureSize(body) : null;
-  if (!size || !pictureFits(size)) return null;
-  return { type: size.type, bytes: body.slice().buffer };
+/** A picture as the server sends it: a JPEG or PNG it encoded, in base64. */
+function pictureOf(image: { type: string; data: string }): Picture | null {
+  if (image.type !== "image/jpeg" && image.type !== "image/png") return null;
+  try {
+    const text = atob(image.data);
+    const bytes = new Uint8Array(text.length);
+    for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+    return { type: image.type, bytes: bytes.buffer };
+  } catch {
+    return null;
+  }
 }
 
 async function build(href: string): Promise<{ preview: Preview; picture: Picture | null } | null> {
-  const page = await linkFetch(href, false);
-  const mime = mimeOf(page.contentType);
-  const host = shownHost(page.url);
-  const blank = { host, title: "", description: "", image: null, large: false, video: false, duration: null, file: null };
-  if (isPicture(mime)) {
-    const picture = page.cut ? null : pictureOf(page.body);
-    if (picture) return { preview: { ...blank, kind: "picture" }, picture };
-    return { preview: { ...blank, kind: "file", file: fileOf(page.url, page.disposition, page.contentType, page.length) }, picture: null };
-  }
-  if (!isPage(mime)) return { preview: { ...blank, kind: "file", file: fileOf(page.url, page.disposition, page.contentType, page.length) }, picture: null };
-  const head = readHead(decodePage(page.body, page.contentType), page.url);
-  if (!head.title && !head.description) return null;
-  let picture: Picture | null = null;
-  if (head.image && linkAllowed(head.image)) {
-    try {
-      picture = pictureOf((await linkFetch(head.image, true)).body);
-    } catch {
-      // A page whose picture does not come is shown without it.
-    }
-  }
-  return { preview: { ...blank, kind: "page", ...head }, picture };
+  const answer = await askPreview(href);
+  if (answer.kind === "none") return null;
+  const { image, ...rest } = answer;
+  return { preview: { ...rest, kind: answer.kind }, picture: image ? pictureOf(image) : null };
 }
 
 /** What a refusal says to the reader who tapped. */
@@ -255,6 +244,7 @@ export function refusalText(reason: string): string {
   if (reason === "address") return t("chats.preview.address");
   if (reason === "redirects") return t("chats.preview.redirects");
   if (reason === "timeout") return t("chats.preview.timeout");
+  if (reason === "busy") return t("chats.preview.busy");
   const status = /^status (\d+)/.exec(reason);
   if (status) return t("chats.preview.status", { code: status[1]! });
   return t("chats.preview.network");

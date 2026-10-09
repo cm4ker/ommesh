@@ -16,7 +16,6 @@ pnpm test           # scripts/*.test.mjs, then every package's tests
 pnpm build          # protocol package + web bundle
 pnpm news [X.Y.Z]   # a version's App Store, TestFlight and Telegram texts, from its news file
 cargo test --manifest-path crates/meshcore-core/Cargo.toml   # the Rust radio core (CI runs it)
-cargo test --manifest-path crates/link-fetch/Cargo.toml      # the link preview's fetch (ring needs a C compiler: on Windows ARM, LLVM in a VS dev shell)
 pnpm --filter @meshnet/desktop desktop:check                 # cargo check of the Tauri shell
 ```
 
@@ -49,14 +48,13 @@ Open `http://localhost:5180/?demo`, choose **Demo**, connect to **MeshCore-demo*
 - `src/transports/` has one `Connector` per link. `connectors()` picks them at runtime from `shell()`: Tauri (BLE, with a Windows-specific GATT path in `tauriWinBle.ts`; serial; TCP), Capacitor (BLE, TCP) or browser (Web Bluetooth, Web Serial).
 - `src/lib/nav.ts` is navigation: three sections (chats, mesh, radio; the radio section is labelled Settings), each a stack of screens. The phone shows the top of the stack; the desktop lays the same stack out side by side. Back handling is in `back.ts`.
 - Map tools (ping, route, line of sight, who hears me, neighbours) are one `MeshTool` at a time (`lib/meshTool.ts`); a sheet on the phone or a panel on the desktop shows it, and the map draws it. Nodes are painted on one canvas (`lib/nodeCanvas.ts`).
+- Link previews come from the project's preview server, `https://preview.cm4ker.ru` (`lib/linkFetch.ts`, `lib/linkPreview.ts`, `components/LinkPreview.tsx`): the server visits the link, so a reader's device never does. The server is a separate project, `ommesh-preview` (Rust, on 89.110.96.139 behind Caddy); its API and safety rules are in its README.
 
 **`apps/desktop`** is the Tauri 2 shell (`src-tauri/`): BLE, serial, updater, tray, single instance, window state. See `docs/desktop-updates.md` for update channels and signing.
 
 **`apps/mobile`** is the Capacitor 8 shell. Phones put the page's JavaScript to sleep in the background while the Bluetooth link stays up, so native code (`MeshRelay` on Android and iOS, an Android foreground service) holds the link. Read `apps/mobile/README.md` before touching it.
 
-**`crates/meshcore-core`** is the Rust core the phone shells run through UniFFI while the page sleeps. `mux` shares one radio between several clients and keeps each client's messages; `watch` raises notices for what stays unread; `survey` runs a coverage survey on the positions the phone's native code hands in, with the rule of `apps/web/src/lib/surveyData.ts` (change both together). It is pure logic (no Bluetooth, clock or threads); the native owner performs the `Effect`s each call returns, so its rules are covered by `cargo test`. Its `codes.rs` and `frames.rs` repeat the opcodes and frames of `packages/meshcore/src/protocol/`: change both together. The one exception is the `link-fetch` feature, which the iOS build turns on to hand the iPhone the link preview's fetch.
-
-**`crates/link-fetch`** is the fetch behind link previews, which the web view cannot do itself: the desktop calls it through a Tauri command (`preview.rs`), the iPhone through `meshcore-core` (`LinkFetchPlugin.swift`). It reaches only the open internet, checked on the link, every redirect and every address a name resolves to, carries no cookies and reads little; the page parses what comes back (`apps/web/src/lib/linkPreviewParse.ts`). Android and the browser have no fetch yet, so no previews. `cargo run --example fetch -- <link>` tries it against a real site.
+**`crates/meshcore-core`** is the Rust core the phone shells run through UniFFI while the page sleeps. `mux` shares one radio between several clients and keeps each client's messages; `watch` raises notices for what stays unread; `survey` runs a coverage survey on the positions the phone's native code hands in, with the rule of `apps/web/src/lib/surveyData.ts` (change both together). It is pure logic (no Bluetooth, clock or threads); the native owner performs the `Effect`s each call returns, so its rules are covered by `cargo test`. Its `codes.rs` and `frames.rs` repeat the opcodes and frames of `packages/meshcore/src/protocol/`: change both together.
 
 ## Protocol source of truth
 

@@ -10,9 +10,10 @@ test("reactions gather by emoji in the order they came, ours marked", () => {
     { emoji: "👍", by: "Dan", at: 4 },
   ];
   assert.deepEqual(groupReactions(reactions), [
-    { emoji: "👍", count: 3, mine: true, names: ["Bob", "Dan"] },
-    { emoji: "😂", count: 1, mine: false, names: ["Carol"] },
+    { emoji: "👍", count: 3, mine: true, unheard: false, names: ["Bob", "Dan"] },
+    { emoji: "😂", count: 1, mine: false, unheard: false, names: ["Carol"] },
   ]);
+  assert.equal(groupReactions([{ emoji: "🔥", by: null, at: 1, unheard: true }])[0]?.unheard, true);
   assert.equal(ownReaction(reactions), "👍");
   assert.equal(ownReaction(reactions.filter((r) => r.by !== null)), null);
   assert.deepEqual(groupReactions(undefined), []);

@@ -3,6 +3,7 @@ import { groupReactions, ownReaction, QUICK_REACTIONS, type ReactionGroup } from
 import { session } from "../lib/session.js";
 import { toast } from "../lib/toast.js";
 import { closeMenu } from "../ui/Menu.js";
+import { RefreshIcon } from "./Icons.js";
 import { errorText } from "../i18n/errors.js";
 import { t } from "../i18n/index.js";
 
@@ -54,19 +55,22 @@ export function Reactions({ message, live }: { message: MessageRecord; live: boo
           <>
             <span className="react-emoji">{g.emoji}</span>
             <span>{g.count}</span>
+            {g.unheard ? <RefreshIcon size={12} strokeWidth={2.6} /> : null}
           </>
         );
-        const className = ["react-chip", g.mine ? "mine" : ""].join(" ");
+        const className = ["react-chip", g.mine ? "mine" : "", g.unheard ? "unheard" : ""].join(" ");
+        const title = g.unheard ? `${whoReacted(g)}\n${t("chats.react.unheard")}` : whoReacted(g);
         return live ? (
           <button
             key={g.emoji}
             type="button"
             className={className}
-            title={whoReacted(g)}
+            title={title}
             aria-pressed={g.mine}
             onClick={(e) => {
               e.stopPropagation();
-              react(message, g.mine ? null : g.emoji);
+              // Ours that nobody sent on goes again; ours that went out is taken back.
+              react(message, g.mine && !g.unheard ? null : g.emoji);
             }}
             // Enter on the chip is the chip's, not the bubble's.
             onKeyDown={(e) => e.stopPropagation()}
@@ -74,7 +78,7 @@ export function Reactions({ message, live }: { message: MessageRecord; live: boo
             {inner}
           </button>
         ) : (
-          <span key={g.emoji} className={className} title={whoReacted(g)}>
+          <span key={g.emoji} className={className} title={title}>
             {inner}
           </span>
         );

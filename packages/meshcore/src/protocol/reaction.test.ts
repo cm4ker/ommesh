@@ -14,26 +14,29 @@ test("a message's hash is MeshCore One's: SHA-256 over the text and the stamp, f
   assert.equal(toHex(await messageHash("Кто слышит гору?", 1760000123)), expected.toString("hex"));
 });
 
-test("a reaction goes out as kind, hash, emoji and name, and reads back", () => {
+test("a reaction goes out as kind, hash, stamp, emoji and name, and reads back", () => {
   const target = fromHex("6c3f21d8d7");
-  const data = encodeReaction({ target, emoji: "👍", by: "Боб" });
-  assert.equal(toHex(data), `01${"6c3f21d8d7"}04${toHex(utf8("👍"))}${toHex(utf8("Боб"))}`);
-  assert.deepEqual(decodeReaction(data), { target, emoji: "👍", by: "Боб" });
+  const stamp = 1_760_000_000;
+  const data = encodeReaction({ target, emoji: "👍", by: "Боб", stamp });
+  assert.equal(toHex(data), `02${"6c3f21d8d7"}0078e76804${toHex(utf8("👍"))}${toHex(utf8("Боб"))}`);
+  assert.deepEqual(decodeReaction(data), { target, emoji: "👍", by: "Боб", stamp });
   // Taken back: no emoji.
-  assert.deepEqual(decodeReaction(encodeReaction({ target, emoji: "", by: "Bob" })), { target, emoji: "", by: "Bob" });
+  assert.deepEqual(decodeReaction(encodeReaction({ target, emoji: "", by: "Bob", stamp })), { target, emoji: "", by: "Bob", stamp });
   // A family emoji is one emoji, however many code points it takes.
-  assert.equal(decodeReaction(encodeReaction({ target, emoji: "👨‍👩‍👧", by: "Bob" }))?.emoji, "👨‍👩‍👧");
+  assert.equal(decodeReaction(encodeReaction({ target, emoji: "👨‍👩‍👧", by: "Bob", stamp }))?.emoji, "👨‍👩‍👧");
+  // The first form, with no stamp, is still read.
+  assert.deepEqual(decodeReaction(fromHex(`01${"6c3f21d8d7"}04${toHex(utf8("👍"))}${toHex(utf8("Bob"))}`)), { target, emoji: "👍", by: "Bob", stamp: 0 });
 });
 
 test("someone else's datagram under the testing type is not taken for a reaction", () => {
   const target = fromHex("6c3f21d8d7");
-  const good = encodeReaction({ target, emoji: "👍", by: "Bob" });
-  assert.equal(decodeReaction(new Uint8Array([2, ...good.subarray(1)])), null, "another kind");
-  assert.equal(decodeReaction(good.subarray(0, 8)), null, "cut short");
+  const good = encodeReaction({ target, emoji: "👍", by: "Bob", stamp: 1 });
+  assert.equal(decodeReaction(new Uint8Array([3, ...good.subarray(1)])), null, "another kind");
+  assert.equal(decodeReaction(good.subarray(0, 12)), null, "cut short");
   assert.equal(decodeReaction(new Uint8Array([1, 1, 2, 3, 4, 5, 2, 0x41, 0x42, 0x43])), null, "letters, not an emoji");
   assert.equal(decodeReaction(new Uint8Array([1, 1, 2, 3, 4, 5, 4, 0xf0, 0x9f, 0x91, 0x8d, 0xff])), null, "a name that is not UTF-8");
   assert.equal(decodeReaction(new Uint8Array([1, 1, 2, 3, 4, 5, 0])), null, "nobody's");
-  assert.throws(() => encodeReaction({ target, emoji: "👍", by: "" }));
+  assert.throws(() => encodeReaction({ target, emoji: "👍", by: "", stamp: 1 }));
 });
 
 test("MeshCore One's text reactions are read, both orders, and plain messages are not", () => {

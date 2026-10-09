@@ -18,6 +18,7 @@ import {
   encodeReaction,
   fromHex,
   fromUtf8,
+  groupDataPayload,
   groupTextPayload,
   heardGroupTextPayload,
   MAX_FRAME_SIZE,
@@ -569,7 +570,7 @@ class DemoRadio extends BaseTransport {
 
   /** An emoji put on a channel message from Ommesh: a datagram, as the radio hands one up. */
   private reaction(index: number, target: Uint8Array, emoji: string, by: string): Uint8Array {
-    const data = encodeReaction({ target, emoji, by });
+    const data = encodeReaction({ target, emoji, by, stamp: Math.floor(Date.now() / 1000) });
     return new ByteWriter()
       .u8(Resp.ChannelDataRecv)
       .i8(Math.round((Math.random() * 20 - 5) * 4))
@@ -895,8 +896,19 @@ class DemoRadio extends BaseTransport {
         }
         return [new Uint8Array([Resp.Ok])];
       }
-      case Cmd.SendChannelData:
+      case Cmd.SendChannelData: {
+        // A reaction: Public's repeaters send it on, and Friends' miss the first try of each, as they do texts.
+        const index = frame[1] ?? 0;
+        const data = frame.subarray(5);
+        const target = toHex(data.subarray(1, 6));
+        if (index === 1 && !this.missed.has(`reaction:${target}`)) {
+          this.missed.add(`reaction:${target}`);
+          return [new Uint8Array([Resp.Ok])];
+        }
+        const type = frame[3]! | (frame[4]! << 8);
+        void groupDataPayload(fromHex(CHANNELS[index] ?? CHANNELS[0]!), type, data).then((payload) => this.later(700, this.heard(6, [0x03], payload)));
         return [new Uint8Array([Resp.Ok])];
+      }
       case Cmd.GetChannel: {
         const index = frame[1] ?? 0;
         if (index === 0) return [new ByteWriter().u8(Resp.ChannelInfo).u8(0).fixedString("Public", 32).bytes(fromHex(CHANNELS[0]!)).toBytes()];

@@ -16,11 +16,17 @@
  *
  * The datagram, after the type and length the firmware puts before it:
  *
- *   0       kind: 1, a reaction
- *   1–5     the message's hash
- *   6       n, the emoji's length in bytes; 0 takes the reaction back
- *   7       the emoji, n bytes of UTF-8
- *   7 + n   who reacts, by the name on their channel messages: a datagram carries no sender
+ *   0         kind: 2, a reaction
+ *   1–5       the message's hash
+ *   6–9       when it was sent, unix seconds, little-endian
+ *   10        n, the emoji's length in bytes; 0 takes the reaction back
+ *   11        the emoji, n bytes of UTF-8
+ *   11 + n    who reacts, by the name on their channel messages: a datagram carries no sender
+ *
+ * The stamp makes each send its own packet. Without it the same reaction
+ * sent again is the same bytes, and every repeater that carried the first
+ * drops it as one seen before. Kind 1, the first form, had no stamp and is
+ * still read.
  *
  * A reaction stands for everything its sender has put on the message: a new
  * one replaces the last.
@@ -30,7 +36,8 @@ import { concat, utf8 } from "./bytes.js";
 /** The datagram type Ommesh's reactions travel under. */
 export const REACTION_DATA_TYPE = 0xff0e;
 
-const KIND_REACTION = 1;
+const KIND_UNSTAMPED = 1;
+const KIND_REACTION = 2;
 export const MESSAGE_HASH_SIZE = 5;
 /** Longer than any one emoji, family and skin tone included. */
 const MAX_EMOJI_BYTES = 32;
@@ -44,6 +51,8 @@ export interface Reaction {
   emoji: string;
   /** Who reacts. */
   by: string;
+  /** When it was sent, unix seconds; 0 in the first form, which had none. */
+  stamp: number;
 }
 
 const strict = new TextDecoder("utf-8", { fatal: true });
@@ -64,21 +73,27 @@ export function encodeReaction(reaction: Reaction): Uint8Array {
   const by = utf8(reaction.by);
   if (emoji.length > MAX_EMOJI_BYTES) throw new Error("not one emoji");
   if (by.length === 0 || by.length > MAX_NAME_BYTES) throw new Error("a reaction needs its sender's name");
-  return concat(new Uint8Array([KIND_REACTION]), reaction.target, new Uint8Array([emoji.length]), emoji, by);
+  const stamp = new Uint8Array(4);
+  new DataView(stamp.buffer).setUint32(0, reaction.stamp >>> 0, true);
+  return concat(new Uint8Array([KIND_REACTION]), reaction.target, stamp, new Uint8Array([emoji.length]), emoji, by);
 }
 
 /** A reaction read from a datagram, or null for anything else sent under the type: the testing range is shared. */
 export function decodeReaction(data: Uint8Array): Reaction | null {
-  if (data.length < 1 + MESSAGE_HASH_SIZE + 1 + 1 || data[0] !== KIND_REACTION) return null;
-  const length = data[1 + MESSAGE_HASH_SIZE]!;
-  const start = 2 + MESSAGE_HASH_SIZE;
+  const stamped = data[0] === KIND_REACTION;
+  if (!stamped && data[0] !== KIND_UNSTAMPED) return null;
+  const at = 1 + MESSAGE_HASH_SIZE + (stamped ? 4 : 0);
+  if (data.length < at + 2) return null;
+  const length = data[at]!;
+  const start = at + 1;
   const nameLength = data.length - start - length;
   if (length > MAX_EMOJI_BYTES || nameLength < 1 || nameLength > MAX_NAME_BYTES) return null;
   try {
     const emoji = strict.decode(data.subarray(start, start + length));
     const by = strict.decode(data.subarray(start + length));
     if (by.includes("\0") || (emoji && !looksLikeEmoji(emoji))) return null;
-    return { target: data.slice(1, 1 + MESSAGE_HASH_SIZE), emoji, by };
+    const stamp = stamped ? new DataView(data.buffer, data.byteOffset + 1 + MESSAGE_HASH_SIZE, 4).getUint32(0, true) : 0;
+    return { target: data.slice(1, 1 + MESSAGE_HASH_SIZE), emoji, by, stamp };
   } catch {
     return null;
   }

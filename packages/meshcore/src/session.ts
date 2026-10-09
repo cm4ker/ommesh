@@ -12,7 +12,7 @@
 import { MeshCoreClient, MeshCoreError, TimeoutError, type TextSendResult } from "./client.js";
 import { ByteReader, bytesEqual, fromHex, pathByteLength, toHex, unixNow } from "./protocol/bytes.js";
 import { neighbourSearchMs, replyBudgetMs, sealedBytes, traceBudgetMs, type ReplySize } from "./protocol/airtime.js";
-import { CHANNEL_TEXT_LEN, groupTextPayload, heardGroupTextPayload, relaysAudible } from "./protocol/group.js";
+import { CHANNEL_TEXT_LEN, groupDataPayload, groupTextPayload, heardGroupTextPayload, relaysAudible } from "./protocol/group.js";
 import { REACTION_DATA_TYPE, decodeReaction, directReactionText, encodeReaction, messageHash, parseDirectReaction, parseTextReaction } from "./protocol/reaction.js";
 import { PayloadType, parseRawPacket, type RawPacket } from "./protocol/packet.js";
 import { AclRole, AdvType, Cmd, ContactFlag, ControlType, DIRECT_TEXT_LEN, ErrCode, MAX_TEXT_LEN, NeighbourOrder, PUB_KEY_PREFIX_SIZE, ROOM_TEXT_LEN, StatsType, TxtType } from "./protocol/codes.js";
@@ -187,6 +187,11 @@ export interface MessageReaction {
   by: string | null;
   /** Local clock, ms. */
   at: number;
+  /**
+   * Ours on a channel: no repeater was heard sending it on within the window,
+   * so nobody may have it. Sending it again takes this back.
+   */
+  unheard?: boolean;
 }
 
 /** A reaction heard, on its way to the message it names. */
@@ -1061,6 +1066,12 @@ export class MeshSession {
   private pendingReactions: PendingReaction[] = [];
   /** Messages' hashes, by id and stamp: a reaction is matched by working them out. */
   private hashes = new Map<string, string>();
+  /** Our reactions' packets as a repeater would send them on, hex, to the message they are on. */
+  private reactionWatch = new Map<string, { id: string; at: number }>();
+  /** Our reactions waiting to hear a repeater send them on, by message id. */
+  private reactionTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** The stamp our last reaction went with: each goes with a later one, so no two are the same packet. */
+  private reactionStamp = 0;
   /** How many tries a direct message gets before it is given up on; 1 leaves the next to the user. */
   private sendTries = 1;
   /** Channel messages waiting to hear a repeater send them on, by message id. */
@@ -2287,7 +2298,12 @@ export class MeshSession {
     if (!self) throw new Error("not connected");
     const hash = await messageHash(message.text, message.timestamp);
     if (target.kind === "channel") {
-      await client.sendChannelData(target.index, REACTION_DATA_TYPE, encodeReaction({ target: hash, emoji: emoji ?? "", by: self.name }));
+      const stamp = Math.max(Math.floor(this.now() / 1000), this.reactionStamp + 1);
+      this.reactionStamp = stamp;
+      const data = encodeReaction({ target: hash, emoji: emoji ?? "", by: self.name, stamp });
+      if (emoji) await this.watchReaction(id, target.index, data);
+      else this.stopReactionWatch(id);
+      await client.sendChannelData(target.index, REACTION_DATA_TYPE, data);
     } else if (target.kind === "contact") {
       const contact = this.state.contacts[target.key];
       if (!contact) throw new Error("unknown contact");
@@ -2297,6 +2313,59 @@ export class MeshSession {
       return;
     }
     this.putReaction(id, emoji ?? "", null, true);
+  }
+
+  /**
+   * Works out the packet our reaction makes, as for a message (`watchEchoes`),
+   * and gives a repeater the same window to be heard sending it on. Nothing
+   * goes again by itself: ours goes faded, and a tap sends it once more.
+   */
+  private async watchReaction(id: string, channelIndex: number, data: Uint8Array): Promise<void> {
+    const secret = this.channelSecret(channelIndex);
+    if (!secret) return;
+    try {
+      const payload = await groupDataPayload(secret, REACTION_DATA_TYPE, data);
+      const now = this.now();
+      for (const [key, watch] of this.reactionWatch) if (now - watch.at > ECHO_WINDOW_MS) this.reactionWatch.delete(key);
+      this.reactionWatch.set(toHex(payload), { id, at: now });
+    } catch (error) {
+      this.log("echo", `cannot work out the reaction's packet: ${(error as Error).message}`);
+      return;
+    }
+    this.stopReactionWatch(id);
+    const timer = setTimeout(() => {
+      this.reactionTimers.delete(id);
+      this.markOurReaction(id, true);
+    }, SILENCE_MS);
+    (timer as { unref?: () => void }).unref?.();
+    this.reactionTimers.set(id, timer);
+  }
+
+  private stopReactionWatch(id: string): void {
+    const timer = this.reactionTimers.get(id);
+    if (timer) clearTimeout(timer);
+    this.reactionTimers.delete(id);
+  }
+
+  /** A repeater sent one of our reactions on: it is out there. */
+  private reactionHeard(hex: string): void {
+    const watch = this.reactionWatch.get(hex);
+    if (!watch) return;
+    this.stopReactionWatch(watch.id);
+    this.markOurReaction(watch.id, false);
+  }
+
+  private markOurReaction(id: string, unheard: boolean): void {
+    const message = this.state.messages.find((m) => m.id === id);
+    const ours = message?.reactions?.find((r) => r.by === null);
+    if (!message || !ours || !!ours.unheard === unheard) return;
+    this.patchMessage(id, {
+      reactions: message.reactions!.map((r) => {
+        if (r.by !== null) return r;
+        const { unheard: _, ...rest } = r;
+        return unheard ? { ...rest, unheard } : rest;
+      }),
+    });
   }
 
   /** A reaction heard: put on its message, or kept for a while in case the message comes after it. */
@@ -2728,6 +2797,8 @@ export class MeshSession {
    */
   private noteHeard(snr: number, raw: Uint8Array): void {
     const packet = parseRawPacket(raw);
+    // A datagram is only looked at for our reactions coming back: ours is never heard from us, so a copy has relays in it.
+    if (packet?.flood && packet.payloadType === PayloadType.GroupData && packet.path.length > 0) this.reactionHeard(toHex(packet.payload));
     if (!packet || !packet.flood || (packet.payloadType !== PayloadType.GroupText && packet.payloadType !== PayloadType.TxtMsg)) return;
     const now = this.now();
     const hex = toHex(packet.payload);

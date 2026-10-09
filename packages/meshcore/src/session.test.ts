@@ -2,7 +2,7 @@ import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { ByteWriter, fromHex } from "./protocol/bytes.js";
 import { Cmd, ContactFlag, Push, Resp, TxtType } from "./protocol/codes.js";
-import { groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
+import { groupDataPayload, groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
 import { crockford, decodeReaction, encodeReaction, messageHash, REACTION_DATA_TYPE } from "./protocol/reaction.js";
 import { channelConversation, CLOCK_RESET_TIME, ClockAheadError, contactConversation, isTrusted, KEYLESS_CONVERSATION, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
 import { BaseTransport } from "./transport.js";
@@ -2319,14 +2319,56 @@ test("a reaction goes out as a channel datagram naming the message by its hash, 
   assert.ok(session.canReact(session.getState().messages.find((m) => m.id === id)!));
   await session.react(id, "👍");
   const sent = () => radio.sent.filter((f) => f[0] === Cmd.SendChannelData).map((f) => ({ channel: f[1], path: f[2], type: f[3]! | (f[4]! << 8), reaction: decodeReaction(f.subarray(5)) }));
-  assert.deepEqual(sent(), [{ channel: 0, path: 0xff, type: REACTION_DATA_TYPE, reaction: { target: hash, emoji: "👍", by: "Me" } }]);
+  assert.deepEqual(sent(), [{ channel: 0, path: 0xff, type: REACTION_DATA_TYPE, reaction: { target: hash, emoji: "👍", by: "Me", stamp: 1_700_000_000 } }]);
   assert.deepEqual(reactionsOf(session, id), [["👍", null]]);
   await session.react(id, "❤️");
   assert.deepEqual(reactionsOf(session, id), [["❤️", null]]);
   await session.react(id, null);
   assert.equal(sent().at(-1)?.reaction?.emoji, "");
   assert.deepEqual(reactionsOf(session, id), []);
+  // Each went with a later stamp than the last, so none is a packet the repeaters have seen.
+  assert.deepEqual(sent().map((s) => s.reaction?.stamp), [1_700_000_000, 1_700_000_001, 1_700_000_002]);
   await session.disconnect();
+});
+
+test("our reaction no repeater sends on goes faded after the window; one heard, or sent again, is not", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  const connecting = session.connect(radio);
+  await settle();
+  await connecting;
+  radio.queue.push(channelFrame(0, "Alice: who hears me?"), channelFrame(0, "Bob: me"));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await settle();
+  const [alice, bob] = ["Alice", "Bob"].map((name) => session.getState().messages.find((m) => m.sender === name)!.id) as [string, string];
+  const ours = (id: string) => session.getState().messages.find((m) => m.id === id)!.reactions?.find((r) => r.by === null);
+  const echo = async () => {
+    const frame = radio.sent.filter((f) => f[0] === Cmd.SendChannelData).at(-1)!;
+    const secret = fromHex(session.getState().channels[0]!.secret);
+    return heardPacket(6, [0x79], await groupDataPayload(secret, REACTION_DATA_TYPE, frame.subarray(5)));
+  };
+
+  await session.react(alice, "👍");
+  const aliceEcho = await echo();
+  await session.react(bob, "🔥");
+  radio.push(await echo());
+  await settle();
+  t.mock.timers.tick(20_000);
+  assert.equal(ours(alice)?.unheard, true);
+  assert.equal(ours(bob)?.unheard, undefined, "a repeater sent it on");
+
+  // Sent again, it goes with a new stamp: another packet, lit while it waits.
+  await session.react(alice, "👍");
+  assert.equal(ours(alice)?.unheard, undefined);
+  const frames = radio.sent.filter((f) => f[0] === Cmd.SendChannelData);
+  assert.notDeepEqual([...frames.at(-1)!], [...frames[0]!]);
+  // A late copy of the first try still says it is out there.
+  t.mock.timers.tick(20_000);
+  assert.equal(ours(alice)?.unheard, true);
+  radio.push(aliceEcho);
+  await settle();
+  assert.equal(ours(alice)?.unheard, undefined);
 });
 
 test("a reaction heard lands on its message, one per sender, and one that comes first waits for it", async () => {
@@ -2336,18 +2378,18 @@ test("a reaction heard lands on its message, one per sender, and one that comes 
     radio.push(new Uint8Array([Push.MsgWaiting]));
     await tick(10);
   };
-  await hear(encodeReaction({ target: hash, emoji: "👍", by: "Bob" }));
-  await hear(encodeReaction({ target: hash, emoji: "👍", by: "Carol" }));
-  await hear(encodeReaction({ target: hash, emoji: "😂", by: "Bob" }));
+  await hear(encodeReaction({ target: hash, emoji: "👍", by: "Bob", stamp: 1_700_000_100 }));
+  await hear(encodeReaction({ target: hash, emoji: "👍", by: "Carol", stamp: 1_700_000_100 }));
+  await hear(encodeReaction({ target: hash, emoji: "😂", by: "Bob", stamp: 1_700_000_100 }));
   assert.deepEqual(reactionsOf(session, id), [["👍", "Carol"], ["😂", "Bob"]]);
-  await hear(encodeReaction({ target: hash, emoji: "", by: "Carol" }));
+  await hear(encodeReaction({ target: hash, emoji: "", by: "Carol", stamp: 1_700_000_100 }));
   assert.deepEqual(reactionsOf(session, id), [["😂", "Bob"]]);
   // Somebody else's datagram under the type, or another type altogether, is no reaction.
   await hear(new Uint8Array([9, 9, 9]));
-  await hear(encodeReaction({ target: hash, emoji: "🔥", by: "Dan" }), 0xff01);
+  await hear(encodeReaction({ target: hash, emoji: "🔥", by: "Dan", stamp: 1_700_000_100 }), 0xff01);
   assert.deepEqual(reactionsOf(session, id), [["😂", "Bob"]]);
   // A reaction to a message the radio has not handed up yet.
-  await hear(encodeReaction({ target: await messageHash("late", 1_700_000_060), emoji: "🙏", by: "Bob" }));
+  await hear(encodeReaction({ target: await messageHash("late", 1_700_000_060), emoji: "🙏", by: "Bob", stamp: 1_700_000_100 }));
   radio.queue.push(channelFrame(0, "Alice: late"));
   radio.push(new Uint8Array([Push.MsgWaiting]));
   await tick(10);
@@ -2381,7 +2423,7 @@ test("a reaction to a copy of ours that went out before a resend still finds it"
   const again = session.getState().messages.find((m) => m.id === message.id)!;
   assert.deepEqual(again.pastStamps, [message.timestamp]);
   assert.equal(again.timestamp, message.timestamp + 1);
-  radio.queue.push(channelDataFrame(0, REACTION_DATA_TYPE, encodeReaction({ target: await messageHash("anyone?", message.timestamp), emoji: "👍", by: "Bob" })));
+  radio.queue.push(channelDataFrame(0, REACTION_DATA_TYPE, encodeReaction({ target: await messageHash("anyone?", message.timestamp), emoji: "👍", by: "Bob", stamp: 1_700_000_100 })));
   radio.push(new Uint8Array([Push.MsgWaiting]));
   await tick(10);
   assert.deepEqual(reactionsOf(session, message.id), [["👍", "Bob"]]);

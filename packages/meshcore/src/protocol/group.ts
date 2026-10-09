@@ -109,6 +109,15 @@ export async function groupTextPayload(secret: Uint8Array, timestamp: number, se
 }
 
 /**
+ * The payload of a channel datagram, as `BaseChatMesh::sendGroupData` builds
+ * it: the type, little-endian, the length and the data, sealed like a text.
+ */
+export async function groupDataPayload(secret: Uint8Array, dataType: number, data: Uint8Array): Promise<Uint8Array> {
+  const plain = new ByteWriter().u16(dataType).u8(data.length).bytes(data).toBytes();
+  return groupPayload(secret, plain);
+}
+
+/**
  * The payload of a channel message somebody else sent, from what the radio
  * handed up: its whole text, `name: text` as it was encrypted, and the text
  * type the firmware shifted out of the flags byte. Encryption here has no

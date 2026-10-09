@@ -4202,6 +4202,16 @@ button.react-chip {
   background: var(--accent);
   color: var(--accent-contrast);
 }
+/* Ours, and no repeater was heard sending it on: dashed and faint, with the arrow that sends it again. */
+.react-chip.mine.unheard {
+  padding: 0 7px 0 5px;
+  border: 1.5px dashed color-mix(in oklab, var(--accent) 65%, transparent);
+  background: transparent;
+  color: var(--accent);
+}
+.react-chip.unheard .react-emoji {
+  opacity: 0.45;
+}
 .react-emoji {
   font-size: calc(15px * var(--text-scale));
   line-height: 1;

@@ -43,6 +43,8 @@
   "list.deleted": "Deleted",
   "list.pinned": "Pinned",
   "list.unpinned": "Unpinned",
+  "list.shareTo": "Pick a chat to send it to",
+  "list.shareDrop": "Don't send",
   "row.profile": "Profile",
   "row.markRead": "Mark as read",
   "row.pin": "Pin",

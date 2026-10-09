@@ -19,6 +19,7 @@ import { startTray } from "./lib/tray.js";
 import { startCoreWatch } from "./lib/coreWatch.js";
 import { startTidyRule } from "./lib/cleanUp.js";
 import { startFollowPhone } from "./lib/followPhone.js";
+import { startShareIn } from "./lib/shareIn.js";
 import { isWide, subscribeWide } from "./lib/layout.js";
 import { getNav, openConversation, openProfile, shownConversation, subscribeNav } from "./lib/nav.js";
 
@@ -116,6 +117,9 @@ export function App() {
 
   // Following the phone (#34), when it is on for the radio: its position moves after the phone while the app is open.
   useEffect(() => startFollowPhone(), []);
+
+  // What other apps share to this one (#88), waiting over the chat list for a chat.
+  useEffect(() => startShareIn(), []);
 
   // A click on a notice opens what it was about.
   useEffect(() => {

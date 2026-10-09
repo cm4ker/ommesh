@@ -158,6 +158,27 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
     });
   }, [conversation]);
 
+  // What another app shared (#88), with this chat picked for it: after whatever was already written,
+  // for the reader to look over and send, with the keyboard up.
+  const putShared = useRef<(text: string) => void>(() => {});
+  putShared.current = (shared) => {
+    const el = field.current;
+    if (!el) return;
+    const end = el.value.length;
+    replace(end, end, (el.value.trim() && !/\s$/.test(el.value) ? " " : "") + shared);
+    el.setSelectionRange(el.value.length, el.value.length);
+    raiseKeyboard();
+  };
+  useLayoutEffect(() => {
+    const asked = takeAsk(conversation, "share");
+    if (asked) putShared.current(asked.text);
+    return onAsk((ask) => {
+      if (ask.conversation !== conversation || ask.kind !== "share") return;
+      takeAsk(conversation, "share");
+      putShared.current(ask.text);
+    });
+  }, [conversation]);
+
   /**
    * The reply let go: its quote goes with it, unless it has been written over. Let go from the
    * keyboard (Esc), it goes as an edit Undo can take back. Its close button leaves the field's

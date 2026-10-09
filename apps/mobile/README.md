@@ -149,8 +149,21 @@ which the app embeds; `SurveyAttributes.swift` is in both targets. The
 extension is signed as an app of its own: `ios.sh` registers its App ID and
 makes its profile, "Meshnet Survey App Store", beside the app's. Its version
 and build number must be the app's: `MARKETING_VERSION` is written in
-`project.pbxproj` once per target, so change both. Live Activities need iOS
+`project.pbxproj` once per target, so change every one. Live Activities need iOS
 16.2; the app still runs on 15, without them.
+
+## Sharing to Ommesh
+
+Another app's share sheet lists Ommesh for a link or a line of text (#88). The
+page puts what came over the chat list, and the chat tapped next gets it in its
+message field (`apps/web/src/lib/shareIn.ts`); nothing is sent by itself. On
+Android the main activity takes the `SEND` intent, and `ShareInPlugin.java`
+keeps it until the page asks. On iOS a third target, the share extension `Share`
+(`ios/App/Share`, bundle ID `dev.cm4ker.meshnet.Share`, profile "Meshnet Share
+App Store"), has no screen of its own: it opens the app at
+`ommesh://share?text=…&url=…&title=…` and goes, and `ShareInPlugin.swift` keeps
+that until the page asks. iOS gives an extension no way to open its app, so it
+asks the application object up its responder chain by the method's name.
 
 It needs a Mac with Xcode. The Mac here is `server.lan`, the same one the Sovabox
 phone app is built on, and the same Apple team (8CNDTQVA32). The build keeps its

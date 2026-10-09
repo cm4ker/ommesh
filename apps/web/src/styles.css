@@ -8328,6 +8328,17 @@ button.c-cmd:focus-visible {
   flex: 1;
   min-width: 0;
 }
+/* What another app shared, on one line under the ask: enough to know it again. */
+.shared-strip .shared-to {
+  display: block;
+  font-weight: 600;
+}
+.shared-strip .shared-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .memory-bar {
   display: block;
   height: 4px;

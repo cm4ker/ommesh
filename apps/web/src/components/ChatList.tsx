@@ -12,13 +12,14 @@ import { openConversation, setStack } from "../lib/nav.js";
 import { useNoticePrefs } from "../lib/noticePrefs.js";
 import { usePress, type MenuAt } from "../lib/press.js";
 import { session, useSession } from "../lib/session.js";
+import { dropShared, useShared } from "../lib/shareIn.js";
 import { toast } from "../lib/toast.js";
 import { IconButton } from "../ui/Button.js";
 import { Confirm } from "../ui/Dialog.js";
 import { SearchField } from "../ui/Field.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
-import { BellOffIcon, CheckIcon, ChevronDownIcon, HashIcon, PersonIcon, PinIcon, PinOffIcon, PlusIcon, SortIcon, StarFilledIcon, TrashIcon } from "./Icons.js";
+import { BellOffIcon, CheckIcon, CloseIcon, ChevronDownIcon, HashIcon, PersonIcon, PinIcon, PinOffIcon, PlusIcon, SortIcon, StarFilledIcon, TrashIcon } from "./Icons.js";
 import { marked } from "./Marked.js";
 import { NewBuildStrip } from "./NewBuild.js";
 import { NewsStrip } from "./News.js";
@@ -96,6 +97,7 @@ export function ChatList({ selected }: { selected: string | null }) {
         enterKeyHint="search"
         data-find
       />
+      <SharedStrip />
       <NewsStrip />
       <NewBuildStrip />
       {rows.length === 0 ? (
@@ -172,6 +174,23 @@ export function ChatList({ selected }: { selected: string | null }) {
           setDeleting(null);
         }}
       />
+    </div>
+  );
+}
+
+/** What another app shared, waiting for a chat to be picked for it (#88): a tap on a chat puts it in its field. */
+function SharedStrip() {
+  const shared = useShared();
+  if (shared === null) return null;
+  return (
+    <div className="memory-strip news shared-strip" role="status">
+      <span className="grow">
+        <span className="shared-to">{t("chats.list.shareTo")}</span>
+        <span className="shared-text muted">{shared}</span>
+      </span>
+      <IconButton className="strip-close" label={t("chats.list.shareDrop")} onClick={dropShared}>
+        <CloseIcon size={16} />
+      </IconButton>
     </div>
   );
 }

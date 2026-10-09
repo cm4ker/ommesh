@@ -19,6 +19,8 @@
 		<string>Meshnet App Store</string>
 		<key>dev.cm4ker.meshnet.SurveyActivity</key>
 		<string>Meshnet Survey App Store</string>
+		<key>dev.cm4ker.meshnet.Share</key>
+		<string>Meshnet Share App Store</string>
 	</dict>
 	<key>uploadSymbols</key>
 	<true/>

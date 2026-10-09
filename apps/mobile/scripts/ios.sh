@@ -88,6 +88,9 @@ case "$mode" in
     # The extension that draws a running survey on the locked screen is signed as an app of its own.
     node "$here/scripts/apple.mjs" bundle "$bundle.SurveyActivity" "Meshnet Survey"
     node "$here/scripts/apple.mjs" profile "$bundle.SurveyActivity" "Meshnet Survey App Store"
+    # So is the one that puts Ommesh in the share sheet.
+    node "$here/scripts/apple.mjs" bundle "$bundle.Share" "Meshnet Share"
+    node "$here/scripts/apple.mjs" profile "$bundle.Share" "Meshnet Share App Store"
     if [ "$mode" = testflight ]; then
       node "$here/scripts/apple.mjs" app "$bundle"
     fi

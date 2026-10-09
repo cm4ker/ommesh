@@ -48,6 +48,8 @@
   "list.deleted": "Удалено",
   "list.pinned": "Закреплено",
   "list.unpinned": "Откреплено",
+  "list.shareTo": "Выберите чат, чтобы отправить",
+  "list.shareDrop": "Не отправлять",
   "row.profile": "Профиль",
   "row.markRead": "Отметить прочитанным",
   "row.pin": "Закрепить",

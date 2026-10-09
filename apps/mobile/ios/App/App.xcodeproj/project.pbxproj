@@ -27,6 +27,9 @@
 		7E5A1C012F9A00000000D003 /* SurveyActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A1C012F9A00000000D011 /* SurveyActivity.swift */; };
 		7E5A1C012F9A00000000D004 /* SurveyActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7E5A1C012F9A00000000D013 /* SurveyActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7E5A1C012F9A00000000D005 /* SurveyGlance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A1C012F9A00000000D014 /* SurveyGlance.swift */; };
+		7E5A1C012F9A00000000E001 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A1C012F9A00000000E010 /* ShareViewController.swift */; };
+		7E5A1C012F9A00000000E002 /* Share.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7E5A1C012F9A00000000E012 /* Share.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7E5A1C012F9A00000000E003 /* ShareInPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A1C012F9A00000000E013 /* ShareInPlugin.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -36,6 +39,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 7E5A1C012F9A00000000D030;
 			remoteInfo = SurveyActivity;
+		};
+		7E5A1C012F9A00000000E051 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7E5A1C012F9A00000000E030;
+			remoteInfo = Share;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -47,6 +57,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				7E5A1C012F9A00000000D004 /* SurveyActivity.appex in Embed Foundation Extensions */,
+				7E5A1C012F9A00000000E002 /* Share.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -75,6 +86,10 @@
 		7E5A1C012F9A00000000D012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		7E5A1C012F9A00000000D013 /* SurveyActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SurveyActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E5A1C012F9A00000000D014 /* SurveyGlance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurveyGlance.swift; sourceTree = "<group>"; };
+		7E5A1C012F9A00000000E010 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		7E5A1C012F9A00000000E011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		7E5A1C012F9A00000000E012 /* Share.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = Share.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		7E5A1C012F9A00000000E013 /* ShareInPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInPlugin.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -94,6 +109,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7E5A1C012F9A00000000E032 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -103,6 +125,7 @@
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
 				7E5A1C012F9A00000000D020 /* SurveyActivity */,
+				7E5A1C012F9A00000000E020 /* Share */,
 				504EC3051FED79650016851F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -112,6 +135,7 @@
 			children = (
 				504EC3041FED79650016851F /* App.app */,
 				7E5A1C012F9A00000000D013 /* SurveyActivity.appex */,
+				7E5A1C012F9A00000000E012 /* Share.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -128,6 +152,7 @@
 				7E5A1C012F9A00000000A008 /* MeshRelay.swift */,
 				7E5A1C012F9A00000000D014 /* SurveyGlance.swift */,
 				7E5A1C012F9A00000000D010 /* SurveyAttributes.swift */,
+				7E5A1C012F9A00000000E013 /* ShareInPlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -148,6 +173,15 @@
 			path = SurveyActivity;
 			sourceTree = "<group>";
 		};
+		7E5A1C012F9A00000000E020 /* Share */ = {
+			isa = PBXGroup;
+			children = (
+				7E5A1C012F9A00000000E010 /* ShareViewController.swift */,
+				7E5A1C012F9A00000000E011 /* Info.plist */,
+			);
+			path = Share;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -164,6 +198,7 @@
 			);
 			dependencies = (
 				7E5A1C012F9A00000000D050 /* PBXTargetDependency */,
+				7E5A1C012F9A00000000E050 /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
@@ -191,6 +226,23 @@
 			productReference = 7E5A1C012F9A00000000D013 /* SurveyActivity.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		7E5A1C012F9A00000000E030 /* Share */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7E5A1C012F9A00000000E040 /* Build configuration list for PBXNativeTarget "Share" */;
+			buildPhases = (
+				7E5A1C012F9A00000000E031 /* Sources */,
+				7E5A1C012F9A00000000E032 /* Frameworks */,
+				7E5A1C012F9A00000000E033 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Share;
+			productName = Share;
+			productReference = 7E5A1C012F9A00000000E012 /* Share.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -206,6 +258,9 @@
 						ProvisioningStyle = Automatic;
 					};
 					7E5A1C012F9A00000000D030 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					7E5A1C012F9A00000000E030 = {
 						CreatedOnToolsVersion = 26.0;
 					};
 				};
@@ -230,6 +285,7 @@
 			targets = (
 				504EC3031FED79650016851F /* App */,
 				7E5A1C012F9A00000000D030 /* SurveyActivity */,
+				7E5A1C012F9A00000000E030 /* Share */,
 			);
 		};
 /* End PBXProject section */
@@ -256,6 +312,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7E5A1C012F9A00000000E033 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -271,6 +334,7 @@
 				7E5A1C012F9A00000000A007 /* MeshRelay.swift in Sources */,
 				7E5A1C012F9A00000000D005 /* SurveyGlance.swift in Sources */,
 				7E5A1C012F9A00000000D001 /* SurveyAttributes.swift in Sources */,
+				7E5A1C012F9A00000000E003 /* ShareInPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -283,6 +347,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7E5A1C012F9A00000000E031 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7E5A1C012F9A00000000E001 /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -290,6 +362,11 @@
 			isa = PBXTargetDependency;
 			target = 7E5A1C012F9A00000000D030 /* SurveyActivity */;
 			targetProxy = 7E5A1C012F9A00000000D051 /* PBXContainerItemProxy */;
+		};
+		7E5A1C012F9A00000000E050 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7E5A1C012F9A00000000E030 /* Share */;
+			targetProxy = 7E5A1C012F9A00000000E051 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -526,6 +603,54 @@
 			};
 			name = Release;
 		};
+		7E5A1C012F9A00000000E041 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8CNDTQVA32;
+				INFOPLIST_FILE = Share/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.7.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.cm4ker.meshnet.Share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		7E5A1C012F9A00000000E042 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8CNDTQVA32;
+				INFOPLIST_FILE = Share/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.7.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.cm4ker.meshnet.Share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "Meshnet Share App Store";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -552,6 +677,15 @@
 			buildConfigurations = (
 				7E5A1C012F9A00000000D041 /* Debug */,
 				7E5A1C012F9A00000000D042 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7E5A1C012F9A00000000E040 /* Build configuration list for PBXNativeTarget "Share" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E5A1C012F9A00000000E041 /* Debug */,
+				7E5A1C012F9A00000000E042 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

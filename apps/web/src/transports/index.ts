@@ -16,7 +16,7 @@ import type { Connector, RememberedLink } from "./types.js";
 import { webBluetoothConnector } from "./webBluetooth.js";
 import { webSerialConnector } from "./webSerial.js";
 
-export type { Connector, FoundDevice, ReachOptions, RememberedLink } from "./types.js";
+export type { Connector, FoundDevice, PortAccess, ReachOptions, RememberedLink } from "./types.js";
 export { BluetoothOffError, bluetoothOff, NeedsPairingError, needsPairing } from "./types.js";
 export { addressDevice } from "./tcp.js";
 

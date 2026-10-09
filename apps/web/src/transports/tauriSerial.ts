@@ -1,16 +1,28 @@
 /**
  * The USB cable through the desktop shell's serial plugin. Ports are listed by
- * the shell; the client opens one at the radio's rate and frames the stream.
+ * the shell; the client opens one at the speed and with the lines its port
+ * settings name (portSettings.ts), and frames the stream.
  */
 
-import { BaseTransport, frameForStream, SERIAL_BAUD, StreamFrameDecoder } from "@meshnet/meshcore";
+import { BaseTransport, frameForStream, StreamFrameDecoder } from "@meshnet/meshcore";
 import type { PortInfo } from "tauri-plugin-serialplugin-api";
 import type { Connector, FoundDevice } from "./types.js";
+import { autoLines, linesOf, portSettings, type Lines } from "./portSettings.js";
+import { lowerLines, writeLines, type LineWriter, type RawPort } from "./rawPort.js";
 import { t } from "../i18n/index.js";
 
 type SerialModule = typeof import("tauri-plugin-serialplugin-api");
+type PluginPort = InstanceType<SerialModule["SerialPort"]>;
 
 const known = (value: string | undefined): string | null => (value && value !== "Unknown" ? value : null);
+
+/** A USB port's maker and product, as the plugin gives them: decimal strings, "Unknown" when the system does not say. */
+function usbOf(info: PortInfo | undefined): FoundDevice["usb"] {
+  if (info?.type !== "USB") return undefined;
+  const vid = Number(info.vid);
+  const pid = Number(info.pid);
+  return Number.isInteger(vid) && vid > 0 ? { vid, pid: Number.isInteger(pid) ? pid : 0 } : undefined;
+}
 
 /**
  * A port as the screen lists it. A radio's cable is a USB port; a port on the
@@ -23,20 +35,16 @@ export function portDevice(path: string, info: PortInfo): FoundDevice {
     return { id: path, name: path, detail: kind, rssi: null, role: "port" };
   }
   const product = known(info.product)?.replace(/\s*\((?:COM\d+|\/dev\/[^)]+)\)$/, "") ?? null;
-  return { id: path, name: path, detail: product ?? known(info.manufacturer), rssi: null, role: "radio" };
+  return { id: path, name: path, detail: product ?? known(info.manufacturer), rssi: null, role: "radio", usb: usbOf(info) };
 }
 
-// The makers of USB-to-UART chips: Silicon Labs (CP210x), WCH (CH340, CH9102), FTDI, Prolific.
-const BRIDGE_VENDORS = new Set([0x10c4, 0x1a86, 0x0403, 0x067b]);
-
-/**
- * Whether the port is opened with DTR raised. A radio with USB of its own on TinyUSB (the nRF52
- * boards: T-Echo, RAK) reads what it is sent but writes nothing back until the host raises it, and
- * Windows opens a port with it down. A board behind a USB-to-UART chip needs no line, and such
- * boards wire DTR to the BOOT pin, so there it stays as it was.
- */
+/** Whether "auto" opens the port with DTR raised: see `autoLines`. */
 export function raisesDtr(info: PortInfo | undefined): boolean {
-  return !(info?.type === "USB" && BRIDGE_VENDORS.has(Number(info.vid)));
+  return autoLines(usbOf(info)).dtr;
+}
+
+function lineWriter(port: Pick<PluginPort, "writeDataTerminalReady" | "writeRequestToSend">): LineWriter {
+  return { dtr: (level) => port.writeDataTerminalReady(level), rts: (level) => port.writeRequestToSend(level) };
 }
 
 let plugin: Promise<SerialModule> | null = null;
@@ -49,10 +57,16 @@ export class TauriSerialTransport extends BaseTransport {
   readonly kind = "serial" as const;
   private readonly decoder = new StreamFrameDecoder();
 
+  /**
+   * `byHand`: the lines were picked in the port's settings, and both are set
+   * as picked. Otherwise ("auto") only DTR is raised, where it is wanted, and
+   * a line it does not want is left as the port opened it.
+   */
   constructor(
-    private readonly port: Pick<InstanceType<SerialModule["SerialPort"]>, "open" | "watch" | "writeBinary" | "close" | "writeDataTerminalReady">,
+    private readonly port: Pick<PluginPort, "open" | "watch" | "writeBinary" | "close" | "writeDataTerminalReady" | "writeRequestToSend">,
     readonly label: string,
-    private readonly dtr = true,
+    private readonly lines: Lines = { dtr: true, rts: false },
+    private readonly byHand = false,
   ) {
     super();
   }
@@ -60,10 +74,8 @@ export class TauriSerialTransport extends BaseTransport {
   async open(): Promise<void> {
     try {
       await this.port.open();
-      // RTS is never raised. An ESP32 on its own USB reads the two lines as a flashing tool's signals:
-      // a port closed with both up restarts the board into its loader, silent to every later
-      // connection until it is reset by hand. With DTR alone it keeps running (checked on a Xiao C6).
-      if (this.dtr) await this.port.writeDataTerminalReady(true);
+      if (this.byHand) await writeLines(lineWriter(this.port), this.lines);
+      else if (this.lines.dtr) await this.port.writeDataTerminalReady(true);
       await this.port.watch(
         {
           onData: (data) => {
@@ -95,12 +107,84 @@ export class TauriSerialTransport extends BaseTransport {
   }
 
   protected async shutdown(): Promise<void> {
+    // With RTS up, an ESP32 on its own USB would restart into its loader as the port closes.
+    if (this.lines.rts) await lowerLines(lineWriter(this.port), this.lines).catch(() => undefined);
     try {
       await this.port.close();
     } catch {
       // Already closed.
     }
   }
+}
+
+/** The port bare, for its log: what comes in is handed on as it comes, nothing is framed. */
+class TauriRawPort implements RawPort {
+  private readonly dataListeners = new Set<(bytes: Uint8Array) => void>();
+  private readonly closeListeners = new Set<(reason: Error | null) => void>();
+  private closed = false;
+
+  constructor(private readonly port: PluginPort) {}
+
+  async start(): Promise<void> {
+    await this.port.watch(
+      {
+        onData: (data) => {
+          const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
+          for (const listener of this.dataListeners) listener(bytes);
+        },
+        onDisconnect: (reason) => void this.end(new Error(reason || "the port closed")),
+        onError: (message) => void this.end(new Error(message)),
+      },
+      { decode: false, routeUrc: false, timeout: 20 },
+    );
+  }
+
+  setLines(lines: Lines): Promise<void> {
+    return writeLines(lineWriter(this.port), lines);
+  }
+
+  async readSignals(): Promise<{ cts: boolean; dsr: boolean } | null> {
+    try {
+      const [cts, dsr] = await Promise.all([this.port.readClearToSend(), this.port.readDataSetReady()]);
+      return { cts, dsr };
+    } catch {
+      return null;
+    }
+  }
+
+  async write(bytes: Uint8Array): Promise<void> {
+    if (this.closed) throw new Error(t("connect.error.portClosed"));
+    await this.port.writeBinary(bytes);
+  }
+
+  onData(listener: (bytes: Uint8Array) => void): void {
+    this.dataListeners.add(listener);
+  }
+
+  onClose(listener: (reason: Error | null) => void): void {
+    this.closeListeners.add(listener);
+  }
+
+  close(): Promise<void> {
+    return this.end(null);
+  }
+
+  private async end(reason: Error | null): Promise<void> {
+    if (this.closed) return;
+    this.closed = true;
+    try {
+      await this.port.close();
+    } catch {
+      // Already closed.
+    }
+    for (const listener of this.closeListeners) listener(reason);
+  }
+}
+
+/** A remembered port carries only its name, so what it is gets read again. */
+async function infoOf(path: string): Promise<PortInfo | undefined> {
+  const { SerialPort } = await serial();
+  return (await SerialPort.available_ports().catch(() => ({}) as Record<string, PortInfo>))[path];
 }
 
 export const tauriSerialConnector: Connector = {
@@ -134,11 +218,33 @@ export const tauriSerialConnector: Connector = {
   async connect(device) {
     if (!device) throw new Error(t("connect.error.pickPort"));
     const { SerialPort } = await serial();
-    const port = new SerialPort({ path: device.id, baudRate: SERIAL_BAUD });
-    // A remembered port carries only its name, so what it is gets read again.
-    const info = (await SerialPort.available_ports().catch(() => ({}) as Record<string, PortInfo>))[device.id];
-    const transport = new TauriSerialTransport(port, device.name, raisesDtr(info));
+    const settings = portSettings(device.id);
+    const port = new SerialPort({ path: device.id, baudRate: settings.baud });
+    const transport =
+      settings.lines === "auto"
+        ? new TauriSerialTransport(port, device.name, autoLines(usbOf(await infoOf(device.id))))
+        : new TauriSerialTransport(port, device.name, linesOf(settings.lines), true);
     await transport.open();
     return transport;
+  },
+
+  port: {
+    // By the port's name: the plugin lists ports by it, and the remembered link keeps it.
+    key: (device) => device.id,
+    // A port remembered from before the board was known says nothing until the list finds it again.
+    autoLines: (device) => (device.usb ? autoLines(device.usb) : null),
+    async openRaw(device, baud) {
+      const { SerialPort } = await serial();
+      const port = new SerialPort({ path: device.id, baudRate: baud });
+      await port.open();
+      const raw = new TauriRawPort(port);
+      try {
+        await raw.start();
+      } catch (error) {
+        await raw.close();
+        throw error;
+      }
+      return raw;
+    },
   },
 };

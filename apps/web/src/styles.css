@@ -793,6 +793,403 @@ textarea.input {
   text-align: left;
   cursor: pointer;
 }
+
+/* A cable's port in the radio card: its settings open under the button; its log stands beside the screen. */
+.port-toggle-row {
+  display: flex;
+}
+.button.pressed {
+  border-color: var(--accent);
+  background: var(--selected);
+}
+.port-summary,
+.port-row-summary {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.port-row-summary {
+  flex: none;
+}
+.port-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+}
+.port-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: left;
+  cursor: pointer;
+}
+.port-pick > svg {
+  flex: none;
+  color: var(--accent);
+}
+.port-pick-value {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.port-pick-note {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+}
+.port-error {
+  color: var(--danger);
+}
+/* The menus of speeds and lines say what each choice is for, under its name. */
+.popover.with-hints {
+  max-width: 380px;
+}
+.popover.with-hints .popover-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.popover.with-hints .popover-label small {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.connect.with-log {
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--space-5);
+}
+.connect.with-log .connect-column {
+  flex: none;
+}
+.port-log {
+  position: sticky;
+  top: var(--space-4);
+  flex: 1;
+  min-width: 0;
+  max-width: 920px;
+  /* Under the screen's top padding, down to the window's foot. */
+  height: calc(100dvh - max(8vh, var(--safe-top)) - var(--space-4));
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--elevated);
+  overflow: hidden;
+}
+@media (max-width: 960px) {
+  .connect.with-log {
+    flex-direction: column;
+    align-items: center;
+  }
+  .port-log {
+    position: static;
+    width: 100%;
+    max-width: none;
+    height: 80dvh;
+  }
+}
+.port-log-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.port-log-title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.port-log-title h2 {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+.port-log-title span {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+.port-log-status {
+  margin-left: auto;
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  background: var(--chrome);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.port-log-check {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.port-outcome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+.port-outcome.good {
+  border-color: color-mix(in oklab, var(--success) 55%, var(--border-strong));
+  background: var(--success-subtle);
+}
+.port-outcome.warn {
+  border-color: color-mix(in oklab, var(--warning) 55%, var(--border-strong));
+  background: var(--warning-subtle);
+}
+.port-outcome.bad {
+  border-color: color-mix(in oklab, var(--danger) 55%, var(--border-strong));
+  background: var(--danger-subtle);
+}
+.port-outcome-icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+}
+.port-outcome.good .port-outcome-icon {
+  color: var(--success);
+}
+.port-outcome.warn .port-outcome-icon {
+  color: var(--warning);
+}
+.port-outcome.bad .port-outcome-icon {
+  color: var(--danger);
+}
+.port-outcome-text {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.port-outcome-text strong {
+  font-weight: 600;
+}
+.port-outcome-text span {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+.port-outcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.port-log-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.port-log-tools .segmented button {
+  flex: none;
+  height: var(--control-h-sm);
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+.port-log-gap {
+  flex: 1;
+}
+.port-log-lines {
+  flex: 1;
+  min-height: 160px;
+  padding: var(--space-2) 0;
+  overflow-y: auto;
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.port-log-empty {
+  padding: var(--space-4);
+  color: var(--text-faint);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+}
+.port-line {
+  display: grid;
+  grid-template-columns: 92px 14px minmax(0, 1fr);
+  gap: var(--space-2);
+  padding: 1px var(--space-4);
+  line-height: 1.6;
+}
+.port-log-lines.with-bytes .port-line {
+  grid-template-columns: 92px 14px minmax(0, 1fr) minmax(0, 220px);
+}
+.port-line-time,
+.port-line-bytes {
+  color: var(--text-faint);
+}
+.port-line-dir {
+  color: var(--text-muted);
+}
+.port-line.out .port-line-dir {
+  color: var(--accent);
+}
+.port-line.in .port-line-dir {
+  color: var(--success);
+}
+.port-line.lines,
+.port-line.note {
+  color: var(--text-muted);
+}
+.port-line.words .port-line-text,
+.port-line.noise .port-line-text {
+  color: var(--warning);
+}
+.port-line-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.port-line-bytes {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.port-rule {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  color: var(--text-faint);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.port-rule i {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.port-probe {
+  margin: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.port-probe .port-line {
+  padding: 1px var(--space-3);
+}
+.port-probe.answered {
+  border-color: color-mix(in oklab, var(--success) 45%, var(--border));
+}
+.port-probe.text,
+.port-probe.loader {
+  border-color: color-mix(in oklab, var(--warning) 45%, var(--border));
+}
+.port-probe-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--panel);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+}
+.port-pill {
+  margin-left: auto;
+  padding: 1px var(--space-2);
+  border-radius: 999px;
+  background: var(--chrome);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.port-pill.answered {
+  background: var(--success-subtle);
+  color: var(--success);
+}
+.port-pill.text,
+.port-pill.loader,
+.port-pill.garbage {
+  background: var(--warning-subtle);
+  color: var(--warning);
+}
+.port-pill.silent,
+.port-pill.busy {
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+.port-log-manual {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+}
+.port-log-hand {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+}
+.port-line-switch {
+  gap: var(--space-2);
+}
+.port-line-switch .switch {
+  width: 28px;
+  height: 16px;
+}
+.port-line-switch .switch::after {
+  width: 12px;
+  height: 12px;
+}
+.port-line-switch .switch.on::after {
+  transform: translateX(12px);
+}
+.port-led {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-muted);
+}
+.port-led i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+.port-led i.on {
+  background: var(--success);
+}
+.port-log-send {
+  display: flex;
+  gap: var(--space-2);
+}
+.port-log-send > .input:first-child {
+  flex: 1;
+}
+.port-log-send > .select {
+  flex: none;
+  width: auto;
+}
 .connect-pin {
   display: flex;
   flex-direction: column;

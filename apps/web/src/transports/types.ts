@@ -1,4 +1,6 @@
 import type { DeviceInfo, SessionState, Transport, TransportKind } from "@meshnet/meshcore";
+import type { Lines } from "./portSettings.js";
+import type { RawPort } from "./rawPort.js";
 
 /** A radio the connect screen can offer. */
 export interface FoundDevice {
@@ -13,6 +15,18 @@ export interface FoundDevice {
    * port's kind); left out, `roleOf` reads it from the name.
    */
   role?: DeviceRole;
+  /** A USB port's maker and product, where the platform says: what kind of board is on the other end. */
+  usb?: { vid: number; pid: number } | undefined;
+}
+
+/** What a connector to a serial port offers beyond connecting. */
+export interface PortAccess {
+  /** What the port's settings are kept under on this machine. */
+  key(device: FoundDevice): string;
+  /** The lines "auto" raises on this port; null where that is not the app's to say (a browser) or not known yet. */
+  autoLines(device: FoundDevice): Lines | null;
+  /** The port opened bare at a speed, for its log and its check. */
+  openRaw(device: FoundDevice, baud: number): Promise<RawPort>;
 }
 
 /** A radio; a phone sharing its radio; a port that is likely something else. */
@@ -42,6 +56,8 @@ export interface Connector {
    * set is the cue to ask for the PIN and call this.
    */
   pair?(device: FoundDevice, pin: string): Promise<void>;
+  /** A cable's port: its settings and its log. */
+  port?: PortAccess;
 }
 
 export interface ReachOptions {

@@ -8,6 +8,8 @@ import { ChevronDownIcon, PlusIcon } from "../Icons.js";
 import { t } from "../../i18n/index.js";
 import { errorText } from "../../i18n/errors.js";
 import { DeviceIcon, nameOf, rowLine, SignalBars, type CardSignal } from "./parts.js";
+import { closeJournal } from "../../lib/portJournal.js";
+import { PortRowSummary } from "./PortSettings.js";
 
 /** How long a Bluetooth radio missing from a pass stays listed: one quiet pass should not make the rows jump. */
 const KEEP_MS = 30_000;
@@ -26,12 +28,15 @@ export function ConnectorPanel({
   hideId,
   other,
   onCardSignal,
+  onCardFound,
 }: {
   connector: Connector;
   hideId: string | null;
   other: boolean;
   /** How well the radio hidden for the card is heard; told again whenever that changes. */
   onCardSignal?: (signal: CardSignal) => void;
+  /** The card's radio as this search finds it: a port remembered from before says what board it is only once listed again. */
+  onCardFound?: (device: FoundDevice | null) => void;
 }) {
   const link = useLink();
   const busy = link.phase === "connecting";
@@ -97,8 +102,14 @@ export function ConnectorPanel({
   const cardSignal: CardSignal = connector.kind !== "ble" || connector.mode !== "scan" || !hideId ? null : cardDevice ? cardDevice.rssi : settled ? "quiet" : null;
   useEffect(() => onCardSignal?.(cardSignal), [cardSignal, onCardSignal]);
   useEffect(() => () => onCardSignal?.(null), [onCardSignal]);
+  useEffect(() => onCardFound?.(cardDevice ?? null), [cardDevice, onCardFound]);
+  useEffect(() => () => onCardFound?.(null), [onCardFound]);
 
-  const connect = (device: FoundDevice | null) => void connectWith(connector, device).catch(() => undefined);
+  // A port's log open on the screen lets its port go first.
+  const connect = (device: FoundDevice | null) =>
+    void closeJournal()
+      .then(() => connectWith(connector, device))
+      .catch(() => undefined);
 
   const shown = new Map<string, FoundDevice>();
   for (const d of remembered) shown.set(d.id, d);
@@ -207,6 +218,7 @@ function DeviceRow({ device, connector, faint, onClick }: { device: FoundDevice;
           <span className="device-name">{nameOf(device, connector)}</span>
           {line ? <span className="device-detail">{line}</span> : null}
         </span>
+        {connector.port ? <PortRowSummary access={connector.port} device={device} /> : null}
         {device.rssi !== null && !faint ? <SignalBars rssi={device.rssi} /> : null}
       </button>
     </li>

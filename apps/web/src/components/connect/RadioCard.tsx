@@ -10,6 +10,8 @@ import { AlertIcon, CheckIcon, LockIcon } from "../Icons.js";
 import { t } from "../../i18n/index.js";
 import { errorText } from "../../i18n/errors.js";
 import { cardLine, CardSignalBars, DeviceIcon, nameOf, type CardSignal } from "./parts.js";
+import { closeJournal } from "../../lib/portJournal.js";
+import { PortSection } from "./PortSettings.js";
 
 /** The radio at the top of the screen. */
 export interface CardRadio {
@@ -39,9 +41,14 @@ export function cardRadio(list: Connector[], link: LinkState): CardRadio | null 
   return null;
 }
 
-/** Connects to a radio; a chooser's radio with no id to find it by is picked in the chooser again. */
+/**
+ * Connects to a radio; a chooser's radio with no id to find it by is picked in the chooser again. A port's log
+ * open on the screen lets its port go first.
+ */
 export function connectTo(connector: Connector, device: FoundDevice | null): void {
-  void connectWith(connector, connector.mode === "picker" && !device?.id ? null : device).catch(() => undefined);
+  void closeJournal()
+    .then(() => connectWith(connector, connector.mode === "picker" && !device?.id ? null : device))
+    .catch(() => undefined);
 }
 
 function firstStep(connector: Connector, device: FoundDevice | null): string {
@@ -94,6 +101,8 @@ export function RadioCard({ connector, device, radioName, last, signal = null }:
 
   const icon = phase === "failed" ? <AlertIcon size={20} /> : phase === "done" ? <CheckIcon size={20} /> : <DeviceIcon device={device} connector={connector} size={20} />;
   const reached = phase === "done" ? 3 : step === "history" ? 2 : step === "hello" ? 1 : 0;
+  // A cable's port can be set up before a connect and after a failed one.
+  const port = connector.port && device?.id && (phase === "idle" || phase === "failed") ? <PortSection connector={connector} access={connector.port} device={device} /> : null;
   const steps = [firstStep(connector, device), t("connect.step.hello"), t("connect.step.history")];
 
   return (
@@ -182,6 +191,8 @@ export function RadioCard({ connector, device, radioName, last, signal = null }:
           </span>
         </div>
       ) : null}
+
+      {port}
     </section>
   );
 }

@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { FoundDevice } from "../../transports/index.js";
+import { closeJournal, useJournal } from "../../lib/portJournal.js";
+import { PortJournal } from "./PortJournal.js";
 import { cancelConnect, getLink, useLink } from "../../lib/link.js";
 import { shell } from "../../lib/platform.js";
 import { connectors, lastLink, type Connector } from "../../transports/index.js";
 import { LinkIcon, PlayIcon } from "../Icons.js";
 import { PrivacyButton } from "../Privacy.js";
 import { UpdateButton } from "../Updates.js";
-import { ToastHost } from "../../ui/Menu.js";
+import { MenuHost, ToastHost } from "../../ui/Menu.js";
 import { t } from "../../i18n/index.js";
 import { ConnectorPanel } from "./ConnectorPanel.js";
 import type { CardSignal } from "./parts.js";
@@ -19,7 +22,20 @@ import { cardRadio, RadioCard } from "./RadioCard.js";
 export function ConnectView() {
   const list = useMemo(connectors, []);
   const link = useLink();
-  const card = cardRadio(list, link);
+  const found = cardRadio(list, link);
+  const journal = useJournal();
+  // The board on the card's port, as the list finds it: a port remembered from before was kept without it.
+  const [cardUsb, setCardUsb] = useState<FoundDevice["usb"]>(undefined);
+  const onCardFound = useCallback(
+    (device: FoundDevice | null) => setCardUsb((was) => (was?.vid === device?.usb?.vid && was?.pid === device?.usb?.pid ? was : device?.usb)),
+    [],
+  );
+  const cardDevice = found?.device ?? null;
+  const device = useMemo(() => (cardDevice && !cardDevice.usb && cardUsb ? { ...cardDevice, usb: cardUsb } : cardDevice), [cardDevice, cardUsb]);
+  const card = found ? { ...found, device } : null;
+
+  // The port's log lets its port go with the screen.
+  useEffect(() => () => void closeJournal(), []);
   const [active, setActive] = useState<Connector | null>(() => {
     const wanted = link.target?.connectorId ?? lastLink()?.connectorId;
     return list.find((c) => c.id === wanted) ?? list[0] ?? null;
@@ -38,7 +54,7 @@ export function ConnectView() {
   }, []);
 
   return (
-    <div className="connect">
+    <div className={["connect", journal.device ? "with-log" : ""].join(" ")}>
       <div className="connect-column">
         <header className="connect-brand">
           <img src="./icon.svg" alt="" width={28} height={28} />
@@ -76,6 +92,7 @@ export function ConnectView() {
                   hideId={cardHidden}
                   other={card !== null}
                   onCardSignal={setSignal}
+                  onCardFound={onCardFound}
                 />
               ) : null}
             </section>
@@ -87,6 +104,9 @@ export function ConnectView() {
           <PrivacyButton />
         </footer>
       </div>
+      {journal.device ? <PortJournal /> : null}
+      {/* The port settings' choices. */}
+      <MenuHost />
       {/* The card's bars say their figure in a toast. */}
       <ToastHost />
     </div>

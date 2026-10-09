@@ -38,6 +38,10 @@ interface MenuState {
   at: MenuAt;
   /** What the menu is for, such as the message held: lit while the menu is open, and on a touch screen left bright over the dimmed screen with the menu under it. */
   lift: HTMLElement | null;
+  /** A menu of choices that says what each is for: the popover shows the hints too, under the labels. */
+  hints: boolean;
+  /** At least as wide as the field it opens from, px. */
+  minWidth: number | undefined;
 }
 
 let current: MenuState | null = null;
@@ -47,9 +51,19 @@ function emit(): void {
   for (const listener of listeners) listener();
 }
 
-export function showMenu(items: MenuItem[], options: { title?: string | undefined; at?: MenuAt; lift?: HTMLElement | null | undefined } = {}): void {
+export function showMenu(
+  items: MenuItem[],
+  options: { title?: string | undefined; at?: MenuAt; lift?: HTMLElement | null | undefined; hints?: boolean; minWidth?: number } = {},
+): void {
   current?.lift?.classList.remove("held");
-  current = { items: items.filter(Boolean), title: options.title, at: options.at ?? null, lift: options.lift ?? null };
+  current = {
+    items: items.filter(Boolean),
+    title: options.title,
+    at: options.at ?? null,
+    lift: options.lift ?? null,
+    hints: options.hints ?? false,
+    minWidth: options.minWidth,
+  };
   current.lift?.classList.add("held");
   emit();
 }
@@ -165,7 +179,7 @@ function Popover({ menu }: { menu: MenuState }) {
   }, []);
 
   return createPortal(
-    <div ref={box} className="popover" role="menu" style={pos}>
+    <div ref={box} className={["popover", menu.hints ? "with-hints" : ""].join(" ")} role="menu" style={{ ...pos, minWidth: menu.minWidth }}>
       {menu.items.map((item, i) => (
         <Fragment key={i}>
           {item.group && i > 0 ? <div className="popover-sep" role="separator" /> : null}
@@ -178,7 +192,10 @@ function Popover({ menu }: { menu: MenuState }) {
             onClick={() => pick(item)}
           >
             {item.icon ? <span className="popover-icon">{item.icon}</span> : null}
-            <span className="popover-label">{item.label}</span>
+            <span className="popover-label">
+              {item.label}
+              {menu.hints && item.hint ? <small>{item.hint}</small> : null}
+            </span>
             <Trailing item={item} />
           </button>
         </Fragment>

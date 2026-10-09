@@ -11,6 +11,7 @@ class FakePort {
   lines: string[] = [];
   async open() { return "COM6"; }
   async writeDataTerminalReady(level: boolean) { this.lines.push(`dtr:${level}`); }
+  async writeRequestToSend(level: boolean) { this.lines.push(`rts:${level}`); }
   async watch(handlers: WatchHandlers, options?: WatchOptions) {
     if (this.watchError) throw this.watchError;
     this.handlers = handlers;
@@ -68,8 +69,32 @@ test("a port behind a USB-to-UART chip is opened with its lines left alone", asy
   assert.deepEqual([0x10c4, 0x1a86, 0x0403, 0x067b].map((vid) => raisesDtr(info(vid))), [false, false, false, false]);
   assert.deepEqual([raisesDtr(info(0x303a)), raisesDtr(info(0x239a)), raisesDtr(info(0, "Unknown")), raisesDtr(undefined)], [true, true, true, true]);
   const port = new FakePort();
-  await new TauriSerialTransport(port, "COM7", false).open();
+  await new TauriSerialTransport(port, "COM7", { dtr: false, rts: false }).open();
   assert.deepEqual(port.lines, []);
+});
+
+test("lines picked by hand are both set, and DTR is written after RTS so Windows passes RTS on", async () => {
+  const port = new FakePort();
+  const transport = new TauriSerialTransport(port, "COM7", { dtr: false, rts: false }, true);
+  await transport.open();
+  assert.deepEqual(port.lines, ["dtr:false", "rts:false", "dtr:false"]);
+  port.lines = [];
+  await transport.close();
+  // Nothing was raised, so nothing is lowered before the port closes.
+  assert.deepEqual(port.lines, []);
+  assert.equal(port.closes, 1);
+});
+
+test("a port with both lines up lowers RTS, then DTR, before it closes", async () => {
+  const port = new FakePort();
+  const transport = new TauriSerialTransport(port, "COM4", { dtr: true, rts: true }, true);
+  await transport.open();
+  assert.deepEqual(port.lines, ["dtr:true", "rts:true", "dtr:true"]);
+  port.lines = [];
+  await transport.close();
+  // Closed with both up, an ESP32 on its own USB restarts into its loader.
+  assert.deepEqual(port.lines, ["rts:false", "dtr:true", "dtr:false"]);
+  assert.equal(port.closes, 1);
 });
 
 test("a USB port is offered as a radio by its product; the board's and Bluetooth's ports are set apart", () => {

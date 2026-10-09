@@ -14,6 +14,7 @@ import {
   ByteWriter,
   Cmd,
   crockford,
+  directReactionText,
   encodeReaction,
   fromHex,
   fromUtf8,
@@ -958,6 +959,18 @@ class DemoRadio extends BaseTransport {
         } else if (!(p.name.startsWith("Bob") && Math.random() < 0.6)) {
           // Bob is on his bike: more often than not, the route he was last reached by is gone.
           this.later(900 + Math.random() * 1500, confirmed);
+        }
+        // Alice likes what she is sent, and says so as console data, as Ommesh does in a direct chat.
+        if (p?.name === "Alice") {
+          const stamp = (frame[3]! | (frame[4]! << 8) | (frame[5]! << 16) | (frame[6]! << 24)) >>> 0;
+          void messageHash(fromUtf8(frame.subarray(13)), stamp).then((hash) =>
+            this.later(3000, () => {
+              this.queue.push(
+                new ByteWriter().u8(Resp.ContactMsgRecvV3).i8(24).u16(0).bytes(p.key.subarray(0, 6)).u8(p.hops).u8(TxtType.CliData).u32(Math.floor(Date.now() / 1000)).string(directReactionText("👍", hash)).toBytes(),
+              );
+              this.emitFrame(new Uint8Array([Push.MsgWaiting]));
+            }),
+          );
         }
         return [new ByteWriter().u8(Resp.Sent).u8(flood ? 1 : 0).u32(tag).u32(3000).toBytes()];
       }

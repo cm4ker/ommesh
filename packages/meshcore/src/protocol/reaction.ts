@@ -144,6 +144,28 @@ export function parseTextReaction(text: string): TextReaction | null {
   return target ? { emoji, to, target } : null;
 }
 
+/**
+ * A reaction in a direct message, tried out: a direct message has no
+ * datagram, so it goes as console data (`TXT_TYPE_CLI_DATA`), which the
+ * radio sends to any contact and hands up on the other side as a message of
+ * that type. The text is MeshCore One's for a direct message, the emoji and
+ * the message's hash on the next line; no emoji takes the reaction back.
+ * The firmware acknowledges no console data, so it goes once.
+ */
+export function directReactionText(emoji: string, target: Uint8Array): string {
+  return `${emoji}\n${crockford(target)}`;
+}
+
+const DIRECT_REACTION = /^([^\n]{0,32})\n([0-9a-z]{8})$/i;
+
+/** A reaction read from console data a contact sent; null for anything else. */
+export function parseDirectReaction(text: string): { emoji: string; target: Uint8Array } | null {
+  const match = DIRECT_REACTION.exec(text);
+  if (!match || (match[1] && !looksLikeEmoji(match[1]))) return null;
+  const target = fromCrockford(match[2]!);
+  return target ? { emoji: match[1]!, target } : null;
+}
+
 const graphemes = typeof Intl !== "undefined" && "Segmenter" in Intl ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
 
 /**

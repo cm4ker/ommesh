@@ -13,7 +13,7 @@ import { MeshCoreClient, MeshCoreError, TimeoutError, type TextSendResult } from
 import { ByteReader, bytesEqual, fromHex, pathByteLength, toHex, unixNow } from "./protocol/bytes.js";
 import { neighbourSearchMs, replyBudgetMs, sealedBytes, traceBudgetMs, type ReplySize } from "./protocol/airtime.js";
 import { CHANNEL_TEXT_LEN, groupTextPayload, heardGroupTextPayload, relaysAudible } from "./protocol/group.js";
-import { REACTION_DATA_TYPE, decodeReaction, encodeReaction, messageHash, parseTextReaction } from "./protocol/reaction.js";
+import { REACTION_DATA_TYPE, decodeReaction, directReactionText, encodeReaction, messageHash, parseDirectReaction, parseTextReaction } from "./protocol/reaction.js";
 import { PayloadType, parseRawPacket, type RawPacket } from "./protocol/packet.js";
 import { AclRole, AdvType, Cmd, ContactFlag, ControlType, DIRECT_TEXT_LEN, ErrCode, MAX_TEXT_LEN, NeighbourOrder, PUB_KEY_PREFIX_SIZE, ROOM_TEXT_LEN, StatsType, TxtType } from "./protocol/codes.js";
 import {
@@ -2137,6 +2137,14 @@ export class MeshSession {
     if (frame.kind === "contactMessage") {
       const prefix = toHex(frame.senderPrefix);
       if (frame.txtType === TxtType.CliData) {
+        // A person sends no console replies: console data from one is a reaction (see `directReactionText`).
+        const person = this.contactByPrefix(prefix);
+        const reaction = person?.type === AdvType.Chat ? parseDirectReaction(frame.text) : null;
+        if (person && reaction) {
+          const conversation = contactConversation(person.key);
+          await this.takeReaction({ conversation, target: toHex(reaction.target), emoji: reaction.emoji, by: person.name, to: null, replaces: true });
+          return;
+        }
         this.receiveCli(prefix, frame.text, frame.timestamp);
         return;
       }
@@ -2238,10 +2246,10 @@ export class MeshSession {
     }
     if (frame.kind === "channelMessage") {
       void this.findChannelCopies(message.id, parseConversation(message.conversation), frame.timestamp, frame.txtType, frame.text);
-      if (this.pendingReactions.length) await this.adoptReactions(message);
     } else if (frame.pathLen !== null && message.senderPrefix) {
       this.findDirectCopies(message.id, toHex(frame.senderPrefix), frame.pathLen);
     }
+    if (this.pendingReactions.length) await this.adoptReactions(message);
   }
 
   // ---- reactions ----
@@ -2250,24 +2258,44 @@ export class MeshSession {
   // and stamp (see protocol/reaction.ts), which is worked out here for each
   // message in the chat until one matches.
 
-  /** Whether an emoji can be put on this message: a channel's, on the radio, and gone out if it is ours. */
+  /**
+   * Whether an emoji can be put on this message: a channel's on the radio, or
+   * one in a direct chat with a person (not a room or a repeater), and gone
+   * out if it is ours.
+   */
   canReact(message: MessageRecord): boolean {
     const target = parseConversation(message.conversation);
-    if (target.kind !== "channel" || !this.state.channels.some((c) => c.index === target.index)) return false;
+    const open =
+      target.kind === "channel"
+        ? this.state.channels.some((c) => c.index === target.index)
+        : target.kind === "contact" && this.state.contacts[target.key]?.type === AdvType.Chat;
+    if (!open) return false;
     return message.direction === "in" || (message.status !== "queued" && message.status !== "sending" && message.status !== "failed");
   }
 
-  /** Puts an emoji on a channel message, replacing ours; null takes ours back. One flood, like a message. */
+  /**
+   * Puts an emoji on a message, replacing ours; null takes ours back. On a
+   * channel it is one flood, like a message; in a direct chat, one message of
+   * console data, sent once (see `directReactionText`).
+   */
   async react(id: string, emoji: string | null): Promise<void> {
     const message = this.state.messages.find((m) => m.id === id);
-    if (!message || !this.canReact(message)) throw new Error("only a channel message can take a reaction");
+    if (!message || !this.canReact(message)) throw new Error("this message cannot take a reaction");
     const target = parseConversation(message.conversation);
-    if (target.kind !== "channel") return;
     const client = this.need();
     const self = this.state.self;
     if (!self) throw new Error("not connected");
     const hash = await messageHash(message.text, message.timestamp);
-    await client.sendChannelData(target.index, REACTION_DATA_TYPE, encodeReaction({ target: hash, emoji: emoji ?? "", by: self.name }));
+    if (target.kind === "channel") {
+      await client.sendChannelData(target.index, REACTION_DATA_TYPE, encodeReaction({ target: hash, emoji: emoji ?? "", by: self.name }));
+    } else if (target.kind === "contact") {
+      const contact = this.state.contacts[target.key];
+      if (!contact) throw new Error("unknown contact");
+      const sent = await client.sendCliCommand(fromHex(contact.prefix), directReactionText(emoji ?? "", hash), Math.floor(this.now() / 1000));
+      this.log("message", `a reaction to ${contact.name} went as console data${sent.flood ? ", flooded" : ""}`);
+    } else {
+      return;
+    }
     this.putReaction(id, emoji ?? "", null, true);
   }
 

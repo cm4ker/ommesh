@@ -2388,17 +2388,48 @@ test("a reaction to a copy of ours that went out before a resend still finds it"
   await session.disconnect();
 });
 
-test("reactions are for channel messages only", async () => {
+test("no reaction goes to the chat without a key, nor through a channel datagram in a direct chat", async () => {
   const { radio, session } = await withAlice();
-  radio.queue.push(dmFrame(BOB, "hi"), channelFrame(8, "Stalin_v3: what is this channel?"));
+  radio.queue.push(channelFrame(8, "Stalin_v3: what is this channel?"));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(10);
+  const keyless = session.getState().messages.find((m) => m.conversation === KEYLESS_CONVERSATION)!;
+  assert.ok(!session.canReact(keyless));
+  await assert.rejects(session.react(keyless.id, "👍"));
+  assert.ok(!radio.sent.some((f) => f[0] === Cmd.SendChannelData));
+  await session.disconnect();
+});
+
+test("in a direct chat a reaction goes as console data, and a person's console data is read as one", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  radio.queue.push(dmFrame(BOB, "hi"));
   radio.push(new Uint8Array([Push.MsgWaiting]));
   await tick(10);
   const dm = session.getState().messages.find((m) => m.text === "hi")!;
-  const keyless = session.getState().messages.find((m) => m.conversation === KEYLESS_CONVERSATION)!;
-  assert.ok(!session.canReact(dm));
-  assert.ok(!session.canReact(keyless));
-  await assert.rejects(session.react(dm.id, "👍"));
+  assert.ok(session.canReact(dm));
+  await session.react(dm.id, "👍");
+  const sent = radio.sent.filter((f) => f[0] === Cmd.SendTxtMsg).at(-1)!;
+  assert.equal(sent[1], TxtType.CliData);
+  assert.deepEqual([...sent.subarray(7, 13)], [...BOB.subarray(0, 6)]);
+  assert.equal(new TextDecoder().decode(sent.subarray(13)), `👍\n${crockford(await messageHash("hi", 1_700_000_050))}`);
+  assert.deepEqual(reactionsOf(session, dm.id), [["👍", null]]);
   assert.ok(!radio.sent.some((f) => f[0] === Cmd.SendChannelData));
+
+  // Bob reacts to ours, then takes it back.
+  const mine = await session.sendText(contactConversation(bobKey()), "see you");
+  const cli = (text: string) => new ByteWriter().u8(Resp.ContactMsgRecvV3).i8(20).u8(0).u8(0).bytes(BOB.subarray(0, 6)).u8(1).u8(TxtType.CliData).u32(1_700_000_070).string(text).toBytes();
+  const hash = crockford(await messageHash("see you", mine.timestamp));
+  radio.queue.push(cli(`❤️\n${hash}`));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(10);
+  assert.deepEqual(reactionsOf(session, mine.id), [["❤️", "Bob"]]);
+  radio.queue.push(cli(`\n${hash}`));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(10);
+  assert.deepEqual(reactionsOf(session, mine.id), []);
+  assert.equal(session.getState().messages.length, 2);
   await session.disconnect();
 });
 

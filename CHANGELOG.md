@@ -4,6 +4,9 @@
 
 ## Unreleased
 
+### Connecting
+- On a PC, a radio on a USB cable has Port settings in its card: the speed the port opens at, from 9600 to 921600 or any other, and its DTR and RTS lines, Auto or any of DTR off/on with RTS off/on. The list of lines says which boards each one suits, and Auto shows what it picks for the port. A port that is not on Auto at 115200 shows its speed and lines in the list. Before, every port opened at 115200 with the lines the app chose, and a radio that wanted other ones never answered.
+- Port log, beside the card, shows everything that goes along the cable both ways and checks the port: it tries speeds and lines until the radio answers, and Apply and connect keeps what worked. It also tells a board in flashing mode, a radio that answers in words, one that is heard at no speed, and a silent one, and Restart the radio restarts an ESP32 radio without its RESET button. DTR and RTS can be set by hand there, and words sent to the port. Copy and Save take the log along, for a report.
 ### Chats
 - Pulling up at the end of a chat, the next chat with unread messages grows from a dot under the last message, as in Telegram, and the phone gives a light tap once it is full size: let go then to open it. It used to slide up from below with no tap on an iPhone. The iPhone now taps as well when a long press opens a menu and when a message is pulled far enough to answer it.
 - A chat with a background scrolls smoothly and opens without a stall, on an old phone too. The picture was drawn from its thousands of shapes every time the chat was painted: on a phone over a tenth of a second a frame while scrolling, and about a second when a chat opened. The pictures now come with the app ready drawn, in a size for each kind of screen.

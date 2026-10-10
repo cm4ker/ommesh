@@ -10,9 +10,9 @@
 //! The mux reads the radio's message queue itself and keeps a copy of every
 //! message for each client in an inbox; a client's "next message" is answered
 //! from there. So a message is read off the radio even while no client is awake
-//! to ask for it, and each client still gets all of them. A text the radio took
-//! from one client goes to the others as a mirror push, kept in the inbox of a
-//! client that is away.
+//! to ask for it, and each client still gets all of them. A text or a channel
+//! datagram (a reaction) the radio took from one client goes to the others as a
+//! mirror push, kept in the inbox of a client that is away.
 
 use std::collections::VecDeque;
 
@@ -320,11 +320,11 @@ impl Mux {
         self.out.push(Effect::InboxesChanged);
     }
 
-    /// A text the radio took from one client, told to the others.
+    /// A text or a channel datagram the radio took from one client, told to the others.
     fn mirror(&mut self, command: &[u8], answer: &[u8], sender: Client) {
         let taken = match command[0] {
             CMD_SEND_TXT_MSG => answer[0] == RESP_SENT,
-            CMD_SEND_CHANNEL_TXT_MSG => answer[0] == RESP_OK,
+            CMD_SEND_CHANNEL_TXT_MSG | CMD_SEND_CHANNEL_DATA => answer[0] == RESP_OK,
             _ => false,
         };
         if !taken || command.len() >= 256 {
@@ -780,6 +780,14 @@ mod tests {
             rig.page.first().map(|f| f[0]),
             Some(0xf0),
             "a channel text too, on OK"
+        );
+        rig.clear();
+        let reaction: &[u8] = &[62, 0, 0xff, 0x0e, 0xff, 2, 1, 2, 3, 4, 5];
+        rig.client_says(Computer, reaction).radio_says(OK);
+        assert_eq!(
+            rig.page,
+            vec![[&[0xf0, reaction.len() as u8][..], reaction, OK].concat()],
+            "and a channel datagram, which is how a reaction goes"
         );
         rig.clear();
         rig.client_says(Computer, channel).radio_says(&[1, 2]);

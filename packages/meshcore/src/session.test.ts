@@ -2475,6 +2475,34 @@ test("in a direct chat a reaction goes as console data, and a person's console d
   await session.disconnect();
 });
 
+test("a reaction the other app put through the relay is ours here, in a channel and in a direct chat", async () => {
+  const { radio, session, id, hash } = await withAlice();
+  const put = async (emoji: string) => {
+    const data = encodeReaction({ target: hash, emoji, by: "Me", stamp: 1_700_000_100 });
+    radio.push(mirrorFrame(new ByteWriter().u8(Cmd.SendChannelData).u8(0).u8(0xff).u16(REACTION_DATA_TYPE).bytes(data).toBytes(), new Uint8Array([Resp.Ok])));
+    await tick(10);
+  };
+  await put("👍");
+  assert.deepEqual(reactionsOf(session, id), [["👍", null]]);
+  await put("❤️");
+  assert.deepEqual(reactionsOf(session, id), [["❤️", null]]);
+  await put("");
+  assert.deepEqual(reactionsOf(session, id), []);
+
+  radio.queue.push(dmFrame(BOB, "hi"));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(10);
+  const dm = session.getState().messages.find((m) => m.text === "hi")!;
+  const text = `🙏\n${crockford(await messageHash("hi", 1_700_000_050))}`;
+  const cli = new ByteWriter().u8(Cmd.SendTxtMsg).u8(TxtType.CliData).u8(0).u32(1_700_000_300).bytes(BOB.subarray(0, 6)).string(text).toBytes();
+  radio.push(mirrorFrame(cli, new ByteWriter().u8(Resp.Sent).u8(0).u32(0).u32(2000).toBytes()));
+  await tick(10);
+  assert.deepEqual(reactionsOf(session, dm.id), [["🙏", null]]);
+  assert.equal(session.getState().messages.length, 2, "no line of its own");
+  assert.ok(!radio.sent.some((f) => f[0] === Cmd.SendChannelData || (f[0] === Cmd.SendTxtMsg && f[1] === TxtType.CliData)), "nothing sent from here");
+  await session.disconnect();
+});
+
 test("an incoming flooded direct message takes the packet addressed from its sender to us", async () => {
   const radio = new ScriptedRadio();
   const session = new MeshSession({ now: () => 1_700_000_000_000 });

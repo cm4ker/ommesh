@@ -16,6 +16,7 @@ pub const CMD_REBOOT: u8 = 19;
 pub const CMD_SEND_TELEMETRY_REQ: u8 = 39;
 pub const CMD_FACTORY_RESET: u8 = 51;
 pub const CMD_SEND_CONTROL_DATA: u8 = 55;
+pub const CMD_SEND_CHANNEL_DATA: u8 = 62;
 
 // Radio → app, in answer to a command. Always below 0x80.
 pub const RESP_OK: u8 = 0;
@@ -33,7 +34,7 @@ pub const RESP_CHANNEL_DATA_RECV: u8 = 27;
 pub const PUSH_MSG_WAITING: u8 = 0x83;
 pub const PUSH_NEW_ADVERT: u8 = 0x8a;
 pub const PUSH_CONTROL_DATA: u8 = 0x8e;
-/// Not the firmware's: what the other client sharing the radio sent, as
+/// Not the firmware's: a text or a reaction the other client sharing the radio sent, as
 /// `0xf0`, the command's length, the command, then the radio's answer.
 pub const PUSH_MIRROR: u8 = 0xf0;
 

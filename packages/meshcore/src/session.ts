@@ -15,7 +15,7 @@ import { neighbourSearchMs, replyBudgetMs, sealedBytes, traceBudgetMs, type Repl
 import { CHANNEL_TEXT_LEN, groupDataPayload, groupTextPayload, heardGroupTextPayload, relaysAudible } from "./protocol/group.js";
 import { REACTION_DATA_TYPE, decodeReaction, directReactionText, encodeReaction, messageHash, parseDirectReaction, parseTextReaction } from "./protocol/reaction.js";
 import { PayloadType, parseRawPacket, type RawPacket } from "./protocol/packet.js";
-import { AclRole, AdvType, Cmd, ContactFlag, ControlType, DIRECT_TEXT_LEN, ErrCode, MAX_TEXT_LEN, NeighbourOrder, PUB_KEY_PREFIX_SIZE, ROOM_TEXT_LEN, StatsType, TxtType } from "./protocol/codes.js";
+import { AclRole, AdvType, Cmd, ContactFlag, ControlType, DIRECT_TEXT_LEN, ErrCode, MAX_TEXT_LEN, NeighbourOrder, OUT_PATH_UNKNOWN, PUB_KEY_PREFIX_SIZE, ROOM_TEXT_LEN, StatsType, TxtType } from "./protocol/codes.js";
 import {
   accessListRequest,
   avgMinMaxRequest,
@@ -201,7 +201,8 @@ interface IncomingReaction {
   target: string;
   /** Empty: taken back. */
   emoji: string;
-  by: string;
+  /** Null: ours, put by the other app sharing the radio. */
+  by: string | null;
   /** Whose message it is on, when the reaction says. */
   to: string | null;
   /** Ommesh's stand for all the sender put on the message; MeshCore One's add up. */
@@ -2368,16 +2369,32 @@ export class MeshSession {
     });
   }
 
-  /** A reaction heard: put on its message, or kept for a while in case the message comes after it. */
-  private async takeReaction(reaction: IncomingReaction): Promise<void> {
+  /**
+   * A reaction heard: put on its message, or kept for a while in case the
+   * message comes after it. Gives the message it went on.
+   */
+  private async takeReaction(reaction: IncomingReaction): Promise<string | null> {
     const found = await this.reactedMessage(reaction);
     if (found) {
       this.putReaction(found.id, reaction.emoji, reaction.by, reaction.replaces);
-      return;
+      return found.id;
     }
     const now = this.now();
     this.pendingReactions = [...this.pendingReactions.filter((p) => now - p.at < REACTION_WAIT_MS), { ...reaction, at: now }].slice(-MAX_PENDING_REACTIONS);
-    this.log("message", `a reaction from ${reaction.by} to a message not here yet`);
+    this.log("message", `a reaction from ${reaction.by ?? "the other app"} to a message not here yet`);
+    return null;
+  }
+
+  /**
+   * Our reaction the other app sharing the radio put (see `mirrored`). One it
+   * put just now is watched for a repeater sending it on, as if put here; one
+   * from while this app was away is not, since its packet went long ago.
+   */
+  private async mirroredReaction(reaction: IncomingReaction, sent: { index: number; data: Uint8Array } | null): Promise<void> {
+    const id = await this.takeReaction(reaction);
+    if (!id) return;
+    if (sent && reaction.emoji) await this.watchReaction(id, sent.index, sent.data);
+    else this.stopReactionWatch(id);
   }
 
   /** The newest message in the chat a reaction names. */
@@ -2967,14 +2984,41 @@ export class MeshSession {
    * ahead of the next message this app reads: one that comes during a sync
    * went out long ago. What came of it only the other app saw, so it is kept
    * as sent, not waited on for an echo or an ack that will not come again.
+   *
+   * A reaction the other app put is ours here too: a channel datagram, or
+   * console data to a person.
    */
   private mirrored(command: Uint8Array, answer: Uint8Array): void {
     try {
       const r = new ByteReader(command);
       const code = r.u8();
-      if (code !== Cmd.SendTxtMsg && code !== Cmd.SendChannelTxtMsg) return;
-      if (r.u8() !== TxtType.Plain) return;
       const late = this.state.syncing;
+      if (code === Cmd.SendChannelData) {
+        const index = r.u8();
+        const pathLen = r.u8();
+        if (pathLen !== OUT_PATH_UNKNOWN) r.skip(pathByteLength(pathLen));
+        if (r.u16() !== REACTION_DATA_TYPE) return;
+        const data = r.rest();
+        const reaction = decodeReaction(data);
+        if (!reaction) return;
+        const ours = { conversation: channelConversation(index), target: toHex(reaction.target), emoji: reaction.emoji, by: null, to: null, replaces: true };
+        void this.mirroredReaction(ours, late ? null : { index, data });
+        return;
+      }
+      if (code !== Cmd.SendTxtMsg && code !== Cmd.SendChannelTxtMsg) return;
+      const txtType = r.u8();
+      if (code === Cmd.SendTxtMsg && txtType === TxtType.CliData) {
+        r.skip(5); // the attempt and the stamp
+        const prefix = toHex(r.take(PUB_KEY_PREFIX_SIZE));
+        const person = Object.values(this.state.contacts).find((c) => c.prefix === prefix);
+        const reaction = person?.type === AdvType.Chat ? parseDirectReaction(r.restString()) : null;
+        if (person && reaction) {
+          const ours = { conversation: contactConversation(person.key), target: toHex(reaction.target), emoji: reaction.emoji, by: null, to: null, replaces: true };
+          void this.mirroredReaction(ours, null);
+        }
+        return;
+      }
+      if (txtType !== TxtType.Plain) return;
       let conversation: string;
       let contact: ContactRecord | undefined;
       let attempt = 0;

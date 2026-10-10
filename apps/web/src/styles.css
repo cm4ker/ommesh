@@ -2828,6 +2828,116 @@ details.more .kv-grid {
   border-radius: 50%;
   background: var(--panel);
 }
+/* Who put the emoji on, under the strip: one row, and the list it opens into. */
+.react-line {
+  height: 1px;
+  margin: 6px 16px 0;
+  background: var(--border);
+}
+.popover .react-line {
+  margin: 4px 6px 0;
+}
+.menu-head .react-who {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 50px;
+  padding: 6px 12px 6px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: calc(15px * var(--text-scale));
+  text-align: left;
+  cursor: pointer;
+}
+.popover .menu-head .react-who {
+  gap: var(--space-2);
+  min-height: 0;
+  padding: 7px 10px;
+  font-size: inherit;
+}
+.menu-head .react-who:active {
+  background: var(--hover);
+}
+@media (hover: hover) {
+  .menu-head .react-who:hover {
+    background: var(--hover);
+  }
+}
+.menu-head .react-who.react-back {
+  gap: 10px;
+  min-height: 44px;
+  padding-left: 12px;
+  font-weight: 500;
+}
+.react-who-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.react-who-text small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.react-faces {
+  flex: none;
+  display: flex;
+}
+/* The first face on top, so its letters stay whole. */
+.react-faces .avatar {
+  position: relative;
+  box-shadow: 0 0 0 2px var(--elevated);
+}
+.react-faces .avatar:nth-child(1) {
+  z-index: 3;
+}
+.react-faces .avatar:nth-child(2) {
+  z-index: 2;
+}
+.react-faces .avatar + .avatar {
+  margin-left: -7px;
+}
+.react-who-go {
+  flex: none;
+  color: var(--text-faint);
+}
+.react-people {
+  max-height: min(360px, 45vh);
+  margin: 0;
+  padding: 0 0 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+.react-people li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  font-size: calc(15px * var(--text-scale));
+}
+.popover .react-people li {
+  padding: 5px 10px;
+  font-size: inherit;
+}
+.react-person {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.react-person-emoji {
+  flex: none;
+  font-size: calc(22px * var(--text-scale));
+  line-height: 1;
+}
 .hold-menu.expanded {
   width: min(380px, calc(100vw - 16px));
 }

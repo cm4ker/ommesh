@@ -65,6 +65,18 @@ export function groupReactions(reactions: readonly MessageReaction[] | undefined
   return [...groups.values()];
 }
 
+/** One emoji someone put on a message; `name` null is ours. */
+export interface Reactor {
+  emoji: string;
+  name: string | null;
+}
+
+/** Who put what on a message, one line each: ours first, then the others as they came. */
+export function reactors(reactions: readonly MessageReaction[] | undefined): Reactor[] {
+  const all = (reactions ?? []).map((r) => ({ emoji: r.emoji, name: r.by }));
+  return [...all.filter((r) => r.name === null), ...all.filter((r) => r.name !== null)];
+}
+
 /** The emoji we put on the message, if any. */
 export function ownReaction(reactions: readonly MessageReaction[] | undefined): string | null {
   return reactions?.find((r) => r.by === null)?.emoji ?? null;

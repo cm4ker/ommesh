@@ -111,6 +111,7 @@ export const SoundOffIcon = icon('<path d="M4 9.5v5h3.5l4.5 4v-13l-4.5 4z"/><pat
 export const AirIcon = icon('<path d="M12 21v-8.5"/><circle cx="12" cy="10.5" r="1.6"/><path d="M8.3 7a5.2 5.2 0 0 0 0 7M15.7 7a5.2 5.2 0 0 1 0 7"/><path d="M5.6 4.4a9 9 0 0 0 0 12.2M18.4 4.4a9 9 0 0 1 0 12.2"/>');
 export const SearchIcon = icon('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>');
 export const ChevronRightIcon = icon('<path d="M9 5l7 7-7 7"/>');
+export const SmileIcon = icon('<circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0"/><path d="M9 9.5h.01M15 9.5h.01"/>');
 export const EditIcon = icon('<path d="M4 20h4L19 9l-4-4L4 16z"/>');
 export const HashIcon = icon('<path d="M9 4L7 20M17 4l-2 16M4.5 9h15M3.5 15h15"/>');
 export const AtIcon = icon('<circle cx="12" cy="12" r="3.5"/><path d="M15.5 8.5v5a2.5 2.5 0 0 0 5 0V12a8.5 8.5 0 1 0-3.4 6.8"/>');

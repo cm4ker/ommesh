@@ -1,6 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { EMOJI_GROUPS, groupReactions, noteReaction, ownReaction, stripReactions } from "./reactions.js";
+import { EMOJI_GROUPS, groupReactions, noteReaction, ownReaction, reactors, stripReactions } from "./reactions.js";
+
+test("who put what on a message lists ours first, then the others as they came", () => {
+  const reactions = [
+    { emoji: "👍", by: "Alice", at: 1 },
+    { emoji: "❤️", by: null, at: 2 },
+    { emoji: "👍", by: "Kolya", at: 3 },
+  ];
+  assert.deepEqual(reactors(reactions), [
+    { emoji: "❤️", name: null },
+    { emoji: "👍", name: "Alice" },
+    { emoji: "👍", name: "Kolya" },
+  ]);
+  assert.deepEqual(reactors(undefined), []);
+});
 
 test("the strip leads with the emoji chosen lately and fills up with the first few", () => {
   assert.deepEqual(stripReactions([]), ["👍", "❤️", "😂", "😮", "😢", "🙏"]);

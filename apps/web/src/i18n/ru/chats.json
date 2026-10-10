@@ -131,6 +131,12 @@
   "react.groupHearts": "Сердца",
   "react.groupOther": "Разное",
   "react.unheard": "Ни один ретранслятор не повторил. Нажмите, чтобы отправить ещё раз",
+  "react.count": {
+    "one": "{count} реакция",
+    "few": "{count} реакции",
+    "many": "{count} реакций",
+    "other": "{count} реакции"
+  },
   "pick.count": {
     "one": "{count} сообщение",
     "few": "{count} сообщения",

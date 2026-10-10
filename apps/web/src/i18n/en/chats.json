@@ -115,6 +115,10 @@
   "react.groupHearts": "Hearts",
   "react.groupOther": "Other",
   "react.unheard": "No repeater was heard sending it on. Tap to send it again",
+  "react.count": {
+    "one": "{count} reaction",
+    "other": "{count} reactions"
+  },
   "pick.count": {
     "one": "{count} message",
     "other": "{count} messages"

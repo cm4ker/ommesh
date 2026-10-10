@@ -2634,6 +2634,46 @@ details.more .kv-grid {
   letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
+/* The name and its copy mark are one button. The empty ::before is as wide as the mark, so the name stays in the middle. */
+.hero-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+.hero-name::before {
+  content: "";
+  width: 16px;
+  flex: none;
+}
+.hero-name:active {
+  background: var(--hover);
+}
+@media (hover: hover) {
+  .hero-name:hover {
+    background: var(--hover);
+  }
+}
+.hero-name-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.hero-copy {
+  flex: none;
+  color: var(--text-faint);
+}
+.hero-copy.done {
+  color: var(--success);
+}
 .hero.compact {
   padding-top: var(--space-4);
 }

@@ -13,7 +13,8 @@ import { SearchField } from "../ui/Field.js";
 import { Group } from "../ui/List.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
-import { AtIcon, ChatIcon, PersonIcon, SearchIcon } from "./Icons.js";
+import { copyName } from "./HeroName.js";
+import { AtIcon, ChatIcon, CopyIcon, PersonIcon, SearchIcon } from "./Icons.js";
 import { Gone, ScreenHead, type Chrome } from "./ScreenHead.js";
 import { t } from "../i18n/index.js";
 
@@ -84,7 +85,7 @@ function ourMessages(w: Writer, conversation: string): void {
   openConversation(conversation);
 }
 
-/** What can be done about one who wrote: their profile, a word to them, a mention, their messages. */
+/** What can be done about one who wrote: their profile, a word to them, a mention, their name copied, their messages. */
 function writerMenu(w: Writer, conversation: string): void {
   const contacts = session.getState().contacts;
   const found = sendersOf(w.last, contacts);
@@ -106,6 +107,7 @@ function writerMenu(w: Writer, conversation: string): void {
         openConversation(conversation);
       },
     },
+    { label: t("common.copyName"), icon: <CopyIcon size={17} />, onSelect: () => copyName(w.name) },
     {
       label: t("chats.writers.theirs"),
       hint: t("chats.writers.messages", { count: w.count }),

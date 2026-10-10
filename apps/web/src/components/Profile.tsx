@@ -15,6 +15,7 @@ import { Group, InfoRow, LinkRow } from "../ui/List.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
 import { ChatNotices } from "./ChatNotices.js";
+import { HeroName } from "./HeroName.js";
 import { AirIcon, ChartIcon, ChatIcon, CheckIcon, CopyIcon, EditIcon, LockIcon, MapIcon, MoreIcon, PowerIcon, ShieldIcon, SlidersIcon, StarFilledIcon, StarIcon, TerminalIcon, TrashIcon, UsersIcon, CloseIcon } from "./Icons.js";
 import { NodeReadings } from "./NodeReadings.js";
 import { ClockRow } from "./node/Clock.js";
@@ -79,7 +80,7 @@ export function Profile({ contactKey, chrome }: { contactKey: string; chrome: Ch
         <div className="screen-scroll">
           <div className="hero">
             <Avatar name={name} type={removed.type} size={68} />
-            <h1>{name}</h1>
+            <HeroName name={name} label={t("common.copyName")} />
             <span className="muted">{t("mesh.profile.kindHeard", { kind: kindLabel(removed.type), time: agoPhrase(heardAt(removed) || null) })}</span>
           </div>
           <NotOnRadio contactKey={contactKey} />
@@ -167,7 +168,7 @@ export function Profile({ contactKey, chrome }: { contactKey: string; chrome: Ch
       <div className="screen-scroll">
         <div className="hero">
           <Avatar name={name} type={contact.type} size={68} />
-          <h1>{name}</h1>
+          <HeroName name={name} label={t("common.copyName")} />
           <span className="muted">{t("mesh.profile.kindHeard", { kind: kindLabel(contact.type), time: agoPhrase(heard) })}</span>
           {where ? <span className="muted">{where}</span> : null}
         </div>

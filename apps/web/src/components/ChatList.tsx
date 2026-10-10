@@ -19,7 +19,8 @@ import { Confirm } from "../ui/Dialog.js";
 import { SearchField } from "../ui/Field.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
-import { BellOffIcon, CheckIcon, CloseIcon, ChevronDownIcon, HashIcon, PersonIcon, PinIcon, PinOffIcon, PlusIcon, SortIcon, StarFilledIcon, TrashIcon } from "./Icons.js";
+import { copyName } from "./HeroName.js";
+import { BellOffIcon, CheckIcon, CloseIcon, ChevronDownIcon, CopyIcon, HashIcon, PersonIcon, PinIcon, PinOffIcon, PlusIcon, SortIcon, StarFilledIcon, TrashIcon } from "./Icons.js";
 import { marked } from "./Marked.js";
 import { NewBuildStrip } from "./NewBuild.js";
 import { NewsStrip } from "./News.js";
@@ -297,6 +298,9 @@ function ChatRow({ row, radio, selected, pinned, onPin, onDelete }: { row: Conve
           : target.kind === "contact"
             ? { label: t("chats.row.profile"), icon: <PersonIcon size={17} />, onSelect: () => setStack("chats", [{ kind: "chat", conversation: row.id }, { kind: "profile", key: target.key }]) }
             : null,
+        target.kind === "channel" || target.kind === "contact"
+          ? { label: target.kind === "channel" ? t("chats.row.copyChannelName") : t("common.copyName"), icon: <CopyIcon size={17} />, onSelect: () => copyName(row.title) }
+          : null,
         row.unread > 0 ? { label: t("chats.row.markRead"), icon: <CheckIcon size={17} />, onSelect: () => session.markRead(row.id) } : null,
         pinned ? { label: t("chats.row.unpin"), icon: <PinOffIcon size={17} />, onSelect: onPin } : { label: t("chats.row.pin"), icon: <PinIcon size={17} />, onSelect: onPin },
         { label: staysListed(row) ? t("chats.row.clearMessages") : t("chats.row.deleteChat"), icon: <TrashIcon size={17} />, danger: true, onSelect: onDelete },

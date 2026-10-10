@@ -10,6 +10,7 @@ import { Confirm } from "../ui/Dialog.js";
 import { ActionRow, Block, Group, LinkRow } from "../ui/List.js";
 import { Avatar } from "./Avatar.js";
 import { ChatNotices } from "./ChatNotices.js";
+import { HeroName } from "./HeroName.js";
 import { CopyIcon } from "./Icons.js";
 import { Gone, ScreenHead, type Chrome } from "./ScreenHead.js";
 import { t } from "../i18n/index.js";
@@ -42,7 +43,7 @@ export function ChannelView({ index, chrome }: { index: number; chrome: Chrome }
       <div className="screen-scroll">
         <div className="hero">
           <Avatar name={channel.name || t("chats.conversation.channel", { index: channel.index })} channel={channelAccess(channel)} size={68} />
-          <h1>{channel.name || t("chats.conversation.channel", { index: channel.index })}</h1>
+          <HeroName name={channel.name || t("chats.conversation.channel", { index: channel.index })} label={t("chats.row.copyChannelName")} />
           <span className="muted">{t("chats.channel.slot", { index: channel.index })}</span>
         </div>
         <ChatNotices conversation={channelConversation(channel.index)} direct={false} />

@@ -48,6 +48,7 @@
   "row.profile": "Profile",
   "row.markRead": "Mark as read",
   "row.pin": "Pin",
+  "row.copyChannelName": "Copy the channel name",
   "row.unpin": "Unpin",
   "row.pinned": "Pinned",
   "row.clearMessages": "Clear messages",

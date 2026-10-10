@@ -8,9 +8,8 @@
     &nbsp;
     <a href="https://apps.apple.com/app/ommesh/id6814511595"><img src="docs/badges/app-store-en.svg" height="56" alt="Download on the App Store" /></a>
     &nbsp;
-    <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x64.exe"><img src="docs/badges/windows-en.svg" height="56" alt="Download for Windows" /></a>
+    <a href="https://github.com/cm4ker/ommesh/releases/latest"><img src="docs/badges/windows-en.svg" height="56" alt="Download for Windows" /></a>
   </p>
-  <p><sub>Windows on <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-arm64.exe">ARM</a> · <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x86.exe">32-bit Windows</a> · <a href="#install">other ways to install</a></sub></p>
   <p><strong>English</strong> · <a href="README.ru.md">Русский</a></p>
   <p>
     <a href="https://github.com/cm4ker/ommesh/actions/workflows/build.yml"><img src="https://github.com/cm4ker/ommesh/actions/workflows/build.yml/badge.svg" alt="Build status" /></a>

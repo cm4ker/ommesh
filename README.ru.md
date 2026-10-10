@@ -6,9 +6,11 @@
   <p>
     <a href="https://play.google.com/store/apps/details?id=dev.cm4ker.meshnet"><img src="docs/badges/google-play-ru.png" height="56" alt="Скачать из Google Play" /></a>
     &nbsp;
+    <a href="https://apps.apple.com/ru/app/ommesh/id6814511595"><img src="docs/badges/app-store-ru.svg" height="56" alt="Загрузите в App Store" /></a>
+    &nbsp;
     <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x64.exe"><img src="docs/badges/windows-ru.svg" height="56" alt="Скачать для Windows" /></a>
   </p>
-  <p><sub>Windows на <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-arm64.exe">ARM</a> · <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x86.exe">32-битная Windows</a> · <a href="#установка">другие способы</a> · iPhone: скоро в App Store</sub></p>
+  <p><sub>Windows на <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-arm64.exe">ARM</a> · <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x86.exe">32-битная Windows</a> · <a href="#установка">другие способы</a></sub></p>
   <p><a href="README.md">English</a> · <strong>Русский</strong></p>
   <p>
     <a href="https://github.com/cm4ker/ommesh/actions/workflows/build.yml"><img src="https://github.com/cm4ker/ommesh/actions/workflows/build.yml/badge.svg" alt="Статус сборки" /></a>
@@ -27,7 +29,7 @@
 | :--- | :--- |
 | **Android** | [Google Play](https://play.google.com/store/apps/details?id=dev.cm4ker.meshnet). Обновления приходят через магазин. |
 | **Windows 10 и 11** | Установщик для [x64](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x64.exe), [ARM](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-arm64.exe) или [32-bit](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x86.exe). Каждую новую версию приложение предложит само. |
-| **iPhone** | Скоро в App Store. |
+| **iPhone и iPad** | [App Store](https://apps.apple.com/ru/app/ommesh/id6814511595). Обновления приходят через магазин. |
 | **macOS и Linux** | Соберите приложение из исходников, см. [Разработку](#разработка). |
 | **Браузер** | Откройте [ommesh.cm4ker.ru](https://ommesh.cm4ker.ru) в Chrome или Edge, ничего не устанавливая; они подключаются к радио по Bluetooth и USB. Сайт получает каждую правку сразу, как канал Dev. |
 

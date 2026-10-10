@@ -6,9 +6,11 @@
   <p>
     <a href="https://play.google.com/store/apps/details?id=dev.cm4ker.meshnet"><img src="docs/badges/google-play-en.png" height="56" alt="Get it on Google Play" /></a>
     &nbsp;
+    <a href="https://apps.apple.com/app/ommesh/id6814511595"><img src="docs/badges/app-store-en.svg" height="56" alt="Download on the App Store" /></a>
+    &nbsp;
     <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x64.exe"><img src="docs/badges/windows-en.svg" height="56" alt="Download for Windows" /></a>
   </p>
-  <p><sub>Windows on <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-arm64.exe">ARM</a> · <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x86.exe">32-bit Windows</a> · <a href="#install">other ways to install</a> · iPhone: coming to the App Store</sub></p>
+  <p><sub>Windows on <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-arm64.exe">ARM</a> · <a href="https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x86.exe">32-bit Windows</a> · <a href="#install">other ways to install</a></sub></p>
   <p><strong>English</strong> · <a href="README.ru.md">Русский</a></p>
   <p>
     <a href="https://github.com/cm4ker/ommesh/actions/workflows/build.yml"><img src="https://github.com/cm4ker/ommesh/actions/workflows/build.yml/badge.svg" alt="Build status" /></a>
@@ -27,7 +29,7 @@
 | :--- | :--- |
 | **Android** | [Google Play](https://play.google.com/store/apps/details?id=dev.cm4ker.meshnet). Updates come through the store. |
 | **Windows 10 and 11** | Installer for [x64](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x64.exe), [ARM](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-arm64.exe) or [32-bit](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x86.exe). The app offers each new version itself. |
-| **iPhone** | Coming to the App Store. |
+| **iPhone and iPad** | [App Store](https://apps.apple.com/app/ommesh/id6814511595). Updates come through the store. |
 | **macOS and Linux** | Build the desktop app from source; see [Development](#development). |
 | **Browser** | Open [ommesh.cm4ker.ru](https://ommesh.cm4ker.ru) in Chrome or Edge, nothing to install; they reach a radio over Bluetooth or USB. The site takes every change as it lands, like the Dev channel. |
 

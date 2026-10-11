@@ -1,0 +1,86 @@
+{
+  "version": "0.8.0",
+  "date": "2026-10-12",
+  "items": [
+    {
+      "kind": "new",
+      "show": "chats",
+      "en": {
+        "title": "Put an emoji on a channel message",
+        "text": "Hold a message and pick one, as in Telegram. Each emoji shows how many put it there; tap it to put the same. For now only Ommesh shows them."
+      },
+      "ru": {
+        "title": "Реакции на сообщения в канале",
+        "text": "Удержите сообщение и выберите эмодзи, как в Telegram. Под сообщением видно, сколько человек поставили каждое; нажмите, чтобы поставить такое же. Пока их видит только Ommesh."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "radio/messages",
+      "en": {
+        "title": "See where a link leads",
+        "text": "A link shows the page's title and picture, or a video's frame. The Ommesh server fetches it, so the site never sees your device. Messages and routes can set On a tap or Off."
+      },
+      "ru": {
+        "title": "Превью ссылок",
+        "text": "Ссылка показывает заголовок и картинку страницы или кадр видео. Её открывает сервер Ommesh, и сайт не видит ваше устройство. «По нажатию» или «Выкл» — в «Сообщениях и маршрутах»."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "chats",
+      "en": {
+        "title": "Share a link or text to Ommesh",
+        "text": "Ommesh is in the phone's share sheet with four of your chats by name. Pick one, and the link waits in its message field for you to send."
+      },
+      "ru": {
+        "title": "Поделиться ссылкой в Ommesh",
+        "text": "Ommesh есть в меню «Поделиться» на телефоне, с четырьмя вашими чатами. Выберите чат, и ссылка встанет в поле ввода — проверьте и отправьте."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "chats",
+      "en": {
+        "title": "Pick several messages to copy or delete",
+        "text": "Drag across messages with a mouse, or hold one on a phone and tap Select. Each copies with who wrote it and when; Delete takes them off this device only."
+      },
+      "ru": {
+        "title": "Выбор нескольких сообщений",
+        "text": "Протяните мышью по сообщениям или удержите одно на телефоне и нажмите «Выбрать». Каждое копируется с автором и временем; «Удалить» убирает только с этого устройства."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "radio/connection",
+      "en": {
+        "title": "Set a USB radio's port speed and lines",
+        "text": "On a PC, Port settings choose the speed and DTR and RTS, and Port log shows what goes along the cable and tries settings until the radio answers."
+      },
+      "ru": {
+        "title": "Скорость и линии USB-порта",
+        "text": "На ПК «Настройки порта» задают скорость, DTR и RTS, а «Журнал порта» показывает всё, что идёт по кабелю, и перебирает настройки, пока радио не ответит."
+      }
+    },
+    {
+      "kind": "fix",
+      "en": "A battery's charge no longer leaps between readings.",
+      "ru": "Заряд батареи больше не скачет от показания к показанию."
+    },
+    {
+      "kind": "fix",
+      "en": "A chat with a background scrolls smoothly and opens at once.",
+      "ru": "Чат с фоном прокручивается плавно и открывается сразу."
+    },
+    {
+      "kind": "fix",
+      "en": "Who hears me fits every answering repeater on the map.",
+      "ru": "«Кто меня слышит» показывает на карте всех ответивших."
+    },
+    {
+      "kind": "fix",
+      "en": "Send again under a red message fits on a phone.",
+      "ru": "«Отправить ещё раз» под красным сообщением помещается на телефоне."
+    }
+  ]
+}

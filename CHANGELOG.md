@@ -2,7 +2,7 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
-## Unreleased
+## 0.8.0 — 2026-10-12
 
 ### Connecting
 - On a PC, a radio on a USB cable has Port settings in its card: the speed the port opens at, from 9600 to 921600 or any other, and its DTR and RTS lines, Auto or any of DTR off/on with RTS off/on. The list of lines says which boards each one suits, and Auto shows what it picks for the port. A port that is not on Auto at 115200 shows its speed and lines in the list. Before, every port opened at 115200 with the lines the app chose, and a radio that wanted other ones never answered.

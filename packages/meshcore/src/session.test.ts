@@ -4,7 +4,8 @@ import { ByteWriter, fromHex } from "./protocol/bytes.js";
 import { Cmd, ContactFlag, Push, Resp, TxtType } from "./protocol/codes.js";
 import { groupDataPayload, groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
 import { crockford, decodeReaction, encodeReaction, messageHash, REACTION_DATA_TYPE } from "./protocol/reaction.js";
-import { channelConversation, CLOCK_RESET_TIME, ClockAheadError, contactConversation, isTrusted, KEYLESS_CONVERSATION, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
+import { decodeVoice, encodeVoiceAnnounce, encodeVoicePart, VOICE_DATA_TYPE, VoiceCodec, VoiceGender } from "./protocol/voice.js";
+import { channelConversation, CLOCK_RESET_TIME, ClockAheadError, contactConversation, isTrusted, KEYLESS_CONVERSATION, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState, type VoicePacker } from "./session.js";
 import { BaseTransport } from "./transport.js";
 import { TimeoutError, TransportClosedError } from "./client.js";
 
@@ -2840,4 +2841,107 @@ test("someone asking this radio to run a console command is not a chat line", as
   await session.connect(radio);
   await until(() => session.getState().messages.length > 0);
   assert.deepEqual(session.getState().messages.map((m) => m.text), ["hello"]);
+});
+
+/** A stand-in for the desktop's zstd: the text's UTF-8 back to front, so it is never read as it is. */
+const testPacker: VoicePacker = {
+  pack: async (text) => new TextEncoder().encode(text).reverse(),
+  unpack: async (data) => new TextDecoder().decode(data.slice().reverse()),
+};
+const unpackTest = (data: Uint8Array) => new TextDecoder().decode(data.slice().reverse());
+
+function voiceFrames(radio: ScriptedRadio) {
+  return radio.sent.filter((f) => f[0] === Cmd.SendChannelData).map((f) => ({ type: f[3]! | (f[4]! << 8), voice: decodeVoice(f.subarray(5)), frame: f }));
+}
+
+test("a voice message's parts gather into one message, named by its announce whenever that comes", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  const hear = async (data: Uint8Array) => {
+    radio.queue.push(channelDataFrame(0, VOICE_DATA_TYPE, data));
+    radio.push(new Uint8Array([Push.MsgWaiting]));
+    await tick(10);
+  };
+  const part = (index: number, text: string, attempt = 0) =>
+    encodeVoicePart({ speaker: "a1b2c3d4", message: 7, index, count: 2, codec: VoiceCodec.ZstdRuV1, attempt, seconds: 9.5, data: new TextEncoder().encode(text).reverse() });
+  const voices = () => session.getState().messages.filter((m) => m.voice);
+
+  // An app that cannot unpack them reads nothing.
+  await hear(part(0, "Буду у вышки"));
+  assert.equal(voices().length, 0);
+  session.setVoicePacker(testPacker);
+  await hear(part(1, "через десять минут"));
+  assert.equal(voices().length, 1);
+  assert.deepEqual(voices()[0]!.voice!.parts, [null, "через десять минут"]);
+  assert.equal(voices()[0]!.sender, null, "nobody announced it, and no contact has the key");
+  await hear(part(0, "Буду у вышки"));
+  // The same part again, sent once more with the next try: nothing new.
+  await hear(part(0, "Буду у вышки", 1));
+  assert.equal(voices().length, 1);
+  assert.equal(voices()[0]!.text, "Буду у вышки через десять минут");
+  assert.equal(voices()[0]!.voice!.seconds, 9.5);
+  await hear(encodeVoiceAnnounce({ speaker: "a1b2c3d4", gender: VoiceGender.Male, codecs: 2, card: null, name: "Борис" }));
+  assert.equal(voices()[0]!.sender, "Борис");
+  assert.equal(session.voiceName("a1b2c3d4"), "Борис");
+  assert.equal(session.getState().voicePeers["a1b2c3d4"]!.gender, VoiceGender.Male);
+  assert.equal(session.getState().unread[channelConversation(0)], 1);
+  // A speaker never announced is found among the contacts by the key.
+  assert.equal(session.voiceName("01020304"), "Bob");
+  await session.disconnect();
+});
+
+test("a voice message goes as parts sharing a number; an announce goes only when asked for", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000, voicePartGapMs: 0 });
+  await session.connect(radio);
+  session.setVoicePacker(testPacker);
+  const text = "Всем привет, это Борис с вышки. Батарея на ретрансляторе садится, утром было три и семь вольта, сейчас меньше.";
+  const id = await session.sendVoice(0, text, 8);
+  await until(() => session.getState().messages.find((m) => m.id === id)?.status === "sent");
+  const sent = voiceFrames(radio);
+  assert.ok(sent.length >= 2, "two bytes a letter do not fit one part");
+  assert.ok(sent.every((s) => s.type === VOICE_DATA_TYPE && s.voice?.kind === "part"));
+  const parts = sent.map((s) => s.voice).filter((v): v is Extract<typeof v, { kind: "part" }> => v?.kind === "part");
+  assert.deepEqual(parts.map((p) => p.index), parts.map((_, i) => i));
+  assert.equal(new Set(parts.map((p) => p.message)).size, 1);
+  assert.equal(parts[0]!.speaker, session.voiceSpeaker());
+  assert.equal(parts.map((p) => unpackTest(p.data)).join(" "), text);
+  const message = session.getState().messages.find((m) => m.id === id)!;
+  assert.equal(message.status, "sent");
+  assert.equal(message.text, text);
+  assert.equal(message.direction, "out");
+
+  await session.announceVoice(0, { gender: VoiceGender.Female });
+  assert.deepEqual(voiceFrames(radio).at(-1)!.voice, { kind: "announce", speaker: session.voiceSpeaker(), gender: VoiceGender.Female, codecs: 2, card: null, name: "Me" });
+  await session.disconnect();
+});
+
+test("our voice part no repeater sends on goes faded, and once more goes with the next try", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000, voicePartGapMs: 0 });
+  const connecting = session.connect(radio);
+  await settle();
+  await connecting;
+  session.setVoicePacker(testPacker);
+  const id = await session.sendVoice(0, "Буду у вышки через десять минут", 3);
+  // The part's packet is worked out with WebCrypto before it goes, so wait for the send itself.
+  await until(() => voiceFrames(radio).length === 1);
+  await settle();
+  const voice = () => session.getState().messages.find((m) => m.id === id)!.voice!;
+  t.mock.timers.tick(20_000);
+  assert.deepEqual(voice().unheard, [0]);
+
+  await session.resendVoicePart(id, 0);
+  assert.deepEqual(voice().unheard, []);
+  assert.deepEqual(voice().attempts, [1]);
+  const [first, again] = voiceFrames(radio);
+  assert.equal(again!.voice?.kind === "part" && again!.voice.attempt, 1, "another packet, which the repeaters have not seen");
+  assert.notDeepEqual([...again!.frame], [...first!.frame]);
+  const secret = fromHex(session.getState().channels[0]!.secret);
+  radio.push(heardPacket(6, [0x79], await groupDataPayload(secret, VOICE_DATA_TYPE, again!.frame.subarray(5))));
+  await settle();
+  t.mock.timers.tick(20_000);
+  assert.deepEqual(voice().unheard, [], "a repeater sent the new try on");
 });

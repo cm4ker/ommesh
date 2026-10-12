@@ -53,6 +53,26 @@ tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
 # The window opens where it was left and at the size it was, maximised or not.
 tauri-plugin-window-state = "2"
+# Voice messages travel as text packed with a dictionary (`voice.rs`). The
+# experimental API is for the frame without its magic number: four bytes of a
+# part's 147.
+zstd = { version = "0.13", features = ["experimental"] }
+# A downloaded speech model is checked against its published digest before
+# whisper.cpp reads it (`voice.rs`). Already in the tree through Tauri.
+sha2 = "0.10"
+# The updater's reqwest has TLS without a crypto provider, which the updater
+# installs before its first check; a model download may come before that and
+# installs the same one (`voice.rs`). Already in the tree through the updater.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+
+# The speech in a voice message written down on this computer (`voice.rs`):
+# whisper.cpp on the processor alone, no GPU backend. It is C++ built with
+# CMake, and bindgen reads its header through libclang, so a build needs both;
+# the build workflow also says which processors to build for and which C++
+# runtime to link. `log_backend` hands whisper's chatter to `log`. 32-bit
+# Windows goes without: see `voice::engine`.
+[target.'cfg(target_pointer_width = "64")'.dependencies]
+whisper-rs = { version = "0.16", features = ["log_backend"] }
 
 # On Windows the BLE link is the platform's own GATT API, not btleplug: the
 # firmware's UART characteristics demand an encrypted link, and btleplug's

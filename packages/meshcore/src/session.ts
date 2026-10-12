@@ -14,6 +14,7 @@ import { ByteReader, bytesEqual, fromHex, pathByteLength, toHex, unixNow } from 
 import { neighbourSearchMs, replyBudgetMs, sealedBytes, traceBudgetMs, type ReplySize } from "./protocol/airtime.js";
 import { CHANNEL_TEXT_LEN, groupDataPayload, groupTextPayload, heardGroupTextPayload, relaysAudible } from "./protocol/group.js";
 import { REACTION_DATA_TYPE, decodeReaction, directReactionText, encodeReaction, messageHash, parseDirectReaction, parseTextReaction } from "./protocol/reaction.js";
+import { VOICE_DATA_TYPE, VOICE_SPEAKER_SIZE, VoiceCodec, decodeVoice, encodeVoiceAnnounce, encodeVoicePart, splitVoiceText, type VoiceGender } from "./protocol/voice.js";
 import { PayloadType, parseRawPacket, type RawPacket } from "./protocol/packet.js";
 import { AclRole, AdvType, Cmd, ContactFlag, ControlType, DIRECT_TEXT_LEN, ErrCode, MAX_TEXT_LEN, NeighbourOrder, OUT_PATH_UNKNOWN, PUB_KEY_PREFIX_SIZE, ROOM_TEXT_LEN, StatsType, TxtType } from "./protocol/codes.js";
 import {
@@ -178,6 +179,45 @@ export interface MessageRecord {
    * one names it by its stamp.
    */
   pastStamps?: number[];
+  /** A voice message (#89): the text came in parts, and is read out rather than read. */
+  voice?: MessageVoice;
+}
+
+/** What a voice message is made of; see `protocol/voice.ts`. */
+export interface MessageVoice {
+  /** Hex of the first four bytes of the speaker's key. */
+  speaker: string;
+  /** The message's number, which its parts share. */
+  message: number;
+  /** How long it was said, seconds. */
+  seconds: number;
+  /** Each part's text in order; null for a part not here. */
+  parts: (string | null)[];
+  /** Ours: the try each part went with last. */
+  attempts?: number[];
+  /** Ours: the parts no repeater was heard sending on. Sending one again takes it off. */
+  unheard?: number[];
+}
+
+/** Who speaks under a few bytes of key, as their announce said. */
+export interface VoicePeer {
+  name: string;
+  gender: VoiceGender;
+  /** The packings they read, as `VoiceCodec` bits. */
+  codecs: number;
+  /** Hex of their voice card's hash; null without one. */
+  card: string | null;
+  /** Local clock, ms. */
+  at: number;
+}
+
+/**
+ * Packs a voice message's text and unpacks it. The dictionary and zstd live
+ * in the desktop shell, so the session is handed this rather than doing it.
+ */
+export interface VoicePacker {
+  pack(text: string): Promise<Uint8Array>;
+  unpack(data: Uint8Array): Promise<string>;
 }
 
 /** An emoji someone put on a message. */
@@ -406,6 +446,8 @@ export interface SessionState {
   remote: { active: RemoteJobInfo | null; queued: RemoteJobInfo[] };
   /** How direct messages are routed: a flood pinned per contact, and how long a learned route is trusted. */
   routing: RoutingSettings;
+  /** Who speaks in voice messages, by the hex of their first key bytes, as their announces said (#89). */
+  voicePeers: Record<string, VoicePeer>;
   /** The most recent pushes and errors, newest last, for a log pane. */
   log: LogEntry[];
   error: string | null;
@@ -438,6 +480,8 @@ export interface PersistedState {
   routing?: RoutingSettings;
   /** Absent in history saved before a node's console was kept over a restart. */
   consoles?: Record<string, ConsoleEntry[]>;
+  /** Absent in history saved before voice messages. */
+  voicePeers?: Record<string, VoicePeer>;
 }
 
 /** History brought in from a file, as `importHistory` takes it. */
@@ -478,6 +522,8 @@ export interface SessionOptions {
   traceWaitMs?: (estimateMs: number) => number;
   /** How long a neighbour search waits for the neighbours' answers, from the time worked out for it; for tests. */
   searchWaitMs?: (estimateMs: number) => number;
+  /** The pause between a voice message's parts, ms; for tests. */
+  voicePartGapMs?: number;
 }
 
 /** One trace that came back. */
@@ -804,8 +850,8 @@ function guessPathSince(lastMod: number, now: number): number {
 
 /** The part of the state that is kept per radio. */
 function historyOf(state: SessionState): PersistedState {
-  const { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles } = state;
-  return { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles };
+  const { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles, voicePeers } = state;
+  return { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles, voicePeers };
 }
 
 /**
@@ -865,6 +911,11 @@ function toRecord(contact: Contact, lastHeardAt: number | null, previous: Contac
 const LOG_LIMIT = 400;
 
 let idCounter = 0;
+/** A voice message's text: the parts here, in order; one still missing leaves nothing in its place. */
+function voiceText(parts: readonly (string | null)[]): string {
+  return parts.filter((p): p is string => !!p).join(" ");
+}
+
 function newId(now: number): string {
   const c = globalThis.crypto;
   if (c && typeof c.randomUUID === "function") return c.randomUUID();
@@ -903,6 +954,7 @@ const EMPTY: SessionState = {
   consoles: {},
   remote: { active: null, queued: [] },
   routing: { resetAfterMin: null, contacts: {} },
+  voicePeers: {},
   log: [],
   error: null,
   syncing: false,
@@ -919,6 +971,14 @@ const ECHO_WINDOW_MS = 15 * 60 * 1000;
  * room for that wait plus the airtime of a couple of hops.
  */
 const SILENCE_MS = 20 * 1000;
+/**
+ * The pause between a voice message's parts: a part is some 0.8 s on the
+ * air, and a repeater waits up to half as long again before sending it on,
+ * so by then the one before has gone a hop.
+ */
+const VOICE_PART_GAP_MS = 2000;
+/** How long a voice message waits for the rest of its parts to join it. */
+const VOICE_GATHER_MS = 10 * 60 * 1000;
 
 /**
  * The gaps before each send of a retry loop. The first goes at once, and the
@@ -1110,6 +1170,13 @@ export class MeshSession {
   private heardListeners = new Set<(packet: HeardPacket) => void>();
   private readonly traceWait: (estimateMs: number) => number;
   private readonly searchWait: (estimateMs: number) => number;
+  /** Packs voice messages; null where this app cannot, and then they go unread. */
+  private voicePacker: VoicePacker | null = null;
+  /** Our voice parts' packets as a repeater would send them on, hex, to the message and part. */
+  private voiceWatch = new Map<string, { id: string; index: number; at: number }>();
+  /** Our voice parts waiting to hear a repeater send them on, by `id:index`. */
+  private voiceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly voicePartGap: number;
 
   constructor(options: SessionOptions = {}) {
     this.appName = options.appName ?? "Meshnet";
@@ -1118,6 +1185,7 @@ export class MeshSession {
     this.replyWait = options.replyWaitMs ?? ((budget) => budget);
     this.traceWait = options.traceWaitMs ?? ((budget) => Math.min(30_000, Math.max(2_500, budget)));
     this.searchWait = options.searchWaitMs ?? ((budget) => budget);
+    this.voicePartGap = options.voicePartGapMs ?? VOICE_PART_GAP_MS;
     this.trace = options.trace;
   }
 
@@ -1174,7 +1242,8 @@ export class MeshSession {
       "batteryHistory" in patch ||
       "readingHistory" in patch ||
       "routing" in patch ||
-      "consoles" in patch
+      "consoles" in patch ||
+      "voicePeers" in patch
     ) {
       this.scheduleSave();
     }
@@ -1387,6 +1456,7 @@ export class MeshSession {
       readingHistory: persisted?.readingHistory ?? {},
       routing: persisted?.routing ?? EMPTY.routing,
       consoles: restoredConsoles(persisted?.consoles),
+      voicePeers: persisted?.voicePeers ?? {},
     };
   }
 
@@ -2235,6 +2305,10 @@ export class MeshSession {
         retryPlan: null,
       };
     } else {
+      if (frame.dataType === VOICE_DATA_TYPE) {
+        await this.takeVoice(frame);
+        return;
+      }
       const reaction = frame.dataType === REACTION_DATA_TYPE ? decodeReaction(frame.data) : null;
       if (reaction) {
         const conversation = await this.channelMessageConversation(frame.channelIndex);
@@ -2473,6 +2547,258 @@ export class MeshSession {
     if (index === KEYLESS_INDEX) return new Uint8Array(16);
     const channel = this.state.channels.find((c) => c.index === index);
     return channel ? fromHex(channel.secret) : null;
+  }
+
+  // ---- voice messages (#89) ----
+  //
+  // A voice message is text that travels in parts, each a channel datagram
+  // (see protocol/voice.ts). Parts are gathered into one message as they
+  // come; a part is shown and read out as soon as it is here. Nothing goes on
+  // the air by itself: an announce goes when its button is pressed, a message
+  // when it is sent, and a part again when its "once more" is tapped.
+
+  /** Lets the session pack and unpack voice messages; null stops it reading them. */
+  setVoicePacker(packer: VoicePacker | null): void {
+    this.voicePacker = packer;
+  }
+
+  /** The hex of our own first key bytes, which our voice parts and announces carry. */
+  voiceSpeaker(): string | null {
+    return this.state.self ? this.state.self.key.slice(0, VOICE_SPEAKER_SIZE * 2) : null;
+  }
+
+  /** Who speaks under these key bytes: the name their announce gave, else a contact's whose key starts with them. */
+  voiceName(speaker: string): string | null {
+    const announced = this.state.voicePeers[speaker];
+    if (announced) return announced.name;
+    if (speaker === this.voiceSpeaker()) return this.state.self?.name ?? null;
+    const contact = Object.values(this.state.contacts).find((c) => c.key.startsWith(speaker));
+    return contact?.name ?? null;
+  }
+
+  private async takeVoice(frame: { channelIndex: number; snr: number; pathLen: number | null; data: Uint8Array }): Promise<void> {
+    const voice = decodeVoice(frame.data);
+    if (!voice) {
+      this.log("channelData", `channel ${frame.channelIndex}: a voice datagram that does not read: ${toHex(frame.data)}`);
+      return;
+    }
+    if (voice.kind === "announce") {
+      const peer: VoicePeer = { name: voice.name, gender: voice.gender, codecs: voice.codecs, card: voice.card, at: this.now() };
+      this.set({ voicePeers: { ...this.state.voicePeers, [voice.speaker]: peer } });
+      // Parts that came before the announce were nobody's: they are its now.
+      const nameless = this.state.messages.some((m) => m.voice?.speaker === voice.speaker && m.sender === null);
+      if (nameless) this.set({ messages: this.state.messages.map((m) => (m.voice?.speaker === voice.speaker && m.sender === null ? { ...m, sender: voice.name } : m)) });
+      this.log("message", `${voice.name} announced their voice`);
+      return;
+    }
+    if (!this.voicePacker) {
+      this.log("message", "a voice message came, and this app cannot read voice");
+      return;
+    }
+    if (voice.codec !== VoiceCodec.ZstdRuV1) {
+      this.log("message", `a voice message packed a way this app does not know (${voice.codec})`);
+      return;
+    }
+    let text: string;
+    try {
+      text = (await this.voicePacker.unpack(voice.data)).trim();
+    } catch (error) {
+      this.log("error", `a voice part does not unpack: ${(error as Error).message}`);
+      return;
+    }
+    const conversation = await this.channelMessageConversation(frame.channelIndex);
+    const now = this.now();
+    const known = this.state.messages.find(
+      (m) => m.conversation === conversation && m.voice?.speaker === voice.speaker && m.voice.message === voice.message && now - m.receivedAt < VOICE_GATHER_MS,
+    );
+    if (known?.voice) {
+      // A copy of a part already here, or one sent again: nothing new.
+      if (known.voice.parts[voice.index] !== null && known.voice.parts[voice.index] !== undefined) return;
+      const parts = known.voice.parts.slice();
+      parts[voice.index] = text;
+      this.patchMessage(known.id, { text: voiceText(parts), voice: { ...known.voice, parts } });
+      return;
+    }
+    const parts: (string | null)[] = Array.from({ length: voice.count }, () => null);
+    parts[voice.index] = text;
+    const message: MessageRecord = {
+      id: newId(now),
+      conversation,
+      direction: "in",
+      text: voiceText(parts),
+      sender: this.voiceName(voice.speaker),
+      senderPrefix: null,
+      timestamp: Math.floor(now / 1000),
+      receivedAt: now,
+      snr: frame.snr,
+      hops: frame.pathLen,
+      txtType: TxtType.Plain,
+      status: null,
+      ackTag: null,
+      roundTripMs: null,
+      flood: null,
+      attempt: 0,
+      error: null,
+      echoes: [],
+      route: null,
+      retryPlan: null,
+      voice: { speaker: voice.speaker, message: voice.message, seconds: voice.seconds, parts },
+    };
+    const unread =
+      this.focused === conversation ? this.state.unread : { ...this.state.unread, [conversation]: (this.state.unread[conversation] ?? 0) + 1 };
+    this.set({ messages: [...this.state.messages, message], unread });
+    for (const listener of this.receivedListeners) {
+      try {
+        listener(message);
+      } catch (error) {
+        console.error("received listener threw", error);
+      }
+    }
+  }
+
+  /**
+   * Says on a channel who we are when we speak: our name, the voice to read us
+   * in and the packings we read. It goes only when asked for, once.
+   */
+  async announceVoice(channelIndex: number, voice: { gender: VoiceGender; card?: string | null }): Promise<void> {
+    const client = this.need();
+    const speaker = this.voiceSpeaker();
+    if (!speaker || !this.state.self) throw new Error("not connected");
+    if (!this.state.channels.some((c) => c.index === channelIndex)) throw new Error("that channel is not on the radio");
+    const data = encodeVoiceAnnounce({ speaker, gender: voice.gender, codecs: 1 << VoiceCodec.ZstdRuV1, card: voice.card ?? null, name: this.state.self.name });
+    await client.sendChannelData(channelIndex, VOICE_DATA_TYPE, data);
+    this.log("message", `our voice announced on channel ${channelIndex}`);
+  }
+
+  /**
+   * Sends text that was said as a voice message: cut into parts that each
+   * fit, then the parts one after another with a pause between. Gives the
+   * message's id once it is in the chat, before the parts have gone.
+   */
+  async sendVoice(channelIndex: number, text: string, seconds: number): Promise<string> {
+    const packer = this.voicePacker;
+    if (!packer) throw new Error("this app cannot send voice");
+    const client = this.need();
+    const speaker = this.voiceSpeaker();
+    const self = this.state.self;
+    if (!speaker || !self) throw new Error("not connected");
+    if (!this.state.channels.some((c) => c.index === channelIndex)) throw new Error("that channel is not on the radio");
+    const pieces = await splitVoiceText(text, (t) => packer.pack(t));
+    if (!pieces || pieces.length === 0) throw new Error("too much to say in one voice message");
+    const now = this.now();
+    const message: MessageRecord = {
+      id: newId(now),
+      conversation: channelConversation(channelIndex),
+      direction: "out",
+      text: voiceText(pieces.map((p) => p.text)),
+      sender: self.name,
+      senderPrefix: null,
+      timestamp: Math.floor(now / 1000),
+      receivedAt: now,
+      snr: null,
+      hops: null,
+      txtType: TxtType.Plain,
+      status: "sending",
+      ackTag: null,
+      roundTripMs: null,
+      flood: null,
+      attempt: 0,
+      error: null,
+      echoes: [],
+      route: null,
+      retryPlan: null,
+      voice: { speaker, message: Math.floor(Math.random() * 0x10000), seconds, parts: pieces.map((p) => p.text), attempts: pieces.map(() => 0), unheard: [] },
+    };
+    this.set({ messages: [...this.state.messages, message] });
+    void (async () => {
+      try {
+        for (let index = 0; index < pieces.length; index++) {
+          if (index > 0) await new Promise((resolve) => setTimeout(resolve, this.voicePartGap));
+          await this.sendVoicePart(client, message.id, channelIndex, index, pieces[index]!.data);
+        }
+        this.patchMessage(message.id, { status: "sent" });
+      } catch (error) {
+        this.patchMessage(message.id, { status: "failed", error: (error as Error).message });
+      }
+    })();
+    return message.id;
+  }
+
+  /** One of our voice parts once more, with the next try, for one no repeater was heard sending on. */
+  async resendVoicePart(id: string, index: number): Promise<void> {
+    const message = this.state.messages.find((m) => m.id === id);
+    const voice = message?.voice;
+    const text = voice?.parts[index];
+    if (!message || message.direction !== "out" || !voice || !text) throw new Error("no such voice part");
+    if (!this.voicePacker) throw new Error("this app cannot send voice");
+    const target = parseConversation(message.conversation);
+    if (target.kind !== "channel") return;
+    const attempts = (voice.attempts ?? voice.parts.map(() => 0)).slice();
+    attempts[index] = ((attempts[index] ?? 0) + 1) & 0x0f;
+    this.patchMessage(id, { voice: { ...voice, attempts, unheard: (voice.unheard ?? []).filter((i) => i !== index) } });
+    await this.sendVoicePart(this.need(), id, target.index, index, await this.voicePacker.pack(text));
+    if (message.status === "failed") this.patchMessage(id, { status: "sent", error: null });
+  }
+
+  private async sendVoicePart(client: MeshCoreClient, id: string, channelIndex: number, index: number, packed: Uint8Array): Promise<void> {
+    const voice = this.state.messages.find((m) => m.id === id)?.voice;
+    if (!voice) return;
+    const data = encodeVoicePart({
+      speaker: voice.speaker,
+      message: voice.message,
+      index,
+      count: voice.parts.length,
+      codec: VoiceCodec.ZstdRuV1,
+      attempt: voice.attempts?.[index] ?? 0,
+      seconds: voice.seconds,
+      data: packed,
+    });
+    await this.watchVoicePart(id, index, channelIndex, data);
+    await client.sendChannelData(channelIndex, VOICE_DATA_TYPE, data);
+  }
+
+  /** Works out the packet a part makes, as for a reaction, and gives a repeater the same window to be heard sending it on. */
+  private async watchVoicePart(id: string, index: number, channelIndex: number, data: Uint8Array): Promise<void> {
+    const secret = this.channelSecret(channelIndex);
+    if (!secret) return;
+    const key = `${id}:${index}`;
+    try {
+      const payload = await groupDataPayload(secret, VOICE_DATA_TYPE, data);
+      const now = this.now();
+      for (const [hex, watch] of this.voiceWatch) if (now - watch.at > ECHO_WINDOW_MS) this.voiceWatch.delete(hex);
+      this.voiceWatch.set(toHex(payload), { id, index, at: now });
+    } catch (error) {
+      this.log("echo", `cannot work out a voice part's packet: ${(error as Error).message}`);
+      return;
+    }
+    const previous = this.voiceTimers.get(key);
+    if (previous) clearTimeout(previous);
+    const timer = setTimeout(() => {
+      this.voiceTimers.delete(key);
+      this.markVoicePart(id, index, true);
+    }, SILENCE_MS);
+    (timer as { unref?: () => void }).unref?.();
+    this.voiceTimers.set(key, timer);
+  }
+
+  /** A repeater sent one of our voice parts on: it is out there. */
+  private voiceHeard(hex: string): void {
+    const watch = this.voiceWatch.get(hex);
+    if (!watch) return;
+    const key = `${watch.id}:${watch.index}`;
+    const timer = this.voiceTimers.get(key);
+    if (timer) clearTimeout(timer);
+    this.voiceTimers.delete(key);
+    this.markVoicePart(watch.id, watch.index, false);
+  }
+
+  private markVoicePart(id: string, index: number, unheard: boolean): void {
+    const voice = this.state.messages.find((m) => m.id === id)?.voice;
+    if (!voice) return;
+    const was = voice.unheard ?? [];
+    if (was.includes(index) === unheard) return;
+    const next = unheard ? [...was, index].sort((a, b) => a - b) : was.filter((i) => i !== index);
+    this.patchMessage(id, { voice: { ...voice, unheard: next } });
   }
 
   // ---- the copies the radio heard ----
@@ -2814,8 +3140,11 @@ export class MeshSession {
    */
   private noteHeard(snr: number, raw: Uint8Array): void {
     const packet = parseRawPacket(raw);
-    // A datagram is only looked at for our reactions coming back: ours is never heard from us, so a copy has relays in it.
-    if (packet?.flood && packet.payloadType === PayloadType.GroupData && packet.path.length > 0) this.reactionHeard(toHex(packet.payload));
+    // A datagram is only looked at for our reactions and voice parts coming back: ours is never heard from us, so a copy has relays in it.
+    if (packet?.flood && packet.payloadType === PayloadType.GroupData && packet.path.length > 0) {
+      this.reactionHeard(toHex(packet.payload));
+      this.voiceHeard(toHex(packet.payload));
+    }
     if (!packet || !packet.flood || (packet.payloadType !== PayloadType.GroupText && packet.payloadType !== PayloadType.TxtMsg)) return;
     const now = this.now();
     const hex = toHex(packet.payload);

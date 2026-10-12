@@ -121,6 +121,10 @@ export const PinIcon = icon('<path d="M9 3.5h6M10 3.5v5.2L7 12v1.5h10V12l-3-3.3V
 export const PinOffIcon = icon('<path d="M9 3.5h6M10 3.5v5.2L7 12v1.5h10V12l-3-3.3V3.5"/><path d="M12 13.5v7"/><path d="M4 4l16 16"/>');
 export const BellIcon = icon('<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>');
 export const SpeakerIcon = icon('<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9.5a3.5 3.5 0 0 1 0 5"/><path d="M18 7a7 7 0 0 1 0 10"/>');
+/** Speaking into a voice message (#89). */
+export const MicIcon = icon('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/>');
+/** Experimental features: a flask. */
+export const FlaskIcon = icon('<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/>');
 export const PaletteIcon = icon('<path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.7-.8 1.4-1.8-.4-1.2.4-2.2 1.6-2.2H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3z"/><circle cx="8" cy="11" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="11" r="1"/>');
 /** A picture in a frame: a chat's background. */
 export const PictureIcon = icon('<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 16.5l5-5 4 4 2.5-2.5 5.5 5"/><circle cx="15.5" cy="9" r="1.5"/>');

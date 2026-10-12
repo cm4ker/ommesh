@@ -10,6 +10,8 @@ import { registerNews } from "./lib/news.js";
 import { getPing } from "./lib/ping.js";
 import { isCapacitor, nativePlatform } from "./lib/platform.js";
 import { initSendTries } from "./lib/sendTries.js";
+// Voice messages (#89): as it loads it hands the session the packer the shell provides, before the first message is read.
+import "./lib/voice.js";
 import { session } from "./lib/session.js";
 import { connectors } from "./transports/index.js";
 import { initTheme } from "./theme/store.js";

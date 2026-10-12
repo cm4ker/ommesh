@@ -43,6 +43,7 @@ import { NotOnRadio } from "./ContactsPages.js";
 import { PlaceBody } from "./PlaceCard.js";
 import { LinkCards, LinkMark } from "./LinkPreview.js";
 import { Reactions, ReactStrip } from "./Reactions.js";
+import { VoiceBody, VoiceLength } from "./VoiceMessage.js";
 import {
   AlertIcon,
   CheckIcon,
@@ -942,17 +943,21 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
   // Nobody has been heard sending it on, a loop on a channel is still trying, or no try
   // was acknowledged: the whole bubble says so.
   const bad = out && (message.status === "unheard" || (looping && !direct) || gaveUp);
-  const retryable = out && (message.status === "unheard" || message.status === "unconfirmed" || message.status === "failed");
+  // A voice message (#89) goes again part by part, from its own strip, not as a text would.
+  const voice = message.voice;
+  const retryable = !voice && out && (message.status === "unheard" || message.status === "unconfirmed" || message.status === "failed");
   const flood = retryable && session.retryFloods(message);
   // One to three emoji and nothing else: large, with no bubble (#41), unless turned off in Appearance.
   // A red one keeps its bubble for the strip.
-  const jumbo = bad || !large ? 0 : emojiOnly(message.text);
+  const jumbo = bad || !large || voice ? 0 : emojiOnly(message.text);
   // One place and nothing else to it but words: a map with them under it.
   // A place in the line a reply quotes is the answered message's, and does not make this one a place.
-  const placed = useMemo(() => (jumbo ? null : placeMessage(message.text, quoteHeadLength(message.text))), [jumbo, message.text]);
+  const placed = useMemo(() => (jumbo || voice ? null : placeMessage(message.text, quoteHeadLength(message.text))), [jumbo, voice, message.text]);
   const from = out ? null : message.sender || peer;
   const showPlace = (text: string) => openPlace(text, from, at);
-  const reactable = session.canReact(message);
+  // A voice message carries no stamp of its sender's, which a reaction names a message by.
+  const reactable = !voice && session.canReact(message);
+  const sender = message.sender ?? (voice && !out ? t("chats.voice.someone", { speaker: voice.speaker.slice(0, 4) }) : null);
 
   const retry = async () => {
     setBusy(true);
@@ -1041,9 +1046,11 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
           title={relayTitle}
           {...(selecting ? holdOff : press)}
         >
-          {showSender && message.sender ? <SenderName name={message.sender} /> : null}
+          {showSender && sender ? <SenderName name={sender} /> : null}
           {placed ? <PlaceBody place={placed.place} mine={out} /> : null}
-          {placed ? (
+          {voice ? (
+            <VoiceBody message={message} />
+          ) : placed ? (
             placed.place.label || placed.caption ? <span className="msg-text place-caption">{richText([placed.place.label, placed.caption].filter(Boolean).join("\n"), me, mark, showPlace)}</span> : null
           ) : (
             <span className="msg-text">{richText(message.text, me, mark, showPlace, previews ? linkMark : undefined)}</span>
@@ -1058,6 +1065,7 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
           ) : null}
           <span className="msg-meta">
             {tech ? <span className="msg-tech">{tech} ·</span> : null}
+            {voice ? <VoiceLength seconds={voice.seconds} /> : null}
             <span>{timeOfDay(at)}</span>
             {/* A red bubble carries its state in the strip below; a tick beside it would say the opposite. */}
             {out && !bad ? <Status message={message} trying={trying} /> : null}

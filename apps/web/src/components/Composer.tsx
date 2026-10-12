@@ -23,8 +23,12 @@ import { touchFirst } from "../lib/platform.js";
 import { usePress } from "../lib/press.js";
 import { session, useSession } from "../lib/session.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
+import { toast } from "../lib/toast.js";
+import { getVoicePrefs, useVoicePrefs } from "../lib/voice.js";
+import { errorText } from "../i18n/errors.js";
 import { Avatar } from "./Avatar.js";
-import { ClockIcon, CloseIcon, LocationIcon, ReplyIcon, SendIcon, TextIcon, WavesIcon } from "./Icons.js";
+import { RecordingBar, TakeBar, useRecorder, useVoiceHere } from "./ComposerVoice.js";
+import { ClockIcon, CloseIcon, LocationIcon, MicIcon, ReplyIcon, SendIcon, StopIcon, TextIcon, WavesIcon } from "./Icons.js";
 import { t } from "../i18n/index.js";
 import { tx } from "../i18n/rich.js";
 
@@ -71,7 +75,25 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   // A quote with nothing written under it is not a message yet; a place alone is.
   const empty = text.slice(head.length).trim() === "";
   const nothing = empty && !place;
-  const over = cost.over > 0;
+  // In #voice with voice messages on (#89): the empty field's button records, and what was heard
+  // waits in the field as a voice message (`take`, how long it was said) until it goes or is let go.
+  const voiceChannel = useVoiceHere(conversation);
+  const voicePrefs = useVoicePrefs();
+  const [take, setTake] = useState<{ seconds: number } | null>(null);
+  useEffect(() => setTake(null), [conversation]);
+  const recorder = useRecorder((heard, seconds) => {
+    if (voiceChannel === null) return;
+    if (!getVoicePrefs().review) {
+      void session.sendVoice(voiceChannel, heard, seconds).catch(() => undefined);
+      onSent();
+      return;
+    }
+    setText(heard);
+    setTake({ seconds });
+    field.current?.focus({ preventScroll: true });
+  });
+  // A voice message is cut into parts by itself: no byte limit to go over.
+  const over = !take && cost.over > 0;
   const tone = over ? "over" : cost.used >= cost.budget * 0.8 ? "warn" : "";
   // The tag counts the place with the text, as the reader sees one message.
   const lineBytes = line ? utf8Length(line) + 1 : 0;
@@ -233,6 +255,18 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   };
 
   const send = async (how: { raw?: boolean; flood?: boolean } = {}) => {
+    if (take && voiceChannel !== null) {
+      if (!body) return;
+      const seconds = take.seconds;
+      setTake(null);
+      cleared();
+      try {
+        await session.sendVoice(voiceChannel, body, seconds);
+      } catch (error) {
+        toast(errorText(error), "error");
+      }
+      return;
+    }
     if (nothing || (place && !placeReady(place))) return;
     if (how.raw ? utf8Length(body) > cost.budget : over) {
       nudge();
@@ -322,8 +356,16 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   }
 
   const saved = cost.typed - cost.used;
+  // In #voice the empty field's button records instead (#89), and keeps doing so until the recording is done.
+  const mic = voiceChannel !== null && !take && (nothing || recorder.phase !== "idle");
   // An empty field's button puts a place in it; with a place or text in it, it sends.
-  const button = nothing
+  const button = mic
+    ? recorder.phase === "recording"
+      ? { cls: "mic on", label: t("chats.voice.finish"), icon: <StopIcon size={18} />, disabled: false, act: () => undefined }
+      : { cls: "mic", label: t("chats.voice.record"), icon: <MicIcon size={19} />, disabled: recorder.phase === "hearing" || !online, act: () => undefined }
+    : take
+    ? { cls: "ready", label: t("chats.voice.send"), icon: <SendIcon size={18} />, disabled: !body, act: () => void send() }
+    : nothing
     ? { cls: "pin", label: t("chats.place.attach"), icon: <LocationIcon size={19} />, disabled: false, act: () => attachPlace(radio, conversation, many) }
     : place && !placeReady(place)
       ? { cls: "idle", label: t("chats.place.locating"), icon: <SendIcon size={18} />, disabled: true, act: () => undefined }
@@ -357,7 +399,7 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
         </div>
       ) : null}
       <div className="compose-box">
-        {!nothing && !(pick && matches.length > 0) ? (
+        {!nothing && !take && !(pick && matches.length > 0) ? (
           <span className={["compose-tag", tone].join(" ")} id={`cost-${conversation}`}>
             {over ? (
               t("chats.composer.bytesOver", { bytes: cost.over })
@@ -385,6 +427,8 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
             </button>
           </div>
         ) : null}
+        {recorder.phase !== "idle" ? <RecordingBar recorder={recorder} /> : null}
+        {take ? <TakeBar seconds={take.seconds} text={body} gender={voicePrefs.gender} onPlain={() => setTake(null)} /> : null}
         {place?.open ? (
           <PlacePanel radio={radio} conversation={conversation} place={place} />
         ) : place ? (
@@ -454,17 +498,20 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
             disabled={button.disabled}
             onMouseDown={(e) => e.preventDefault()}
             onClick={button.act}
-            {...press}
+            {...(mic ? recorder.press : press)}
           >
             {button.icon}
           </button>
         </div>
-        <div className="compose-meter" aria-hidden="true">
-          <i className={["fill", tone].join(" ")} style={{ width: share(cost.prefix + cost.used, ceiling) }} />
-          {blockEdges(ceiling).map((edge) => (
-            <span key={edge} className="tick" style={{ left: share(edge, ceiling) }} />
-          ))}
-        </div>
+        {/* A voice message is packed and cut into parts by itself: a text's bytes say nothing of it. */}
+        {take ? null : (
+          <div className="compose-meter" aria-hidden="true">
+            <i className={["fill", tone].join(" ")} style={{ width: share(cost.prefix + cost.used, ceiling) }} />
+            {blockEdges(ceiling).map((edge) => (
+              <span key={edge} className="tick" style={{ left: share(edge, ceiling) }} />
+            ))}
+          </div>
+        )}
       </div>
     </footer>
   );

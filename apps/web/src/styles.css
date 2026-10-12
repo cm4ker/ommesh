@@ -9663,3 +9663,101 @@ button.reading-tile.tap {
   color: var(--text-faint);
   font-size: var(--text-xs);
 }
+
+/* ---- voice messages (#89) ---- */
+
+/* What was said, with the button that reads it out at its start. */
+.voice-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+.voice-play {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  margin: 1px 0 0 -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+  color: var(--accent);
+  cursor: pointer;
+}
+.voice-play.on {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+.voice-text {
+  min-width: 0;
+  padding-top: 5px;
+}
+/* The word being read lit, what is still to come set back. */
+.voice-word {
+  border-radius: 3px;
+  background: color-mix(in oklab, var(--accent) 30%, transparent);
+  color: inherit;
+}
+.voice-ahead {
+  color: var(--text-faint);
+}
+/* A part not here, or one of ours no repeater was heard sending on. */
+.voice-gap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  white-space: normal;
+}
+.voice-gap.warn {
+  color: var(--warning);
+}
+.voice-length {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+/* The microphone in place of the empty field's button, filled while it records. */
+.compose-send.mic {
+  color: var(--accent);
+  touch-action: none;
+}
+.compose-send.mic.on {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  box-shadow: 0 0 0 6px color-mix(in oklab, var(--accent) 20%, transparent);
+}
+.compose-voice .compose-bar-text {
+  display: flex;
+  flex-direction: column;
+}
+.compose-voice .compose-bar-text small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-faint);
+}
+.compose-voice .chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.rec-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-left: 2px;
+  border-radius: 50%;
+  background: var(--danger);
+  transition: transform 0.1s;
+}
+.rec-time {
+  flex: none;
+  font: var(--text-sm) var(--font-mono);
+  color: var(--text);
+}

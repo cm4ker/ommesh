@@ -15,13 +15,14 @@ import { session, useSelector, useSession } from "../lib/session.js";
 import { act } from "../lib/toast.js";
 import { useDesktopUpdateInfo } from "../lib/updates.js";
 import { memoryUse } from "../lib/tidy.js";
+import { useVoicePrefs, voiceAvailable } from "../lib/voice.js";
 import { getPreference, subscribeTheme } from "../theme/store.js";
 import { findTheme } from "../theme/themes.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { Group, LinkRow } from "../ui/List.js";
 import { showMenu } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
-import { AirIcon, AlertIcon, BellIcon, FileIcon, GaugeIcon, InfoIcon, LinkIcon, LogIcon, PaletteIcon, PersonIcon, PowerIcon, RadioIcon, RefreshIcon, ShieldIcon, SlidersIcon, TextIcon, UsersIcon, WavesIcon } from "./Icons.js";
+import { AirIcon, AlertIcon, BellIcon, FileIcon, FlaskIcon, GaugeIcon, InfoIcon, LinkIcon, LogIcon, PaletteIcon, PersonIcon, PowerIcon, RadioIcon, RefreshIcon, ShieldIcon, SlidersIcon, TextIcon, UsersIcon, WavesIcon } from "./Icons.js";
 import { presetName, radioTitle } from "./RadioPages.js";
 import { readingsSummary } from "./Readings.js";
 
@@ -47,6 +48,7 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
   const events = useSelector((state) => state.log.length);
   const lookalikes = useLookalikePrefs();
   const theme = useSyncExternalStore(subscribeTheme, getPreference);
+  const voice = useVoicePrefs();
   const self = state.self;
   const online = state.status === "ready";
   const cell = useBatteryType(self?.key);
@@ -145,6 +147,8 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
           {row("history", <FileIcon size={17} />)}
           {row("appearance", <PaletteIcon size={17} />, theme === "system" ? t("radio.home.themeSystem") : themeName(theme))}
           {row("connection", state.link ? <LinkIcon kind={state.link.kind} size={17} /> : <RadioIcon size={17} />, state.link ? { ble: "Bluetooth", serial: "USB", tcp: "Wi-Fi" }[state.link.kind] : undefined)}
+          {/* Only where something there can be tried: voice needs the desktop app (#89). */}
+          {voiceAvailable() ? row("labs", <FlaskIcon size={17} />, voice.on ? t("radio.titles.voice") : undefined) : null}
         </Group>
         <Group>
           {row("air", <WavesIcon size={17} />, t("radio.home.listen"))}

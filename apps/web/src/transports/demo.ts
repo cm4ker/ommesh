@@ -30,7 +30,16 @@ import {
   toHex,
   TxtType,
   type Transport,
+  decodeVoice,
+  encodeVoiceAnnounce,
+  encodeVoicePart,
+  splitVoiceText,
+  VOICE_DATA_TYPE,
+  VoiceCodec,
+  VoiceGender,
 } from "@meshnet/meshcore";
+import { hashtagSecret } from "../lib/channels.js";
+import { VOICE_CHANNEL, voicePacker } from "../lib/voice.js";
 import type { Connector } from "./types.js";
 import { t } from "../i18n/index.js";
 
@@ -222,6 +231,10 @@ function startingWith(first: number, n: number): Uint8Array {
 const RELAYS = [0x03, 0x94, 0x6f, 0x2c];
 
 const CHANNELS = ["8b3387e9c5cdea6ac9e5edbaa115cd72", "0123456789abcdef0123456789abcdef"];
+/** Where the demo radio keeps #voice (#89); slot 2 stays empty for the chat without a key. */
+const VOICE_SLOT = 3;
+/** Who speaks in the demo's #voice: four bytes of a key nobody in the contacts has. */
+const BORIS = "b0715a1e";
 
 function contactFrame(code: number, p: Person, lastMod: number, hops = p.hops, relays: number[] = RELAYS, flags = p.name === "Alice" ? 1 : 0): Uint8Array {
   const path = new Uint8Array(64);
@@ -425,6 +438,8 @@ class DemoRadio extends BaseTransport {
       this.queue.push(this.reaction(0, hash, "👍", "Alice"), this.channel(0, "Kolya ⛺", `@[Bob (bike)]❤️\n${crockford(hash)}`));
       this.emitFrame(new Uint8Array([Push.MsgWaiting]));
     });
+    // Boris in #voice, a little after the rest, once the app can unpack what he says.
+    this.later(5000, () => void this.voiceSay("Всем привет из голосового канала. Это Борис с вышки, проверка связи.", 4.5));
     this.chatter = setInterval(() => void this.chat(), 25_000);
     this.murmur = setInterval(() => this.overhear(), 3_500);
     // The town's floods: every link once at first, so there is something to look through from the start.
@@ -754,6 +769,31 @@ class DemoRadio extends BaseTransport {
     super.emitFrame(frame);
   }
 
+  private borisAnnounced = false;
+
+  /**
+   * Boris says something in #voice: his announce the first time, then the
+   * parts, packed as this app packs voice, so that it reads them as it would
+   * a real radio's.
+   */
+  private async voiceSay(text: string, seconds: number): Promise<void> {
+    const pieces = await splitVoiceText(text, (t) => voicePacker().pack(t)).catch(() => null);
+    if (!pieces) return;
+    if (!this.borisAnnounced) {
+      this.borisAnnounced = true;
+      this.queue.push(this.voiceFrame(encodeVoiceAnnounce({ speaker: BORIS, gender: VoiceGender.Male, codecs: 1 << VoiceCodec.ZstdRuV1, card: null, name: "Борис" })));
+    }
+    const message = Math.floor(Math.random() * 0x10000);
+    pieces.forEach((piece, index) =>
+      this.queue.push(this.voiceFrame(encodeVoicePart({ speaker: BORIS, message, index, count: pieces.length, codec: VoiceCodec.ZstdRuV1, attempt: 0, seconds, data: piece.data }))),
+    );
+    this.emitFrame(new Uint8Array([Push.MsgWaiting]));
+  }
+
+  private voiceFrame(data: Uint8Array): Uint8Array {
+    return new ByteWriter().u8(Resp.ChannelDataRecv).i8(28).u8(0).u8(0).u8(VOICE_SLOT).u8(2).u16(VOICE_DATA_TYPE).u8(data.length).bytes(data).toBytes();
+  }
+
   private later(ms: number, frame: Uint8Array | (() => void)): void {
     this.timers.push(setTimeout(() => (typeof frame === "function" ? frame() : this.emitFrame(frame)), ms));
   }
@@ -906,13 +946,18 @@ class DemoRadio extends BaseTransport {
           return [new Uint8Array([Resp.Ok])];
         }
         const type = frame[3]! | (frame[4]! << 8);
-        void groupDataPayload(fromHex(CHANNELS[index] ?? CHANNELS[0]!), type, data).then((payload) => this.later(700, this.heard(6, [0x03], payload)));
+        const secret = index === VOICE_SLOT ? hashtagSecret(VOICE_CHANNEL) : (CHANNELS[index] ?? CHANNELS[0]!);
+        void groupDataPayload(fromHex(secret), type, data).then((payload) => this.later(700, this.heard(6, [0x03], payload)));
+        // Boris answers the last part of a voice message of ours, in a voice message of his own.
+        const voice = type === VOICE_DATA_TYPE ? decodeVoice(data) : null;
+        if (voice?.kind === "part" && voice.index === voice.count - 1 && voice.attempt === 0) this.later(6000, () => void this.voiceSay("Слышу тебя хорошо, приём.", 2));
         return [new Uint8Array([Resp.Ok])];
       }
       case Cmd.GetChannel: {
         const index = frame[1] ?? 0;
         if (index === 0) return [new ByteWriter().u8(Resp.ChannelInfo).u8(0).fixedString("Public", 32).bytes(fromHex(CHANNELS[0]!)).toBytes()];
         if (index === 1) return [new ByteWriter().u8(Resp.ChannelInfo).u8(1).fixedString("Friends", 32).bytes(fromHex(CHANNELS[1]!)).toBytes()];
+        if (index === VOICE_SLOT) return [new ByteWriter().u8(Resp.ChannelInfo).u8(index).fixedString(VOICE_CHANNEL, 32).bytes(fromHex(hashtagSecret(VOICE_CHANNEL))).toBytes()];
         return [new ByteWriter().u8(Resp.ChannelInfo).u8(index).fixedString("", 32).zeros(16).toBytes()];
       }
       case Cmd.SyncNextMessage:

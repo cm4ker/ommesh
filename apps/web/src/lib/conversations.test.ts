@@ -81,6 +81,7 @@ function state(messages: MessageRecord[]): SessionState {
     consoles: {},
     remote: { active: null, queued: [] },
     routing: { resetAfterMin: null, contacts: {} },
+    voicePeers: {},
     log: [],
     error: null,
     syncing: false,

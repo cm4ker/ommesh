@@ -13,6 +13,7 @@ import { push } from "../lib/nav.js";
 import { session, useSession } from "../lib/session.js";
 import { act, toast } from "../lib/toast.js";
 import {
+  deleteVoiceModel,
   downloadVoiceModel,
   setVoicePrefs,
   speak,
@@ -26,8 +27,8 @@ import {
   type VoiceModel,
 } from "../lib/voice.js";
 import { Button } from "../ui/Button.js";
-import { ActionRow, ChoiceRow, Group, LinkRow, SelectRow, SwitchRow } from "../ui/List.js";
-import { AirIcon, MicIcon, PlayIcon } from "./Icons.js";
+import { ActionRow, Group, LinkRow, SelectRow, SwitchRow } from "../ui/List.js";
+import { AirIcon, CheckIcon, DownIcon, MicIcon, PlayIcon, TrashIcon } from "./Icons.js";
 import { t } from "../i18n/index.js";
 import { errorText } from "../i18n/errors.js";
 
@@ -164,62 +165,81 @@ export function VoicePage() {
   );
 }
 
-/** Which recognition model, and fetching the one picked when it is not here yet. */
+/**
+ * The recognition models: pick one, and fetch or delete each on its own line.
+ * The shell fetches one at a time, so the other buttons wait while it does.
+ */
 function ModelGroup({ model }: { model: VoiceModel }) {
   const [models, setModels] = useState<ModelInfo[] | null>(null);
-  const [progress, setProgress] = useState<number | null>(null);
+  const [busy, setBusy] = useState<{ id: VoiceModel; percent: number | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
+  const refresh = () =>
     voiceModels()
-      .then((list) => live && setModels(list))
-      .catch((e: unknown) => live && setError(errorText(e)));
-    return () => {
-      live = false;
-    };
+      .then(setModels)
+      .catch((e: unknown) => setError(errorText(e)));
+  useEffect(() => {
+    void refresh();
   }, []);
   const picked = models?.find((m) => m.id === model);
   const mb = (bytes: number) => t("radio.voice.size", { mb: Math.round(bytes / 1_000_000) });
 
-  const download = async () => {
+  const download = async (id: VoiceModel) => {
     setError(null);
-    setProgress(0);
+    setBusy({ id, percent: 0 });
     try {
-      await downloadVoiceModel(model, (done, total) => setProgress(total ? Math.floor((done / total) * 100) : null));
-      setModels(await voiceModels());
+      await downloadVoiceModel(id, (done, total) => setBusy({ id, percent: total ? Math.floor((done / total) * 100) : null }));
     } catch (e) {
       setError(errorText(e));
     } finally {
-      setProgress(null);
+      setBusy(null);
+      await refresh();
     }
   };
 
+  const remove = async (id: VoiceModel) => {
+    setError(null);
+    try {
+      await deleteVoiceModel(id);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      await refresh();
+    }
+  };
+
+  const note = error ?? (picked && !picked.present && !busy ? t("radio.voice.missing") : undefined);
   return (
-    <Group title={t("radio.voice.recognition")} note={error ?? undefined}>
+    <Group title={t("radio.voice.recognition")} note={note}>
       {MODELS.map((m) => {
         const info = models?.find((x) => x.id === m.id);
+        const fetching = busy?.id === m.id;
         return (
-          <ChoiceRow
-            key={m.id}
-            label={t(m.label)}
-            hint={t(m.hint)}
-            value={info ? (info.present ? t("radio.voice.downloaded") : mb(info.bytes)) : undefined}
-            checked={model === m.id}
-            onSelect={() => setVoicePrefs({ model: m.id })}
-          />
+          <div key={m.id} className="line">
+            <button type="button" role="radio" aria-checked={model === m.id} className="model-pick" onClick={() => setVoicePrefs({ model: m.id })}>
+              <CheckIcon size={16} className="model-tick" />
+              <span className="line-text">
+                <span>{t(m.label)}</span>
+                <small>{info ? t("radio.voice.modelState", { hint: t(m.hint), state: info.present ? t("radio.voice.downloaded") : mb(info.bytes) }) : t(m.hint)}</small>
+              </span>
+            </button>
+            {!info ? null : fetching ? (
+              <Button size="sm" disabled>
+                {busy.percent === null ? t("radio.voice.download") : t("radio.voice.downloading", { percent: busy.percent })}
+              </Button>
+            ) : info.present ? (
+              <Button size="sm" disabled={busy !== null} onClick={() => void remove(m.id)}>
+                <TrashIcon size={14} />
+                {t("radio.voice.delete")}
+              </Button>
+            ) : (
+              <Button size="sm" disabled={busy !== null} onClick={() => void download(m.id)}>
+                <DownIcon size={14} />
+                {t("radio.voice.download")}
+              </Button>
+            )}
+          </div>
         );
       })}
-      {picked && !picked.present ? (
-        <div className="line">
-          <span className="line-text">
-            <span>{t("radio.voice.missing")}</span>
-            <small>{mb(picked.bytes)}</small>
-          </span>
-          <Button size="sm" disabled={progress !== null} onClick={() => void download()}>
-            {progress !== null ? t("radio.voice.downloading", { percent: progress }) : t("radio.voice.download")}
-          </Button>
-        </div>
-      ) : null}
     </Group>
   );
 }

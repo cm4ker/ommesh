@@ -9761,3 +9761,26 @@ button.reading-tile.tap {
   font: var(--text-sm) var(--font-mono);
   color: var(--text);
 }
+/* A recognition model on its line: the part to pick it by, a tick on the one picked, its button after. */
+.model-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.model-tick {
+  flex: none;
+  color: var(--accent);
+  visibility: hidden;
+}
+.model-pick[aria-checked="true"] .model-tick {
+  visibility: visible;
+}

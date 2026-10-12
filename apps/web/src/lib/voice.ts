@@ -146,6 +146,7 @@ export async function downloadVoiceModel(id: VoiceModel, progress: (done: number
 }
 
 export async function deleteVoiceModel(id: VoiceModel): Promise<void> {
+  if (found === id) found = null;
   if (isTauri()) await invoke("voice_model_delete", { id });
 }
 

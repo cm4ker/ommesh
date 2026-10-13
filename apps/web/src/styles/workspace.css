@@ -1,0 +1,332 @@
+/* ---- the workspace ---- */
+
+.app {
+  height: 100%;
+  display: grid;
+  overflow: hidden;
+}
+/* The desktop and a tablet held sideways: the rail, the list, what was picked in it, and the panel of its details. */
+.app.wide {
+  grid-template-columns: var(--rail-width) var(--pane-width) minmax(0, 1fr) auto;
+  padding-right: var(--safe-right);
+}
+/*
+ * On a tablet the status bar lies over the top of the page, as on a phone (a
+ * computer has no insets). The rail runs up under it; the other columns start
+ * below it, their own background filling the strip, so their heads keep the
+ * desktop's height.
+ */
+.app.wide > .pane,
+.app.wide > .content,
+.app.wide > .panel {
+  padding-top: var(--safe-top);
+}
+/* The system's buttons or gesture line lie over the bottom: a list in a side column scrolls clear of them. */
+.app.wide .pane .list,
+.app.wide .panel .list {
+  padding-bottom: var(--safe-bottom);
+}
+.app.narrow {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.app.narrow.detail {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: calc(var(--space-2) + var(--safe-top)) var(--space-1) calc(var(--space-2) + var(--safe-bottom)) calc(var(--space-1) + var(--safe-left));
+  gap: var(--space-1);
+  background: var(--chrome);
+  border-right: 1px solid var(--border);
+}
+.rail button,
+.tabbar button {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.rail button {
+  height: calc(54px * var(--box-scale));
+}
+@media (hover: hover) {
+  .rail button:hover,
+  .tabbar button:hover {
+    color: var(--text);
+  }
+}
+.rail button.on {
+  background: var(--selected);
+  color: var(--text);
+}
+.update-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: center;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.update-link:hover { background: var(--accent-subtle); }
+.update-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.rail-update .update-dot { position: absolute; top: 8px; right: 10px; }
+.update-status { margin-top: var(--space-4); font-weight: 500; }
+.update-progress { display: block; width: 100%; height: 8px; margin-top: var(--space-3); }
+.update-notes {
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+}
+.rail .rail-search {
+  height: calc(36px * var(--box-scale));
+  margin-bottom: var(--space-2);
+}
+.tab-badge {
+  position: absolute;
+  top: 4px;
+  left: calc(50% + 4px);
+  min-width: calc(16px * var(--text-scale));
+  height: calc(16px * var(--text-scale));
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: calc(10px * var(--text-scale));
+  font-weight: 600;
+  line-height: calc(16px * var(--text-scale));
+}
+.tab-dot {
+  position: absolute;
+  top: 7px;
+  left: calc(50% + 7px);
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--chrome);
+}
+.tab-dot.warn {
+  background: var(--warning);
+}
+.tab-dot.bad {
+  background: var(--danger);
+}
+/* A survey running, on the Mesh tab while another is open. */
+.tab-dot.rec {
+  background: var(--danger);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .tab-dot.rec {
+    animation: map-rec 2s ease-in-out infinite;
+  }
+}
+
+.tabbar {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  height: calc(var(--tabbar-height) + var(--safe-bottom));
+  padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
+  background: var(--chrome);
+  border-top: 1px solid var(--border);
+}
+.tabbar button {
+  font-size: var(--text-xs);
+}
+.tabbar button.on {
+  color: var(--accent);
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+}
+.content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg);
+  overflow: hidden;
+}
+/* The phone's screens: the top one on screen, the one under it kept mounted for Back and shown only while the top one slides. */
+.layer {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg);
+}
+.layer[data-layer="under"] {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  visibility: hidden;
+}
+.layer.moving {
+  will-change: transform;
+  box-shadow: -8px 0 24px rgb(0 0 0 / 0.25);
+}
+/*
+ * Under the one leaving: a third to the left and dimmed, coming into place as
+ * the finger moves. The swipe moves it by its own transform and fades the dim,
+ * a layer of its own between the two, by opacity (Workspace): both are the
+ * phone's to draw, with nothing painted again. A dim painted inside this screen
+ * repainted the whole of it on every move.
+ */
+.layer.peek,
+.mesh-phone.peek[hidden] {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  visibility: visible;
+  will-change: transform;
+  transform: translateX(-30%);
+}
+.layer.peek {
+  display: flex;
+}
+.layer-dim {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: #000;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  will-change: opacity;
+}
+.layer-dim.on {
+  visibility: visible;
+}
+/* The tabs of the screen under a conversation, which has none: they show with that screen, as a swipe back uncovers it and as a conversation slides in over it. */
+.content > .under-tabs {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.content > .under-tabs.peek {
+  visibility: visible;
+  will-change: transform;
+  transform: translateX(-30%);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .layer.enter {
+    animation: layer-enter 0.22s ease-out;
+  }
+  .layer.leave,
+  .content > .under-tabs.leave {
+    animation: layer-leave 0.22s ease-out;
+  }
+}
+@keyframes layer-enter {
+  from {
+    transform: translateX(100%);
+    box-shadow: -8px 0 24px rgb(0 0 0 / 0.25);
+  }
+}
+@keyframes layer-leave {
+  from,
+  to {
+    visibility: visible;
+  }
+  to {
+    transform: translateX(-30%);
+    filter: brightness(0.7);
+  }
+}
+.app.narrow .content {
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+.panel {
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .panel {
+    animation: panel-in 0.18s ease-out;
+  }
+}
+@keyframes panel-in {
+  from {
+    transform: translateX(16px);
+    opacity: 0.5;
+  }
+}
+
+/* The radio is gone: said once, under the headers, in every section. */
+.offline {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-3);
+  background: var(--warning-subtle);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+  order: -1;
+}
+.offline-text {
+  flex: 1;
+  min-width: 0;
+}
+.app.narrow .offline {
+  padding-top: calc(6px + var(--safe-top));
+}
+.app.narrow .offline ~ .layer > .screen > .screen-head,
+.app.narrow .offline ~ .layer > .list-pane > .list-head {
+  padding-top: 0;
+  min-height: 48px;
+}
+
+.empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  text-align: center;
+}

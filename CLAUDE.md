@@ -46,6 +46,7 @@ Open `http://localhost:5180/?demo`, choose **Demo**, connect to **MeshCore-demo*
 **`apps/web`** is the client every shell bundles.
 - `src/lib/session.ts` holds the single `MeshSession` (with `IndexedDbStorage`) and the `useSession` / `useSelector` hooks.
 - `src/lib/*` is feature logic, mostly small stores read with `useSyncExternalStore`, plus pure helpers with tests. `components/` are screens, `ui/` the primitives.
+- `src/styles.css` imports `src/styles/*.css`, one file per area, in cascade order. Where two rules of the same specificity meet, the later file wins, so moving a rule from one file to another can change what it overrides.
 - `src/transports/` has one `Connector` per link. `connectors()` picks them at runtime from `shell()`: Tauri (BLE, with a Windows-specific GATT path in `tauriWinBle.ts`; serial; TCP), Capacitor (BLE, TCP) or browser (Web Bluetooth, Web Serial).
 - `src/lib/nav.ts` is navigation: three sections (chats, mesh, radio; the radio section is labelled Settings), each a stack of screens. The phone shows the top of the stack; the desktop lays the same stack out side by side. Back handling is in `back.ts`.
 - Map tools (ping, route, line of sight, who hears me, neighbours) are one `MeshTool` at a time (`lib/meshTool.ts`); a sheet on the phone or a panel on the desktop shows it, and the map draws it. Nodes are painted on one canvas (`lib/nodeCanvas.ts`).
@@ -72,7 +73,7 @@ Anything sent over the air to test a change goes to the `#test` channel, never P
 - **Lean UI first.** The maintainer has pushed back on overloaded screens more than once. Start with the smallest version and put details behind a tap.
 - **Comments** are full sentences that explain why and what the reader cannot see from the code, as in the existing files. Match the surrounding style.
 - **Names.** The product is called Ommesh, but package names (`@meshnet/*`), app identifiers (`dev.cm4ker.meshnet`) and storage names stay `meshnet`. Renaming them would cut installed apps off from their updates and stored history.
-- **Colours** come only from the theme's custom properties (`apps/web/src/theme/themes.ts`); `styles.css` names none.
+- **Colours** come only from the theme's custom properties (`apps/web/src/theme/themes.ts`); the stylesheets in `apps/web/src/styles/` name none.
 - **Artwork.** The only source is `apps/web/public/icon.svg`; run `pnpm icons` after changing it.
 - **Generated files** are not edited by hand: the icons, the sounds (`pnpm sounds`), the chat backgrounds (`apps/web/src/backgrounds/`, `pnpm backgrounds`), the People list at the end of both READMEs and in the app (`apps/web/src/lib/people.json`, `apps/web/public/people/`, `apps/web/src/fonts/caveat-thanks.woff2`; `pnpm people`, which the People workflow runs and commits to master on every new issue), `apps/mobile/ios/App/CapApp-SPM/Package.swift` (written by `cap sync`) and `apps/desktop/src-tauri/tauri.release.json` (written by `scripts/release.mjs`).
 - **Commits** read `type(scope): What changes for the user (#issue)`, for example `feat(search): Put a clearing cross in every search field (#44)`. Types are `feat`, `fix`, `perf`, `docs`, `ci`. They are in English, and the body says in prose what changed and why.

@@ -21,7 +21,7 @@ import { LOCK_GLYPH, REPEATER_GLYPH, ROOM_GLYPH, SENSOR_GLYPH, UNLOCK_GLYPH } fr
 /** Pixels on a side: twice what a notice shows at the most, for a sharp picture on a dense screen. */
 const SIZE = 192;
 
-/** `--avatar-l` and `--avatar-c` of the default themes (styles.css). */
+/** `--avatar-l` and `--avatar-c` of the default themes (styles/base.css). */
 const SWATCH = { l: 0.62, c: 0.11 };
 const INK = { l: 0.2, c: 0.03 };
 

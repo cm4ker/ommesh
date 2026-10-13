@@ -1,0 +1,187 @@
+/* ---- contacts: how full the radio is, the clean-up sheet, a contact not on the radio ---- */
+
+.memory-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-2) var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: 10px;
+  font-size: var(--text-sm);
+}
+.memory-strip.warn {
+  background: var(--warning-subtle);
+}
+.memory-strip.full {
+  background: var(--danger-subtle);
+}
+.memory-strip.busy {
+  background: var(--panel);
+}
+.memory-strip.news {
+  background: var(--accent-subtle);
+}
+/* The cross closes the strip without making it taller than its line. */
+.memory-strip .strip-close {
+  width: 28px;
+  height: 28px;
+  margin: -4px -6px -4px 0;
+}
+.memory-strip .grow {
+  flex: 1;
+  min-width: 0;
+}
+/* What another app shared, on one line under the ask: enough to know it again. */
+.shared-strip .shared-to {
+  display: block;
+  font-weight: 600;
+}
+.shared-strip .shared-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.memory-bar {
+  display: block;
+  height: 4px;
+  margin-top: 5px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  overflow: hidden;
+}
+.memory-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--warning);
+}
+.memory-strip.full .memory-bar > i {
+  background: var(--danger);
+}
+.memory-strip.busy .memory-bar > i {
+  background: var(--accent);
+  transition: width 0.2s;
+}
+.memory-act {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: var(--space-1) 0;
+}
+.memory-act:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.toast-action {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 4px 4px;
+  border: 0;
+  background: transparent;
+  color: #74a9ec;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.toast-ring {
+  width: 20px;
+  height: 20px;
+}
+.toast-ring circle {
+  fill: none;
+  stroke-width: 2;
+}
+.toast-ring-track {
+  stroke: #3a404b;
+}
+.toast-ring-run {
+  stroke: #74a9ec;
+  stroke-dasharray: 50.27;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .toast-ring-run {
+    animation: toast-ring linear forwards;
+  }
+}
+@keyframes toast-ring {
+  to {
+    stroke-dashoffset: 50.27;
+  }
+}
+.toast-ring text {
+  fill: #e9edf3;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.cleanup-note {
+  padding: 0 var(--space-4) var(--space-1);
+}
+.cleanup-kinds {
+  padding: 0 var(--space-4) var(--space-3);
+  color: var(--text-muted);
+}
+.cleanup-kept {
+  color: var(--success);
+  font-weight: 600;
+}
+.cleanup-row {
+  cursor: pointer;
+}
+.cleanup-row > input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+.cleanup-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--space-3);
+  padding-bottom: max(var(--space-3), var(--safe-bottom));
+  background: var(--bg);
+}
+.group-note.danger {
+  color: var(--danger);
+}
+
+.not-on-radio {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-3) var(--space-3) 0;
+  padding: var(--space-3);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+.not-on-radio p {
+  margin: 0;
+}
+.not-on-radio b {
+  color: var(--text);
+}
+.not-on-radio.compact {
+  margin: 0;
+}
+/* A chat that cannot be written in (a channel gone, messages without a key): its one action keeps to its own width. */
+.no-channel .button {
+  align-self: flex-start;
+}
+
+/* The head of a way a check found round a break: a line, not a figure. */
+.check-result b.found-head {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}

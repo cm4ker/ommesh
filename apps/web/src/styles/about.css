@@ -1,0 +1,75 @@
+/* ---- People: About's row and its page ---- */
+
+.faces {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.faces-stack {
+  display: inline-flex;
+}
+/* Each face overlaps the one before it, ringed in the row's own ground. */
+.faces-stack .avatar {
+  box-shadow: 0 0 0 2px var(--panel);
+}
+.app.wide .pane .faces-stack .avatar,
+.sheet .faces-stack .avatar {
+  box-shadow: 0 0 0 2px var(--bg);
+}
+.faces-stack .avatar + .avatar {
+  margin-left: -6px;
+}
+/* Shipped with the app, cut down by scripts/people.mjs to the thanks line's letters in every language. */
+@font-face {
+  font-family: "Caveat Thanks";
+  font-weight: 500;
+  font-display: swap;
+  src: url("../fonts/caveat-thanks.woff2") format("woff2");
+}
+.people-thanks {
+  margin: var(--space-5) var(--space-3) var(--space-4);
+  text-align: center;
+  color: var(--text-muted);
+  font: 500 calc(30px * var(--text-scale)) / 1.2 "Caveat Thanks", cursive;
+}
+
+/* ---- What's new: a version's new things, and its fixes folded into one row ---- */
+
+.news-title {
+  font-weight: 600;
+}
+/* Read rather than glanced at, so darker than a row's usual hint. */
+.line-text > .news-text {
+  color: var(--text-muted);
+}
+.line-text > .news-show {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: var(--space-1);
+  color: var(--accent);
+  font-weight: 600;
+}
+.news-fold {
+  transition: transform 0.15s ease-out;
+}
+.news-fold.open {
+  transform: rotate(90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .news-fold {
+    transition: none;
+  }
+}
+
+.line-choice .line-value {
+  font-variant-numeric: tabular-nums;
+}
+.line-check {
+  flex: none;
+  color: var(--accent);
+  visibility: hidden;
+}
+.line-choice[aria-checked="true"] .line-check {
+  visibility: visible;
+}

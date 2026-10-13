@@ -1,0 +1,69 @@
+/* ---- small adjustments ---- */
+
+/* The label keeps its room; the value gives way. */
+.line-text {
+  min-width: 40%;
+}
+.app.wide .pane .chips {
+  flex-wrap: wrap;
+}
+/* A phone's header has no room to say the radio is idle; it says so only when busy. */
+.app.narrow .queue:not(.busy) {
+  display: none;
+}
+
+/* iOS zooms the page into any field whose text is under 16px, and leaves it zoomed. On a touch
+   screen every field is at least 16px, whatever its own rule says, and grows with the text size. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"], [type="radio"], [type="range"]),
+  textarea,
+  select {
+    font-size: max(16px, var(--text-base)) !important;
+  }
+}
+
+/* On a touch screen a long press opens a row's or a message's menu, and elsewhere does nothing, as
+   in a phone's own apps: it never selects the words under the finger (iOS would select a whole row
+   and lay its Copy bar over the menu). Fields and what a node sent back to read still select. */
+@media (pointer: coarse) {
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  input,
+  textarea,
+  [contenteditable],
+  .c-out,
+  .log-text {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+  }
+}
+
+/* A touch screen has no pointer resting on things, and a hover a tap leaves behind would stay lit.
+   There a press lights what is pressed, for as long as the finger is on it. */
+@media (hover: none) {
+  .button:active:not(:disabled),
+  .icon-button:active:not(:disabled),
+  .device:active:not(:disabled),
+  .row:active,
+  button.line:active:not(:disabled),
+  label.line:active:not(.off),
+  .hero-act:active:not(:disabled),
+  .popover button:active:not(:disabled),
+  button.hop:active,
+  .kv-action:active,
+  .pick button:active,
+  .chip:active {
+    background: var(--hover);
+  }
+  .button.primary:active:not(:disabled),
+  .hero-act.primary:active:not(:disabled) {
+    background: color-mix(in oklab, var(--accent) 88%, var(--text));
+  }
+  .button.danger:active:not(:disabled) {
+    background: var(--danger-subtle);
+  }
+}

@@ -1,0 +1,216 @@
+/* ---- the app's own notices, as a banner and in the desktop's corner window ---- */
+
+/*
+ * The app's own notices (noticePrefs `shownBy: "app"`): one card, drawn as a
+ * banner at the top of a phone or a tab while the app is on screen, and in a
+ * corner of a computer's screen from the desktop shell's window of its own
+ * (notices/main.tsx). The sender's circle, their name in its hue, two lines.
+ */
+.notice-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 4px var(--space-3);
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--elevated);
+  color: var(--text);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.22);
+  cursor: pointer;
+  text-align: left;
+}
+.notice-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.notice-app {
+  border-radius: 9px;
+}
+.notice-text {
+  min-width: 0;
+}
+.notice-title {
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.notice-who {
+  color: oklch(var(--name-l) var(--name-c) var(--hue));
+}
+.notice-body {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.notice-close {
+  display: grid;
+  place-items: center;
+  align-self: start;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.notice-card:hover .notice-close,
+.notice-close:focus-visible {
+  opacity: 1;
+}
+.notice-close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+/* The desktop card's answer row: there while the pointer is on the card or the field has the focus. */
+.notice-reply {
+  display: none;
+  grid-column: 2 / 4;
+  gap: var(--space-2);
+  align-items: center;
+  margin-top: 4px;
+}
+.notice-card:hover .notice-reply,
+.notice-card:focus-within .notice-reply {
+  display: flex;
+}
+.notice-field {
+  flex: 1;
+  min-width: 0;
+  height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+.notice-field:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.notice-read {
+  padding: 0 var(--space-1);
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* A phone's or a tab's banner, clear of the notch; swiped up, it goes. */
+.notice-banner {
+  position: fixed;
+  top: calc(var(--safe-top) + 6px);
+  left: 8px;
+  right: 8px;
+  z-index: 1300;
+  max-width: 480px;
+  margin: 0 auto;
+  touch-action: none;
+}
+.notice-grip {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  width: 32px;
+  height: 3px;
+  translate: -50% 0;
+  border-radius: 2px;
+  background: var(--border-strong);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .notice-banner {
+    animation: notice-drop 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+}
+@keyframes notice-drop {
+  from {
+    transform: translateY(-120%);
+  }
+}
+/* Radio › Notifications: which corner of the screen the computer's cards stack in, on a small screen. */
+.corner-pick {
+  position: relative;
+  flex: none;
+  width: 64px;
+  height: 42px;
+  border: 2px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--bg);
+}
+.corner-pick button {
+  position: absolute;
+  width: 18px;
+  height: 11px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  background: var(--panel);
+  cursor: pointer;
+}
+.corner-pick button[aria-checked="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.corner-pick button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.corner-pick .corner-tl {
+  top: 3px;
+  left: 3px;
+}
+.corner-pick .corner-tr {
+  top: 3px;
+  right: 3px;
+}
+.corner-pick .corner-bl {
+  bottom: 3px;
+  left: 3px;
+}
+.corner-pick .corner-br {
+  right: 3px;
+  bottom: 3px;
+}
+/* The desktop's corner window: the page is clear around the cards, and as tall as they are. */
+html.notices-window,
+html.notices-window body,
+html.notices-window #root {
+  height: auto;
+  min-height: 0;
+  overflow: hidden;
+  background: transparent;
+}
+/* Held to the window's edge at the corner: a card that grows grows away from it, as the window does. */
+.notice-stack {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 376px;
+  padding: 12px;
+}
+.notice-stack[data-top] {
+  top: 0;
+  bottom: auto;
+}
+.notice-stack .notice-card {
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.28);
+}

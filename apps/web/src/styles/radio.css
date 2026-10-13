@@ -1,0 +1,87 @@
+/* ---- the radio ---- */
+
+.resync-bar {
+  flex: none;
+  height: 2px;
+  margin: 0 var(--space-3);
+  background: var(--border);
+  border-radius: 1px;
+  overflow: hidden;
+}
+.resync-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+.pull-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding-bottom: var(--space-2);
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.radio-card {
+  margin: var(--space-2) var(--space-3) 0;
+  border-radius: 12px;
+  background: var(--panel);
+  overflow: hidden;
+}
+.app.wide .pane .radio-card {
+  background: var(--bg);
+}
+.radio-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+.radio-battery {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.radio-battery small {
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+}
+.radio-battery b.low {
+  color: var(--warning);
+}
+.radio-battery b svg {
+  margin-right: 3px;
+  vertical-align: -1px;
+}
+.radio-card-actions {
+  display: flex;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) var(--space-3);
+}
+.radio-card-actions .button {
+  flex: 1;
+}
+.preset-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.preset-chips .chip {
+  height: calc(28px * var(--box-scale));
+  padding: 0 10px;
+}
+.page-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}

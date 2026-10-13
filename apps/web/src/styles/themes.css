@@ -1,0 +1,107 @@
+/* ---- the theme picker ---- */
+
+/* Each theme as a patch of its own ground with a bubble of each kind on it. */
+.line-block.theme-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(84px * var(--box-scale)), 1fr));
+  gap: var(--space-3) var(--space-2);
+}
+.theme-tiles.following {
+  opacity: 0.5;
+}
+.theme-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: center;
+  cursor: pointer;
+}
+.theme-swatch {
+  height: calc(48px * var(--box-scale));
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: var(--swatch-bg);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.theme-swatch i {
+  height: 9px;
+  width: 62%;
+  border-radius: 5px;
+  background: var(--swatch-in);
+}
+.theme-swatch i + i {
+  align-self: flex-end;
+  background: var(--swatch-out);
+}
+/* Taller swatches leave room to recognise the illustrated motifs. */
+.line-block.bg-tiles {
+  grid-template-columns: repeat(auto-fill, minmax(calc(104px * var(--box-scale)), 1fr));
+}
+.line-block.bg-control-label {
+  padding-bottom: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.bg-swatch {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  width: 100%;
+  height: calc(136px * var(--box-scale));
+  border-radius: 10px;
+  background: var(--bg);
+}
+.bg-swatch .chat-backdrop {
+  border-radius: inherit;
+}
+.bg-swatch::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.theme-tile[aria-pressed="true"] {
+  font-weight: 600;
+}
+.theme-tile[aria-pressed="true"] :is(.theme-swatch, .bg-swatch) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.theme-tile:focus-visible {
+  outline: 0;
+}
+.theme-tile:focus-visible :is(.theme-swatch, .bg-swatch) {
+  outline: 2px dashed var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- bubbles of the other kind ---- */
+
+/* Onyx sets light bubbles on a black ground: inside them the text and its marks take the bubble palette. */
+:root[data-bubbles] .bubble {
+  --text: var(--bubble-text);
+  --text-muted: var(--bubble-text-muted);
+  --text-faint: var(--bubble-text-faint);
+  --accent: var(--bubble-accent);
+  --danger: var(--bubble-danger);
+  --accent-subtle: color-mix(in oklab, var(--bubble-accent) 16%, transparent);
+}
+:root[data-bubbles="light"] .bubble {
+  --name-l: 50%;
+  --name-c: 0.14;
+}
+:root[data-bubbles="dark"] .bubble {
+  --name-l: 78%;
+  --name-c: 0.1;
+}

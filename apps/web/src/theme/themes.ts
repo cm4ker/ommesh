@@ -44,7 +44,7 @@ export interface BubblePalette {
 
 export type BubbleToken = Exclude<keyof BubblePalette, "appearance">;
 
-/** Beyond colour: corners, rules and a face of its own, drawn by the `:root[data-look]` blocks in styles.css. */
+/** Beyond colour: corners, rules and a face of its own, drawn by the `:root[data-look]` blocks in styles/looks.css. */
 export type ThemeLook = "terminal" | "lcd" | "classic";
 
 export interface Theme {

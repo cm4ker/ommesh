@@ -1,0 +1,184 @@
+/* ---- voice input (#89) ---- */
+
+/* The microphone beside the message field, drawn as the send button is: a filled circle of the
+   same size. While it listens it turns red with a stop, and a ring breathes with the voice; in the
+   last seconds of a quiet the ring runs down instead. 10 px from the send button, so a ring never
+   meets it. */
+.compose-mic {
+  position: relative;
+  flex: none;
+  width: var(--control-h);
+  height: var(--control-h);
+  margin-right: 10px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  cursor: pointer;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  transition:
+    background-color 0.15s,
+    transform 0.1s;
+}
+.compose-mic:active {
+  transform: scale(0.94);
+}
+.compose-mic:disabled {
+  cursor: default;
+}
+.compose-mic > * {
+  position: relative;
+}
+/* Both round buttons take a press a little beyond what they draw: 44 px tall, and as wide as the
+   gap between them allows. */
+.compose-send {
+  position: relative;
+}
+.compose-mic::after,
+.compose-send::after {
+  content: "";
+  position: absolute;
+  inset: -6px -5px;
+  border-radius: 50%;
+}
+.compose-mic.on {
+  background: var(--danger);
+}
+.compose-mic.on::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--danger);
+  opacity: calc(0.45 + 0.4 * var(--level, 0));
+  transform: scale(calc(1 + 0.18 * var(--level, 0)));
+  transition:
+    transform 0.1s,
+    opacity 0.1s;
+}
+.compose-mic.ending::before {
+  border: 0;
+  opacity: 1;
+  transform: none;
+  background: conic-gradient(var(--text) calc(var(--left, 1) * 360deg), var(--border-strong) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
+}
+.compose-mic.on svg rect {
+  fill: currentColor;
+}
+.compose-mic .spinner {
+  border-color: var(--accent-contrast);
+  border-top-color: transparent;
+}
+/* The field's frame turns red while the microphone is on, as the button does. */
+.compose.listening .compose-box,
+.compose.listening.focus .compose-box {
+  border-color: var(--danger);
+}
+/* The line over the field: what the microphone does now, for how long, how soon it stops. */
+.listen-bar {
+  min-height: 34px;
+  box-sizing: border-box;
+  /* Read at a glance. */
+  font-size: calc(15px * var(--text-scale));
+}
+.listen-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: listen-dot 1.2s ease-in-out infinite;
+}
+@keyframes listen-dot {
+  50% {
+    opacity: 0.35;
+  }
+}
+.listen-what {
+  font-weight: 600;
+}
+.listen-clock {
+  font: var(--text-sm) var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.listen-gap {
+  flex: 1;
+}
+.listen-left {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.listen-bars {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  margin-right: 6px;
+}
+.listen-bars i {
+  display: block;
+  width: 3px;
+  height: 18px;
+  border-radius: 2px;
+  background: var(--danger);
+  transition: transform 0.1s;
+}
+/* The phrase just written in, lit for a moment under the text. */
+.compose-said {
+  color: transparent;
+}
+.compose-said mark {
+  border-radius: 3px;
+  background: color-mix(in oklab, var(--accent) 28%, transparent);
+  color: transparent;
+  animation: said-fade 1.2s ease-out forwards;
+}
+@keyframes said-fade {
+  60% {
+    background: color-mix(in oklab, var(--accent) 28%, transparent);
+  }
+  to {
+    background: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .compose-mic.on::before {
+    transform: none;
+    opacity: 0.6;
+  }
+  .listen-dot,
+  .compose-said mark {
+    animation: none;
+  }
+}
+/* A recognition model on its line: the part to pick it by, a tick on the one picked, its button after. */
+.model-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.model-tick {
+  flex: none;
+  color: var(--accent);
+  visibility: hidden;
+}
+.model-pick[aria-checked="true"] .model-tick {
+  visibility: visible;
+}

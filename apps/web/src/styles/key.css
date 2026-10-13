@@ -1,0 +1,78 @@
+/* ---- the radio's key: pasted, whose it is, and what changes ---- */
+
+.key-paste-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.key-paste {
+  line-height: 1.5;
+  word-break: break-all;
+  resize: none;
+}
+.key-paste.bad {
+  border-color: var(--danger);
+  outline: 1px solid var(--danger);
+  outline-offset: -2px;
+}
+.key-paste-hint {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.key-paste-count {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.key-whose {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.key-whose > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+.key-whose > svg.ok {
+  color: var(--success);
+}
+.key-whose b {
+  font-weight: 600;
+}
+.key-whose small {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.key-compare {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.key-compare > div {
+  display: grid;
+  grid-template-columns: minmax(56px, auto) minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+.key-compare > div + div {
+  border-top: 1px solid var(--border);
+}
+.key-compare dt {
+  color: var(--text-muted);
+}
+.key-compare dd {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  font-weight: 500;
+}
+.key-compare small {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
+}

@@ -1,0 +1,105 @@
+/* ---- cards and settings ---- */
+
+.card-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-3) max(var(--space-5), var(--safe-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.app.narrow .content > .card-scroll {
+  padding-top: var(--space-3);
+}
+.section {
+  /* `flex: none`: `overflow: hidden` would otherwise let the column shrink a section to nothing. */
+  flex: none;
+  --section-bg: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--section-bg);
+  overflow: hidden;
+}
+.card-scroll > p {
+  flex: none;
+}
+.app.wide .content .section {
+  --section-bg: var(--panel);
+}
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.section-head h2 {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.section-body {
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.kv {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--control-h);
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 0;
+}
+.kv-action {
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+@media (hover: hover) {
+  .kv-action:hover {
+    background: var(--hover);
+  }
+}
+.kv-label {
+  color: var(--text-muted);
+  flex: none;
+}
+.kv-value {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+.kv-grid {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}

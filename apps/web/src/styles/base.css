@@ -1,0 +1,179 @@
+/* ---- sizes, the page, and the few helpers used everywhere ---- */
+
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* The reader's text size (theme/textSize.ts), as a share of the sizes below. Text grows by all of
+     it; a box that holds a line of text grows by half as much, enough to keep the line inside
+     without the layout ballooning. Icons, gaps and hairlines keep their size. */
+  --text-scale: 1;
+  --box-scale: calc(0.5 + var(--text-scale) / 2);
+
+  --text-xs: calc(11px * var(--text-scale));
+  --text-sm: calc(12px * var(--text-scale));
+  --text-base: calc(13px * var(--text-scale));
+  --text-lg: calc(15px * var(--text-scale));
+  --text-xl: calc(18px * var(--text-scale));
+
+  --radius: 4px;
+  --radius-lg: 8px;
+  --radius-bubble: 12px;
+
+  --control-h-sm: calc(24px * var(--box-scale));
+  --control-h: calc(32px * var(--box-scale));
+  --control-h-lg: calc(40px * var(--box-scale));
+
+  --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, monospace;
+
+  --rail-width: calc(66px * var(--box-scale));
+  --pane-width: calc(320px * var(--box-scale));
+  --tabbar-height: calc(52px * var(--box-scale));
+
+  --avatar-l: 62%;
+  --avatar-c: 0.11;
+  /* A sender's name in their avatar's hue: dark enough to read on the light bubble. */
+  --name-l: 50%;
+  --name-c: 0.14;
+
+  --accent-subtle: color-mix(in oklab, var(--accent) 18%, var(--bg));
+  --danger-subtle: color-mix(in oklab, var(--danger) 14%, var(--bg));
+  /* Our message nobody was heard sending on: the out bubble, pulled toward danger. */
+  --bubble-bad: color-mix(in oklab, var(--danger) 26%, var(--bubble-out));
+  --success-subtle: color-mix(in oklab, var(--success) 14%, var(--bg));
+  --warning-subtle: color-mix(in oklab, var(--warning) 14%, var(--bg));
+  --scrollbar: color-mix(in oklab, var(--text) 30%, transparent);
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --home-bar: env(safe-area-inset-bottom, 0px);
+  /* The keyboard covers the home bar, so the room kept for it goes while the keyboard is up. */
+  --safe-bottom: max(0px, calc(var(--home-bar) - var(--keyboard, 0px)));
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+/* On the dark bubble the name goes light. */
+:root[data-appearance="dark"] {
+  --name-l: 78%;
+  --name-c: 0.1;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/*
+ * How far the keyboard reaches up the screen, where the page makes room for it
+ * itself (iOS, lib/keyboard.ts); 0 elsewhere. `--keyboard` is where the
+ * keyboard is going, set at once. `--keyboard-rise` follows it over the
+ * keyboard's own quarter second on the few boxes laid out from it (the app and
+ * the fixed layers), so they rise with the keyboard instead of jumping once it
+ * is up.
+ *
+ * Only those boxes animate. `--keyboard` itself used to, on the root, and every
+ * element inherits it: WebKit restyled the whole page on every frame, 25 ms a
+ * frame in a chat of 600 messages, and the rise stuttered. `--keyboard-rise`
+ * is not inherited, and the room for the home bar changes once, at the start.
+ * A box's lift is the rise less that room, which the keyboard covers first:
+ * the room goes as the box starts to rise, and what sits in it stays put.
+ *
+ * Safari before 16.4 registers no property, so this one has no value of its
+ * own there: every use names 0px to fall back on, or the app's height was void
+ * and the page grew past the screen.
+ */
+@property --keyboard-rise {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+:root.keyboard-follows :is(#root, .sheet-layer, .palette-layer, .toast, .dialog) {
+  --keyboard-rise: var(--keyboard, 0px);
+  transition: --keyboard-rise 0.25s cubic-bezier(0.38, 0.7, 0.125, 1);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  height: 100dvh;
+}
+#root {
+  height: calc(100% - max(var(--keyboard-rise, 0px), var(--home-bar)) + var(--safe-bottom));
+  height: calc(100dvh - max(var(--keyboard-rise, 0px), var(--home-bar)) + var(--safe-bottom));
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: 1.45;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  accent-color: var(--accent);
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--accent);
+}
+
+code,
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+.small {
+  font-size: var(--text-sm);
+}
+.grow {
+  flex: 1;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+@media (max-width: 480px) {
+  .two {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* A mouse gets a slim scrollbar in the theme's colour. Touch keeps the system's overlay
+   bars, which take no room and fade: styled here, Android's WebView would draw a fixed
+   10 px bar beside every list and under every row of chips. */
+@media (pointer: fine) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar);
+    border-radius: 5px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+}

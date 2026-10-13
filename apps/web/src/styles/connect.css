@@ -1,0 +1,235 @@
+/* ---- the connect screen ---- */
+
+.connect {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  /* Pinned near the top rather than centred: a list that grows as radios turn up would jump at every one. */
+  align-items: center;
+  padding: max(8vh, var(--safe-top)) var(--space-4) max(var(--space-4), var(--safe-bottom));
+}
+@media (max-width: 600px) {
+  .connect {
+    padding-top: calc(var(--safe-top) + var(--space-4));
+  }
+}
+.connect-column {
+  flex: 1;
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.connect-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.connect-brand h1 {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+.connect-error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+.connect-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+.connect-link:hover {
+  text-decoration: underline;
+}
+
+/* The radio at the top: the one thing on the screen that is a card. */
+.connect-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--elevated);
+}
+.connect-card.bad {
+  border-color: color-mix(in oklab, var(--danger) 60%, var(--border-strong));
+}
+.connect-card.good {
+  border-color: color-mix(in oklab, var(--success) 60%, var(--border-strong));
+}
+.connect-card-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.connect-card-icon {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-lg);
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+.connect-card.bad .connect-card-icon {
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+.connect-card.good .connect-card-icon {
+  background: var(--success-subtle);
+  color: var(--success);
+}
+.connect-card-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+/* The card's signal: larger bars than a row's, in a button as big as a finger, which says the figure. */
+.connect-card-signal {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -6px -8px -6px 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+.connect-card-signal .signal-bars {
+  height: 18px;
+  gap: 3px;
+}
+.connect-card-signal .signal-bars i {
+  width: 4px;
+}
+.connect-card-signal:focus-visible {
+  outline: 2px solid var(--accent);
+}
+.connect-card-name {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.connect-card-line {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.connect-good {
+  color: var(--success);
+}
+.connect-bad {
+  color: var(--danger);
+}
+.connect-pin-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.connect-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.connect-steps-bar {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-1);
+}
+.connect-steps-bar i {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  overflow: hidden;
+}
+.connect-steps-bar i.done {
+  background: var(--accent);
+}
+.connect-card.good .connect-steps-bar i {
+  background: var(--success);
+}
+/* The step under way: the screen's one moving thing while a radio connects. */
+.connect-steps-bar i.now::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 45%;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: connect-step 1.3s ease-in-out infinite;
+}
+@keyframes connect-step {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(230%);
+  }
+}
+.connect-steps-label {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.connect-hint {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.connect-details {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+.connect-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.connect-card-links {
+  display: flex;
+  gap: var(--space-4);
+}
+.button.wide {
+  width: 100%;
+}
+.connect-auto {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) 0 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}

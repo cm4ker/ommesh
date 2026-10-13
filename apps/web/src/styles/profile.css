@@ -1,0 +1,110 @@
+/* ---- a node's profile ---- */
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: var(--space-5) var(--space-4) var(--space-2);
+  text-align: center;
+}
+.hero h1 {
+  margin-top: var(--space-2);
+  font-size: calc(22px * var(--text-scale));
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+/* The name and its copy mark are one button. The empty ::before is as wide as the mark, so the name stays in the middle. */
+.hero-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+.hero-name::before {
+  content: "";
+  width: 16px;
+  flex: none;
+}
+.hero-name:active {
+  background: var(--hover);
+}
+@media (hover: hover) {
+  .hero-name:hover {
+    background: var(--hover);
+  }
+}
+.hero-name-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.hero-copy {
+  flex: none;
+  color: var(--text-faint);
+}
+.hero-copy.done {
+  color: var(--success);
+}
+.hero.compact {
+  padding-top: var(--space-4);
+}
+.hero-actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) 0;
+}
+.hero-act {
+  flex: 1;
+  min-width: 0;
+  max-width: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 4px 8px;
+  /* A long word breaks at a hyphen rather than running into the next button. */
+  line-height: 1.2;
+  text-align: center;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+  border: 0;
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .hero-act:hover:not(:disabled) {
+    background: var(--hover);
+  }
+}
+.hero-act.primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+@media (hover: hover) {
+  .hero-act.primary:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--accent) 88%, var(--text));
+  }
+}
+.hero-act:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.hops-step {
+  display: contents;
+}

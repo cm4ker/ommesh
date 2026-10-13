@@ -10,7 +10,7 @@ import { isCapacitor, nativePlatform } from "./platform.js";
  * web view alone (`resize: "none"`, capacitor.config.ts) and reports the
  * keyboard's height as the keyboard starts to move. `--keyboard` takes it at
  * once, and the app and the fixed layers follow over the keyboard's own quarter
- * second (`--keyboard-rise`, styles.css), so they rise with the keyboard.
+ * second (`--keyboard-rise`, styles/base.css), so they rise with the keyboard.
  *
  * The plugin hears every keyboard in the app, the one a system prompt brings up
  * too (the Bluetooth PIN on a reconnect), and drops its "will hide" when a

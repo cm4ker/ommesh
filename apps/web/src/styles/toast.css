@@ -1,0 +1,101 @@
+/* ---- toasts ---- */
+
+/*
+ * What an action did: a dark card, the same in either theme, above the field
+ * being typed in or the tab bar. A line, a smaller one under it, and a button
+ * with the seconds left to use it. A short note on its own hugs its text.
+ */
+.toast {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--tabbar-height) + max(var(--keyboard-rise, 0px), var(--home-bar)) + var(--space-3));
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 10px 12px;
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 14px;
+  background: rgb(28 31 36 / 0.94);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  color: #f1f3f6;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+  touch-action: none;
+  cursor: pointer;
+}
+/* A sheet too tall to leave room above it: the toast goes to the top of the screen. */
+.toast.top {
+  top: calc(var(--safe-top) + var(--space-3));
+  bottom: auto;
+}
+.toast.short {
+  left: 50%;
+  right: auto;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  translate: -50% 0;
+}
+.toast.error {
+  border-color: #6b3434;
+  background: rgb(52 26 26 / 0.96);
+}
+.toast-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #2e3a4b;
+  color: #74a9ec;
+  font-size: 14px;
+  font-weight: 700;
+}
+.toast.error .toast-icon {
+  background: #5a2a2a;
+  color: #ff9b93;
+}
+.toast-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.toast-main {
+  display: -webkit-box;
+  overflow: hidden;
+  font-weight: 600;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+/* What went wrong is read whole. */
+.toast.error .toast-main {
+  -webkit-line-clamp: 4;
+}
+.toast-detail {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  color: #9aa3b1;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+@media (min-width: 840px) {
+  .toast {
+    bottom: var(--space-5);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .toast {
+    animation: toast-in 0.18s ease-out;
+  }
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}

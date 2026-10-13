@@ -1,0 +1,511 @@
+/* ---- sheets, menus, toasts, the palette ---- */
+
+.sheet-layer {
+  position: fixed;
+  inset: 0 0 calc(max(var(--keyboard-rise, 0px), var(--home-bar)) - var(--safe-bottom));
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.sheet-layer.wide {
+  justify-content: center;
+  align-items: center;
+}
+.sheet-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.4);
+}
+/* A held message's menu on a touch screen (Menu.tsx): the dimming is the shadow of a hole around the
+   message, so the message stays bright in it, and the menu is a card right under the message. */
+.hold-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+.hold-scrim {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.hold-hole {
+  position: absolute;
+  box-shadow: 0 0 0 200vmax rgb(0 0 0 / 0.45);
+  pointer-events: none;
+}
+.hold-menu {
+  position: absolute;
+  width: min(250px, calc(100vw - 16px));
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0;
+  border-radius: 14px;
+  background: var(--elevated);
+  box-shadow: 0 10px 40px rgb(0 0 0 / 0.35);
+  transform-origin: top left;
+}
+.hold-menu.right {
+  transform-origin: top right;
+}
+/* Measured before it is placed, where nobody sees it. */
+.hold-menu.unplaced {
+  visibility: hidden;
+}
+.hold-menu > button {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 46px;
+  padding: 6px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: calc(15px * var(--text-scale));
+  text-align: left;
+  cursor: pointer;
+}
+.hold-menu > button:active:not(:disabled) {
+  background: var(--hover);
+}
+.hold-menu > button:disabled {
+  opacity: 0.5;
+}
+.hold-menu > button.danger {
+  color: var(--danger);
+}
+.hold-menu > button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.hold-menu-icon {
+  flex: none;
+  display: grid;
+}
+.hold-menu-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.hold-menu-text small {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.hold-menu-sep {
+  height: 6px;
+  margin: 4px 0;
+  background: var(--hover);
+}
+/* A held message's emoji, over its menu: one row, each a round target. */
+.react-strip {
+  display: flex;
+  gap: 2px;
+  padding: 0 6px;
+}
+.sheet .menu-head {
+  margin-bottom: var(--space-3);
+}
+.menu-head .react-strip button {
+  flex: 1;
+  min-width: 0;
+  height: calc(42px * var(--box-scale));
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  font-size: calc(24px * var(--text-scale));
+  line-height: 1;
+  cursor: pointer;
+}
+.menu-head .react-strip button.on {
+  background: var(--accent-subtle);
+}
+/* The button that opens the strip out into every emoji. */
+.menu-head .react-strip button.react-more {
+  flex: none;
+  width: calc(36px * var(--box-scale));
+  color: var(--text-muted);
+}
+.react-more > span {
+  width: calc(30px * var(--box-scale));
+  height: calc(30px * var(--box-scale));
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--panel);
+}
+/* Who put the emoji on, under the strip: one row, and the list it opens into. */
+.react-line {
+  height: 1px;
+  margin: 6px 16px 0;
+  background: var(--border);
+}
+.popover .react-line {
+  margin: 4px 6px 0;
+}
+.menu-head .react-who {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 50px;
+  padding: 6px 12px 6px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: calc(15px * var(--text-scale));
+  text-align: left;
+  cursor: pointer;
+}
+.popover .menu-head .react-who {
+  gap: var(--space-2);
+  min-height: 0;
+  padding: 7px 10px;
+  font-size: inherit;
+}
+.menu-head .react-who:active {
+  background: var(--hover);
+}
+@media (hover: hover) {
+  .menu-head .react-who:hover {
+    background: var(--hover);
+  }
+}
+.menu-head .react-who.react-back {
+  gap: 10px;
+  min-height: 44px;
+  padding-left: 12px;
+  font-weight: 500;
+}
+.react-who-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.react-who-text small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.react-faces {
+  flex: none;
+  display: flex;
+}
+/* The first face on top, so its letters stay whole. */
+.react-faces .avatar {
+  position: relative;
+  box-shadow: 0 0 0 2px var(--elevated);
+}
+.react-faces .avatar:nth-child(1) {
+  z-index: 3;
+}
+.react-faces .avatar:nth-child(2) {
+  z-index: 2;
+}
+.react-faces .avatar + .avatar {
+  margin-left: -7px;
+}
+.react-who-go {
+  flex: none;
+  color: var(--text-faint);
+}
+.react-people {
+  max-height: min(360px, 45vh);
+  margin: 0;
+  padding: 0 0 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+.react-people li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  font-size: calc(15px * var(--text-scale));
+}
+.popover .react-people li {
+  padding: 5px 10px;
+  font-size: inherit;
+}
+.react-person {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.react-person-emoji {
+  flex: none;
+  font-size: calc(22px * var(--text-scale));
+  line-height: 1;
+}
+.hold-menu.expanded {
+  width: min(380px, calc(100vw - 16px));
+}
+.popover.expanded {
+  width: 344px;
+}
+.react-tabs {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.menu-head .react-tabs button {
+  flex: none;
+  width: auto;
+  display: inline-block;
+  padding: 5px 11px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  cursor: pointer;
+}
+/* Every emoji, in groups, scrolling inside the card. */
+.react-grid-scroll {
+  position: relative;
+  max-height: min(420px, 50vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 6px 8px;
+}
+.react-group-name {
+  padding: 10px 6px 4px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.react-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 2px;
+}
+.menu-head .react-grid button {
+  width: 100%;
+  height: calc(40px * var(--box-scale));
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font-size: calc(24px * var(--text-scale));
+  line-height: 1;
+  cursor: pointer;
+}
+.menu-head .react-grid button.on {
+  background: var(--accent-subtle);
+}
+@media (hover: hover) {
+  .menu-head .react-grid button:hover {
+    background: var(--hover);
+  }
+}
+@media (hover: hover) {
+  .menu-head .react-strip button:hover {
+    background: var(--hover);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .menu-head .react-strip button:active {
+    transform: scale(1.18);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .hold-scrim {
+    animation: fade-in 0.2s;
+  }
+  .hold-menu:not(.unplaced) {
+    animation: hold-menu-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+}
+@keyframes hold-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+}
+.sheet {
+  position: relative;
+  max-height: 88%;
+  display: flex;
+  flex-direction: column;
+  padding: 0 0 max(var(--space-4), var(--safe-bottom));
+  border-radius: 16px 16px 0 0;
+  background: var(--elevated);
+  box-shadow: 0 -8px 32px rgb(0 0 0 / 0.25);
+  outline: none;
+  transition: transform 0.2s ease;
+}
+.sheet-layer.wide .sheet {
+  width: min(460px, calc(100vw - 32px));
+  max-height: 80vh;
+  padding-top: var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sheet-layer:not(.wide) .sheet {
+    animation: sheet-up 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .sheet-scrim {
+    animation: fade-in 0.2s;
+  }
+  /* Closing, it slides on down from wherever it was let go. */
+  .sheet-layer.leaving:not(.wide) .sheet {
+    animation: sheet-down 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
+  }
+  .sheet-layer.leaving .sheet-scrim {
+    animation: fade-out 0.2s forwards;
+  }
+}
+.sheet-layer.leaving {
+  pointer-events: none;
+}
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes sheet-down {
+  to {
+    transform: translateY(100%);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+/* The handle and the title: what the sheet is pulled down by. */
+.sheet-head {
+  flex: none;
+  cursor: grab;
+  touch-action: none;
+}
+.sheet-grab {
+  flex: none;
+  display: grid;
+  place-items: center;
+  height: 22px;
+  cursor: grab;
+  touch-action: none;
+}
+.sheet-grab::before {
+  content: "";
+  width: 40px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border-strong);
+}
+.sheet-title {
+  padding: var(--space-1) var(--space-4) var(--space-2);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+.sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.sheet-body > .group-body {
+  margin: 0 var(--space-3);
+}
+.sheet-body > .group {
+  margin-top: 0;
+}
+.sheet-body > .list {
+  flex: none;
+}
+.sheet-form {
+  padding: 0 var(--space-4) var(--space-2);
+}
+
+.popover {
+  position: fixed;
+  z-index: 1100;
+  min-width: 210px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--elevated);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.28);
+}
+.popover button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.popover-label {
+  flex: 1;
+}
+/* Between the groups of a menu. */
+.popover-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+/* The choice in force, in a menu of choices. */
+.menu-check {
+  flex: none;
+  color: var(--accent);
+}
+.sheet-body > .group-body + .group-body {
+  margin-top: var(--space-3);
+}
+.popover button:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+@media (hover: hover) {
+  .popover button:hover:not(:disabled) {
+    background: var(--hover);
+    outline: none;
+  }
+}
+.popover button.danger {
+  color: var(--danger);
+}
+.popover button:disabled {
+  opacity: 0.45;
+}
+.popover-icon {
+  display: grid;
+  color: var(--text-muted);
+}
+.popover .danger .popover-icon {
+  color: var(--danger);
+}

@@ -239,7 +239,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   };
 
   // Where the page follows the keyboard (iOS), the chat rises for it instead of shrinking
-  // (lib/keyboard.ts, styles.css): the list gains the rise as room at its top, scrolled so that
+  // (lib/keyboard.ts, styles/chat.css): the list gains the rise as room at its top, scrolled so that
   // nothing on screen moves, and a transform then carries all under the head up with the
   // keyboard. The top of the list, under the head, is out of sight by as much as it rose.
   const screen = useRef<HTMLDivElement>(null);
@@ -247,7 +247,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   useEffect(() => {
     const box = screen.current;
     if (!box) return;
-    // Each box directly in the chat takes the height itself (styles.css), one that comes in while
+    // Each box directly in the chat takes the height itself (styles/chat.css), one that comes in while
     // the chat is risen (the search's bar, say) too.
     let keyboard = "0px";
     const give = (node: Node) => node instanceof HTMLElement && node.style.setProperty("--chat-keyboard", keyboard);
@@ -719,7 +719,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
         </footer>
       ) : null}
 
-      {/* On a phone, while messages are picked, their actions take the field's place (styles.css hides it). */}
+      {/* On a phone, while messages are picked, their actions take the field's place (styles/messages.css hides it). */}
       {selecting && !wide ? <PickBar onCopy={() => copyPicked(true)} onReply={replyPicked} onDelete={deletePicked} /> : null}
 
       {target.kind === "contact" && (contact?.unsaved || (!contact && state.removed[target.key])) ? (

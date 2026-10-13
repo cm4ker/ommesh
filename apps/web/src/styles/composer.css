@@ -1,0 +1,358 @@
+/* ---- the composer ---- */
+
+/*
+ * A conversation's composer: one frame for the text and its button, a bubble's
+ * outline with nothing painted in it.
+ * Its lower edge is the byte meter; the tag above it gives the numbers.
+ */
+.compose {
+  flex: none;
+  position: relative;
+  padding: var(--space-2) var(--space-2) max(var(--space-2), var(--safe-bottom));
+  background: var(--bg);
+}
+/* With the keyboard up the home bar is under it, so no room is kept for it. Where the page
+   follows the keyboard (iOS), --safe-bottom already goes as the keyboard starts to rise, and
+   dropping it at once on focus would jump before the keyboard moves. Where the shell says
+   whether the keyboard is up (Android), that is asked rather than the focus, which a field
+   keeps with the keyboard put away. */
+@media (pointer: coarse) {
+  :root:not(.keyboard-follows):not(.keyboard-heard) .compose.focus,
+  :root.keyboard-up .compose.focus {
+    padding-bottom: var(--space-2);
+  }
+  /* A touch screen's fields are at least 16 px (see the end of this file), and the layer under this one must match. */
+  .compose-field textarea,
+  .compose-field input,
+  .compose-mirror {
+    font-size: max(16px, var(--text-base));
+    line-height: calc(22px * var(--text-scale));
+  }
+}
+.compose-box {
+  --r: 16px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r);
+  background: transparent;
+  transition: border-color 0.15s;
+}
+.compose.focus .compose-box {
+  border-color: var(--text-faint);
+}
+/* Written now, sent when the radio is back. Not `.offline`: that is the line that
+   says the radio is gone, and its rules (drawn first, tinted) would take the composer too. */
+.compose.waiting .compose-box {
+  border-style: dashed;
+}
+.compose.shake .compose-box {
+  animation: compose-shake 0.3s;
+}
+@keyframes compose-shake {
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}
+.compose-row {
+  display: flex;
+  align-items: flex-end;
+  padding: 3px;
+}
+.compose-field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+/* The field and the layer under it that marks mentions and overflow must lay the text out alike. */
+.compose-field textarea,
+.compose-field input,
+.compose-mirror {
+  margin: 0;
+  border: 0;
+  padding: calc(6px * var(--box-scale)) 6px calc(6px * var(--box-scale)) 12px;
+  font: inherit;
+  font-size: calc(14px * var(--text-scale));
+  line-height: calc(20px * var(--text-scale));
+  letter-spacing: normal;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  tab-size: 4;
+}
+.compose-mirror {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: transparent;
+  pointer-events: none;
+}
+/* Mixed with nothing rather than the page, so they show on the bubble colour too. */
+.compose-mirror .men {
+  border-radius: 3px;
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+}
+.compose-mirror .ovr {
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--danger) 30%, transparent);
+}
+.compose-field textarea,
+.compose-field input {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: var(--control-h);
+  max-height: calc(140px * var(--text-scale));
+  resize: none;
+  overflow-y: auto;
+  background: transparent;
+  color: var(--text);
+  outline: none;
+  scrollbar-width: none;
+}
+.compose-field textarea::-webkit-scrollbar {
+  display: none;
+}
+.compose-send {
+  flex: none;
+  width: var(--control-h);
+  height: var(--control-h);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    color 0.15s,
+    transform 0.1s;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.compose-send.ready {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+.compose-send.ready:active {
+  transform: scale(0.94);
+}
+.compose-send.queue {
+  background: var(--chrome);
+  color: var(--text);
+}
+.compose-send.idle {
+  cursor: default;
+}
+.compose-send.over {
+  color: var(--danger);
+  cursor: default;
+}
+/* The meter runs along the frame's lower edge, between its rounded corners. */
+.compose-meter {
+  position: absolute;
+  left: calc(var(--r) - 4px);
+  right: calc(var(--r) - 4px);
+  bottom: -2px;
+  height: 3px;
+  pointer-events: none;
+}
+/* Nothing typed, nothing to weigh: not even the channel's name shows. */
+.compose:not(.has) .compose-meter {
+  visibility: hidden;
+}
+/* One pill from the left edge: the channel's name and the text weigh the same. */
+.compose-meter .fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  min-width: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  transition:
+    width 0.12s ease-out,
+    background-color 0.2s;
+}
+.compose-meter .fill.warn {
+  background: var(--warning);
+}
+.compose-meter .fill.over {
+  background: var(--danger);
+}
+/* Where the cipher starts another block, and the packet grows by 16 bytes of air. */
+.compose-meter .tick {
+  position: absolute;
+  bottom: 1px;
+  width: 1px;
+  height: 4px;
+  background: var(--text-faint);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.compose.has .compose-meter .tick {
+  opacity: 0.3;
+}
+.compose.has.focus .compose-meter .tick {
+  opacity: 0.6;
+}
+.compose-tag {
+  position: absolute;
+  right: 10px;
+  bottom: calc(100% + 6px);
+  z-index: 1;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text-muted);
+  font: 500 var(--text-xs) / 1.35 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.compose-tag.warn {
+  color: var(--warning);
+  border-color: color-mix(in oklab, var(--warning) 45%, var(--border));
+}
+.compose-tag.over {
+  color: var(--danger);
+  border-color: color-mix(in oklab, var(--danger) 45%, var(--border));
+}
+.compose-tag .saved {
+  color: var(--success);
+}
+.compose-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 7px 6px 6px 12px;
+  border-bottom: 1px solid color-mix(in oklab, var(--text) 12%, transparent);
+  font-size: var(--text-sm);
+}
+.compose-bar-icon {
+  flex: none;
+  color: var(--accent);
+}
+.compose-bar-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+.compose-bar-text b {
+  color: var(--accent);
+  font-weight: 600;
+}
+.compose-bar-close {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.compose-bar-close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.compose-cost {
+  flex: none;
+  font: var(--text-xs) var(--font-mono);
+  color: var(--text-faint);
+}
+.compose-over {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.compose-over-text {
+  flex: 1 1 100%;
+  color: var(--danger);
+}
+.compose-over-text b {
+  font-weight: 600;
+}
+.compose-over .chip {
+  background: var(--bg);
+  color: var(--text);
+}
+.compose-pop {
+  position: absolute;
+  left: var(--space-2);
+  bottom: 100%;
+  z-index: 5;
+  width: min(320px, calc(100% - 2 * var(--space-2)));
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--elevated);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.18);
+}
+.compose-pop button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.compose-pop button.on,
+.compose-pop button:hover {
+  background: var(--hover);
+}
+.compose-pop-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.compose-login {
+  width: 100%;
+  height: var(--control-h-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--panel);
+  color: var(--accent);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.compose-note {
+  text-align: center;
+  font-size: var(--text-sm);
+}
+@media (prefers-reduced-motion: reduce) {
+  .compose-box,
+  .compose-meter .fill,
+  .compose-send {
+    transition: none;
+  }
+  .compose.shake .compose-box {
+    animation: none;
+  }
+}

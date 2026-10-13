@@ -1,0 +1,550 @@
+/* ---- the map's tools on the map: line of sight, dots, legs, labels and handles ---- */
+
+.los-verdict {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.los-verdict > svg {
+  flex: none;
+  margin-top: 1px;
+}
+.los-verdict b {
+  color: var(--text);
+}
+.los-verdict.good > svg {
+  color: var(--success);
+}
+.los-verdict.warn > svg {
+  color: var(--warning);
+}
+.los-verdict.bad > svg {
+  color: var(--danger);
+}
+.los-chart {
+  padding: 6px 4px 2px;
+  border-radius: 10px;
+  background: var(--panel);
+}
+.los-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.los-grid {
+  stroke: var(--border-strong);
+  stroke-opacity: 0.6;
+}
+.los-tick {
+  fill: var(--text-faint);
+  font: 9.5px var(--font-mono);
+}
+.los-ground {
+  fill: color-mix(in oklab, var(--text-faint) 30%, var(--panel));
+}
+.los-edge {
+  fill: none;
+  stroke: color-mix(in oklab, var(--text-faint) 80%, var(--panel));
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+.los-zone {
+  fill: var(--accent);
+  fill-opacity: 0.13;
+}
+.los-sixty {
+  fill: none;
+  stroke: var(--accent);
+  stroke-opacity: 0.55;
+  stroke-dasharray: 2 3;
+}
+.los-line {
+  stroke: var(--accent);
+  stroke-width: 1.8;
+}
+.los-graze,
+.los-cut {
+  fill: none;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+.los-graze {
+  stroke: var(--warning);
+}
+.los-cut {
+  stroke: var(--danger);
+}
+.los-mast {
+  stroke: var(--text);
+  stroke-width: 1.5;
+}
+.los-antenna {
+  fill: var(--accent);
+  stroke: var(--bg);
+  stroke-width: 1.5;
+}
+.los-worst-line {
+  stroke: var(--text-muted);
+  stroke-dasharray: 2 2;
+}
+.los-worst {
+  fill: var(--bg);
+  stroke: var(--text);
+  stroke-width: 1.8;
+}
+.los-label {
+  fill: var(--text);
+  font: 500 10px var(--font-ui);
+}
+.los-label-bg {
+  fill: var(--bg);
+  fill-opacity: 0.85;
+}
+.los-heights {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px 4px 4px var(--space-3);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.stepper b {
+  font-size: var(--text-base);
+}
+
+/* The lines over the nodes. */
+/* A survey's points: green, amber, red by the worse way at the best repeater, hollow where nobody answered. */
+.map-dot {
+  fill: var(--text-faint);
+  fill-opacity: 1;
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+.map-dot.good {
+  fill: var(--success);
+}
+.map-dot.fair {
+  fill: var(--warning);
+}
+.map-dot.weak {
+  fill: var(--danger);
+}
+.map-dot.none {
+  fill: var(--bg);
+  stroke: var(--text-faint);
+  stroke-width: 2.5;
+}
+.map-dot.off {
+  fill: var(--text-faint);
+  fill-opacity: 0.55;
+  stroke: none;
+}
+.map-dot.on {
+  stroke: var(--text);
+  stroke-width: 3;
+}
+/* A survey running: a red dot on the "who hears me" button. */
+.map-controls .icon-button {
+  position: relative;
+}
+.map-rec {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 1.5px var(--bg);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .map-rec {
+    animation: map-rec 2s ease-in-out infinite;
+  }
+}
+@keyframes map-rec {
+  50% {
+    opacity: 0.35;
+  }
+}
+/* "Who hears me" held: a red ring runs round it, and a word beside it says what the hold does. */
+.map-controls .map-hears {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.map-hold {
+  position: absolute;
+  inset: -6px;
+  width: calc(100% + 12px);
+  height: calc(100% + 12px);
+  transform: rotate(-90deg);
+  pointer-events: none;
+  opacity: 0;
+}
+.map-hold circle {
+  fill: none;
+  stroke: var(--danger);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 138.3;
+  stroke-dashoffset: 138.3;
+}
+.map-hears.holding .map-hold {
+  opacity: 1;
+}
+.map-hears.holding .map-hold circle {
+  animation: map-hold 0.7s linear forwards;
+}
+@keyframes map-hold {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.map-hold-word {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 12px);
+  transform: translateY(-50%);
+  padding: 6px 10px;
+  border-radius: var(--radius-lg);
+  /* Dressed as the toast, the one dark card the app has. */
+  background: rgb(28 31 36 / 0.94);
+  color: #f1f3f6;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.3);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* A survey running, over every screen but its own card: a tap goes back to it. */
+.survey-strip {
+  flex: none;
+  order: -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 6px var(--space-3);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--danger-subtle);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+}
+.survey-strip-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.survey-strip svg {
+  flex: none;
+  color: var(--text-faint);
+}
+.app.narrow .survey-strip {
+  padding-top: calc(6px + var(--safe-top));
+}
+.app.narrow .offline ~ .survey-strip {
+  padding-top: 6px;
+}
+.survey-strip ~ .mesh-phone {
+  --mesh-top: 0px;
+}
+.app.narrow .survey-strip ~ .layer > .screen > .screen-head,
+.app.narrow .survey-strip ~ .layer > .list-pane > .list-head {
+  padding-top: 0;
+  min-height: 48px;
+}
+.survey-rec {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .survey-rec {
+    animation: map-rec 2s ease-in-out infinite;
+  }
+}
+.survey-live .row-title {
+  color: var(--danger);
+}
+/* Said in the sheet until a survey has once been started by holding the button. */
+.survey-teach {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.survey-teach-ring {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px dashed var(--danger);
+  border-radius: 50%;
+}
+.map-leg-under {
+  stroke: var(--bg);
+  stroke-width: 8;
+  stroke-opacity: 0.8;
+  stroke-linecap: round;
+  fill: none;
+}
+.map-leg {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+.map-leg.plain {
+  stroke-dasharray: 6 8;
+  stroke-width: 3;
+}
+.map-leg.unknown {
+  stroke: var(--text);
+  stroke-opacity: 0.75;
+  stroke-dasharray: 1.5 8;
+}
+.map-leg.dest {
+  stroke: var(--text-muted);
+  stroke-width: 3;
+  stroke-dasharray: 1.5 7;
+}
+.map-leg.good {
+  stroke: var(--success);
+}
+.map-leg.fair {
+  stroke: var(--warning);
+}
+.map-leg.weak,
+.map-leg.fail {
+  stroke: var(--danger);
+}
+.map-leg.fail {
+  stroke-dasharray: 8 7;
+}
+.map-leg.flight {
+  stroke-dasharray: 8 8;
+}
+/* A neighbour heard long ago; the lines behind the link picked; the link picked. */
+.map-leg.stale {
+  stroke-dasharray: 1.5 7;
+}
+.map-leg.dim,
+.map-leg-under.dim {
+  opacity: 0.18;
+}
+.map-leg.on {
+  stroke-width: 6;
+}
+/* How far a filter by distance reaches from a repeater: a dashed circle, the distance on it. */
+.map-ring {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 5;
+  stroke-opacity: 0.85;
+  pointer-events: none;
+}
+.maplibregl-marker.map-ring-label {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font: 600 var(--text-xs) / 1.4 var(--font-mono);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.map-leg-under.on {
+  stroke-width: 10;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .map-leg.flight {
+    animation: map-march 0.6s linear infinite;
+  }
+}
+@keyframes map-march {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+.map-leg.look {
+  stroke-dasharray: 6 5;
+}
+/* A discovery: the way it found there, the way its answer came back, the route it replaced. */
+.map-leg.back {
+  stroke-width: 2;
+  stroke-dasharray: 6 6;
+  stroke-opacity: 0.85;
+}
+.map-leg.was {
+  stroke: var(--text-faint);
+  stroke-width: 3;
+  stroke-dasharray: 1.5 7;
+}
+.map-flood {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+.map-flood i {
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  opacity: 0;
+  transform: scale(0.06);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .map-flood i {
+    animation: map-flood 1.8s ease-out infinite;
+  }
+  .map-flood i:nth-child(2) {
+    animation-delay: 0.6s;
+  }
+  .map-flood i:nth-child(3) {
+    animation-delay: 1.2s;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .map-flood i:first-child {
+    opacity: 0.5;
+    transform: scale(0.4);
+  }
+}
+@keyframes map-flood {
+  from {
+    opacity: 0.8;
+    transform: scale(0.06);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+.maplibregl-marker.map-leg-label {
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: var(--danger);
+  color: #fff;
+  font: 600 10px/1 var(--font-ui);
+}
+/* Relays a leg goes round, and where a route goes on off the map: quieter than a warning. */
+.maplibregl-marker.map-leg-note,
+.maplibregl-marker.map-tail {
+  padding: 2px 6px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  background: var(--elevated);
+  color: var(--text);
+  font: 500 10px/1.3 var(--font-ui);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.maplibregl-marker.map-tail {
+  display: grid;
+}
+.maplibregl-marker.map-tail b {
+  font-weight: 600;
+}
+.maplibregl-marker.map-tail small {
+  color: var(--text-muted);
+  font-size: 9px;
+}
+.maplibregl-marker.map-spot span {
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin: 0 2px;
+  border: 2px solid var(--bg);
+  border-radius: 50% 50% 50% 0;
+  background: var(--accent);
+  transform: rotate(-45deg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+}
+.map-num {
+  position: absolute;
+  left: 13px;
+  top: -8px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border: 2px solid var(--bg);
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font: 600 10px/12px var(--font-ui);
+  text-align: center;
+}
+
+/* Points of a route that drag onto another repeater: a ring round a relay, a dot in a leg's middle. */
+.maplibregl-marker.map-handle {
+  display: grid;
+  place-items: center;
+  cursor: grab;
+}
+.maplibregl-marker.map-handle.dragging {
+  cursor: grabbing;
+}
+.map-handle-hop span {
+  width: 30px;
+  height: 30px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--bg);
+}
+.map-handle-gap span {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+}
+.map-handle .map-num {
+  left: 20px;
+  top: -3px;
+}
+.map-handle.dragging span {
+  border-style: dashed;
+  background: transparent;
+  box-shadow: none;
+}
+.map-leg.rubber {
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-dasharray: 4 6;
+}
+.maplibregl-marker.map-snap span {
+  display: block;
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--accent);
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--accent) 20%, transparent);
+}

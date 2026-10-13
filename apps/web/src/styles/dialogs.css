@@ -1,0 +1,49 @@
+/* ---- dialogs ---- */
+
+.dialog {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--elevated);
+  color: var(--text);
+  padding: 0;
+  width: min(440px, calc(100vw - 32px));
+  box-shadow: 0 8px 24px rgb(0 0 0 / 28%);
+}
+.dialog::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+/* Where the page follows the keyboard (iOS) the screen keeps its size, so a dialog centred on it
+   had its lower half, buttons and all, under the keyboard. It is centred in the room between the
+   status bar and the keyboard instead, rising with the keyboard, and scrolls if it does not fit. */
+:root.keyboard-follows .dialog {
+  inset-block: var(--safe-top) var(--keyboard-rise, 0px);
+  max-height: calc(100% - var(--safe-top) - var(--keyboard-rise, 0px) - 2 * var(--space-4));
+}
+.dialog-inner {
+  display: flex;
+  flex-direction: column;
+}
+.dialog-head {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.dialog-head h2 {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+.dialog-body {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.dialog-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+.dialog-body .dialog-foot {
+  padding: 0;
+}

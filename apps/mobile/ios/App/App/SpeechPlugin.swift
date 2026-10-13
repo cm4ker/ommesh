@@ -15,7 +15,7 @@ import UIKit
 ///   `delete({ id })`; `unload()`.
 /// - `start({ model, language, before })` turns the microphone on once the model is read in,
 ///   asking for it the first time. While it listens: `phrase` events `{ text }`, `level` events
-///   `{ level, speaking }`, `quiet` after a long silence, `error` events `{ message }` for a failure
+///   `{ level, speaking, recognising, quietLeft }`, `quiet` after a long silence, `error` events `{ message }` for a failure
 ///   that turned it off. `stop()` answers `{ phrases }`, the last heard; `cancel()` drops them.
 @objc(SpeechPlugin)
 final class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -185,6 +185,7 @@ final class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         self.engine = engine
         listening = true
         lock.unlock()
+        awake(true)
     }
 
     /// The microphone's sound at 16 kHz mono, handed in a quarter of a second at a time.
@@ -220,7 +221,7 @@ final class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
             for phrase in heard.phrases {
                 notifyListeners("phrase", data: ["text": phrase])
             }
-            notifyListeners("level", data: ["level": Double(heard.level), "speaking": heard.speaking])
+            notifyListeners("level", data: ["level": Double(heard.level), "speaking": heard.speaking, "recognising": heard.recognising, "quietLeft": Double(heard.quietLeft)])
             if heard.ended {
                 notifyListeners("quiet", data: [:])
             }
@@ -239,6 +240,7 @@ final class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         self.engine = nil
         lock.unlock()
         guard let engine else { return }
+        awake(false)
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         feeding.sync {
@@ -256,6 +258,11 @@ final class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
             try? session.setCategory(before.0, mode: before.1, options: before.2)
         }
         before = nil
+    }
+
+    /// The screen stays on while the microphone listens: a locked phone gives an app silence.
+    private func awake(_ on: Bool) {
+        DispatchQueue.main.async { UIApplication.shared.isIdleTimerDisabled = on }
     }
 
     private static func text(_ error: Error) -> String {

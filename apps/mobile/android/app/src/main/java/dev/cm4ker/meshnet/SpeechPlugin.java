@@ -5,6 +5,7 @@ import android.annotation.SuppressLint;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
+import android.view.WindowManager;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
@@ -35,7 +36,8 @@ import java.util.concurrent.Executors;
  * {@code start({ model, language, before })} turns the microphone on once the model is read in,
  * asking for the microphone the first time; while it listens, {@code phrase} events
  * {@code { text }} bring what was heard, {@code level} events {@code { level, speaking }} how loud
- * it is, {@code quiet} a long silence, and {@code error} events {@code { message }} a failure that
+ * it is ({@code recognising}: a phrase is being heard; {@code quietLeft}: seconds of quiet left before it
+ * turns itself off), {@code quiet} a long silence, and {@code error} events {@code { message }} a failure that
  * turned it off. {@code stop()} answers {@code { phrases }}, the last ones heard; {@code cancel()}
  * drops them.
  */
@@ -205,6 +207,7 @@ public class SpeechPlugin extends Plugin {
         }
         recorder.startRecording();
         listening = true;
+        awake(true);
         microphone = new Thread(() -> listen(recorder), "speech-microphone");
         microphone.start();
     }
@@ -227,6 +230,8 @@ public class SpeechPlugin extends Plugin {
                 JSObject level = new JSObject();
                 level.put("level", (double) heard.getLevel());
                 level.put("speaking", heard.getSpeaking());
+                level.put("recognising", heard.getRecognising());
+                level.put("quietLeft", (double) heard.getQuietLeft());
                 notifyListeners("level", level);
                 if (heard.getEnded()) notifyListeners("quiet", new JSObject());
             }
@@ -249,11 +254,21 @@ public class SpeechPlugin extends Plugin {
         microphone = null;
         listening = false;
         if (running == null) return;
+        awake(false);
         try {
             running.join(2_000);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    /** The screen stays on while the microphone listens: a locked phone gives an app silence. */
+    private void awake(boolean on) {
+        if (getActivity() == null) return;
+        getActivity().runOnUiThread(() -> {
+            if (on) getActivity().getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            else getActivity().getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        });
     }
 
     private static String message(Exception e) {

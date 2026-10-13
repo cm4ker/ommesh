@@ -63,9 +63,12 @@ struct Progress {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Fed {
     phrases: Vec<String>,
     speaking: bool,
+    recognising: bool,
+    quiet_left: f32,
     ended: bool,
 }
 
@@ -198,7 +201,7 @@ pub async fn speech_feed(state: State<'_, Speech>, samples: Vec<f32>) -> Result<
         let mut slot = slot.lock().unwrap_or_else(PoisonError::into_inner);
         let dictation = slot.as_mut().ok_or("not listening")?;
         let fed = dictation.feed(&samples)?;
-        Ok(Fed { phrases: fed.phrases, speaking: fed.speaking, ended: fed.ended })
+        Ok(Fed { phrases: fed.phrases, speaking: fed.speaking, recognising: fed.recognising, quiet_left: fed.quiet_left, ended: fed.ended })
     })
     .await
     .map_err(|e| e.to_string())?

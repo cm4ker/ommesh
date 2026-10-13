@@ -185,7 +185,7 @@ interface SpeechPlugin {
   cancel(): Promise<void>;
   addListener(event: "progress", listener: (event: Progress) => void): Promise<PluginListenerHandle>;
   addListener(event: "phrase", listener: (event: { text: string }) => void): Promise<PluginListenerHandle>;
-  addListener(event: "level", listener: (event: { level: number; speaking: boolean }) => void): Promise<PluginListenerHandle>;
+  addListener(event: "level", listener: (event: { level: number } & Heard) => void): Promise<PluginListenerHandle>;
   addListener(event: "quiet", listener: () => void): Promise<PluginListenerHandle>;
   addListener(event: "error", listener: (event: { message: string }) => void): Promise<PluginListenerHandle>;
 }
@@ -215,11 +215,25 @@ export interface ListenOptions {
 }
 
 /** One turn of the microphone. */
+/** What the recogniser says of the moment, as the microphone's state shows it. */
+export interface Heard {
+  /** Someone is speaking now. */
+  speaking: boolean;
+  /** A phrase said is being heard and is not written yet. */
+  recognising: boolean;
+  /** Seconds of quiet left before the microphone turns itself off. */
+  quietLeft: number;
+}
+
+/** Fifteen seconds of quiet turn the microphone off (`crates/speech`, `IDLE_SECONDS`). */
+export const QUIET_SECONDS = 15;
+
+const FRESH: Heard = { speaking: false, recognising: false, quietLeft: QUIET_SECONDS };
+
 export interface Listening {
   /** How loud it is now, 0 to 1. */
   level(): number;
-  /** Someone is speaking, or a phrase is being heard. */
-  speaking(): boolean;
+  heard(): Heard;
   /** Off, once what was said last is written in. */
   stop(): Promise<void>;
   /** Off at once, and what is not heard yet is dropped. */
@@ -234,9 +248,8 @@ export function startListening(options: ListenOptions): Promise<Listening> {
 /** How often the sound recorded goes to the shell: often enough that the text keeps close behind. */
 const FEED_MS = 250;
 
-interface Fed {
+interface Fed extends Heard {
   phrases: string[];
-  speaking: boolean;
   ended: boolean;
 }
 
@@ -255,7 +268,7 @@ async function listenDesktop(options: ListenOptions): Promise<Listening> {
     mic.close();
     throw error;
   }
-  let speaking = false;
+  let heard = FRESH;
   let over = false;
   const put = (phrases: string[]) => {
     for (const phrase of phrases) {
@@ -272,7 +285,7 @@ async function listenDesktop(options: ListenOptions): Promise<Listening> {
       if (over) return;
       try {
         const fed = await invoke<Fed>("speech_feed", { samples: Array.from(samples) });
-        speaking = fed.speaking;
+        heard = { speaking: fed.speaking, recognising: fed.recognising, quietLeft: fed.quietLeft };
         put(fed.phrases);
         if (fed.ended) options.onQuiet();
       } catch (error) {
@@ -291,7 +304,7 @@ async function listenDesktop(options: ListenOptions): Promise<Listening> {
   };
   return {
     level: () => mic.level(),
-    speaking: () => speaking,
+    heard: () => heard,
     async stop() {
       if (over) return;
       clearInterval(timer);
@@ -312,7 +325,7 @@ async function listenDesktop(options: ListenOptions): Promise<Listening> {
 /** On a phone the native code records and hears; the page gets the phrases and how loud it is. */
 async function listenPhone(options: ListenOptions): Promise<Listening> {
   let loud = 0;
-  let speaking = false;
+  let heard = FRESH;
   let over = false;
   const put = (phrase: string) => {
     const text = speechOnly(phrase);
@@ -325,7 +338,7 @@ async function listenPhone(options: ListenOptions): Promise<Listening> {
       }),
       api.addListener("level", (event) => {
         loud = event.level;
-        speaking = event.speaking;
+        heard = { speaking: event.speaking, recognising: event.recognising, quietLeft: event.quietLeft };
       }),
       api.addListener("quiet", () => options.onQuiet()),
       api.addListener("error", (event) => {
@@ -347,7 +360,7 @@ async function listenPhone(options: ListenOptions): Promise<Listening> {
   }
   return {
     level: () => (over ? 0 : loud),
-    speaking: () => speaking,
+    heard: () => heard,
     async stop() {
       if (over) return;
       // The phrases heard before the answer came as events; the answer brings the rest.
@@ -427,17 +440,27 @@ async function listenDemo(options: ListenOptions): Promise<Listening> {
   let said = 0;
   let over = false;
   const started = Date.now();
+  // Each line: two seconds said, half a second heard, half a second of pause.
+  const at = () => (Date.now() - started) / 1000;
+  const heard = (): Heard => {
+    const t = at();
+    const line = Math.floor(t / 3);
+    if (line >= lines.length) return { speaking: false, recognising: false, quietLeft: Math.max(0, QUIET_SECONDS - (t - lines.length * 3)) };
+    const into = t - line * 3;
+    return { speaking: into < 2, recognising: into >= 2 && into < 2.5, quietLeft: QUIET_SECONDS };
+  };
   const timer = setInterval(() => {
-    if (said < lines.length) options.onPhrase(lines[said++]!);
-    else options.onQuiet();
-  }, 2500);
+    const t = at();
+    while (said < lines.length && t >= said * 3 + 2.5) options.onPhrase(lines[said++]!);
+    if (said >= lines.length && heard().quietLeft <= 0) options.onQuiet();
+  }, 100);
   const end = () => {
     over = true;
     clearInterval(timer);
   };
   return {
-    level: () => (over ? 0 : 0.15 + 0.25 * Math.abs(Math.sin((Date.now() - started) / 180))),
-    speaking: () => !over,
+    level: () => (over || !heard().speaking ? 0.02 : 0.15 + 0.25 * Math.abs(Math.sin((Date.now() - started) / 180))),
+    heard: () => (over ? FRESH : heard()),
     async stop() {
       end();
     },

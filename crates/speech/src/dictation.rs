@@ -17,6 +17,7 @@ use crate::phrases::{self, Step, FRAME, RATE};
 /// since it starts each call from nothing and is unsure of its first frames.
 const WARM: usize = 16;
 /// Fifteen seconds without a word, and the microphone turns itself off.
+pub const IDLE_SECONDS: f32 = 15.0;
 const IDLE: usize = 15 * RATE / FRAME;
 /// What was written last that goes with a phrase as a clue: a sentence or two.
 const CLUE: usize = 200;
@@ -104,8 +105,13 @@ struct Heard {
 pub struct Fed {
     /// Phrases heard since the last call, in the order they were said.
     pub phrases: Vec<String>,
-    /// Someone is speaking now, or a phrase is being heard.
+    /// Someone is speaking now: a phrase has begun and not ended at a pause.
     pub speaking: bool,
+    /// A phrase said is being heard and is not written yet.
+    pub recognising: bool,
+    /// Seconds of quiet left before the microphone turns itself off; the
+    /// whole `IDLE_SECONDS` while someone speaks or a phrase is being heard.
+    pub quiet_left: f32,
     /// Long quiet: the microphone can be turned off.
     pub ended: bool,
     /// How loud the sound handed in was at its loudest, 0 to 1.
@@ -196,8 +202,12 @@ impl Dictation {
         if let Some(error) = heard.error.take() {
             return Err(error);
         }
-        let busy = speaking || heard.waiting > 0;
-        Ok(Fed { phrases: std::mem::take(&mut heard.phrases), speaking: busy, ended: !busy && self.idle >= IDLE, level })
+        let recognising = heard.waiting > 0;
+        let busy = speaking || recognising;
+        // The quiet held but not yet let go counts too, or the count would lag half a second.
+        let quiet = if busy { 0 } else { self.idle + self.probs.len() };
+        let quiet_left = (IDLE_SECONDS - (quiet * FRAME) as f32 / RATE as f32).max(0.0);
+        Ok(Fed { phrases: std::mem::take(&mut heard.phrases), speaking, recognising, quiet_left, ended: !busy && quiet >= IDLE, level })
     }
 
     /// The microphone is off: what was said since the last pause is heard

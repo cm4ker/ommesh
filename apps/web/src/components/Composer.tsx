@@ -25,7 +25,7 @@ import { session, useSession } from "../lib/session.js";
 import { useVoiceInputReady } from "../lib/voiceInput.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
-import { MicButton, useMic } from "./ComposerMic.js";
+import { ListenBar, MicButton, useMic } from "./ComposerMic.js";
 import { ClockIcon, CloseIcon, LocationIcon, ReplyIcon, SendIcon, TextIcon, WavesIcon } from "./Icons.js";
 import { t } from "../i18n/index.js";
 import { tx } from "../i18n/rich.js";
@@ -105,6 +105,7 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
     if (mirror.current) mirror.current.scrollTop = el.scrollTop;
+    if (saidLayer.current) saidLayer.current.scrollTop = el.scrollTop;
   }, [text]);
 
   /** Puts `insert` over [from, to) as typing would, so that Undo takes it back. */
@@ -221,6 +222,14 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   // field has no focus (its caret then says nothing), with spaces where it joins words. It is
   // put in without taking the focus, so a phone's keyboard stays down.
   const voice = useVoiceInputReady();
+  // The phrase just put in is lit for a moment, so a glance finds what was heard.
+  const [said, setSaid] = useState<{ from: number; to: number } | null>(null);
+  const saidLayer = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!said) return;
+    const timer = setTimeout(() => setSaid(null), 1200);
+    return () => clearTimeout(timer);
+  }, [said]);
   const putPhrase = (phrase: string) => {
     const el = field.current;
     if (!el) return;
@@ -228,7 +237,9 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
     const [from, to] = focused ? [el.selectionStart, el.selectionEnd] : [el.value.length, el.value.length];
     const before = el.value.slice(0, from);
     const after = el.value.slice(to);
-    const insert = (before && !/\s$/.test(before) ? " " : "") + phrase + (after && !/^\s/.test(after) ? " " : "");
+    const lead = before && !/\s$/.test(before) ? " " : "";
+    const insert = lead + phrase + (after && !/^\s/.test(after) ? " " : "");
+    setSaid({ from: from + lead.length, to: from + lead.length + phrase.length });
     if (focused && document.execCommand("insertText", false, insert)) return;
     el.setRangeText(insert, from, to, "end");
     setText(el.value);
@@ -369,7 +380,7 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   const parts = over ? splitParts(pack(body), cost.budget).length : 0;
 
   return (
-    <footer className={["compose", focused ? "focus" : "", text || reply || place ? "has" : "", online ? "" : "waiting", shake ? "shake" : ""].join(" ")} onAnimationEnd={() => setShake(false)}>
+    <footer className={["compose", focused ? "focus" : "", text || reply || place ? "has" : "", online ? "" : "waiting", shake ? "shake" : "", listening ? "listening" : ""].join(" ")} onAnimationEnd={() => setShake(false)}>
       {matches.length > 0 && pick ? (
         <div className="compose-pop" role="listbox" aria-label={t("chats.composer.mention")}>
           {matches.map((who, i) => (
@@ -445,6 +456,7 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
             ) : null}
           </div>
         ) : null}
+        {listening ? <ListenBar mic={mic} /> : null}
         <div className="compose-row">
           <div className="compose-field">
             <div className="compose-mirror" ref={mirror} aria-hidden="true">
@@ -455,6 +467,14 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
               ))}
               {"​"}
             </div>
+            {said && said.to <= text.length ? (
+              <div className="compose-mirror compose-said" ref={saidLayer} aria-hidden="true">
+                {text.slice(0, said.from)}
+                <mark>{text.slice(said.from, said.to)}</mark>
+                {text.slice(said.to)}
+                {"​"}
+              </div>
+            ) : null}
             <textarea
               ref={field}
               rows={1}
@@ -469,6 +489,7 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
               onKeyDown={onKey}
               onScroll={(e) => {
                 if (mirror.current) mirror.current.scrollTop = e.currentTarget.scrollTop;
+                if (saidLayer.current) saidLayer.current.scrollTop = e.currentTarget.scrollTop;
               }}
               onFocus={() => {
                 setFocused(true);

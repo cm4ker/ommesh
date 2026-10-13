@@ -50,8 +50,12 @@ pub struct SpeechModel {
 pub struct Heard {
     /// Phrases heard since the last call, in the order they were said.
     pub phrases: Vec<String>,
-    /// Someone is speaking, or a phrase is being heard.
+    /// Someone is speaking now.
     pub speaking: bool,
+    /// A phrase said is being heard and is not written yet.
+    pub recognising: bool,
+    /// Seconds of quiet left before the microphone turns itself off.
+    pub quiet_left: f32,
     /// Long quiet: the microphone can go off.
     pub ended: bool,
     /// How loud the sound handed in was at its loudest, 0 to 1.
@@ -143,7 +147,7 @@ impl SpeechInput {
         let mut slot = self.dictation.lock().unwrap_or_else(PoisonError::into_inner);
         let dictation = slot.as_mut().ok_or_else(|| "not listening".to_string())?;
         let fed = dictation.feed(&samples)?;
-        Ok(Heard { phrases: fed.phrases, speaking: fed.speaking, ended: fed.ended, level: fed.level })
+        Ok(Heard { phrases: fed.phrases, speaking: fed.speaking, recognising: fed.recognising, quiet_left: fed.quiet_left, ended: fed.ended, level: fed.level })
     }
 
     /// The microphone is off: what was said last comes back once heard.

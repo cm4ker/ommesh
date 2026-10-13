@@ -13,16 +13,19 @@ use std::time::Duration;
 use crate::dictation::{Dictation, Recognizer};
 use crate::models::{self, Download, Model};
 
+/// Flat: Kotlin and Swift get the words as the error's message (a field named
+/// `message` would clash with Kotlin's own on every exception).
 #[derive(Debug, uniffi::Error)]
+#[uniffi(flat_error)]
 pub enum SpeechError {
     /// What went wrong, in the words the page shows.
-    Failed { message: String },
+    Failed(String),
 }
 
 impl std::fmt::Display for SpeechError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SpeechError::Failed { message } => f.write_str(message),
+            SpeechError::Failed(message) => f.write_str(message),
         }
     }
 }
@@ -31,7 +34,7 @@ impl std::error::Error for SpeechError {}
 
 impl From<String> for SpeechError {
     fn from(message: String) -> Self {
-        SpeechError::Failed { message }
+        SpeechError::Failed(message)
     }
 }
 

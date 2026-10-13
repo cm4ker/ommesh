@@ -9,21 +9,6 @@
 .line-block .check {
   padding: 0;
 }
-.check-route {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-}
-.check-route-text {
-  flex: 1;
-  min-width: 0;
-}
-.check-route-text b {
-  color: var(--text);
-  font-weight: 500;
-}
 .check-link {
   flex: none;
   padding: 2px 0;
@@ -101,14 +86,6 @@
 }
 .check .button {
   width: 100%;
-}
-.check-buttons {
-  display: flex;
-  gap: var(--space-2);
-}
-.check-buttons .button {
-  flex: 1;
-  min-width: 0;
 }
 /* What a discovery found: a line, the key to the lines on the map, or a bar while the flood is out. */
 .disc {

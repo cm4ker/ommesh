@@ -1,16 +1,4 @@
-/* ---- small adjustments ---- */
-
-/* The label keeps its room; the value gives way. */
-.line-text {
-  min-width: 40%;
-}
-.app.wide .pane .chips {
-  flex-wrap: wrap;
-}
-/* A phone's header has no room to say the radio is idle; it says so only when busy. */
-.app.narrow .queue:not(.busy) {
-  display: none;
-}
+/* ---- a touch screen: fields iOS will not zoom into, no selecting by a long press, lit while pressed ---- */
 
 /* iOS zooms the page into any field whose text is under 16px, and leaves it zoomed. On a touch
    screen every field is at least 16px, whatever its own rule says, and grows with the text size. */

@@ -14,11 +14,6 @@
   grid-column: 1 / -1;
   justify-self: start;
 }
-.field-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
 .field.dirty .field-label > span:first-child,
 .toggle.dirty .toggle-text > span:first-child {
   color: var(--accent);

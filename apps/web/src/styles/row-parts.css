@@ -1,27 +1,5 @@
-/* ---- inside a row: a reading, a stepper, the text size, a sample of a chat, a route's state ---- */
+/* ---- inside a row: an action, a stepper, the text size, a sample of a chat, a route's state ---- */
 
-/* Radio › Battery: the charge now, big, with a button to read it again. */
-.battery-now {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3);
-}
-.battery-now-text {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-.battery-now-text b {
-  font-size: calc(28px * var(--text-scale));
-  font-weight: 600;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-}
-.battery-now-text small {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
 .line-action {
   color: var(--accent);
 }
@@ -108,12 +86,16 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-/* A window onto a chat, on the chat's own ground, where a message's bubble stands out. */
+/* A window onto a chat, on the chat's own ground, where a message's bubble stands out. The sample
+   sits on the chats' background, which stays inside its corners. */
 .line-block.text-sample {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   margin: 0 var(--space-3) var(--space-3);
+  overflow: hidden;
   border-radius: var(--radius-lg);
   background: var(--bg);
   box-shadow: none;
@@ -121,12 +103,6 @@
 .text-sample .bubble,
 .text-sample .jumbo {
   cursor: default;
-}
-/* The sample sits on the chats' background, which stays inside its corners. */
-.line-block.text-sample {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
 }
 .line-block.bg-sample {
   margin-top: var(--space-3);

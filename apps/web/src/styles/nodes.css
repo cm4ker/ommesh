@@ -1,27 +1,5 @@
 /* ---- nodes ---- */
 
-.list-title {
-  flex: 1;
-  align-self: center;
-  font-size: var(--text-lg);
-  font-weight: 600;
-}
-.pane-foot {
-  flex: none;
-  padding: var(--space-2) var(--space-3) max(var(--space-2), var(--safe-bottom));
-  border-top: 1px solid var(--border);
-  font-size: var(--text-xs);
-}
-
-.node-head {
-  gap: var(--space-2);
-}
-.node-sub {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* What the radio is waiting on: it carries one request to a remote node at a time. */
 .queue {
   display: inline-flex;
@@ -41,6 +19,10 @@
   border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
   background: var(--accent-subtle);
   color: var(--text);
+}
+/* A phone's header has no room to say the radio is idle; it says so only when busy. */
+.app.narrow .queue:not(.busy) {
+  display: none;
 }
 .queue-label {
   overflow: hidden;
@@ -103,26 +85,6 @@
   cursor: not-allowed;
 }
 
-.banner-box {
-  flex: none;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid color-mix(in oklab, var(--warning) 40%, var(--border));
-  border-radius: var(--radius-lg);
-  background: var(--warning-subtle);
-}
-.banner-box > svg {
-  flex: none;
-  color: var(--warning);
-}
-.banner-box p {
-  flex: 1;
-  min-width: 200px;
-}
-
 /* A state is never colour alone: an icon or a word goes with it. */
 .pill {
   display: inline-flex;
@@ -175,32 +137,6 @@
   min-width: 0;
   padding: var(--space-3);
   background: var(--section-bg);
-}
-.stat-label {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-.stat-value {
-  font-size: calc(20px * var(--text-scale));
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.25;
-  font-variant-numeric: tabular-nums;
-}
-.stat-value small {
-  margin-left: 2px;
-  color: var(--text-muted);
-  font-size: var(--text-base);
-  font-weight: 500;
-}
-.stat-sub {
-  color: var(--text-faint);
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
 }
 
 .spark {

@@ -76,7 +76,9 @@
   flex-direction: column;
   gap: 6px;
 }
+/* Positioned for the red dot a running survey puts on "who hears me". */
 .map-controls .icon-button {
+  position: relative;
   width: 38px;
   height: 38px;
   border-radius: 10px;
@@ -124,11 +126,9 @@
 .mesh-phone .map-controls {
   top: calc(var(--mesh-top) + var(--space-3));
 }
-.mesh-phone .map-attribution {
-  top: var(--mesh-top);
-}
 /* With the list all the way up the map is out of sight, and its credit would show cut in the gap above. */
 .mesh-phone .map-attribution {
+  top: var(--mesh-top);
   transition: opacity 0.2s;
 }
 .mesh-phone[data-detent="full"] .map-attribution {
@@ -253,9 +253,6 @@
     transform: scale(2.2);
     opacity: 0;
   }
-}
-.map-route {
-  stroke: var(--accent);
 }
 
 /* The phone (#34): a hollow ring in the text's colour, apart from this radio's filled dot in every

@@ -77,50 +77,6 @@
   cursor: default;
 }
 
-.toast-action {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0 4px 4px;
-  border: 0;
-  background: transparent;
-  color: #74a9ec;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-.toast-ring {
-  width: 20px;
-  height: 20px;
-}
-.toast-ring circle {
-  fill: none;
-  stroke-width: 2;
-}
-.toast-ring-track {
-  stroke: #3a404b;
-}
-.toast-ring-run {
-  stroke: #74a9ec;
-  stroke-dasharray: 50.27;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .toast-ring-run {
-    animation: toast-ring linear forwards;
-  }
-}
-@keyframes toast-ring {
-  to {
-    stroke-dashoffset: 50.27;
-  }
-}
-.toast-ring text {
-  fill: #e9edf3;
-  font-size: 9px;
-  font-weight: 600;
-}
-
 .cleanup-note {
   padding: 0 var(--space-4) var(--space-1);
 }

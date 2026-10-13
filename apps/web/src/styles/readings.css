@@ -1,0 +1,116 @@
+/* ---- readings: a node's sensors in tiles, and a counter over its split ---- */
+
+/* Readings from a node's sensors: a set of tiles for each channel, tinted over whatever the group is drawn on. */
+.line-block.readings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.reading-set-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+  font-size: var(--text-sm);
+}
+.reading-set-head b {
+  font-weight: 600;
+}
+.reading-set-head span {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+}
+.reading-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-1);
+}
+.reading-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklab, var(--text) 5%, transparent);
+}
+.reading-tile.wide {
+  grid-column: 1 / -1;
+}
+.reading-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.reading-value {
+  overflow: hidden;
+  font-size: calc(19px * var(--text-scale));
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reading-value small {
+  margin-left: 3px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+/* A low charge: the number goes amber with a sign before it, never the colour alone (#31). */
+.reading-value.low,
+.reading-value.low small {
+  color: var(--warning);
+}
+.reading-value svg {
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+.reading-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.reading-sub .link {
+  color: var(--accent);
+  font-size: inherit;
+}
+/* The battery's tile opens the cell it is counted by. */
+button.reading-tile.tap {
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  button.reading-tile.tap:hover {
+    background: color-mix(in oklab, var(--text) 9%, transparent);
+  }
+}
+.reading-tile .spark {
+  max-width: none;
+  margin-top: 2px;
+}
+.reading-more {
+  padding: 0 var(--space-3) var(--space-2);
+}
+/* A counter over its split, both at the row's right edge. */
+.kv-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+  padding-block: 3px;
+}
+.kv-sub {
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+}

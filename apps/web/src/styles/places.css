@@ -130,16 +130,11 @@
 .place-line,
 .place-sub {
   display: block;
-}
-.place-line b {
-  font-weight: 600;
-}
-.place-line,
-.place-sub {
   color: var(--text-muted);
 }
 .place-line b {
   color: var(--text);
+  font-weight: 600;
 }
 .place-sub {
   font-size: var(--text-xs);

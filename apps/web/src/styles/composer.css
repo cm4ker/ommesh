@@ -118,6 +118,7 @@
   display: none;
 }
 .compose-send {
+  position: relative;
   flex: none;
   width: var(--control-h);
   height: var(--control-h);

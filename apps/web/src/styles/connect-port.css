@@ -396,19 +396,3 @@
   flex: none;
   width: auto;
 }
-.connect-pin {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-.connect-pin label {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-}
-.connect-pin-row {
-  display: flex;
-  gap: var(--space-2);
-}
-.connect-pin .input:not(:placeholder-shown) {
-  letter-spacing: 0.2em;
-}

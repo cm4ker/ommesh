@@ -233,3 +233,20 @@
   text-align: left;
   cursor: pointer;
 }
+/* The PIN a radio asks for when it pairs over Bluetooth, in its card. */
+.connect-pin {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.connect-pin label {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.connect-pin-row {
+  display: flex;
+  gap: var(--space-2);
+}
+.connect-pin .input:not(:placeholder-shown) {
+  letter-spacing: 0.2em;
+}

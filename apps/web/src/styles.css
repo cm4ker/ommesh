@@ -37,7 +37,7 @@
 @import "./styles/nodes.css";
 @import "./styles/node-pages.css";
 @import "./styles/map.css";
-@import "./styles/adjustments.css";
+@import "./styles/touch.css";
 @import "./styles/tools.css";
 @import "./styles/survey.css";
 @import "./styles/neighbours.css";
@@ -46,5 +46,6 @@
 @import "./styles/contacts.css";
 @import "./styles/themes.css";
 @import "./styles/looks.css";
+@import "./styles/readings.css";
 @import "./styles/voice.css";
 @import "./styles/key.css";

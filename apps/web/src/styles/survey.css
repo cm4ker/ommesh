@@ -350,3 +350,83 @@
 .survey-more svg:last-child {
   color: var(--text-faint);
 }
+
+/* A survey running, over every screen but its own card: a tap goes back to it. */
+.survey-strip {
+  flex: none;
+  order: -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 6px var(--space-3);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--danger-subtle);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+}
+.survey-strip-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.survey-strip svg {
+  flex: none;
+  color: var(--text-faint);
+}
+.app.narrow .survey-strip {
+  padding-top: calc(6px + var(--safe-top));
+}
+.app.narrow .offline ~ .survey-strip {
+  padding-top: 6px;
+}
+.survey-strip ~ .mesh-phone {
+  --mesh-top: 0px;
+}
+.app.narrow .survey-strip ~ .layer > .screen > .screen-head,
+.app.narrow .survey-strip ~ .layer > .list-pane > .list-head {
+  padding-top: 0;
+  min-height: 48px;
+}
+.survey-rec {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .survey-rec {
+    animation: map-rec 2s ease-in-out infinite;
+  }
+}
+.survey-live .row-title {
+  color: var(--danger);
+}
+/* Said in the sheet until a survey has once been started by holding the button. */
+.survey-teach {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.survey-teach-ring {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px dashed var(--danger);
+  border-radius: 50%;
+}

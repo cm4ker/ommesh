@@ -36,9 +36,6 @@
 }
 /* Both round buttons take a press a little beyond what they draw: 44 px tall, and as wide as the
    gap between them allows. */
-.compose-send {
-  position: relative;
-}
 .compose-mic::after,
 .compose-send::after {
   content: "";

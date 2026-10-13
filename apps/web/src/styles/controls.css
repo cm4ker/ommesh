@@ -202,6 +202,9 @@ textarea.input {
   min-width: 0;
 }
 .field-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--text-sm);
   color: var(--text-muted);
 }
@@ -264,6 +267,9 @@ textarea.input {
 }
 .chips::-webkit-scrollbar {
   display: none;
+}
+.app.wide .pane .chips {
+  flex-wrap: wrap;
 }
 .chip {
   height: var(--control-h-sm);

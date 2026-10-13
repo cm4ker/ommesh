@@ -16,6 +16,7 @@ import { listen } from "@tauri-apps/api/event";
 import { VoiceGender, type ChannelRecord, type SessionState, type VoicePacker } from "@meshnet/meshcore";
 import { hashtagSecret } from "./channels.js";
 import { speechOnly } from "./speechOnly.js";
+import { canClone, clonedSpeech, CLONE_RATE } from "./voiceClone.js";
 import { isTauri } from "./platform.js";
 import { session } from "./session.js";
 import { readSetting, writeSetting } from "./storage.js";
@@ -40,7 +41,7 @@ export interface VoicePrefs {
   gender: VoiceGender;
   model: VoiceModel;
   /** Our last announce, per radio key: when, and with which voice. */
-  announced: Record<string, { at: number; gender: VoiceGender }>;
+  announced: Record<string, { at: number; gender: VoiceGender; card?: string | null }>;
 }
 
 const KEY = "meshnet.voice";
@@ -184,12 +185,13 @@ export interface Recording {
 }
 
 /**
- * Records from the microphone at 16 kHz, mono, the way Whisper hears. The
- * browser resamples; the samples are kept as they come, in memory only.
+ * Records from the microphone, mono: at 16 kHz by default, the way Whisper
+ * hears, or at the rate a voice card keeps. The browser resamples; the
+ * samples are kept as they come, in memory only.
  */
-export async function startRecording(onLimit: () => void): Promise<Recording> {
+export async function startRecording(onLimit: () => void, rate = 16_000, limitSeconds = VOICE_MAX_SECONDS): Promise<Recording> {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-  const context = new AudioContext({ sampleRate: 16_000 });
+  const context = new AudioContext({ sampleRate: rate });
   const source = context.createMediaStreamSource(stream);
   // A ScriptProcessor rather than a worklet: a worklet needs a module of its own, and this is a few seconds of audio.
   const processor = context.createScriptProcessor(4096, 1, 1);
@@ -205,7 +207,7 @@ export async function startRecording(onLimit: () => void): Promise<Recording> {
     let peak = 0;
     for (const s of input) peak = Math.max(peak, Math.abs(s));
     loud = peak;
-    if (count >= VOICE_MAX_SECONDS * context.sampleRate) onLimit();
+    if (count >= limitSeconds * context.sampleRate) onLimit();
   };
   source.connect(processor);
   processor.connect(context.destination);
@@ -239,7 +241,12 @@ export async function startRecording(onLimit: () => void): Promise<Recording> {
 export interface Speaking {
   id: string;
   at: number;
+  /** Its sender's voice is still being worked out. */
+  preparing?: boolean;
 }
+
+/** Stops the cloned voice playing now, if one is. */
+let stopClone: (() => void) | null = null;
 
 let speaking: Speaking | null = null;
 const speakingListeners = new Set<() => void>();
@@ -275,15 +282,65 @@ export function canSpeak(): boolean {
   return typeof speechSynthesis !== "undefined" && speechSynthesis.getVoices().some((v) => v.lang.toLowerCase().startsWith("ru"));
 }
 
-/** Reads a message out; a second call for the same one stops it. */
-export function speak(id: string, text: string, gender: VoiceGender): void {
-  if (typeof speechSynthesis === "undefined") return;
+/**
+ * Reads a message out; a second call for the same one stops it. In its
+ * sender's own voice when this computer holds their card and the model
+ * (voiceClone.ts), else in one of the computer's voices.
+ */
+export function speak(id: string, text: string, gender: VoiceGender, speaker: string | null = null): void {
   const again = speaking?.id === id;
-  speechSynthesis.cancel();
-  if (again) {
-    setSpeaking(null);
+  stopSpeaking();
+  if (again) return;
+  if (speaker && canClone(speaker)) void speakCloned(id, text, gender, speaker);
+  else speakSystem(id, text, gender);
+}
+
+async function speakCloned(id: string, text: string, gender: VoiceGender, speaker: string): Promise<void> {
+  setSpeaking({ id, at: 0, preparing: true });
+  const pcm = await clonedSpeech(id, speaker, text);
+  // Stopped, or another one started, while the voice was worked out.
+  if (speaking?.id !== id) return;
+  if (!pcm) {
+    speakSystem(id, text, gender);
     return;
   }
+  const context = new AudioContext();
+  const buffer = context.createBuffer(1, pcm.length, CLONE_RATE);
+  buffer.getChannelData(0).set(pcm);
+  const source = context.createBufferSource();
+  source.buffer = buffer;
+  source.connect(context.destination);
+  const length = pcm.length / CLONE_RATE;
+  // The clone says nothing of where each word falls, so the place in the text follows the place in the sound.
+  const timer = setInterval(() => {
+    if (speaking?.id !== id) return;
+    const share = Math.min(1, context.currentTime / length);
+    let at = Math.floor(share * text.length);
+    while (at > 0 && !/\s/.test(text[at - 1]!)) at--;
+    if (at !== speaking.at) setSpeaking({ id, at });
+  }, 120);
+  const done = () => {
+    clearInterval(timer);
+    stopClone = null;
+    void context.close();
+    if (speaking?.id === id) setSpeaking(null);
+  };
+  source.onended = done;
+  stopClone = () => {
+    source.onended = null;
+    try {
+      source.stop();
+    } catch {
+      // Not started yet, or over already.
+    }
+    done();
+  };
+  setSpeaking({ id, at: 0 });
+  source.start();
+}
+
+function speakSystem(id: string, text: string, gender: VoiceGender): void {
+  if (typeof speechSynthesis === "undefined") return;
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = "ru-RU";
   const voice = russianVoice(gender);
@@ -301,6 +358,7 @@ export function speak(id: string, text: string, gender: VoiceGender): void {
 }
 
 export function stopSpeaking(): void {
+  stopClone?.();
   if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
   setSpeaking(null);
 }
@@ -324,14 +382,17 @@ export function useRussianVoices(): string {
   );
 }
 
-// Read out as they come, when the settings ask for it: a moment after the first part, so that the
-// rest of a short message joins it, and never over one already being read.
+// A moment after a voice message's first part, so that the rest of a short one joins it: its
+// sender's voice is worked out ahead of a Listen, and it is read out when the settings ask for
+// that, never over one already being read.
 session.onReceived((message) => {
-  if (!message.voice || !prefs.on || prefs.readAloud !== "auto") return;
+  if (!message.voice || !prefs.on) return;
   setTimeout(() => {
     const state = session.getState();
     const now = state.messages.find((m) => m.id === message.id);
-    if (!now?.voice || speaking) return;
-    speak(now.id, now.text, state.voicePeers[now.voice.speaker]?.gender ?? VoiceGender.Any);
+    if (!now?.voice) return;
+    const speaker = now.voice.speaker;
+    if (canClone(speaker)) void clonedSpeech(now.id, speaker, now.text);
+    if (prefs.readAloud === "auto" && !speaking) speak(now.id, now.text, state.voicePeers[speaker]?.gender ?? VoiceGender.Any, speaker);
   }, 2500);
 });

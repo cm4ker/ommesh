@@ -51,6 +51,7 @@ import { PrivacyButton } from "./Privacy.js";
 import { NewBuildRow } from "./NewBuild.js";
 import { NewsPage, NewsRow } from "./News.js";
 import { LabsPage, VoicePage } from "./VoicePages.js";
+import { VoiceCardsPage } from "./VoiceCards.js";
 import { getLanguagePreference, languageName, languages, setLanguagePreference, subscribeLanguage, systemLanguage, t, type Key } from "../i18n/index.js";
 import { errorText } from "../i18n/errors.js";
 
@@ -69,6 +70,7 @@ export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = {
   console: "advanced",
   background: "appearance",
   voice: "labs",
+  voiceCards: "voice",
 };
 
 /** Pages that read only under their own parent, one kind's sound under Sound: the palette leaves them out. */
@@ -97,6 +99,7 @@ export const RADIO_TITLES: Record<RadioPage, Key> = {
   connection: "radio.titles.connection",
   labs: "radio.titles.labs",
   voice: "radio.titles.voice",
+  voiceCards: "radio.titles.voiceCards",
   air: "radio.titles.air",
   log: "radio.titles.log",
   power: "radio.titles.power",
@@ -282,6 +285,8 @@ function PageBody({ page }: { page: RadioPage }) {
       return <LabsPage />;
     case "voice":
       return <VoicePage />;
+    case "voiceCards":
+      return <VoiceCardsPage />;
     case "power":
       return <PowerPage />;
     case "about":

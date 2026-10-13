@@ -65,13 +65,14 @@ export function VoiceBody({ message }: { message: MessageRecord }) {
           title={playing ? t("chats.voice.stop") : t("chats.voice.play")}
           onClick={(e) => {
             stop(e);
-            speak(message.id, message.text, gender);
+            speak(message.id, message.text, gender, voice.speaker);
           }}
           onKeyDown={(e) => e.stopPropagation()}
         >
-          {playing ? <PauseIcon size={14} strokeWidth={2.5} /> : <PlayIcon size={14} />}
+          {/* While its sender's voice is still being worked out, a spinner in place of the pause. */}
+          {playing && speaking.preparing ? <span className="spinner" aria-hidden="true" /> : playing ? <PauseIcon size={14} strokeWidth={2.5} /> : <PlayIcon size={14} />}
         </button>
-        <span className="msg-text voice-text">{playing ? <Lit text={message.text} at={speaking.at} /> : message.text}</span>
+        <span className="msg-text voice-text">{playing && !speaking.preparing ? <Lit text={message.text} at={speaking.at} /> : message.text}</span>
       </span>
       {missing.length ? <span className="voice-gap">{missing.map((index) => t("chats.voice.partMissing", { index, count: voice.parts.length })).join(" · ")}</span> : null}
       {failed || unheard.length ? (

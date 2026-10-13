@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { parseConversation, type VoiceGender } from "@meshnet/meshcore";
 import { push } from "../lib/nav.js";
-import { useSession } from "../lib/session.js";
+import { session, useSession } from "../lib/session.js";
 import { toast } from "../lib/toast.js";
 import { modelReady, speak, startRecording, transcribe, useVoicePrefs, voiceAvailable, voiceChannel, type Recording } from "../lib/voice.js";
 import { CloseIcon, MicIcon, PlayIcon } from "./Icons.js";
@@ -181,7 +181,7 @@ export function TakeBar({ seconds, text, gender, onPlain }: { seconds: number; t
         <b>{t("chats.voice.bar", { length: voiceLength(seconds) })}</b>
         <small>{t("chats.voice.barHint")}</small>
       </span>
-      <button type="button" className="chip" disabled={!text.trim()} onMouseDown={(e) => e.preventDefault()} onClick={() => speak("voice-draft", text, gender)}>
+      <button type="button" className="chip" disabled={!text.trim()} onMouseDown={(e) => e.preventDefault()} onClick={() => speak("voice-draft", text, gender, session.voiceSpeaker())}>
         <PlayIcon size={12} />
         {t("chats.voice.play")}
       </button>

@@ -1,0 +1,32 @@
+[package]
+name = "voice-clone"
+version = "0.1.0"
+edition = "2021"
+description = "Text read aloud in a voice cloned from a short recording: XTTS v2 on ONNX Runtime, for Ommesh voice messages"
+publish = false
+
+[lib]
+name = "voice_clone"
+
+[dependencies]
+# ONNX Runtime with pyke's prebuilt binaries, the processor alone for now.
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "download-binaries", "copy-dylibs", "tls-native"] }
+realfft = "3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+unicode-normalization = "0.1"
+unicode-segmentation = "1"
+
+[dev-dependencies]
+hound = "3"
+
+[profile.release]
+debug = false
+
+# The tests run the encoders' arithmetic (mel spectrograms, resampling) on
+# seconds of audio; unoptimised they take minutes.
+[profile.test]
+opt-level = 3
+
+[profile.dev.package."*"]
+opt-level = 3

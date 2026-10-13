@@ -7,7 +7,8 @@
 import { isCapacitor } from "./platform.js";
 
 interface FilesystemPlugin {
-  writeFile(options: { path: string; data: string; directory: "CACHE"; encoding: "utf8"; recursive?: boolean }): Promise<{ uri: string }>;
+  /** Without an encoding the data is base64, which is how a file of bytes goes. */
+  writeFile(options: { path: string; data: string; directory: "CACHE"; encoding?: "utf8"; recursive?: boolean }): Promise<{ uri: string }>;
 }
 interface SharePlugin {
   share(options: { title?: string; files?: string[]; dialogTitle?: string }): Promise<unknown>;
@@ -17,13 +18,17 @@ interface SharePlugin {
 let files: FilesystemPlugin | null = null;
 let share: SharePlugin | null = null;
 
-/** How the file went: to the share sheet, or downloaded. Throws when it could not be written. */
-export async function saveFile(name: string, text: string, type: string, dialogTitle: string): Promise<"shared" | "downloaded"> {
+/** How the file went: to the share sheet, or downloaded. Throws when it could not be written. Text, or bytes (a voice card). */
+export async function saveFile(name: string, content: string | Uint8Array, type: string, dialogTitle: string): Promise<"shared" | "downloaded"> {
   if (isCapacitor()) {
     const { registerPlugin } = await import("@capacitor/core");
     files ??= registerPlugin<FilesystemPlugin>("Filesystem");
     share ??= registerPlugin<SharePlugin>("Share");
-    const { uri } = await files.writeFile({ path: `exports/${name}`, data: text, directory: "CACHE", encoding: "utf8", recursive: true });
+    const written =
+      typeof content === "string"
+        ? { data: content, encoding: "utf8" as const }
+        : { data: btoa(Array.from(content, (b) => String.fromCharCode(b)).join("")) };
+    const { uri } = await files.writeFile({ path: `exports/${name}`, directory: "CACHE", recursive: true, ...written });
     try {
       await share.share({ title: name, files: [uri], dialogTitle });
     } catch (error) {
@@ -33,7 +38,7 @@ export async function saveFile(name: string, text: string, type: string, dialogT
     }
     return "shared";
   }
-  const url = URL.createObjectURL(new Blob([text], { type }));
+  const url = URL.createObjectURL(new Blob([typeof content === "string" ? content : new Uint8Array(content)], { type }));
   const link = document.createElement("a");
   link.href = url;
   link.download = name;

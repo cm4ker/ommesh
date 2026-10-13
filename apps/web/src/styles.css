@@ -9784,3 +9784,13 @@ button.reading-tile.tap {
 .model-pick[aria-checked="true"] .model-tick {
   visibility: visible;
 }
+/* The phrase a voice card is read from, set off from the rows round it. */
+.card-phrase small {
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+}
+.card-phrase p {
+  margin: 6px 0 0;
+  font-size: calc(15px * var(--text-scale));
+  line-height: 1.5;
+}

@@ -9,6 +9,8 @@ import { useEffect, useState } from "react";
 import { fromHex, VoiceGender } from "@meshnet/meshcore";
 import { freeChannelIndex, hashtagSecret } from "../lib/channels.js";
 import { agoPhrase } from "../lib/format.js";
+import { isTauri } from "../lib/platform.js";
+import { useCards } from "../lib/voiceClone.js";
 import { push } from "../lib/nav.js";
 import { session, useSession } from "../lib/session.js";
 import { act, toast } from "../lib/toast.js";
@@ -68,6 +70,11 @@ export function VoicePage() {
   const radio = state.self?.key ?? null;
   const announced = radio ? prefs.announced[radio] : undefined;
   const [busy, setBusy] = useState<"channel" | "announce" | null>(null);
+  // Voice cards and the clone live in the desktop shell.
+  const cards = useCards();
+  const speaker = session.voiceSpeaker();
+  const card = cards.find((c) => c.speaker === speaker)?.print ?? null;
+  const others = cards.filter((c) => c.speaker !== speaker).length;
 
   const addChannel = async () => {
     const index = freeChannelIndex(state);
@@ -87,8 +94,8 @@ export function VoicePage() {
     if (!channel || !radio) return;
     setBusy("announce");
     try {
-      await act(() => session.announceVoice(channel.index, { gender: prefs.gender }), t("radio.voice.announced"));
-      setVoicePrefs({ announced: { ...prefs.announced, [radio]: { at: Date.now(), gender: prefs.gender } } });
+      const sent = await act(() => session.announceVoice(channel.index, { gender: prefs.gender, card }), t("radio.voice.announced"));
+      if (sent) setVoicePrefs({ announced: { ...prefs.announced, [radio]: { at: Date.now(), gender: prefs.gender, card } } });
     } finally {
       setBusy(null);
     }
@@ -96,7 +103,8 @@ export function VoicePage() {
 
   const channelHint = channel ? t("radio.voice.inRadio", { slot: channel.index }) : t("radio.voice.switchHint");
   const announceHint = !announced ? t("radio.voice.neverAnnounced") : t("radio.voice.announcedAt", { when: agoPhrase(announced.at) });
-  const changed = !!announced && announced.gender !== prefs.gender;
+  const changed = !!announced && (announced.gender !== prefs.gender || (announced.card ?? null) !== card);
+  const cardsValue = [card ? t("radio.voice.cardsMine") : null, others ? t("radio.voice.cardsTheirs", { count: others }) : null].filter(Boolean).join(" · ") || t("radio.voice.cardsNone");
 
   return (
     <>
@@ -126,11 +134,12 @@ export function VoicePage() {
                 <span>{t("radio.voice.sampleLabel")}</span>
                 <small>{t("radio.voice.sample")}</small>
               </span>
-              <Button size="sm" disabled={!voices} onClick={() => speak("voice-sample", t("radio.voice.sample"), prefs.gender)}>
+              <Button size="sm" disabled={!voices && !card} onClick={() => speak("voice-sample", t("radio.voice.sample"), prefs.gender, speaker)}>
                 <PlayIcon size={14} />
                 {t("radio.voice.listen")}
               </Button>
             </div>
+            {isTauri() ? <LinkRow label={t("radio.titles.voiceCards")} hint={t("radio.voice.cardsHint")} value={cardsValue} onClick={() => push({ kind: "radio", page: "voiceCards" })} /> : null}
             <div className="line">
               <span className="line-text">
                 <span>{t("radio.voice.announce")}</span>

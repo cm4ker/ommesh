@@ -52,7 +52,6 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NoticesPlugin.class);
         registerPlugin(MeshRelayPlugin.class);
         registerPlugin(ShareInPlugin.class);
-        registerPlugin(SpeechPlugin.class);
         super.onCreate(savedInstanceState);
 
         holdOrientation();

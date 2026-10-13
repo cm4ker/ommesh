@@ -1,8 +1,0 @@
-[bindings.kotlin]
-package_name = "dev.cm4ker.meshnet.speech"
-# Android's own cleaner, chosen by API level at run time, as the radio core's.
-android_cleaner = true
-
-[bindings.swift]
-# Not "Speech": Apple's speech recognition framework has that name.
-module_name = "SpeechCore"

@@ -7,10 +7,25 @@ publish = false
 
 [lib]
 name = "meshcore_core"
-# The phones link it inside crates/phone, with voice input and the bindings for both.
+# A library for the desktop shell and the tests, a shared one for Android, a static one for iOS.
+crate-type = ["lib", "cdylib", "staticlib"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uniffi = "0.32"
 
+[features]
+# The Kotlin and Swift bindings' generator (`cargo run --features bindgen --bin uniffi-bindgen`).
+bindgen = ["uniffi/cli"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+required-features = ["bindgen"]
+
+[profile.release]
+# The phone carries it: small over fast. Not stripped: the bindings are read from its symbols, and Android strips it when it packs it.
+opt-level = "s"
+lto = true
+codegen-units = 1

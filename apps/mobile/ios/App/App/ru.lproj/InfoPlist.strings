@@ -4,4 +4,3 @@
 "NSLocalNetworkUsageDescription" = "Ommesh связывается с радио MeshCore в вашей сети Wi-Fi.";
 "NSLocationWhenInUseUsageDescription" = "Ommesh показывает на карте, где вы, по вашей просьбе ставит туда радио и отмечает точки замера покрытия, который вы начали.";
 "NSLocationAlwaysAndWhenInUseUsageDescription" = "Ommesh показывает на карте, где вы, по вашей просьбе ставит туда радио и отмечает точки замера покрытия, который вы начали.";
-"NSMicrophoneUsageDescription" = "Ommesh пишет в поле сообщения то, что вы говорите. Речь распознаётся на телефоне, а звук нигде не хранится.";

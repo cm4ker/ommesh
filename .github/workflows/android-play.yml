@@ -78,13 +78,13 @@ jobs:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
           log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
-      - name: Rust for the radio core and voice input
+      - name: Rust for the radio core
         run: |
           rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
           cargo install cargo-ndk --version 4.1.2 --locked
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: crates/phone
+          workspaces: crates/meshcore-core
       - run: pnpm install --frozen-lockfile
       - name: Validate release build using a disposable key
         shell: bash
@@ -135,13 +135,13 @@ jobs:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
           log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
-      - name: Rust for the radio core and voice input
+      - name: Rust for the radio core
         run: |
           rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
           cargo install cargo-ndk --version 4.1.2 --locked
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: crates/phone
+          workspaces: crates/meshcore-core
       - run: pnpm install --frozen-lockfile
       - name: Build and verify signed bundle
         env:

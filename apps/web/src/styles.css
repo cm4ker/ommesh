@@ -9701,7 +9701,7 @@ button.reading-tile.tap {
   position: relative;
 }
 /* Both round buttons take a press a little beyond what they draw: 44 px tall, and as wide as the
-   gap between them allows. In a car a thumb lands near a button more often than on it. */
+   gap between them allows. */
 .compose-send {
   position: relative;
 }
@@ -9751,7 +9751,7 @@ button.reading-tile.tap {
 .listen-bar {
   min-height: 34px;
   box-sizing: border-box;
-  /* Read at a glance, from a phone in a holder too. */
+  /* Read at a glance. */
   font-size: calc(15px * var(--text-scale));
 }
 .listen-dot {

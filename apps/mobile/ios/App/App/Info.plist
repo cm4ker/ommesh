@@ -57,8 +57,6 @@
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Ommesh talks to a MeshCore radio on your Wi-Fi network.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Ommesh writes what you say into the message field. Speech is recognised on the phone and the sound is not kept.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Ommesh shows where you are on the map, puts your radio there when you ask, and marks the points of a coverage survey you start.</string>
 	<!-- The location plugin's library can report in the background, so Apple wants this string too; Ommesh never asks for Always, and iOS never shows it. -->

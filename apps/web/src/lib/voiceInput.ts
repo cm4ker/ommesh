@@ -6,19 +6,18 @@
  * the microphone to the recogniser in memory and is forgotten once heard.
  *
  * Settings › Messages › Voice input turns it on and fetches a model. The
- * desktop shell hears, with the page recording and handing the sound over;
- * on a phone the native code records and hears (`SpeechPlugin`), and the
- * page gets the phrases. A browser has no recogniser, except with the demo
- * radio, where the microphone "hears" set lines so that the screens can be
- * tried.
+ * desktop shell hears, with the page recording and handing the sound over.
+ * A phone's own keyboard has voice input that works well, so the phone apps
+ * leave it to that (the try at Whisper on phones is on exp/voice-input-phones).
+ * A browser has no recogniser, except with the demo radio, where the
+ * microphone "hears" set lines so that the screens can be tried.
  */
 
 import { useEffect, useSyncExternalStore } from "react";
-import type { PluginListenerHandle } from "@capacitor/core";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { language } from "../i18n/index.js";
-import { isCapacitor, isTauri, nativePlatform } from "./platform.js";
+import { isCapacitor, isTauri } from "./platform.js";
 import { speechOnly } from "./speechOnly.js";
 import { readSetting, writeSetting } from "./storage.js";
 
@@ -72,24 +71,19 @@ export function setVoiceInputPrefs(patch: Partial<VoiceInputPrefs>): void {
   prefs = { ...prefs, ...patch };
   writeSetting(KEY, { ...DEFAULTS, ...prefs });
   if (patch.on === false && isTauri()) void invoke("speech_unload").catch(() => undefined);
-  if (patch.on === false && phone()) void withSpeech((api) => api.unload()).catch(() => undefined);
   if (patch.model) void refreshReady();
   emit();
 }
 
-/** Whether this app can hear speech at all: the desktop shell, a phone's, or a browser trying the demo radio. */
+/** Whether this app can hear speech at all: the desktop shell, or a browser trying the demo radio. */
 export function voiceInputAvailable(): boolean {
-  return isTauri() || phone() || demo();
+  return isTauri() || demo();
 }
 
-/** The phone shells, whose native code records and hears. */
-function phone(): boolean {
-  const platform = nativePlatform();
-  return isCapacitor() && (platform === "android" || platform === "ios");
-}
-
+/** A browser with the demo radio; never a phone, whose keyboard hears instead. */
 function demo(): boolean {
-  return !isTauri() && !phone() && (import.meta.env.DEV || new URLSearchParams(window.location.search).has("demo"));
+  if (isTauri() || isCapacitor()) return false;
+  return import.meta.env.DEV || new URLSearchParams(window.location.search).has("demo");
 }
 
 /**
@@ -140,7 +134,6 @@ export interface Models {
 /** What the shell has of the models; in a browser's demo, both already there. */
 export async function voiceModels(): Promise<Models> {
   if (isTauri()) return invoke<Models>("speech_models");
-  if (phone()) return withSpeech((api) => api.models());
   return { models: [{ id: "small", bytes: 190_085_487, present: true }, { id: "base", bytes: 59_707_625, present: true }], unable: null };
 }
 
@@ -148,16 +141,12 @@ type Progress = { model: string; done: number; total: number };
 
 /** Fetches a model and the voice detector with it, telling `progress` how far it has got. */
 export async function downloadVoiceModel(id: VoiceModel, progress: (done: number, total: number) => void): Promise<void> {
-  if (!isTauri() && !phone()) return;
-  const told = (event: Progress) => {
-    if (event.model === id) progress(event.done, event.total);
-  };
-  const stop = isTauri()
-    ? await listen<Progress>("speech-model-progress", (event) => told(event.payload))
-    : await withSpeech((api) => api.addListener("progress", told)).then((handle) => () => void handle.remove());
+  if (!isTauri()) return;
+  const stop = await listen<Progress>("speech-model-progress", (event) => {
+    if (event.payload.model === id) progress(event.payload.done, event.payload.total);
+  });
   try {
-    if (isTauri()) await invoke("speech_model_download", { id });
-    else await withSpeech((api) => api.download({ id }));
+    await invoke("speech_model_download", { id });
   } finally {
     stop();
     await refreshReady();
@@ -167,38 +156,9 @@ export async function downloadVoiceModel(id: VoiceModel, progress: (done: number
 export async function deleteVoiceModel(id: VoiceModel): Promise<void> {
   try {
     if (isTauri()) await invoke("speech_model_delete", { id });
-    else if (phone()) await withSpeech((api) => api.delete({ id }));
   } finally {
     await refreshReady();
   }
-}
-
-/** The phones' native side (`SpeechPlugin` on Android and iOS). */
-interface SpeechPlugin {
-  models(): Promise<Models>;
-  download(options: { id: string }): Promise<void>;
-  delete(options: { id: string }): Promise<void>;
-  unload(): Promise<void>;
-  start(options: { model: string; language: string; before: string }): Promise<void>;
-  /** The microphone off; the last phrases heard. */
-  stop(): Promise<{ phrases: string[] }>;
-  cancel(): Promise<void>;
-  addListener(event: "progress", listener: (event: Progress) => void): Promise<PluginListenerHandle>;
-  addListener(event: "phrase", listener: (event: { text: string }) => void): Promise<PluginListenerHandle>;
-  addListener(event: "level", listener: (event: { level: number } & Heard) => void): Promise<PluginListenerHandle>;
-  addListener(event: "quiet", listener: () => void): Promise<PluginListenerHandle>;
-  addListener(event: "error", listener: (event: { message: string }) => void): Promise<PluginListenerHandle>;
-}
-
-let speechPlugin: SpeechPlugin | null = null;
-
-/** The plugin is used inside, never handed out of a promise: a plugin proxy answers to `then`. */
-async function withSpeech<T>(use: (api: SpeechPlugin) => Promise<T>): Promise<T> {
-  if (!speechPlugin) {
-    const { registerPlugin } = await import("@capacitor/core");
-    speechPlugin = registerPlugin<SpeechPlugin>("Speech");
-  }
-  return use(speechPlugin);
 }
 
 // ---- listening ----
@@ -242,7 +202,7 @@ export interface Listening {
 
 /** Turns the microphone on. Rejects when there is no microphone or no model. */
 export function startListening(options: ListenOptions): Promise<Listening> {
-  return isTauri() ? listenDesktop(options) : phone() ? listenPhone(options) : listenDemo(options);
+  return isTauri() ? listenDesktop(options) : listenDemo(options);
 }
 
 /** How often the sound recorded goes to the shell: often enough that the text keeps close behind. */
@@ -318,59 +278,6 @@ async function listenDesktop(options: ListenOptions): Promise<Listening> {
       if (over) return;
       end();
       void invoke("speech_cancel").catch(() => undefined);
-    },
-  };
-}
-
-/** On a phone the native code records and hears; the page gets the phrases and how loud it is. */
-async function listenPhone(options: ListenOptions): Promise<Listening> {
-  let loud = 0;
-  let heard = FRESH;
-  let over = false;
-  const put = (phrase: string) => {
-    const text = speechOnly(phrase);
-    if (text) options.onPhrase(text);
-  };
-  const handles = await withSpeech((api) =>
-    Promise.all([
-      api.addListener("phrase", (event) => {
-        if (!over) put(event.text);
-      }),
-      api.addListener("level", (event) => {
-        loud = event.level;
-        heard = { speaking: event.speaking, recognising: event.recognising, quietLeft: event.quietLeft };
-      }),
-      api.addListener("quiet", () => options.onQuiet()),
-      api.addListener("error", (event) => {
-        if (over) return;
-        end();
-        options.onError(new Error(event.message));
-      }),
-    ]),
-  );
-  const end = () => {
-    over = true;
-    for (const handle of handles) void handle.remove();
-  };
-  try {
-    await withSpeech((api) => api.start({ model: prefs.model, language: spoken(), before: options.before }));
-  } catch (error) {
-    end();
-    throw error;
-  }
-  return {
-    level: () => (over ? 0 : loud),
-    heard: () => heard,
-    async stop() {
-      if (over) return;
-      // The phrases heard before the answer came as events; the answer brings the rest.
-      const answer = await withSpeech((api) => api.stop()).finally(end);
-      for (const phrase of answer.phrases) put(phrase);
-    },
-    cancel() {
-      if (over) return;
-      end();
-      void withSpeech((api) => api.cancel()).catch(() => undefined);
     },
   };
 }

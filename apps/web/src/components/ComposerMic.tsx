@@ -5,15 +5,13 @@
  * what is not heard yet. What is said goes into the field phrase by phrase,
  * where the caret is, while it is said.
  *
- * Made to be read at a glance, in a car as well: while it listens the button
- * is red with a ring that breathes with the voice, and a line over the field
- * says whether it listens or is writing a phrase down, for how long, and,
- * near the end of a quiet, how soon it turns itself off. The phone taps at
- * the start, at each phrase written in and at the end.
+ * Made to be read at a glance: while it listens the button is red with a
+ * ring that breathes with the voice, and a line over the field says whether
+ * it listens or is writing a phrase down, for how long, and, near the end of
+ * a quiet, how soon it turns itself off.
  */
 
 import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
-import { haptic } from "../lib/haptic.js";
 import { QUIET_SECONDS, startListening, type Heard, type Listening } from "../lib/voiceInput.js";
 import { toast } from "../lib/toast.js";
 import { MicIcon, StopIcon } from "./Icons.js";
@@ -69,10 +67,7 @@ export function useMic(before: () => string, put: (text: string) => void): Mic {
     setPhase("starting");
     const turn = startListening({
       before: before(),
-      onPhrase: (text) => {
-        said.current(text);
-        haptic();
-      },
+      onPhrase: (text) => said.current(text),
       onQuiet: () => void stop(),
       onError: (error) => {
         listening.current = null;
@@ -83,7 +78,6 @@ export function useMic(before: () => string, put: (text: string) => void): Mic {
       (handle) => {
         listening.current = handle;
         setPhase("listening");
-        haptic();
         return handle;
       },
       (error: unknown) => {
@@ -103,7 +97,6 @@ export function useMic(before: () => string, put: (text: string) => void): Mic {
     if (!handle || listening.current !== handle) return;
     listening.current = null;
     setPhase("finishing");
-    haptic();
     try {
       await handle.stop();
     } catch (error) {
@@ -182,9 +175,9 @@ export function useMic(before: () => string, put: (text: string) => void): Mic {
   };
 }
 
-/** The microphone refused: by the browser's prompt on a computer, by the phone's on a phone. */
+/** The microphone refused at the system's prompt. */
 function denied(error: unknown): boolean {
-  return (error instanceof DOMException && error.name === "NotAllowedError") || (error as { code?: unknown } | null)?.code === "denied";
+  return error instanceof DOMException && error.name === "NotAllowedError";
 }
 
 /** Seconds left of a quiet, once few enough to be counted down; null before. */

@@ -189,13 +189,13 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
-      - name: Rust for the radio core and voice input
+      - name: Rust for the radio core
         run: |
           rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
           cargo install cargo-ndk --version 4.1.2 --locked
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: crates/phone
+          workspaces: crates/meshcore-core
       - run: pnpm install --frozen-lockfile
       - run: node scripts/release.mjs prepare
       # A fixed debug key lets each APK install over the previous one. PRs from forks

@@ -88,13 +88,9 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Notifications are delivered immediately; the app never schedules exact alarms. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" tools:node="remove" />
-    <!-- Voice input: the microphone, asked the first time it is pressed. What it hears is written down on
-         the phone and never kept or sent (SpeechPlugin). -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- A buzz in place of the signal for the app's own banner while the ringer is on vibrate (NoticesPlugin.chime). -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
-    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.location" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 </manifest>

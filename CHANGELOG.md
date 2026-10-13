@@ -5,7 +5,7 @@
 ## Unreleased
 
 ### Chats
-- On a PC, voice messages can be tried in the public channel #voice: Settings › Experimental features › Voice. In #voice the empty message field's button is a microphone: hold it and speak, or click it and click again when done; Esc drops the recording. The computer recognises the speech itself with Whisper, with no internet, and puts the text in the field to check before it goes. What goes on air is that text, packed with a dictionary of Russian speech, so ten seconds of speech take one short send. Everyone in #voice with Ommesh on a PC sees the text and hears it read out by their computer, in a female or male voice as the sender asked; a longer message comes in parts, and a part that has not come is named under it. Announce on the Voice page tells #voice your name and voice, and goes only when pressed. The Whisper model is downloaded on the same page. Other apps, and Ommesh on a phone, show nothing for voice messages yet.
+- On a PC, a microphone beside the message field writes what you say into it, in every chat: Settings › Messages and routes › Voice input. Click it and speak, or hold it while you speak; the text appears phrase by phrase as you talk, and goes as an ordinary message once you send it. Whisper recognises the speech on the computer itself, with no internet, and the sound is not kept. The Whisper model is downloaded on the same page.
 
 ## 0.8.0 — 2026-10-12
 

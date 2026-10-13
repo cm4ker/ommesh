@@ -217,21 +217,26 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
 
   const nudge = () => setShake(true);
 
-  // Voice input (#89): each phrase heard goes in where the caret is, a space before it when
-  // it joins words. It is put in without taking the focus, so a phone's keyboard stays down.
+  // Voice input (#89): each phrase heard goes in where the caret is, or after the text when the
+  // field has no focus (its caret then says nothing), with spaces where it joins words. It is
+  // put in without taking the focus, so a phone's keyboard stays down.
   const voice = useVoiceInputReady();
   const putPhrase = (phrase: string) => {
     const el = field.current;
     if (!el) return;
-    const [from, to] = [el.selectionStart, el.selectionEnd];
-    const insert = (from > 0 && !/\s$/.test(el.value.slice(0, from)) ? " " : "") + phrase;
-    if (document.activeElement === el && document.execCommand("insertText", false, insert)) return;
+    const focused = document.activeElement === el;
+    const [from, to] = focused ? [el.selectionStart, el.selectionEnd] : [el.value.length, el.value.length];
+    const before = el.value.slice(0, from);
+    const after = el.value.slice(to);
+    const insert = (before && !/\s$/.test(before) ? " " : "") + phrase + (after && !/^\s/.test(after) ? " " : "");
+    if (focused && document.execCommand("insertText", false, insert)) return;
     el.setRangeText(insert, from, to, "end");
     setText(el.value);
   };
   const mic = useMic(() => {
     const el = field.current;
-    return el ? el.value.slice(0, el.selectionStart) : text;
+    if (!el) return text;
+    return document.activeElement === el ? el.value.slice(0, el.selectionStart) : el.value;
   }, putPhrase);
   const listening = mic.phase !== "idle";
   useEffect(() => mic.cancel, [conversation]);

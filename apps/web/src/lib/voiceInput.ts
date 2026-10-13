@@ -28,15 +28,26 @@ export type VoiceModel = "small" | "base";
 export interface VoiceInputPrefs {
   on: boolean;
   model: VoiceModel;
+  /**
+   * What is spoken: `app` for the app's own language, else a language's
+   * code. Whisper told the wrong one does not fail: it translates, so a
+   * Russian speaker with the app in English needs Russian here.
+   */
+  language: string;
 }
 
 /** The key voice messages kept their settings under: a model picked then stays picked. */
 const KEY = "meshnet.voice";
-const DEFAULTS: VoiceInputPrefs = { on: false, model: "small" };
+const DEFAULTS: VoiceInputPrefs = { on: false, model: "small", language: "app" };
 
 function load(): VoiceInputPrefs {
   const saved = readSetting<Partial<VoiceInputPrefs>>(KEY, {});
-  return { on: saved.on === true, model: saved.model === "base" ? "base" : "small" };
+  return { on: saved.on === true, model: saved.model === "base" ? "base" : "small", language: typeof saved.language === "string" ? saved.language : "app" };
+}
+
+/** Whisper's code for what is spoken. */
+function spoken(): string {
+  return prefs.language === "app" ? language() : prefs.language;
 }
 
 let prefs = load();
@@ -230,7 +241,7 @@ interface Fed {
 }
 
 async function listenDesktop(options: ListenOptions): Promise<Listening> {
-  const started = invoke("speech_start", { model: prefs.model, language: language(), before: options.before });
+  const started = invoke("speech_start", { model: prefs.model, language: spoken(), before: options.before });
   let mic: Microphone;
   try {
     mic = await openMicrophone();
@@ -329,7 +340,7 @@ async function listenPhone(options: ListenOptions): Promise<Listening> {
     for (const handle of handles) void handle.remove();
   };
   try {
-    await withSpeech((api) => api.start({ model: prefs.model, language: language(), before: options.before }));
+    await withSpeech((api) => api.start({ model: prefs.model, language: spoken(), before: options.before }));
   } catch (error) {
     end();
     throw error;

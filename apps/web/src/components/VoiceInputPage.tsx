@@ -7,9 +7,9 @@
 import { useEffect, useState } from "react";
 import { deleteVoiceModel, downloadVoiceModel, setVoiceInputPrefs, useVoiceInputPrefs, voiceModels, type Models, type VoiceModel } from "../lib/voiceInput.js";
 import { Button } from "../ui/Button.js";
-import { Group, SwitchRow } from "../ui/List.js";
+import { Group, SelectRow, SwitchRow } from "../ui/List.js";
 import { CheckIcon, DownIcon, TrashIcon } from "./Icons.js";
-import { t } from "../i18n/index.js";
+import { language, languageName, languages, t } from "../i18n/index.js";
 import { errorText } from "../i18n/errors.js";
 
 const MODELS: { id: VoiceModel; label: "radio.voice.modelSmall" | "radio.voice.modelBase"; hint: "radio.voice.modelSmallHint" | "radio.voice.modelBaseHint" }[] = [
@@ -23,6 +23,15 @@ export function VoiceInputPage() {
     <>
       <Group note={t("radio.voice.note")}>
         <SwitchRow label={t("radio.voice.switch")} hint={t("radio.voice.switchHint")} checked={prefs.on} onChange={(on) => setVoiceInputPrefs({ on })} />
+        {prefs.on ? (
+          <SelectRow
+            label={t("radio.voice.language")}
+            hint={t("radio.voice.languageHint")}
+            value={prefs.language}
+            options={[{ value: "app", label: t("radio.voice.languageApp", { language: languageName(language()) }) }, ...languages().map((code) => ({ value: code, label: languageName(code) }))]}
+            onChange={(language) => setVoiceInputPrefs({ language })}
+          />
+        ) : null}
       </Group>
       {prefs.on ? <ModelGroup model={prefs.model} /> : null}
     </>

@@ -97,7 +97,7 @@
   inherits: false;
   initial-value: 0px;
 }
-:root.keyboard-follows :is(#root, .sheet-layer, .palette-layer, .toast) {
+:root.keyboard-follows :is(#root, .sheet-layer, .palette-layer, .toast, .dialog) {
   --keyboard-rise: var(--keyboard, 0px);
   transition: --keyboard-rise 0.25s cubic-bezier(0.38, 0.7, 0.125, 1);
 }
@@ -5937,6 +5937,13 @@ button.hop {
 }
 .dialog::backdrop {
   background: rgb(0 0 0 / 40%);
+}
+/* Where the page follows the keyboard (iOS) the screen keeps its size, so a dialog centred on it
+   had its lower half, buttons and all, under the keyboard. It is centred in the room between the
+   status bar and the keyboard instead, rising with the keyboard, and scrolls if it does not fit. */
+:root.keyboard-follows .dialog {
+  inset-block: var(--safe-top) var(--keyboard-rise, 0px);
+  max-height: calc(100% - var(--safe-top) - var(--keyboard-rise, 0px) - 2 * var(--space-4));
 }
 .dialog-inner {
   display: flex;

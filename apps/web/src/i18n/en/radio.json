@@ -425,6 +425,7 @@
   "voice.modelState": "{hint} · {state}",
   "voice.delete": "Delete",
   "voice.missing": "Download the model picked: the microphone shows once it is here",
+  "voice.unable": "The processor of this device cannot run speech recognition.",
   "voice.download": "Download",
   "voice.downloading": "{percent} %"
 }

@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { deleteVoiceModel, downloadVoiceModel, setVoiceInputPrefs, useVoiceInputPrefs, voiceModels, type ModelInfo, type VoiceModel } from "../lib/voiceInput.js";
+import { deleteVoiceModel, downloadVoiceModel, setVoiceInputPrefs, useVoiceInputPrefs, voiceModels, type Models, type VoiceModel } from "../lib/voiceInput.js";
 import { Button } from "../ui/Button.js";
 import { Group, SwitchRow } from "../ui/List.js";
 import { CheckIcon, DownIcon, TrashIcon } from "./Icons.js";
@@ -31,16 +31,17 @@ export function VoiceInputPage() {
 
 /** The models: pick one, and fetch or delete each on its own line. The shell fetches one at a time. */
 function ModelGroup({ model }: { model: VoiceModel }) {
-  const [models, setModels] = useState<ModelInfo[] | null>(null);
+  const [known, setKnown] = useState<Models | null>(null);
   const [busy, setBusy] = useState<{ id: VoiceModel; percent: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const refresh = () =>
     voiceModels()
-      .then(setModels)
+      .then(setKnown)
       .catch((e: unknown) => setError(errorText(e)));
   useEffect(() => {
     void refresh();
   }, []);
+  const models = known?.models;
   const picked = models?.find((m) => m.id === model);
   const mb = (bytes: number) => t("radio.voice.size", { mb: Math.max(1, Math.round(bytes / 1_000_000)) });
 
@@ -68,6 +69,8 @@ function ModelGroup({ model }: { model: VoiceModel }) {
     }
   };
 
+  // A processor that cannot run the recogniser (32-bit, or older than the ones it is built for) is told so before anything is downloaded.
+  if (known?.unable) return <p className="group-note warn">{t("radio.voice.unable")}</p>;
   const note = error ?? (picked && !picked.present && !busy ? t("radio.voice.missing") : undefined);
   return (
     <Group title={t("radio.voice.models")} note={note}>

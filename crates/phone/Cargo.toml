@@ -1,0 +1,35 @@
+[package]
+name = "phone"
+version = "0.1.0"
+edition = "2021"
+description = "The phones' one native library: the radio core and voice input, with Kotlin and Swift bindings for both"
+publish = false
+
+[lib]
+name = "meshnet_phone"
+# A shared library for Android, a static one for iOS. iOS takes one Rust
+# library per app (two would each bring the standard library and clash), so
+# the core and voice input are linked into this one rather than each its own.
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+meshcore-core = { path = "../meshcore-core" }
+speech = { path = "../speech", features = ["ffi"] }
+uniffi = "0.32"
+
+[features]
+# The Kotlin and Swift bindings' generator (`cargo run --features bindgen --bin uniffi-bindgen`).
+bindgen = ["uniffi/cli"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+required-features = ["bindgen"]
+
+[profile.release]
+# The phone carries it: small over fast for the Rust (whisper.cpp's C++ is
+# built optimised for speed either way). Not stripped: the bindings are read
+# from its symbols, and Android strips it when it packs it.
+opt-level = "s"
+lto = true
+codegen-units = 1

@@ -32,12 +32,18 @@ methods and events on both. The framing is the client's
     pnpm android         # builds the client, syncs, opens Android Studio
     pnpm --filter @meshnet/mobile android:apk
 
-The build also compiles the radio core (`crates/meshcore-core`, Rust) for the
-phone and writes its Kotlin bindings (Gradle's `buildRustCore` and
-`bindRustCore`), so it needs cargo, the Android targets and cargo-ndk:
+The build also compiles the radio core and voice input (`crates/phone`, Rust:
+`crates/meshcore-core` and `crates/speech` in one library) for the phone and
+writes their Kotlin bindings (Gradle's `buildRustCore` and `bindRustCore`), so
+it needs cargo, the Android targets, cargo-ndk, and CMake and libclang for
+whisper.cpp:
 
     rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
     cargo install cargo-ndk
+
+The APK builds on Linux or a Mac, as CI builds it. On Windows whisper.cpp's
+build script (whisper-rs-sys) takes the Windows machine for the target and
+hands the Android compiler `/utf-8` and the linker `advapi32`.
 
 On Android the page always reaches a Bluetooth radio through `MeshRelay.java`,
 which runs the core: it keeps reading the radio while Android has the page's
@@ -123,6 +129,17 @@ described above. Windows then connects, stalls for 30 s on the vendor service,
 drops the link and connects again, with no app asking, until the package is
 switched off for one connection.
 
+## Voice input
+
+The microphone beside the message field (#89) is the native side's:
+`SpeechPlugin.java` and `SpeechPlugin.swift` record at 16 kHz and hand the sound
+straight to the recogniser in the Rust library (`crates/speech`), a quarter of a
+second at a time; the page gets only the phrases heard. The models are fetched
+into a folder the phone does not back up (`noBackupFilesDir/voice` on Android,
+Application Support/voice excluded from backup on iOS). The microphone
+permission is asked the first time it is pressed (`RECORD_AUDIO`,
+`NSMicrophoneUsageDescription`), and it goes off when the app leaves the screen.
+
 ## iOS
 
 As on Android, the page reaches a Bluetooth radio through `MeshRelay.swift`,
@@ -194,10 +211,10 @@ Then, on the Mac:
     bash apps/mobile/scripts/ios.sh simulator
 
 That installs the packages, builds the client, syncs it into the project,
-builds the radio core (`crates/meshcore-core`, Rust) for the phone and the
-simulator with `scripts/core-ios.sh` into the local package `ios/MeshcoreCore`
-(cargo with the `aarch64-apple-ios`, `aarch64-apple-ios-sim` and
-`x86_64-apple-ios` targets), builds, creates the simulator "Meshnet iPhone" if it is missing, installs the app and
+builds the radio core and voice input (`crates/phone`, Rust) for the phone and
+the simulator with `scripts/core-ios.sh` into the local package
+`ios/MeshcoreCore` (cargo with the `aarch64-apple-ios`, `aarch64-apple-ios-sim`
+and `x86_64-apple-ios` targets, and Homebrew's CMake for whisper.cpp), builds, creates the simulator "Meshnet iPhone" if it is missing, installs the app and
 opens it. The simulator has no Bluetooth, so the connect screen says "BLE
 unsupported" there; a radio needs a phone. `xcrun simctl delete "Meshnet iPhone"`
 afterwards: a simulator is about 2 GB, and that Mac's disk is short.

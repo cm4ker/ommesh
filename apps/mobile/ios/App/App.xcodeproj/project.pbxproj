@@ -30,6 +30,7 @@
 		7E5A1C012F9A00000000E001 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A1C012F9A00000000E010 /* ShareViewController.swift */; };
 		7E5A1C012F9A00000000E002 /* Share.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7E5A1C012F9A00000000E012 /* Share.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7E5A1C012F9A00000000E003 /* ShareInPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A1C012F9A00000000E013 /* ShareInPlugin.swift */; };
+		7E5A1C012F9A00000000E004 /* SpeechPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A1C012F9A00000000E014 /* SpeechPlugin.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -90,6 +91,7 @@
 		7E5A1C012F9A00000000E011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		7E5A1C012F9A00000000E012 /* Share.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = Share.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E5A1C012F9A00000000E013 /* ShareInPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInPlugin.swift; sourceTree = "<group>"; };
+		7E5A1C012F9A00000000E014 /* SpeechPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechPlugin.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -153,6 +155,7 @@
 				7E5A1C012F9A00000000D014 /* SurveyGlance.swift */,
 				7E5A1C012F9A00000000D010 /* SurveyAttributes.swift */,
 				7E5A1C012F9A00000000E013 /* ShareInPlugin.swift */,
+				7E5A1C012F9A00000000E014 /* SpeechPlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -335,6 +338,7 @@
 				7E5A1C012F9A00000000D005 /* SurveyGlance.swift in Sources */,
 				7E5A1C012F9A00000000D001 /* SurveyAttributes.swift in Sources */,
 				7E5A1C012F9A00000000E003 /* ShareInPlugin.swift in Sources */,
+				7E5A1C012F9A00000000E004 /* SpeechPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -425,6 +425,7 @@
   "voice.modelState": "{hint} · {state}",
   "voice.delete": "Удалить",
   "voice.missing": "Скачайте выбранную модель: микрофон появится, когда она будет здесь",
+  "voice.unable": "Процессор этого устройства не справится с распознаванием речи.",
   "voice.download": "Скачать",
   "voice.downloading": "{percent} %"
 }

@@ -48,6 +48,13 @@ pub struct ModelInfo {
     present: bool,
 }
 
+#[derive(Serialize)]
+pub struct Models {
+    models: Vec<ModelInfo>,
+    /// Why this computer cannot hear speech (a 32-bit build, a processor without AVX2); null when it can.
+    unable: Option<String>,
+}
+
 #[derive(Serialize, Clone)]
 struct Progress {
     model: &'static str,
@@ -63,13 +70,14 @@ pub struct Fed {
 }
 
 #[tauri::command]
-pub fn speech_models(app: AppHandle, state: State<'_, Speech>) -> Result<Vec<ModelInfo>, String> {
-    Ok(state
+pub fn speech_models(app: AppHandle, state: State<'_, Speech>) -> Result<Models, String> {
+    let models = state
         .recognizer(&app)?
         .models()
         .into_iter()
         .map(|info| ModelInfo { id: info.id, bytes: info.bytes, present: info.present })
-        .collect())
+        .collect();
+    Ok(Models { models, unable: speech::able().err() })
 }
 
 /// Fetches what a model needs, the voice detector first, telling

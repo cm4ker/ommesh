@@ -64,7 +64,7 @@ export function useMic(before: () => string, put: (text: string) => void): Mic {
       },
       (error: unknown) => {
         setPhase("idle");
-        toast(error instanceof DOMException && error.name === "NotAllowedError" ? t("chats.voice.micDenied") : errorText(error), "error");
+        toast(denied(error) ? t("chats.voice.micDenied") : errorText(error), "error");
         return null;
       },
     );
@@ -142,6 +142,11 @@ export function useMic(before: () => string, put: (text: string) => void): Mic {
       },
     },
   };
+}
+
+/** The microphone refused: by the browser's prompt on a computer, by the phone's on a phone. */
+function denied(error: unknown): boolean {
+  return (error instanceof DOMException && error.name === "NotAllowedError") || (error as { code?: unknown } | null)?.code === "denied";
 }
 
 export function MicButton({ mic }: { mic: Mic }) {

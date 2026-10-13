@@ -62,7 +62,7 @@ android {
     }
     sourceSets {
         main {
-            // The radio core (crates/meshcore-core), built by buildRustCore, and its Kotlin bindings.
+            // The radio core and voice input (crates/phone), built by buildRustCore, and their Kotlin bindings.
             jniLibs.srcDir new File(rustOut, 'jniLibs')
             java.srcDir new File(rustOut, 'kotlin')
         }
@@ -83,31 +83,45 @@ kotlin {
     }
 }
 
-// The radio core: Rust, shared with iOS and the desktop (crates/meshcore-core). Built for the phones'
-// ABIs with cargo-ndk, which finds the NDK under ANDROID_HOME; its Kotlin bindings are read off the
-// built library. Needs cargo, the Android targets (rustup target add aarch64-linux-android
-// armv7-linux-androideabi x86_64-linux-android) and cargo-ndk (cargo install cargo-ndk).
-def rustCore = rootProject.file('../../../crates/meshcore-core')
+// The radio core and voice input: Rust, shared with iOS and the desktop, in one library for the
+// phone (crates/phone, holding crates/meshcore-core and crates/speech). Built for the phones' ABIs
+// with cargo-ndk, which finds the NDK under ANDROID_HOME; the Kotlin bindings of both are read off
+// the built library. Needs cargo, the Android targets (rustup target add aarch64-linux-android
+// armv7-linux-androideabi x86_64-linux-android), cargo-ndk (cargo install cargo-ndk), CMake and
+// libclang for whisper.cpp. whisper.cpp's build script takes the build machine for the target when
+// it is Windows, so the APK builds on Linux or a Mac (CI), not on Windows.
+def rustPhone = rootProject.file('../../../crates/phone')
+def rustCrates = ['phone', 'meshcore-core', 'speech'].collect { rootProject.file("../../../crates/$it") }
 
 tasks.register('buildRustCore', Exec) {
-    description = 'Builds the radio core for the phone.'
-    workingDir rustCore
-    inputs.dir(new File(rustCore, 'src'))
-    inputs.files(new File(rustCore, 'Cargo.toml'), new File(rustCore, 'Cargo.lock'))
+    description = 'Builds the radio core and voice input for the phone.'
+    workingDir rustPhone
+    rustCrates.each { crate ->
+        inputs.dir(new File(crate, 'src'))
+        inputs.files(new File(crate, 'Cargo.toml'))
+    }
+    inputs.file(new File(rustPhone, 'Cargo.lock'))
     outputs.dir(new File(rustOut, 'jniLibs'))
+    // whisper.cpp for the processors phones have had since 2018 (the dot product, half floats),
+    // which the library checks for at run time before it hears anything; CMake finds the NDK
+    // cargo-ndk uses. Its C++ runtime goes into the APK beside the library.
+    environment 'GGML_NATIVE', 'OFF'
+    environment 'GGML_CPU_ARM_ARCH', 'armv8.2-a+dotprod+fp16'
+    def ndk = System.getenv('ANDROID_NDK_HOME') ?: System.getenv('ANDROID_NDK_ROOT')
+    if (ndk) environment 'ANDROID_NDK_ROOT', ndk
     commandLine 'cargo', 'ndk', '-t', 'arm64-v8a', '-t', 'armeabi-v7a', '-t', 'x86_64', '--platform', '24',
-        '-o', new File(rustOut, 'jniLibs').path, 'build', '--release', '--locked'
+        '--link-libcxx-shared', '-o', new File(rustOut, 'jniLibs').path, 'build', '--release', '--locked'
 }
 
 tasks.register('bindRustCore', Exec) {
-    description = "Writes the radio core's Kotlin bindings."
+    description = "Writes the Kotlin bindings of the radio core and voice input."
     dependsOn 'buildRustCore'
-    workingDir rustCore
+    workingDir rustPhone
     inputs.dir(new File(rustOut, 'jniLibs'))
-    inputs.file(new File(rustCore, 'uniffi.toml'))
+    rustCrates.each { crate -> inputs.files(fileTree(crate) { include 'uniffi.toml' }) }
     outputs.dir(new File(rustOut, 'kotlin'))
     commandLine 'cargo', 'run', '-q', '--locked', '--features', 'bindgen', '--bin', 'uniffi-bindgen', '--',
-        'generate', '--library', new File(rustOut, 'jniLibs/arm64-v8a/libmeshcore_core.so').path,
+        'generate', '--library', new File(rustOut, 'jniLibs/arm64-v8a/libmeshnet_phone.so').path,
         '--language', 'kotlin', '--no-format', '--out-dir', new File(rustOut, 'kotlin').path
 }
 

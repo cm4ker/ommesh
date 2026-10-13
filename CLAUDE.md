@@ -16,6 +16,7 @@ pnpm test           # scripts/*.test.mjs, then every package's tests
 pnpm build          # protocol package + web bundle
 pnpm news [X.Y.Z]   # a version's App Store, TestFlight and Telegram texts, from its news file
 cargo test --manifest-path crates/meshcore-core/Cargo.toml   # the Rust radio core (CI runs it)
+cargo test --manifest-path crates/speech/Cargo.toml          # voice input; builds whisper.cpp (CMake, libclang; on Windows in a VS developer prompt)
 pnpm --filter @meshnet/desktop desktop:check                 # cargo check of the Tauri shell
 ```
 
@@ -55,6 +56,8 @@ Open `http://localhost:5180/?demo`, choose **Demo**, connect to **MeshCore-demo*
 **`apps/mobile`** is the Capacitor 8 shell. Phones put the page's JavaScript to sleep in the background while the Bluetooth link stays up, so native code (`MeshRelay` on Android and iOS, an Android foreground service) holds the link. Read `apps/mobile/README.md` before touching it.
 
 **`crates/meshcore-core`** is the Rust core the phone shells run through UniFFI while the page sleeps. `mux` shares one radio between several clients and keeps each client's messages; `watch` raises notices for what stays unread; `survey` runs a coverage survey on the positions the phone's native code hands in, with the rule of `apps/web/src/lib/surveyData.ts` (change both together). It is pure logic (no Bluetooth, clock or threads); the native owner performs the `Effect`s each call returns, so its rules are covered by `cargo test`. Its `codes.rs` and `frames.rs` repeat the opcodes and frames of `packages/meshcore/src/protocol/`: change both together.
+
+**`crates/speech`** is voice input: whisper.cpp (through whisper-rs) with Silero's voice detector, cutting the microphone's sound into phrases at the pauses (`phrases.rs`, tested on made-up verdicts) and hearing each on a thread of its own (`dictation.rs`), plus the models and their checked downloads. The desktop shell links it (`speech.rs`); the phones reach it through its `ffi` feature. **`crates/phone`** is the phones' one native library, the core and voice input together with the bindings of both: iOS takes one Rust library per app.
 
 ## Protocol source of truth
 

@@ -9,14 +9,20 @@
 //! a phrase begins and ends), and each phrase is heard once, on a thread of
 //! its own, while the next is being said (`dictation`).
 //!
-//! The desktop shell links this crate directly; the phones' native code
-//! calls it the same way. The models are downloaded once into a folder the
-//! shell names (`models`).
+//! The desktop shell links this crate directly. The phones' native code calls
+//! it through `ffi`, built into the radio core's library (meshcore-core's
+//! `speech` feature). The models are downloaded once into a folder the shell
+//! names (`models`).
 
 pub mod dictation;
 mod engine;
+#[cfg(feature = "ffi")]
+mod ffi;
 pub mod models;
 pub mod phrases;
+
+#[cfg(feature = "ffi")]
+uniffi::setup_scaffolding!();
 
 pub use dictation::{Dictation, Fed, Recognizer};
 pub use models::{able, Download, Model, ModelInfo, MODELS, VAD};

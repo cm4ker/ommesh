@@ -7,12 +7,19 @@ publish = false
 
 [lib]
 name = "speech"
-# A library for the desktop shell and the tests, a shared one for Android, a static one for iOS.
-crate-type = ["lib", "cdylib", "staticlib"]
 
 [dependencies]
 # A downloaded model is checked against its published digest before whisper.cpp reads it.
 sha2 = "0.10"
+# The phones' side (`ffi`): the bindings Kotlin and Swift call, and the HTTP
+# client that fetches the models there. The phones link it inside the radio
+# core's library (meshcore-core's `speech` feature), as iOS takes one Rust
+# library per app.
+uniffi = { version = "0.32", optional = true }
+ureq = { version = "3", default-features = false, features = ["rustls"], optional = true }
+
+[features]
+ffi = ["dep:uniffi", "dep:ureq"]
 
 # whisper.cpp on the processor alone, no GPU backend. It is C++ built with
 # CMake, and bindgen reads its header through libclang, so a build needs both;

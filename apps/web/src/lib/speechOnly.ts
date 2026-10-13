@@ -1,8 +1,9 @@
 /**
  * What Whisper writes down for noise with no speech in it (#89): the credits
- * of the subtitles it learnt Russian from, and sounds in brackets. Its own
- * guess that nothing was said is no help here, so these are taken out by
- * sight. The credits come last, so everything from them on goes.
+ * of the subtitles it learnt from, a video's sign-off, and sounds in
+ * brackets. Its own guess that nothing was said is no help here, so these
+ * are taken out by sight. The credits come last, so everything from them on
+ * goes.
  */
 const NOT_SPEECH = [
   /\[[^\]]*\]/g,
@@ -12,6 +13,8 @@ const NOT_SPEECH = [
   /продолжение следует[.!…]*/gi,
   /спасибо за просмотр[.!…]*/gi,
   /dimatorzok/gi,
+  /(subtitles|captions)\s+by.*$/gis,
+  /thanks?( you)? for watching[.!…]*/gi,
 ];
 
 /** Whisper's text with what it makes up for noise taken out; empty when nothing else is left. */

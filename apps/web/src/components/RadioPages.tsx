@@ -18,6 +18,7 @@ import { ChatSoundRow, signalName } from "./ChatNotices.js";
 import { askPermission, hasNoticeSettings, openNoticeSettings } from "../lib/notify.js";
 import { previewSignal } from "../lib/chime.js";
 import { push, type RadioPage } from "../lib/nav.js";
+import { useVoiceInputPrefs, voiceInputAvailable } from "../lib/voiceInput.js";
 import { useOwnConsole } from "../lib/ownConsole.js";
 import { canLocate, locateOnce, locateText, phoneLocates } from "../lib/phonePosition.js";
 import { canHover, nativePlatform, shell } from "../lib/platform.js";
@@ -36,7 +37,7 @@ import { SearchField } from "../ui/Field.js";
 import { ActionRow, Block, ChoiceRow, Group, InfoRow, LinkRow, SelectRow, StepperRow, SwitchRow } from "../ui/List.js";
 import { Avatar, SenderName } from "./Avatar.js";
 import { ChatBackdrop } from "./ChatBackdrop.js";
-import { CopyIcon, PictureIcon } from "./Icons.js";
+import { CopyIcon, MicIcon, PictureIcon } from "./Icons.js";
 import { ContactsPage, RemovedPage } from "./ContactsPages.js";
 import { Console } from "./node/Console.js";
 import { LogView } from "./LogView.js";
@@ -50,7 +51,7 @@ import { PeoplePage, PeopleRow, ReportRow } from "./People.js";
 import { PrivacyButton } from "./Privacy.js";
 import { NewBuildRow } from "./NewBuild.js";
 import { NewsPage, NewsRow } from "./News.js";
-import { LabsPage, VoicePage } from "./VoicePages.js";
+import { VoiceInputPage } from "./VoiceInputPage.js";
 import { getLanguagePreference, languageName, languages, setLanguagePreference, subscribeLanguage, systemLanguage, t, type Key } from "../i18n/index.js";
 import { errorText } from "../i18n/errors.js";
 
@@ -63,12 +64,12 @@ export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = {
   soundDirect: "notifications",
   soundChats: "notifications",
   soundNodes: "notifications",
+  voice: "messages",
   people: "about",
   news: "about",
   trusted: "privacy",
   console: "advanced",
   background: "appearance",
-  voice: "labs",
 };
 
 /** Pages that read only under their own parent, one kind's sound under Sound: the palette leaves them out. */
@@ -91,12 +92,11 @@ export const RADIO_TITLES: Record<RadioPage, Key> = {
   soundChats: "radio.notifications.chats",
   soundNodes: "radio.notifications.nodes",
   messages: "radio.titles.messages",
+  voice: "radio.titles.voice",
   history: "radio.titles.history",
   appearance: "radio.titles.appearance",
   background: "radio.titles.background",
   connection: "radio.titles.connection",
-  labs: "radio.titles.labs",
-  voice: "radio.titles.voice",
   air: "radio.titles.air",
   log: "radio.titles.log",
   power: "radio.titles.power",
@@ -270,6 +270,8 @@ function PageBody({ page }: { page: RadioPage }) {
       return <KindSoundPage kind="nodes" />;
     case "messages":
       return <MessagesPage />;
+    case "voice":
+      return <VoiceInputPage />;
     case "history":
       return self ? <HistoryPage self={self} /> : <Offline />;
     case "appearance":
@@ -278,10 +280,6 @@ function PageBody({ page }: { page: RadioPage }) {
       return <BackgroundPage />;
     case "connection":
       return <ConnectionPage />;
-    case "labs":
-      return <LabsPage />;
-    case "voice":
-      return <VoicePage />;
     case "power":
       return <PowerPage />;
     case "about":
@@ -870,6 +868,7 @@ function MessagesPage() {
   const lookalikes = useLookalikePrefs();
   const openAtUnread = useOpenAtUnread();
   const sendTries = useSendTries();
+  const voice = useVoiceInputPrefs();
   return (
     <>
       <Group>
@@ -889,6 +888,12 @@ function MessagesPage() {
         />
         {lookalikes.on ? <SwitchRow label={t("radio.messages.near")} hint={t("radio.messages.nearHint")} checked={lookalikes.near} onChange={(v) => setLookalikePrefs({ near: v })} /> : null}
       </Group>
+      {/* Only where it can hear: the desktop app, or the demo in a browser (#89). */}
+      {voiceInputAvailable() ? (
+        <Group>
+          <LinkRow icon={<MicIcon size={17} />} label={t("radio.titles.voice")} value={voice.on ? t("radio.voice.on") : t("radio.voice.off")} onClick={() => push({ kind: "radio", page: "voice" })} />
+        </Group>
+      ) : null}
       <PreviewGroup />
       <Group note={t("radio.messages.triesNote")}>
         <StepperRow

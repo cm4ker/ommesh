@@ -74,7 +74,6 @@ function initial(messages: MessageRecord[] = [], unread: Record<string, number> 
     consoles: {},
     remote: { active: null, queued: [] },
     routing: { resetAfterMin: null, contacts: {} },
-    voicePeers: {},
     log: [],
     error: null,
     syncing: false,

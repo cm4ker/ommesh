@@ -7,7 +7,6 @@ export * from "./protocol/lpp.js";
 export * from "./protocol/packet.js";
 export * from "./protocol/group.js";
 export * from "./protocol/reaction.js";
-export * from "./protocol/voice.js";
 export * from "./protocol/airtime.js";
 export * from "./framing.js";
 export * from "./transport.js";

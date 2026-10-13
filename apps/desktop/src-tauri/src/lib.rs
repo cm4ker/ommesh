@@ -10,8 +10,8 @@ mod notices;
 mod secrets;
 mod tcp;
 mod tray;
+mod speech;
 mod updates;
-mod voice;
 #[cfg(windows)]
 mod winble;
 
@@ -83,7 +83,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(tcp::Tcp::default())
         .manage(notices::Notices::default())
-        .manage(voice::Voice::default());
+        .manage(speech::Speech::default());
 
     #[cfg(windows)]
     let builder = builder.manage(winble::WinBle::default()).invoke_handler(tauri::generate_handler![
@@ -114,13 +114,14 @@ pub fn run() {
         secrets::secret_set,
         secrets::secret_delete,
         coverage::coverage_upload,
-        voice::voice_pack,
-        voice::voice_unpack,
-        voice::voice_models,
-        voice::voice_model_download,
-        voice::voice_model_delete,
-        voice::voice_transcribe,
-        voice::voice_unload,
+        speech::speech_models,
+        speech::speech_model_download,
+        speech::speech_model_delete,
+        speech::speech_start,
+        speech::speech_feed,
+        speech::speech_finish,
+        speech::speech_cancel,
+        speech::speech_unload,
     ]);
     #[cfg(not(windows))]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -145,13 +146,14 @@ pub fn run() {
         secrets::secret_set,
         secrets::secret_delete,
         coverage::coverage_upload,
-        voice::voice_pack,
-        voice::voice_unpack,
-        voice::voice_models,
-        voice::voice_model_download,
-        voice::voice_model_delete,
-        voice::voice_transcribe,
-        voice::voice_unload,
+        speech::speech_models,
+        speech::speech_model_download,
+        speech::speech_model_delete,
+        speech::speech_start,
+        speech::speech_feed,
+        speech::speech_finish,
+        speech::speech_cancel,
+        speech::speech_unload,
     ]);
 
     builder

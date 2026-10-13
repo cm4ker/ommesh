@@ -13,6 +13,7 @@ import { MeshCoreClient, MeshCoreError, TimeoutError, type TextSendResult } from
 import { ByteReader, bytesEqual, fromHex, pathByteLength, toHex, unixNow } from "./protocol/bytes.js";
 import { neighbourSearchMs, replyBudgetMs, sealedBytes, traceBudgetMs, type ReplySize } from "./protocol/airtime.js";
 import { CHANNEL_TEXT_LEN, groupDataPayload, groupTextPayload, heardGroupTextPayload, relaysAudible } from "./protocol/group.js";
+import { publicKeyOf } from "./protocol/identity.js";
 import { REACTION_DATA_TYPE, decodeReaction, directReactionText, encodeReaction, messageHash, parseDirectReaction, parseTextReaction } from "./protocol/reaction.js";
 import { PayloadType, parseRawPacket, type RawPacket } from "./protocol/packet.js";
 import { AclRole, AdvType, Cmd, ContactFlag, ControlType, DIRECT_TEXT_LEN, ErrCode, MAX_TEXT_LEN, NeighbourOrder, OUT_PATH_UNKNOWN, PUB_KEY_PREFIX_SIZE, ROOM_TEXT_LEN, StatsType, TxtType } from "./protocol/codes.js";
@@ -3223,6 +3224,30 @@ export class MeshSession {
 
   async factoryReset(): Promise<void> {
     await this.need().factoryReset();
+  }
+
+  /** The radio's private key, 64 bytes; null when its firmware was built not to give it. */
+  async exportKey(): Promise<Uint8Array | null> {
+    return this.need().exportPrivateKey();
+  }
+
+  /**
+   * Gives the radio another private key, and with it another place in the
+   * mesh: from here on it is the node that key belongs to. The name goes with
+   * it when given. False when the firmware was built not to take a key.
+   *
+   * The radio is then rebooted. The link that comes back reads it anew, as any
+   * dropped link does, and so the chats become that key's: the history held
+   * now is saved under the old key first and stays there.
+   */
+  async importKey(privateKey: Uint8Array, name?: string): Promise<boolean> {
+    const client = this.need();
+    if (!(await client.importPrivateKey(privateKey))) return false;
+    if (name && name !== this.state.self?.name) await client.setAdvertName(name);
+    this.log("link", `the radio took key ${toHex(publicKeyOf(privateKey)).slice(0, PUB_KEY_PREFIX_SIZE * 2)}…; rebooting it`);
+    await this.flush().catch(() => undefined);
+    await client.reboot();
+    return true;
   }
 
   // ---- diagnostics ----

@@ -189,3 +189,26 @@ test("sync next message returns null on the empty-queue answer", async () => {
   const client = new MeshCoreClient(radio);
   assert.equal(await client.syncNextMessage(), null);
 });
+
+test("the private key comes back as its 64 bytes, and a firmware built without it answers null", async () => {
+  const radio = new FakeRadio();
+  const key = new Uint8Array(64).map((_, i) => i);
+  radio.script.set(Cmd.ExportPrivateKey, () => [new ByteWriter().u8(Resp.PrivateKey).bytes(key).toBytes()]);
+  const client = new MeshCoreClient(radio);
+  assert.deepEqual(await client.exportPrivateKey(), key);
+  radio.script.set(Cmd.ExportPrivateKey, () => [new Uint8Array([Resp.Disabled])]);
+  assert.equal(await client.exportPrivateKey(), null);
+});
+
+test("a key the radio takes is true, a firmware built without import false, an unfit key refused", async () => {
+  const radio = new FakeRadio();
+  const key = new Uint8Array(64).fill(7);
+  radio.script.set(Cmd.ImportPrivateKey, () => [new Uint8Array([Resp.Ok])]);
+  const client = new MeshCoreClient(radio);
+  assert.equal(await client.importPrivateKey(key), true);
+  assert.deepEqual(radio.sent[0], new Uint8Array([Cmd.ImportPrivateKey, ...key]));
+  radio.script.set(Cmd.ImportPrivateKey, () => [new Uint8Array([Resp.Disabled])]);
+  assert.equal(await client.importPrivateKey(key), false);
+  radio.script.set(Cmd.ImportPrivateKey, () => [new Uint8Array([Resp.Err, 6])]);
+  await assert.rejects(client.importPrivateKey(key), (error: unknown) => error instanceof MeshCoreError && error.code === 6);
+});

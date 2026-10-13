@@ -23,6 +23,8 @@ import {
   heardGroupTextPayload,
   MAX_FRAME_SIZE,
   messageHash,
+  privateKeyFault,
+  publicKeyOf,
   Push,
   REACTION_DATA_TYPE,
   ReqType,
@@ -34,7 +36,14 @@ import {
 import type { Connector } from "./types.js";
 import { t } from "../i18n/index.js";
 
-const SELF = fromHex("a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf");
+/**
+ * Who the demo radio is: its private key, the public key that comes of it,
+ * and its name. They last as long as the page rather than one link, as a
+ * radio keeps them over a reboot, so a key or a name given to it in Settings
+ * is what it comes back with.
+ */
+const DEMO_KEY = fromHex("1088b9a5a4103e31b859e71fa9723589219e5651a7bd90a1a04b81a5024cc157b8460e03da7d62cf6b03cb648efca994eaf82acf07358dfe9892d2f7e71142fd");
+const own = { privateKey: DEMO_KEY, publicKey: publicKeyOf(DEMO_KEY), name: "Demo radio" };
 
 interface Person {
   key: Uint8Array;
@@ -518,7 +527,7 @@ class DemoRadio extends BaseTransport {
   private heardDm(from: Person, text: string): void {
     const sealed = new Uint8Array(20);
     crypto.getRandomValues(sealed);
-    sealed[0] = SELF[0]!;
+    sealed[0] = own.publicKey[0]!;
     sealed[1] = from.key[0]!;
     const path = RELAYS.slice(0, from.hops);
     this.emitFrame(this.heard(2, path, sealed));
@@ -717,7 +726,7 @@ class DemoRadio extends BaseTransport {
       }
       case ReqType.GetAccessList:
         if (!this.admins.has(p)) return null;
-        w.bytes(SELF.subarray(0, 6)).u8(3).bytes(PEOPLE[0]!.key.subarray(0, 6)).u8(3);
+        w.bytes(own.publicKey.subarray(0, 6)).u8(3).bytes(PEOPLE[0]!.key.subarray(0, 6)).u8(3);
         if (p.type !== 3) w.bytes(PEOPLE[1]!.key.subarray(0, 6)).u8(2).bytes(fromHex("91c2e0a1b2c3")).u8(1);
         return w.toBytes();
       case ReqType.GetOwnerInfo:
@@ -825,7 +834,7 @@ class DemoRadio extends BaseTransport {
             .u8(1)
             .i8(22)
             .i8(22)
-            .bytes(SELF)
+            .bytes(own.publicKey)
             .i32(55_020_000)
             .i32(73_360_000)
             .u8(0)
@@ -836,7 +845,7 @@ class DemoRadio extends BaseTransport {
             .u32(this.radio.bandwidthHz)
             .u8(this.radio.spreadingFactor)
             .u8(this.radio.codingRate)
-            .string("Demo radio")
+            .string(own.name)
             .toBytes(),
         ];
       case Cmd.GetDeviceTime:
@@ -882,7 +891,7 @@ class DemoRadio extends BaseTransport {
           this.missed.add(text);
           return [new Uint8Array([Resp.Ok])];
         }
-        void groupTextPayload(fromHex(CHANNELS[index] ?? CHANNELS[0]!), timestamp, "Demo radio", text).then((payload) => {
+        void groupTextPayload(fromHex(CHANNELS[index] ?? CHANNELS[0]!), timestamp, own.name, text).then((payload) => {
           [[0x03], [0x03, 0x94], [0x2c]].forEach((path, i) => this.later(600 * (i + 1), this.heard(5, path, payload)));
         });
         // Alice likes whatever is said on Public.
@@ -1043,7 +1052,7 @@ class DemoRadio extends BaseTransport {
         return [this.sent(this.acks++)];
       }
       case Cmd.SendTelemetryReq: {
-        const prefix = frame.length > 4 ? frame.subarray(4, 10) : SELF.subarray(0, 6);
+        const prefix = frame.length > 4 ? frame.subarray(4, 10) : own.publicKey.subarray(0, 6);
         this.later(
           frame.length > 4 ? 1500 : 50,
           new ByteWriter()
@@ -1182,6 +1191,19 @@ class DemoRadio extends BaseTransport {
       case Cmd.SetPathHashMode:
         if (frame[1] !== 0 || frame[2]! >= 3) return [new Uint8Array([Resp.Err, 6])];
         this.radio = { ...this.radio, pathHashMode: frame[2]! };
+        return [new Uint8Array([Resp.Ok])];
+      case Cmd.ExportPrivateKey:
+        return [new ByteWriter().u8(Resp.PrivateKey).bytes(own.privateKey).toBytes()];
+      case Cmd.ImportPrivateKey: {
+        // The firmware checks the key the way `privateKeyFault` does, and refuses an unfit one as an illegal argument.
+        const key = frame.slice(1, 65);
+        if (key.length !== 64 || privateKeyFault(key)) return [new Uint8Array([Resp.Err, 6])];
+        own.privateKey = key;
+        own.publicKey = publicKeyOf(key);
+        return [new Uint8Array([Resp.Ok])];
+      }
+      case Cmd.SetAdvertName:
+        own.name = new TextDecoder().decode(frame.subarray(1));
         return [new Uint8Array([Resp.Ok])];
       case Cmd.Reboot:
         // A radio that reboots says nothing more on this link.

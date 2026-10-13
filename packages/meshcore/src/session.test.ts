@@ -38,6 +38,9 @@ class ScriptedRadio extends BaseTransport {
   slots: Record<number, { name: string; secret: Uint8Array }> = {};
   /** Whether it runs console lines of its own (protocol 14); an older radio refuses the command. */
   console = false;
+  /** Whether its firmware takes a private key, and the key it was last given. */
+  keys = true;
+  privateKey: Uint8Array | null = null;
 
   async send(frame: Uint8Array): Promise<void> {
     this.sent.push(frame);
@@ -171,6 +174,16 @@ class ScriptedRadio extends BaseTransport {
         const command = text.slice(tag.length);
         return [new ByteWriter().u8(Resp.CliReply).string(tag + (command === "get tx" ? "> 22" : "Unknown command")).toBytes()];
       }
+      case Cmd.ImportPrivateKey:
+        if (!this.keys) return [new Uint8Array([Resp.Disabled])];
+        this.privateKey = frame.slice(1);
+        return [new Uint8Array([Resp.Ok])];
+      case Cmd.SetAdvertName:
+        return [new Uint8Array([Resp.Ok])];
+      case Cmd.Reboot:
+        // A radio that reboots says nothing more on this link.
+        queueMicrotask(() => this.drop());
+        return [];
       default:
         return [new Uint8Array([Resp.Err, 1])];
     }
@@ -2840,4 +2853,29 @@ test("someone asking this radio to run a console command is not a chat line", as
   await session.connect(radio);
   await until(() => session.getState().messages.length > 0);
   assert.deepEqual(session.getState().messages.map((m) => m.text), ["hello"]);
+});
+
+test("a key given to the radio goes with its name, the history is saved under the old key, and the radio reboots", async () => {
+  const storage = new MemoryStorage();
+  const radio = new ScriptedRadio();
+  radio.queue.push(dmFrame(BOB, "kept"));
+  const session = new MeshSession({ storage, now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  const key = new Uint8Array(64).fill(0x40);
+  assert.equal(await session.importKey(key, "Node-21"), true);
+  assert.deepEqual(radio.privateKey, key);
+  const order = radio.sent.map((f) => f[0]).filter((c) => c === Cmd.ImportPrivateKey || c === Cmd.SetAdvertName || c === Cmd.Reboot);
+  assert.deepEqual(order, [Cmd.ImportPrivateKey, Cmd.SetAdvertName, Cmd.Reboot]);
+  assert.deepEqual(storage.saved.get(SELF_KEY)?.messages.map((m) => m.text), ["kept"]);
+  await until(() => session.getState().status === "closed");
+});
+
+test("a radio whose firmware takes no key is left as it was", async () => {
+  const radio = new ScriptedRadio();
+  radio.keys = false;
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  assert.equal(await session.importKey(new Uint8Array(64).fill(0x40), "Node-21"), false);
+  assert.ok(!radio.sent.some((f) => f[0] === Cmd.SetAdvertName || f[0] === Cmd.Reboot));
+  assert.equal(session.getState().status, "ready");
 });

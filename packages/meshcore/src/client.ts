@@ -507,6 +507,26 @@ export class MeshCoreClient {
     return this.ok("setCustomVar", cmd.setCustomVar(name, value));
   }
 
+  /** The radio's private key, 64 bytes; null when its firmware was built not to give it (`ENABLE_PRIVATE_KEY_EXPORT`). */
+  async exportPrivateKey(): Promise<Uint8Array | null> {
+    const [frame] = await this.request("exportPrivateKey", cmd.exportPrivateKey());
+    if (frame?.kind === "disabled") return null;
+    if (frame?.kind !== "privateKey") throw new Error(`exportPrivateKey: expected privateKey, got ${frame?.kind ?? "nothing"}`);
+    return frame.key;
+  }
+
+  /**
+   * Makes `privateKey` the radio's own from now on, and false when its firmware
+   * was built not to take one (`ENABLE_PRIVATE_KEY_IMPORT`). A key it finds unfit
+   * is refused as an illegal argument.
+   */
+  async importPrivateKey(privateKey: Uint8Array): Promise<boolean> {
+    const [frame] = await this.request("importPrivateKey", cmd.importPrivateKey(privateKey));
+    if (frame?.kind === "disabled") return false;
+    if (frame?.kind !== "ok") throw new Error(`importPrivateKey: expected ok, got ${frame?.kind ?? "nothing"}`);
+    return true;
+  }
+
   /** A console line run by this radio itself (protocol 14); an older radio refuses it as unsupported. */
   runCliCommand(text: string): Promise<string> {
     return this.one("runCliCommand", cmd.runCliCommand(text), "cliReply").then((f) => f.text);

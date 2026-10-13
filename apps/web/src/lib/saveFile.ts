@@ -17,8 +17,8 @@ interface SharePlugin {
 let files: FilesystemPlugin | null = null;
 let share: SharePlugin | null = null;
 
-/** How the file went: to the share sheet, or downloaded. Throws when it could not be written. */
-export async function saveFile(name: string, text: string, type: string, dialogTitle: string): Promise<"shared" | "downloaded"> {
+/** How the file went: to the share sheet, downloaded, or nowhere when the share sheet was put away. Throws when it could not be written. */
+export async function saveFile(name: string, text: string, type: string, dialogTitle: string): Promise<"shared" | "downloaded" | "cancelled"> {
   if (isCapacitor()) {
     const { registerPlugin } = await import("@capacitor/core");
     files ??= registerPlugin<FilesystemPlugin>("Filesystem");
@@ -28,7 +28,7 @@ export async function saveFile(name: string, text: string, type: string, dialogT
       await share.share({ title: name, files: [uri], dialogTitle });
     } catch (error) {
       // Put away without picking anything: nothing went wrong.
-      if (/cancel/i.test(String((error as { message?: unknown })?.message ?? error))) return "shared";
+      if (/cancel/i.test(String((error as { message?: unknown })?.message ?? error))) return "cancelled";
       throw error;
     }
     return "shared";

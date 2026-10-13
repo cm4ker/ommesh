@@ -5,7 +5,7 @@
 ## Unreleased
 
 ### Chats
-- On a PC, a microphone beside the message field writes what you say into it, in every chat: Settings › Messages and routes › Voice input. Click it and speak, or hold it while you speak; the text appears phrase by phrase as you talk, and goes as an ordinary message once you send it. Whisper recognises the speech on the computer itself, with no internet, and the sound is not kept. The Whisper model is downloaded on the same page.
+- A microphone beside the message field writes what you say into it, in every chat, on a PC and on a phone: Settings › Messages and routes › Voice input. Click it and speak, or hold it while you speak; the text appears phrase by phrase as you talk, and goes as an ordinary message once you send it. Whisper recognises the speech on the device itself, with no internet, and the sound is not kept. The Whisper model is downloaded on the same page, where you can also say which language you speak.
 
 ## 0.8.0 — 2026-10-12
 

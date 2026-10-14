@@ -10,7 +10,6 @@ mod notices;
 mod secrets;
 mod tcp;
 mod tray;
-mod speech;
 mod updates;
 #[cfg(windows)]
 mod winble;
@@ -57,6 +56,13 @@ pub fn run() {
         // turned on back then still counts; the installer's hooks remove it by that name.
         .plugin(tauri_plugin_autostart::Builder::new().app_name("Meshnet").arg(MINIMIZED).build())
         .setup(|app| {
+            // Voice input is gone (#89): the Whisper models a Dev build downloaded for
+            // it, hundreds of megabytes, would otherwise stay on the disk for good.
+            if let Ok(folder) = app.path().app_local_data_dir() {
+                std::thread::spawn(move || {
+                    let _ = std::fs::remove_dir_all(folder.join("voice"));
+                });
+            }
             tray::install(app);
             if std::env::args().any(|arg| arg == MINIMIZED) {
                 if let Some(window) = app.get_webview_window("main") {
@@ -82,8 +88,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(tcp::Tcp::default())
-        .manage(notices::Notices::default())
-        .manage(speech::Speech::default());
+        .manage(notices::Notices::default());
 
     #[cfg(windows)]
     let builder = builder.manage(winble::WinBle::default()).invoke_handler(tauri::generate_handler![
@@ -114,14 +119,6 @@ pub fn run() {
         secrets::secret_set,
         secrets::secret_delete,
         coverage::coverage_upload,
-        speech::speech_models,
-        speech::speech_model_download,
-        speech::speech_model_delete,
-        speech::speech_start,
-        speech::speech_feed,
-        speech::speech_finish,
-        speech::speech_cancel,
-        speech::speech_unload,
     ]);
     #[cfg(not(windows))]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -146,14 +143,6 @@ pub fn run() {
         secrets::secret_set,
         secrets::secret_delete,
         coverage::coverage_upload,
-        speech::speech_models,
-        speech::speech_model_download,
-        speech::speech_model_delete,
-        speech::speech_start,
-        speech::speech_feed,
-        speech::speech_finish,
-        speech::speech_cancel,
-        speech::speech_unload,
     ]);
 
     builder

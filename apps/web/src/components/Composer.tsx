@@ -22,10 +22,8 @@ import { packLookalikes, useLookalikePrefs } from "../lib/lookalikes.js";
 import { touchFirst } from "../lib/platform.js";
 import { usePress } from "../lib/press.js";
 import { session, useSession } from "../lib/session.js";
-import { useVoiceInputReady } from "../lib/voiceInput.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
-import { ListenBar, MicButton, useMic } from "./ComposerMic.js";
 import { ClockIcon, CloseIcon, LocationIcon, ReplyIcon, SendIcon, TextIcon, WavesIcon } from "./Icons.js";
 import { t } from "../i18n/index.js";
 import { tx } from "../i18n/rich.js";
@@ -105,7 +103,6 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
     if (mirror.current) mirror.current.scrollTop = el.scrollTop;
-    if (saidLayer.current) saidLayer.current.scrollTop = el.scrollTop;
   }, [text]);
 
   /** Puts `insert` over [from, to) as typing would, so that Undo takes it back. */
@@ -229,43 +226,7 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
 
   const nudge = () => setShake(true);
 
-  // Voice input (#89): each phrase heard goes in where the caret is, or after the text when the
-  // field has no focus (its caret then says nothing), with spaces where it joins words. It is
-  // put in without taking the focus, so a phone's keyboard stays down.
-  const voice = useVoiceInputReady();
-  // The phrase just put in is lit for a moment, so a glance finds what was heard.
-  const [said, setSaid] = useState<{ from: number; to: number } | null>(null);
-  const saidLayer = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!said) return;
-    const timer = setTimeout(() => setSaid(null), 1200);
-    return () => clearTimeout(timer);
-  }, [said]);
-  const putPhrase = (phrase: string) => {
-    const el = field.current;
-    if (!el) return;
-    const focused = document.activeElement === el;
-    const [from, to] = focused ? [el.selectionStart, el.selectionEnd] : [el.value.length, el.value.length];
-    const before = el.value.slice(0, from);
-    const after = el.value.slice(to);
-    const lead = before && !/\s$/.test(before) ? " " : "";
-    const insert = lead + phrase + (after && !/^\s/.test(after) ? " " : "");
-    setSaid({ from: from + lead.length, to: from + lead.length + phrase.length });
-    if (focused && document.execCommand("insertText", false, insert)) return;
-    el.setRangeText(insert, from, to, "end");
-    setText(el.value);
-  };
-  const mic = useMic(() => {
-    const el = field.current;
-    if (!el) return text;
-    return document.activeElement === el ? el.value.slice(0, el.selectionStart) : el.value;
-  }, putPhrase);
-  const listening = mic.phase !== "idle";
-  useEffect(() => mic.cancel, [conversation]);
-
   const cleared = () => {
-    // What is said after the message has gone would start the next one, unasked.
-    if (listening) mic.cancel();
     setText("");
     setPick(null);
     quoted.current = "";
@@ -344,11 +305,6 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
         return;
       }
     }
-    if (e.key === "Escape" && listening) {
-      e.preventDefault();
-      mic.cancel();
-      return;
-    }
     if (e.key === "Escape" && reply) {
       e.preventDefault();
       dropReply(true);
@@ -391,7 +347,7 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   const parts = over ? splitParts(pack(body), cost.budget).length : 0;
 
   return (
-    <footer className={["compose", focused ? "focus" : "", text || reply || place ? "has" : "", online ? "" : "waiting", shake ? "shake" : "", listening ? "listening" : ""].join(" ")} onAnimationEnd={() => setShake(false)}>
+    <footer className={["compose", focused ? "focus" : "", text || reply || place ? "has" : "", online ? "" : "waiting", shake ? "shake" : ""].join(" ")} onAnimationEnd={() => setShake(false)}>
       {matches.length > 0 && pick ? (
         <div className="compose-pop" role="listbox" aria-label={t("chats.composer.mention")}>
           {matches.map((who, i) => (
@@ -467,7 +423,6 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
             ) : null}
           </div>
         ) : null}
-        {listening ? <ListenBar mic={mic} /> : null}
         <div className="compose-row">
           <div className="compose-field">
             <div className="compose-mirror" ref={mirror} aria-hidden="true">
@@ -478,21 +433,12 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
               ))}
               {"​"}
             </div>
-            {said && said.to <= text.length ? (
-              <div className="compose-mirror compose-said" ref={saidLayer} aria-hidden="true">
-                {text.slice(0, said.from)}
-                <mark>{text.slice(said.from, said.to)}</mark>
-                {text.slice(said.to)}
-                {"​"}
-              </div>
-            ) : null}
             <textarea
               ref={field}
               rows={1}
               value={text}
               aria-label={t("chats.composer.field", { name: title })}
               aria-describedby={empty ? undefined : `cost-${conversation}`}
-              placeholder={listening && !text ? t("chats.voice.speak") : undefined}
               enterKeyHint={touch ? "enter" : "send"}
               autoCapitalize="sentences"
               onChange={(e) => setText(e.target.value)}
@@ -500,7 +446,6 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
               onKeyDown={onKey}
               onScroll={(e) => {
                 if (mirror.current) mirror.current.scrollTop = e.currentTarget.scrollTop;
-                if (saidLayer.current) saidLayer.current.scrollTop = e.currentTarget.scrollTop;
               }}
               onFocus={() => {
                 setFocused(true);
@@ -513,7 +458,6 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
               }}
             />
           </div>
-          {voice || listening ? <MicButton mic={mic} /> : null}
           <button
             type="button"
             className={["compose-send", button.cls].join(" ")}

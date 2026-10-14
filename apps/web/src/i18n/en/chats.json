@@ -385,13 +385,5 @@
   "place.remove": "Remove the place",
   "place.fieldHint": "Coordinates or a link",
   "place.done": "Done",
-  "place.preview": "Place",
-  "voice.start": "Speak",
-  "voice.stop": "Stop listening",
-  "voice.speak": "Speak…",
-  "voice.micDenied": "No access to the microphone",
-  "voice.listening": "Listening",
-  "voice.writing": "Writing it down…",
-  "voice.starting": "Turning on…",
-  "voice.offIn": "off in {seconds} s"
+  "place.preview": "Place"
 }

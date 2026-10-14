@@ -445,13 +445,5 @@
   "place.remove": "Убрать место",
   "place.fieldHint": "Координаты или ссылка",
   "place.done": "Готово",
-  "place.preview": "Место",
-  "voice.start": "Говорить",
-  "voice.stop": "Хватит слушать",
-  "voice.speak": "Говорите…",
-  "voice.micDenied": "Нет доступа к микрофону",
-  "voice.listening": "Слушаю",
-  "voice.writing": "Распознаю…",
-  "voice.starting": "Включаю…",
-  "voice.offIn": "выключусь через {seconds} с"
+  "place.preview": "Место"
 }

@@ -42,9 +42,6 @@ jobs:
       - run: pnpm test
       - name: Radio core checks
         run: cargo test --manifest-path crates/meshcore-core/Cargo.toml
-      # Builds whisper.cpp with the runner's CMake and LLVM; the rules of where a phrase ends need no model.
-      - name: Voice input checks
-        run: cargo test --manifest-path crates/speech/Cargo.toml
       - run: pnpm --filter @meshnet/web build
       - uses: actions/upload-artifact@v4
         with:
@@ -134,26 +131,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: node scripts/release.mjs prepare
       # PR/local packages do not need the private key. Publishing fails closed if it is missing.
-      # The rest is for whisper.cpp, which the 64-bit apps build for voice input
-      # (`crates/speech`) through whisper-rs, CMake and the runner's LLVM. Left to themselves,
-      # the cmake crate's Visual Studio generator drops the optimisation flags, ggml tunes
-      # itself to the runner's processor, MSVC refuses to build ggml for ARM, and the C++
-      # runtime comes as msvcp140.dll, which `tauri build` otherwise spares the app. So:
-      # Ninja; AVX2 on x64 and ARMv8.2 with the dot product on ARM64, which `speech::able`
-      # checks for at run time; clang-cl for the ARM64 build alone (ring already needs
-      # clang there); and the static C++ runtime, as Tauri links the rest.
       - name: Build NSIS and updater signatures
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ needs.check.outputs.publish == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.check.outputs.publish == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
-          CMAKE_GENERATOR: Ninja
-          CXXFLAGS: /EHsc
-          CMAKE_POLICY_DEFAULT_CMP0091: NEW
-          CMAKE_MSVC_RUNTIME_LIBRARY: MultiThreaded
-          GGML_NATIVE: "OFF"
-          GGML_CPU_ARM_ARCH: armv8.2-a+dotprod+fp16
-          CC_aarch64_pc_windows_msvc: clang-cl
-          CXX_aarch64_pc_windows_msvc: clang-cl
         run: pnpm --filter @meshnet/desktop exec tauri build --config src-tauri/tauri.release.json --target ${{ matrix.target }} --bundles nsis
       # The same app again with WebView2's offline installer inside, for a machine with
       # neither WebView2 nor the internet (Windows 10 LTSC, a fresh image). It is bundled

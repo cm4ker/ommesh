@@ -53,15 +53,6 @@ tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
 # The window opens where it was left and at the size it was, maximised or not.
 tauri-plugin-window-state = "2"
-# The updater's reqwest has TLS without a crypto provider, which the updater
-# installs before its first check; a model download may come before that and
-# installs the same one (`speech.rs`). Already in the tree through the updater.
-rustls = { version = "0.23", default-features = false, features = ["ring"] }
-# Voice input (`speech.rs`): whisper.cpp and its voice detector, shared with
-# the phones. It is C++ built with CMake, and bindgen reads its header through
-# libclang, so a build needs both; the build workflow also says which
-# processors to build for and which C++ runtime to link.
-speech = { path = "../../../crates/speech" }
 
 # On Windows the BLE link is the platform's own GATT API, not btleplug: the
 # firmware's UART characteristics demand an encrypted link, and btleplug's

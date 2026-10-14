@@ -6,6 +6,7 @@
 
 ### Chats
 - On a PC, a chat you open is ready to write in: the cursor waits in the message field, so you can start typing at once. Before, what you typed after picking a chat in the list went nowhere until you clicked the field.
+- The place pin in an empty message field puts a place in only when held: a tap on it just says to hold it. Right after a message goes, the send arrow under your thumb turns into the pin, and a second tap used to put a place in by mistake. With a mouse a click still puts one, and so does Enter.
 
 ### Mesh and the map
 - When a node was last heard now counts more than its adverts: a direct message from it, its acknowledgement of yours, the route it sends back and its answers to your requests count too. A node that rarely advertises but writes to you no longer looks long gone in the list, its profile and Clean up. A message that waited in the radio while the app was closed counts from when it was sent. A channel message does not count: it carries only a name, and anyone may write under any name. The map's labels and faded pins now go by the same time as the list.

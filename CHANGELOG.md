@@ -15,6 +15,9 @@
 ### Settings
 - The radio's private key can be saved to a file and given back to the radio: Settings › Advanced › Radio key. A radio wiped by a crash, a flash or a factory reset is the same node again with its old key: the mesh knows it as before, and its chats open on this device again. Restore the key takes the file, or the key pasted as text, 128 hex digits, as the MeshCore app and a repeater's get prv.key give it. Before anything is sent, it says whose key it is and whether its chats are on this device, or why the radio would not take it. The radio then reboots with the key, and with its old name when the key came from a file. The factory reset's question now offers Save the key first. The file holds the key itself: keep it like a password.
 
+### Desktop
+- Ommesh's button on the Windows taskbar shows how many messages are unread: a red circle with the count while a person has written to you, amber when only channels and rooms have something new, and 99+ past 99. Before, only the dot on the icon by the clock said so, and Windows often hides that icon behind the arrow.
+
 ### Fixes
 - On an iPhone, the keyboard no longer covers a window that asks for something, such as Sign in to a repeater: the window moves up above the keyboard, and its buttons stay in sight.
 

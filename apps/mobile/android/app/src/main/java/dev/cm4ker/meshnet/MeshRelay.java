@@ -832,6 +832,11 @@ final class MeshRelay {
             if (responseNeeded) respond(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value);
             if (!RX.equals(characteristic.getUuid()) || value == null) return;
             main.post(() -> {
+                // A computer that subscribed before this copy of the app started (the app was
+                // updated, or stopped by the system) writes on as before: Android kept its
+                // connection up and told the app nothing. Notifications reach it whatever the
+                // app knows of its subscription, so it is taken back.
+                if (computer == null) attachComputer(device);
                 if (!device.equals(computer)) return;
                 if (preparedWrite) {
                     // A frame longer than the link's MTU comes as a long write, in pieces with offsets.

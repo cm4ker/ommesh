@@ -461,6 +461,11 @@ extension MeshRelay: CBPeripheralManagerDelegate {
 
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
         guard characteristic.uuid == MeshRelay.tx, isSharing else { return }
+        take(computer: central, peripheral)
+    }
+
+    /// The computer the radio is shared with from now on: the core keeps its messages and answers it.
+    private func take(computer central: CBCentral, _ peripheral: CBPeripheralManager) {
         computer = central
         backlog = []
         peripheral.stopAdvertising()
@@ -478,13 +483,27 @@ extension MeshRelay: CBPeripheralManagerDelegate {
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
+        guard let first = requests.first else { return }
+        // A computer that subscribed before this copy of the app started (the
+        // app was updated, or stopped by the system) writes on as before: iOS
+        // kept its connection up and told the app nothing. It is taken back if
+        // iOS still counts it subscribed. Otherwise its write is refused, so it
+        // finds the link gone and subscribes again, rather than waiting for
+        // answers that would never reach it.
+        if computer == nil, isSharing, served?.subscribedCentrals?.contains(where: { $0.identifier == first.central.identifier }) == true {
+            take(computer: first.central, peripheral)
+        }
+        guard computer?.identifier == first.central.identifier else {
+            peripheral.respond(to: first, withResult: .unlikelyError)
+            return
+        }
         // A frame longer than the link's MTU comes as a long write, in pieces with offsets.
         var frame = Data()
         for request in requests where request.characteristic.uuid == MeshRelay.rx {
             if let value = request.value { frame.append(value) }
         }
-        if let first = requests.first { peripheral.respond(to: first, withResult: .success) }
-        if !frame.isEmpty, computer != nil { run(core.fromClient(client: .computer, frame: frame, write: nil)) }
+        peripheral.respond(to: first, withResult: .success)
+        if !frame.isEmpty { run(core.fromClient(client: .computer, frame: frame, write: nil)) }
     }
 
     func peripheralManagerIsReady(toUpdateSubscribers peripheral: CBPeripheralManager) {

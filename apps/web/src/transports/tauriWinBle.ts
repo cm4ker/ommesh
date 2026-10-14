@@ -22,7 +22,10 @@ function pretty(address: string): string {
   return address.match(/.{2}/g)?.join(":") ?? address;
 }
 
-class TauriWinBleTransport extends BaseTransport {
+/** The shell's commands, handed in so a test can stand in for them. */
+type Invoke = <T>(command: string, args: Record<string, unknown>) => Promise<T>;
+
+export class TauriWinBleTransport extends BaseTransport {
   readonly kind = "ble" as const;
   private unlisten: UnlistenFn | null = null;
 
@@ -30,6 +33,7 @@ class TauriWinBleTransport extends BaseTransport {
     readonly label: string,
     /** The shell's number for this link: closing it late, after another was opened, leaves that one up. */
     private readonly link: number,
+    private readonly call: Invoke = invoke,
   ) {
     super();
   }
@@ -45,14 +49,29 @@ class TauriWinBleTransport extends BaseTransport {
     this.emitFrame(Uint8Array.from(data));
   }
 
+  /**
+   * A write that does not go through ends the link. Windows can keep the
+   * connection to a phone up after the phone's app went away and came back,
+   * so no disconnect is heard, and every later write met the same dead
+   * service. Ended here, the link is got back as after any drop, on fresh
+   * objects and a fresh subscription, which the phone needs to know the
+   * computer again.
+   */
   async send(frame: Uint8Array): Promise<void> {
-    await invoke("winble_send", { data: Array.from(frame) });
+    try {
+      await this.call("winble_send", { data: Array.from(frame) });
+    } catch (error) {
+      const reason = new Error(String(error));
+      void this.shutdown();
+      this.emitClose(reason);
+      throw reason;
+    }
   }
 
   protected async shutdown(): Promise<void> {
     this.unlisten?.();
     this.unlisten = null;
-    await invoke("winble_disconnect", { link: this.link }).catch(() => undefined);
+    await this.call("winble_disconnect", { link: this.link }).catch(() => undefined);
   }
 }
 

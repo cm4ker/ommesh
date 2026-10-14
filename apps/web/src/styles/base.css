@@ -106,6 +106,17 @@ body,
   height: calc(100% - max(var(--keyboard-rise, 0px), var(--home-bar)) + var(--safe-bottom));
   height: calc(100dvh - max(var(--keyboard-rise, 0px), var(--home-bar)) + var(--safe-bottom));
 }
+/*
+ * On a phone's screen with the tab bar, the keyboard comes up over the tab bar,
+ * as in the phone's own apps, rather than lifting it to ride on top: the app
+ * rises only by what the keyboard reaches above the tab bar. The tab bar stays
+ * put while the keyboard covers it, then waits under the keyboard, and the
+ * screen above it reaches down to the keyboard (Workspace marks the screen).
+ */
+:root.tabs-shown #root {
+  height: calc(100% - max(var(--keyboard-rise, 0px) - var(--tabbar-height), var(--home-bar)) + var(--safe-bottom));
+  height: calc(100dvh - max(var(--keyboard-rise, 0px) - var(--tabbar-height), var(--home-bar)) + var(--safe-bottom));
+}
 
 body {
   margin: 0;

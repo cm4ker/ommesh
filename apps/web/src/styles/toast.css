@@ -27,6 +27,12 @@
   touch-action: none;
   cursor: pointer;
 }
+/* Over the tab bar it rides on the keyboard, which covers the tab bar (base.css). */
+@media (max-width: 839px) {
+  :root.tabs-shown .toast:not(.top) {
+    bottom: calc(var(--tabbar-height) + max(var(--keyboard-rise, 0px) - var(--tabbar-height), var(--home-bar)) + var(--space-3));
+  }
+}
 /* A sheet too tall to leave room above it: the toast goes to the top of the screen. */
 .toast.top {
   top: calc(var(--safe-top) + var(--space-3));

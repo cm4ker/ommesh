@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useBackLayer, useSectionsBack } from "../lib/back.js";
 import { chatsInOrder, getChatOrder } from "../lib/chatOrder.js";
 import { getPins } from "../lib/chatPins.js";
@@ -208,6 +208,13 @@ function Phone() {
   const underTabs = !tabs && (screens.length < 2 || screens[screens.length - 2]!.kind !== "chat");
   // Nodes picked in the Mesh list: their Remove takes the tabs' place, as a chat's picked messages take the field's.
   const picking = useNodePick() !== null && nav.section === "mesh" && shown === null;
+  // The keyboard comes up over the tabs, rather than lifting them (styles/base.css). Marked on the
+  // document, where the app's height is set, by a class rather than a value every box would inherit.
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("tabs-shown", tabs);
+    return () => root.classList.remove("tabs-shown");
+  }, [tabs]);
   const tabbar = (className: string) => (
     <nav className={className} aria-label={t("connect.tabs.label")} {...(className === "tabbar" ? {} : { inert: true, "aria-hidden": true })}>
       {SECTIONS.map((s) => (

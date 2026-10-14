@@ -160,6 +160,11 @@
 .tabbar button {
   font-size: var(--text-xs);
 }
+/* Android lifts the whole page above the keyboard, tab bar and all. The tab bar stays behind,
+   under the keyboard, as it does where the page follows the keyboard itself (base.css). */
+:root.keyboard-up .app.narrow > .tabbar {
+  display: none;
+}
 .tabbar button.on {
   color: var(--accent);
 }

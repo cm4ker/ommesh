@@ -3,6 +3,7 @@
 [Русская версия](CHANGELOG.ru.md)
 
 ## Unreleased
+- On a PC, a chat you open is ready to write in: the cursor waits in the message field, so you can start typing at once. Before, what you typed after picking a chat in the list went nowhere until you clicked the field.
 
 ### Chats
 - On a PC, a microphone beside the message field writes what you say into it, in every chat: Settings › Messages and routes › Voice input. Click it and speak, or hold it while you speak; the text appears phrase by phrase as you talk, and goes as an ordinary message once you send it. While it listens the button is red, a line over the field shows how long it has listened and counts down before it turns off. Whisper recognises the speech on the computer itself, with no internet, and the sound is not kept. The Whisper model is downloaded on the same page, where you can also say which language you speak.

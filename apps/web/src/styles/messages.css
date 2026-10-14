@@ -349,7 +349,7 @@ button.react-chip {
 .bubble.held,
 .jumbo.held {
   transform: translateY(var(--lift-y, 0px)) scale(1.02);
-  box-shadow: 0 6px 24px rgb(0 0 0 / 0.28);
+  box-shadow: 0 6px 24px rgb(var(--shadow-rgb) / 0.28);
 }
 .jumbo.held {
   border-radius: 16px;

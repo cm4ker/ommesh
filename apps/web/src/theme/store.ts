@@ -1,5 +1,5 @@
 import { locale, t } from "../i18n/index.js";
-import { bubbleVariable, cssVariable, defaultDark, defaultLight, findTheme, themes, type BubbleToken, type Theme, type ThemeToken } from "./themes.js";
+import { bubbleVariable, cssVariable, defaultDark, defaultLight, findTheme, sharedTokens, themes, type BubbleToken, type SharedToken, type Theme, type ThemeToken } from "./themes.js";
 import { paintSystemBars } from "../lib/systemBars.js";
 
 const BUBBLE_TOKENS: BubbleToken[] = ["text", "textMuted", "textFaint", "accent", "danger"];
@@ -84,6 +84,8 @@ function setData(root: HTMLElement, key: string, value: string | undefined): voi
 
 /** Before the first render, so the page never paints in one palette and resolves into another. */
 export function initTheme(): void {
+  const root = document.documentElement;
+  for (const token of Object.keys(sharedTokens) as SharedToken[]) root.style.setProperty(cssVariable(token), sharedTokens[token]);
   media = window.matchMedia("(prefers-color-scheme: dark)");
   media.addEventListener("change", () => {
     if (preference === "system") apply();

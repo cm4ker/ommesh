@@ -63,8 +63,8 @@
   opacity: 1;
   transform: none;
   background: conic-gradient(var(--text) calc(var(--left, 1) * 360deg), var(--border-strong) 0);
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
-  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), rgb(var(--shadow-rgb)) 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), rgb(var(--shadow-rgb)) 0);
 }
 .compose-mic.on svg rect {
   fill: currentColor;

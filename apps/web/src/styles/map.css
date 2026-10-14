@@ -85,7 +85,7 @@
   background: color-mix(in oklab, var(--bg) 92%, transparent);
   border: 1px solid var(--border-strong);
   color: var(--text);
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.15);
+  box-shadow: 0 1px 4px rgb(var(--shadow-rgb) / 0.15);
 }
 /* Grouping of close nodes, while it is on. */
 .map-controls .icon-button.on {
@@ -154,7 +154,7 @@
   flex-direction: column;
   border-radius: 16px 16px 0 0;
   background: var(--elevated);
-  box-shadow: 0 -6px 24px rgb(0 0 0 / 0.22);
+  box-shadow: 0 -6px 24px rgb(var(--shadow-rgb) / 0.22);
   transition: transform 0.34s cubic-bezier(0.22, 0.9, 0.3, 1);
   will-change: transform;
 }
@@ -298,7 +298,7 @@
   background: var(--bg);
   border: 1px solid var(--border-strong);
   border-radius: 999px;
-  box-shadow: 0 4px 12px -4px rgb(0 0 0 / 0.35);
+  box-shadow: 0 4px 12px -4px rgb(var(--shadow-rgb) / 0.35);
 }
 .map-put svg {
   width: 15px;

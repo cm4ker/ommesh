@@ -7,10 +7,10 @@
   color: var(--text);
   padding: 0;
   width: min(440px, calc(100vw - 32px));
-  box-shadow: 0 8px 24px rgb(0 0 0 / 28%);
+  box-shadow: 0 8px 24px rgb(var(--shadow-rgb) / 28%);
 }
 .dialog::backdrop {
-  background: rgb(0 0 0 / 40%);
+  background: rgb(var(--shadow-rgb) / 40%);
 }
 /* Where the page follows the keyboard (iOS) the screen keeps its size, so a dialog centred on it
    had its lower half, buttons and all, under the keyboard. It is centred in the room between the

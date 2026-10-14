@@ -15,7 +15,7 @@
 .sheet-scrim {
   position: absolute;
   inset: 0;
-  background: rgb(0 0 0 / 0.4);
+  background: rgb(var(--shadow-rgb) / 0.4);
 }
 /* A held message's menu on a touch screen (Menu.tsx): the dimming is the shadow of a hole around the
    message, so the message stays bright in it, and the menu is a card right under the message. */
@@ -31,7 +31,7 @@
 }
 .hold-hole {
   position: absolute;
-  box-shadow: 0 0 0 200vmax rgb(0 0 0 / 0.45);
+  box-shadow: 0 0 0 200vmax rgb(var(--shadow-rgb) / 0.45);
   pointer-events: none;
 }
 .hold-menu {
@@ -42,7 +42,7 @@
   padding: 6px 0;
   border-radius: 14px;
   background: var(--elevated);
-  box-shadow: 0 10px 40px rgb(0 0 0 / 0.35);
+  box-shadow: 0 10px 40px rgb(var(--shadow-rgb) / 0.35);
   transform-origin: top left;
 }
 .hold-menu.right {
@@ -351,7 +351,7 @@
   padding: 0 0 max(var(--space-4), var(--safe-bottom));
   border-radius: 16px 16px 0 0;
   background: var(--elevated);
-  box-shadow: 0 -8px 32px rgb(0 0 0 / 0.25);
+  box-shadow: 0 -8px 32px rgb(var(--shadow-rgb) / 0.25);
   outline: none;
   transition: transform 0.2s ease;
 }
@@ -453,7 +453,7 @@
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   background: var(--elevated);
-  box-shadow: 0 10px 30px rgb(0 0 0 / 0.28);
+  box-shadow: 0 10px 30px rgb(var(--shadow-rgb) / 0.28);
 }
 .popover button {
   width: 100%;

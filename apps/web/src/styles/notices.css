@@ -17,7 +17,7 @@
   border-radius: 14px;
   background: var(--elevated);
   color: var(--text);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.22);
+  box-shadow: 0 8px 24px rgb(var(--shadow-rgb) / 0.22);
   cursor: pointer;
   text-align: left;
 }
@@ -212,5 +212,5 @@ html.notices-window #root {
   bottom: auto;
 }
 .notice-stack .notice-card {
-  box-shadow: 0 6px 18px rgb(0 0 0 / 0.28);
+  box-shadow: 0 6px 18px rgb(var(--shadow-rgb) / 0.28);
 }

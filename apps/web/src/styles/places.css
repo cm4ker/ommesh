@@ -166,7 +166,7 @@
   top: 6px;
   right: 6px;
   background: var(--elevated);
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
+  box-shadow: 0 1px 4px rgb(var(--shadow-rgb) / 0.2);
 }
 .place-drop:hover {
   background: var(--elevated);
@@ -231,7 +231,7 @@
   font: inherit;
   font-size: var(--text-sm);
   font-weight: 600;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
+  box-shadow: 0 1px 4px rgb(var(--shadow-rgb) / 0.2);
   cursor: pointer;
 }
 .place-centre {

@@ -215,9 +215,9 @@
   padding: 6px 10px;
   border-radius: var(--radius-lg);
   /* Dressed as the toast, the one dark card the app has. */
-  background: rgb(28 31 36 / 0.94);
-  color: #f1f3f6;
-  box-shadow: 0 4px 14px rgb(0 0 0 / 0.3);
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  box-shadow: 0 4px 14px rgb(var(--shadow-rgb) / 0.3);
   font-size: var(--text-sm);
   font-weight: 500;
   white-space: nowrap;
@@ -369,7 +369,7 @@
   place-items: center;
   border-radius: 4px;
   background: var(--danger);
-  color: #fff;
+  color: var(--on-fill);
   font: 600 10px/1 var(--font-ui);
 }
 /* Relays a leg goes round, and where a route goes on off the map: quieter than a warning. */
@@ -403,7 +403,7 @@
   border-radius: 50% 50% 50% 0;
   background: var(--accent);
   transform: rotate(-45deg);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+  box-shadow: 0 1px 3px rgb(var(--shadow-rgb) / 0.35);
 }
 .map-num {
   position: absolute;
@@ -442,7 +442,7 @@
   border: 2px solid var(--accent);
   border-radius: 50%;
   background: var(--bg);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+  box-shadow: 0 1px 3px rgb(var(--shadow-rgb) / 0.35);
 }
 .map-handle .map-num {
   left: 20px;

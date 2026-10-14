@@ -166,8 +166,8 @@
   height: 44px;
   margin: -22px 0 0 -22px;
   border-radius: 50%;
-  background: rgb(0 0 0 / 0.55);
-  color: #fff;
+  background: rgb(var(--shadow-rgb) / 0.55);
+  color: var(--on-fill);
 }
 .link-card-time {
   position: absolute;
@@ -175,8 +175,8 @@
   bottom: 6px;
   padding: 1px 5px;
   border-radius: 4px;
-  background: rgb(0 0 0 / 0.6);
-  color: #fff;
+  background: rgb(var(--shadow-rgb) / 0.6);
+  color: var(--on-fill);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }

@@ -400,7 +400,7 @@ mark {
   width: 88px;
   border: 0;
   background: var(--danger);
-  color: #fff;
+  color: var(--on-fill);
   font: inherit;
   font-weight: 600;
   cursor: pointer;

@@ -379,11 +379,36 @@ export const themes: Theme[] = [
 export const defaultDark = oneDark;
 export const defaultLight = oneLight;
 
+/**
+ * Colours that are the same in every theme, set beside the theme's own. Shadows and the dimming
+ * under a sheet or a dialog are black, as channels so a rule gives each its own alpha
+ * (`rgb(var(--shadow-rgb) / 0.25)`). White is for words and marks on a strong fill or a picture,
+ * and a switch's knob. The toast is the one dark card the app has, alike in a light theme and a dark.
+ */
+export const sharedTokens = {
+  shadowRgb: "0 0 0",
+  onFill: "#fff",
+  toastBg: "rgb(28 31 36 / 0.94)",
+  toastBorder: "rgb(255 255 255 / 0.08)",
+  toastText: "#f1f3f6",
+  toastMuted: "#9aa3b1",
+  toastAccent: "#74a9ec",
+  toastIcon: "#2e3a4b",
+  toastTrack: "#3a404b",
+  toastRingText: "#e9edf3",
+  toastErrorBg: "rgb(52 26 26 / 0.96)",
+  toastErrorBorder: "#6b3434",
+  toastError: "#ff9b93",
+  toastErrorIcon: "#5a2a2a",
+};
+
+export type SharedToken = keyof typeof sharedTokens;
+
 export function findTheme(id: string): Theme | undefined {
   return themes.find((t) => t.id === id);
 }
 
-export function cssVariable(token: ThemeToken): string {
+export function cssVariable(token: ThemeToken | SharedToken): string {
   return `--${token.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;
 }
 

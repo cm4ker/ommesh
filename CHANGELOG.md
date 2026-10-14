@@ -3,10 +3,9 @@
 [Русская версия](CHANGELOG.ru.md)
 
 ## Unreleased
-- On a PC, a chat you open is ready to write in: the cursor waits in the message field, so you can start typing at once. Before, what you typed after picking a chat in the list went nowhere until you clicked the field.
 
 ### Chats
-- On a PC, a microphone beside the message field writes what you say into it, in every chat: Settings › Messages and routes › Voice input. Click it and speak, or hold it while you speak; the text appears phrase by phrase as you talk, and goes as an ordinary message once you send it. While it listens the button is red, a line over the field shows how long it has listened and counts down before it turns off. Whisper recognises the speech on the computer itself, with no internet, and the sound is not kept. The Whisper model is downloaded on the same page, where you can also say which language you speak.
+- On a PC, a chat you open is ready to write in: the cursor waits in the message field, so you can start typing at once. Before, what you typed after picking a chat in the list went nowhere until you clicked the field.
 
 ### Settings
 - The radio's private key can be saved to a file and given back to the radio: Settings › Advanced › Radio key. A radio wiped by a crash, a flash or a factory reset is the same node again with its old key: the mesh knows it as before, and its chats open on this device again. Restore the key takes the file, or the key pasted as text, 128 hex digits, as the MeshCore app and a repeater's get prv.key give it. Before anything is sent, it says whose key it is and whether its chats are on this device, or why the radio would not take it. The radio then reboots with the key, and with its old name when the key came from a file. The factory reset's question now offers Save the key first. The file holds the key itself: keep it like a password.

@@ -148,6 +148,38 @@
 .compose-send.pin {
   color: var(--accent);
 }
+/* A finger puts a place by holding the pin; the ring fills for as long as the hold takes
+   (HOLD_MS in lib/press.ts), so a tap that meant the arrow puts none. */
+.hold-ring {
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: calc(100% + 6px);
+  height: calc(100% + 6px);
+  transform: rotate(-90deg);
+  pointer-events: none;
+  opacity: 0;
+}
+.hold-ring circle {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 132;
+  stroke-dashoffset: 132;
+}
+.compose-send.holding .hold-ring {
+  opacity: 1;
+}
+.compose-send.holding .hold-ring circle {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 0.48s linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .compose-send.holding .hold-ring circle {
+    transition: none;
+  }
+}
 .place-panel-in {
   display: flex;
   flex-direction: column;

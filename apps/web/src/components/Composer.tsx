@@ -8,7 +8,7 @@
  * two ways out.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { AdvType, parseConversation } from "@meshnet/meshcore";
 import { onAsk, takeAsk } from "../lib/chatAsk.js";
 import { costOf, blockEdges, ceilingOf, hasCyrillic, headerBytes, mentionOf, mentionQuery, pathBytes, quoteOf, segments, splitParts, translit } from "../lib/composer.js";
@@ -22,6 +22,7 @@ import { packLookalikes, useLookalikePrefs } from "../lib/lookalikes.js";
 import { touchFirst } from "../lib/platform.js";
 import { usePress } from "../lib/press.js";
 import { session, useSession } from "../lib/session.js";
+import { toast } from "../lib/toast.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
 import { ClockIcon, CloseIcon, LocationIcon, ReplyIcon, SendIcon, TextIcon, WavesIcon } from "./Icons.js";
@@ -45,6 +46,9 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   const [pick, setPick] = useState<{ start: number; end: number; query: string; index: number } | null>(null);
   const [shake, setShake] = useState(false);
   const [touch] = useState(touchFirst);
+  // A finger holding the pin of an empty field, and what last pressed the button.
+  const [holding, setHolding] = useState(false);
+  const pointer = useRef("");
   const field = useRef<HTMLTextAreaElement>(null);
   const mirror = useRef<HTMLDivElement>(null);
   // The line a reply put at the head of the field. While it is there as it was put, it is the
@@ -273,9 +277,9 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
     }
   };
 
-  // Held, or right-clicked: the other ways to send this.
+  // Held, or right-clicked: the other ways to send this, or a place for an empty field.
   const press = usePress((at) => {
-    if (nothing) return;
+    if (nothing) return attachPlace(radio, conversation, many);
     const items: MenuItem[] = [];
     if (target.kind === "contact") items.push({ label: t("chats.composer.sendFlood"), icon: <WavesIcon size={17} />, air: true, hint: t("chats.composer.sendFloodHint"), onSelect: () => void send({ flood: true }) });
     const extra = cost.typed - cost.used;
@@ -284,7 +288,15 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
       items.push({ label: t("chats.composer.sendAsTyped"), icon: <TextIcon size={17} />, air: true, disabled: !fits, hint: fits ? t("chats.composer.asTypedHint", { bytes: extra }) : t("chats.composer.asTypedTooLong"), onSelect: () => void send({ raw: true }) });
     }
     if (items.length > 0) showMenu(items, { at });
-  });
+  }, setHolding);
+
+  // A finger has to hold the pin: tapped, it only says so. Right after a message goes, the
+  // arrow under the thumb turns into the pin, and a second tap used to put a place by mistake.
+  // A mouse or a key is not pressed twice like that, so a click and Enter still put one.
+  const pinPressed = (e: MouseEvent) => {
+    if (e.detail > 0 && pointer.current !== "mouse") toast(t("chats.place.holdHint"));
+    else attachPlace(radio, conversation, many);
+  };
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (pick && matches.length > 0) {
@@ -335,7 +347,7 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   const saved = cost.typed - cost.used;
   // An empty field's button puts a place in it; with a place or text in it, it sends.
   const button = nothing
-    ? { cls: "pin", label: t("chats.place.attach"), icon: <LocationIcon size={19} />, disabled: false, act: () => attachPlace(radio, conversation, many) }
+    ? { cls: "pin", label: t("chats.place.attach"), icon: <LocationIcon size={19} />, disabled: false, act: pinPressed }
     : place && !placeReady(place)
       ? { cls: "idle", label: t("chats.place.locating"), icon: <SendIcon size={18} />, disabled: true, act: () => undefined }
       : over
@@ -460,13 +472,22 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
           </div>
           <button
             type="button"
-            className={["compose-send", button.cls].join(" ")}
+            className={["compose-send", button.cls, holding && nothing ? "holding" : ""].join(" ")}
             aria-label={button.label}
             disabled={button.disabled}
             onMouseDown={(e) => e.preventDefault()}
             onClick={button.act}
             {...press}
+            onPointerDown={(e) => {
+              pointer.current = e.pointerType;
+              press.onPointerDown(e);
+            }}
           >
+            {nothing ? (
+              <svg className="hold-ring" viewBox="0 0 46 46" aria-hidden="true">
+                <circle cx="23" cy="23" r="21" />
+              </svg>
+            ) : null}
             {button.icon}
           </button>
         </div>

@@ -349,6 +349,7 @@
   "newChat.keyRandom": "A random key. Copy it from the channel's page to invite people.",
   "newChat.createButton": "Create",
   "place.attach": "Send a place",
+  "place.holdHint": "Hold to send a place",
   "place.locating": "Finding where the phone is…",
   "place.title": "Place",
   "place.gone": "There is no place in this message.",

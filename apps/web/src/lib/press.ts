@@ -13,13 +13,19 @@ export type MenuAt = { x: number; y: number } | null;
 const HOLD_MS = 480;
 const SLOP_PX = 8;
 
-export function usePress(onMenu: (at: MenuAt) => void) {
+/**
+ * `onHolding` hears when a finger starts to hold and when it lets go, moves
+ * off or holds long enough, for a mark that fills while it holds.
+ */
+export function usePress(onMenu: (at: MenuAt) => void, onHolding?: (holding: boolean) => void) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
   const fired = useRef(false);
   const clear = () => {
-    if (timer.current !== null) clearTimeout(timer.current);
+    if (timer.current === null) return;
+    clearTimeout(timer.current);
     timer.current = null;
+    onHolding?.(false);
   };
   return {
     onPointerDown: (e: PointerEvent) => {
@@ -30,9 +36,11 @@ export function usePress(onMenu: (at: MenuAt) => void) {
       timer.current = setTimeout(() => {
         timer.current = null;
         fired.current = true;
+        onHolding?.(false);
         haptic();
         onMenu(null);
       }, HOLD_MS);
+      onHolding?.(true);
     },
     onPointerMove: (e: PointerEvent) => {
       if (start.current && Math.hypot(e.clientX - start.current.x, e.clientY - start.current.y) > SLOP_PX) clear();

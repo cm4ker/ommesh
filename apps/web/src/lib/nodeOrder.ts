@@ -6,8 +6,8 @@ import { heardAt } from "./nodes.js";
 import { readSetting, writeSetting } from "./storage.js";
 
 /**
- * How the Mesh list is ordered, and whether yours and the starred come first
- * or fall in with everyone else. Kept on this device, like the theme.
+ * How the Mesh list is ordered, and whether the starred come first or fall in
+ * with everyone else. Kept on this device, like the theme.
  */
 
 export type NodeOrder = "heard" | "name" | "near" | "relays";
@@ -22,7 +22,7 @@ export const NODE_ORDERS: readonly { id: NodeOrder; label: Key }[] = [
 
 export interface NodeOrderPrefs {
   order: NodeOrder;
-  /** Yours and favourites above the rest. */
+  /** Favourites above the rest. */
   pinned: boolean;
 }
 
@@ -105,12 +105,13 @@ export function nodeComparator(order: NodeOrder, self: SessionState["self"]): (a
 }
 
 /**
- * With yours and favourites pinned: yours first, then the starred, then the
- * rest, each still in the order and with no headings between them. Unpinned,
- * the rows as they are.
+ * With favourites pinned: the starred first, then the rest, each still in the
+ * order and with no heading between them. Unpinned, the rows as they are. Nodes
+ * of yours are not pinned: a guest login to someone else's repeater makes it
+ * "yours", and those would hang at the top of the list.
  */
-export function pinnedFirst(rows: ContactRecord[], yours: (c: ContactRecord) => boolean, pinned: boolean): ContactRecord[] {
+export function pinnedFirst(rows: ContactRecord[], pinned: boolean): ContactRecord[] {
   if (!pinned) return rows;
-  const rank = (c: ContactRecord) => (yours(c) ? 0 : isFavourite(c) ? 1 : 2);
+  const rank = (c: ContactRecord) => (isFavourite(c) ? 0 : 1);
   return [...rows].sort((a, b) => rank(a) - rank(b));
 }

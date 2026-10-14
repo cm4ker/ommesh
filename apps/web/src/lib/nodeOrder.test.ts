@@ -66,15 +66,14 @@ test("nodes alike in the order go newest heard first", () => {
 });
 
 const starred = contact(6, "Lena", 3, { flags: ContactFlag.Favourite });
-const roof = contact(7, "Roof", 4);
-const yours = (c: ContactRecord) => c.key === roof.key;
+const kept = contact(7, "Kate", 4, { flags: ContactFlag.Favourite });
 
-test("pinned: yours, then favourites, then the rest, each in the order given", () => {
-  assert.deepEqual(names(pinnedFirst([zhenya, starred, roof, olga], yours, true)), ["Roof", "Lena", "Zhenya", "Olga"]);
-  assert.deepEqual(names(pinnedFirst([olga, zhenya], yours, true)), ["Olga", "Zhenya"]);
+test("pinned: favourites, then the rest, each in the order given", () => {
+  assert.deepEqual(names(pinnedFirst([zhenya, starred, olga, kept], true)), ["Lena", "Kate", "Zhenya", "Olga"]);
+  assert.deepEqual(names(pinnedFirst([olga, zhenya], true)), ["Olga", "Zhenya"]);
 });
 
 test("unpinned: the list in the order given", () => {
-  const rows = [zhenya, starred, roof, olga];
-  assert.deepEqual(pinnedFirst(rows, yours, false), rows);
+  const rows = [zhenya, starred, olga];
+  assert.deepEqual(pinnedFirst(rows, false), rows);
 });

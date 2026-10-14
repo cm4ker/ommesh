@@ -189,7 +189,7 @@ function FilterButton() {
   );
 }
 
-/** Which nodes, in what order, yours and favourites in groups of their own or not, and every contact fetched again. */
+/** Which nodes, in what order, favourites on top or not, and every contact fetched again. */
 function FilterSheetHost() {
   const open = useFilterOpen();
   const onClose = () => setFilterOpen(false);
@@ -297,8 +297,7 @@ function MeshListBody({ selected, onOpen, hideSearch = false, only }: { selected
   const cells = useBatteryTypes();
   const all = Object.values(state.contacts);
   const rows = all.filter(only ? (c) => only.includes(c.key) : matcher(state, saved, kind, query)).sort(nodeComparator(order, state.self));
-  const mine = (c: ContactRecord) => isYours(state, saved, c);
-  const list = pinnedFirst(rows, mine, pinned);
+  const list = pinnedFirst(rows, pinned);
   // Rows are memoised, so they get a stable opener and the minute their "5 min" is counted from.
   const openRef = useRef(onOpen);
   openRef.current = onOpen;
@@ -328,7 +327,7 @@ function MeshListBody({ selected, onOpen, hideSearch = false, only }: { selected
                   key={c.key}
                   contact={c}
                   selected={selected === c.key}
-                  yours={mine(c)}
+                  yours={isYours(state, saved, c)}
                   onOpen={open}
                   login={state.logins[c.key]}
                   mv={statusMv(state.statusHistory[c.key])}

@@ -9,8 +9,14 @@
 //! title names the radio too, which is how copies of the app opened for
 //! different radios are told apart (`instance.rs`). Its words are the page's,
 //! in the reader's language (`tray_words`), English until the page has said.
+//!
+//! The window's taskbar button carries the count as well: on Windows a badge
+//! over the button's corner that the page draws (`badge`), elsewhere the
+//! number the dock or launcher draws.
 
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(windows)]
+use std::sync::Mutex;
 
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
@@ -29,6 +35,11 @@ const CHATS: [u8; 3] = [0xf5, 0xa5, 0x24];
 /// Whether the icon is there. Where it could not be made (a Linux desktop
 /// without an indicator area), closing the window ends the app as it always did.
 static SHOWN: AtomicBool = AtomicBool::new(false);
+
+/// The taskbar button's badge as the page drew it, a PNG, kept to be put back:
+/// the button goes when the window goes to the tray, and comes back bare.
+#[cfg(windows)]
+static BADGE: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 
 /// Puts the icon by the clock. A failure leaves the app without one, and nothing else.
 pub fn install(app: &App) {
@@ -83,13 +94,23 @@ pub fn stow<R: Runtime>(window: &WebviewWindow<R>) {
 /// The window's close button, while there is a tray: the window hides and the app goes on.
 /// Where it was is written down then, as the app may next end with the
 /// computer, with no quitting of its own to write it at.
+///
+/// The taskbar badge goes back on the button whenever the window takes the
+/// focus, as it does on coming back from the tray.
 pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
-    if let WindowEvent::CloseRequested { api, .. } = event {
-        if available() && window.label() == ID {
+    match event {
+        WindowEvent::CloseRequested { api, .. } if available() && window.label() == ID => {
             api.prevent_close();
             let _ = window.app_handle().save_window_state(crate::WINDOW_STATE);
             let _ = window.hide();
         }
+        #[cfg(windows)]
+        WindowEvent::Focused(true) if window.label() == ID => {
+            if let Some(window) = window.app_handle().get_webview_window(ID) {
+                overlay(&window);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -113,16 +134,25 @@ pub fn tray_words(app: AppHandle, open: String, another: String, quit: String) -
 }
 
 /// What is unread, from the page: messages from people, and in channels and rooms,
-/// and how the tooltip says it (`detail`), in the page's words; and the radio's name,
-/// for the tooltip and the window's title, once the radio has said it.
+/// and how the tooltip says it (`detail`), in the page's words; the radio's name,
+/// for the tooltip and the window's title, once the radio has said it; and the
+/// taskbar button's badge, a PNG in base64, while anything is unread.
 #[tauri::command]
-pub fn tray_unread(app: AppHandle, direct: u32, chats: u32, detail: Option<String>, radio: Option<String>) -> Result<(), String> {
+pub fn tray_unread(
+    app: AppHandle,
+    direct: u32,
+    chats: u32,
+    detail: Option<String>,
+    radio: Option<String>,
+    badge: Option<String>,
+) -> Result<(), String> {
     let name = match radio.as_deref().map(str::trim) {
         Some(radio) if !radio.is_empty() => format!("{radio} — {}", app.package_info().name),
         _ => app.package_info().name.clone(),
     };
     if let Some(window) = app.get_webview_window(ID) {
         let _ = window.set_title(&name);
+        taskbar(&window, direct + chats, badge.as_deref());
     }
     let Some(tray) = app.tray_by_id(ID) else {
         return Ok(());
@@ -152,6 +182,33 @@ pub fn tray_unread(app: AppHandle, direct: u32, chats: u32, detail: Option<Strin
     };
     tray.set_icon(Some(icon)).map_err(|error| error.to_string())?;
     tray.set_tooltip(Some(tooltip)).map_err(|error| error.to_string())
+}
+
+/// The count on the taskbar button. Windows has no number of its own there,
+/// only a small picture over the button's corner, which the page draws;
+/// a picture that does not decode leaves the button without one.
+#[cfg(windows)]
+fn taskbar<R: Runtime>(window: &WebviewWindow<R>, _count: u32, badge: Option<&str>) {
+    use base64::Engine;
+    let png = badge.and_then(|badge| base64::engine::general_purpose::STANDARD.decode(badge).ok());
+    *BADGE.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = png;
+    overlay(window);
+}
+
+/// The dock's number on macOS, the launcher's on Linux.
+#[cfg(not(windows))]
+fn taskbar<R: Runtime>(window: &WebviewWindow<R>, count: u32, _badge: Option<&str>) {
+    let _ = window.set_badge_count((count > 0).then_some(count as i64));
+}
+
+/// Puts the kept badge on the button, or takes it off.
+#[cfg(windows)]
+fn overlay<R: Runtime>(window: &WebviewWindow<R>) {
+    let png = BADGE.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
+    let icon = png.and_then(|png| Image::from_bytes(&png).ok());
+    if let Err(error) = window.set_overlay_icon(icon) {
+        log::warn!("no taskbar badge: {error}");
+    }
 }
 
 /// The icon with a dot in its lower right corner, ringed with clear pixels so

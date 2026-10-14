@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AdvType, type SessionState } from "@meshnet/meshcore";
-import { unreadSplit } from "./tray.js";
+import { badgePng, badgeText, unreadSplit } from "./tray.js";
 
 const BOB = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";
 const ROOM = "2102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";
@@ -20,4 +20,14 @@ test("a sender known only by prefix is a person", () => {
 
 test("nothing unread is nothing", () => {
   assert.deepEqual(unreadSplit(state({ "ch:0": 0 })), { direct: 0, chats: 0 });
+});
+
+test("the badge reads the count up to two digits", () => {
+  assert.equal(badgeText(7), "7");
+  assert.equal(badgeText(99), "99");
+  assert.equal(badgeText(100), "99+");
+});
+
+test("no badge while nothing is unread", () => {
+  assert.equal(badgePng({ direct: 0, chats: 0 }), null);
 });

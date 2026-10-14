@@ -95,11 +95,11 @@ export function scaleBar(metresPerPx: number, maxPx: number): { metres: number; 
 export type Freshness = "fresh" | "aging" | "stale";
 
 /**
- * How recent a node's last advert is. Repeaters advertise every few hours on
- * their own, so they are held to a longer clock than people and rooms.
+ * How lately a node was heard. Repeaters advertise every few hours on their
+ * own, so they are held to a longer clock than people and rooms.
  */
-export function freshness(type: number, advertAgeSec: number): Freshness {
+export function freshness(type: number, heardAgeSec: number): Freshness {
   const [fresh, day] = type === AdvType.Repeater ? [6 * 3600, 48 * 3600] : [3600, 24 * 3600];
-  if (advertAgeSec <= fresh) return "fresh";
-  return advertAgeSec <= day ? "aging" : "stale";
+  if (heardAgeSec <= fresh) return "fresh";
+  return heardAgeSec <= day ? "aging" : "stale";
 }

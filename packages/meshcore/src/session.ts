@@ -1665,6 +1665,18 @@ export class MeshSession {
     return record;
   }
 
+  /**
+   * Notes that a contact was heard at `at`, local ms, from a packet only it could
+   * have sent: its message, its acknowledgement, the route it sent back, its
+   * answer. A channel message names its sender by a name anyone may take, so it
+   * never counts.
+   */
+  private heardFrom(key: string, at: number): void {
+    const contact = this.state.contacts[key];
+    if (!contact || (contact.lastHeardAt ?? 0) >= at) return;
+    this.set({ contacts: { ...this.state.contacts, [key]: { ...contact, lastHeardAt: at } } });
+  }
+
   contactByPrefix(prefix: string): ContactRecord | null {
     for (const c of Object.values(this.state.contacts)) if (c.prefix === prefix) return c;
     return null;
@@ -2149,13 +2161,15 @@ export class MeshSession {
     let message: MessageRecord;
     if (frame.kind === "contactMessage") {
       const prefix = toHex(frame.senderPrefix);
+      const contact = this.contactByPrefix(prefix);
+      // It may have waited in the radio's queue while nobody listened: the sender's stamp says when it came, though never later than now.
+      if (contact) this.heardFrom(contact.key, Math.min(frame.timestamp * 1000, now));
       if (frame.txtType === TxtType.CliData) {
         // A person sends no console replies: console data from one is a reaction (see `directReactionText`).
-        const person = this.contactByPrefix(prefix);
-        const reaction = person?.type === AdvType.Chat ? parseDirectReaction(frame.text) : null;
-        if (person && reaction) {
-          const conversation = contactConversation(person.key);
-          await this.takeReaction({ conversation, target: toHex(reaction.target), emoji: reaction.emoji, by: person.name, to: null, replaces: true });
+        const reaction = contact?.type === AdvType.Chat ? parseDirectReaction(frame.text) : null;
+        if (contact && reaction) {
+          const conversation = contactConversation(contact.key);
+          await this.takeReaction({ conversation, target: toHex(reaction.target), emoji: reaction.emoji, by: contact.name, to: null, replaces: true });
           return;
         }
         this.receiveCli(prefix, frame.text, frame.timestamp);
@@ -2164,10 +2178,9 @@ export class MeshSession {
       if (frame.txtType === TxtType.CliCommand) {
         // Someone without the right asked this radio to run a console command (protocol 14).
         // The radio hands it up instead of running it; it is not a chat line.
-        this.log("message", `${this.contactByPrefix(prefix)?.name ?? prefix} asked this radio to run "${frame.text}"; not run`);
+        this.log("message", `${contact?.name ?? prefix} asked this radio to run "${frame.text}"; not run`);
         return;
       }
-      const contact = this.contactByPrefix(prefix);
       if (!contact) this.queueContactsRefresh();
       // A room relays its members' posts signed with the author's key prefix.
       const signer = frame.signerPrefix ? toHex(frame.signerPrefix) : null;
@@ -4026,7 +4039,9 @@ export class MeshSession {
       job.early.push(event);
       return true;
     }
+    // An answer comes from the node that was asked, a binary one too, though it names the node only by the request's tag.
     if (job && job.answers(event, job.sent)) {
+      this.heardFrom(job.info.key, this.now());
       this.finishRemote(job, null, event);
       return true;
     }
@@ -4035,6 +4050,7 @@ export class MeshSession {
     const late = this.lateJobs.find((l) => l.job.answers(event, l.job.sent));
     if (!late) return false;
     this.lateJobs = this.lateJobs.filter((l) => l !== late);
+    this.heardFrom(late.job.info.key, this.now());
     const name = this.state.contacts[late.job.info.key]?.name || late.job.info.key.slice(0, 12);
     this.log("remote", `${late.job.info.label} to ${name}: answered late`);
     late.job.late?.(event);
@@ -4130,6 +4146,9 @@ export class MeshSession {
           if (timer) clearTimeout(timer);
           this.ackTimers.delete(message.id);
           this.patchMessage(message.id, { status: "delivered", roundTripMs: frame.roundTripMs, retryPlan: null });
+          // Only the one it went to could read it and acknowledge it.
+          const target = parseConversation(message.conversation);
+          if (target.kind === "contact") this.heardFrom(target.key, this.now());
           // A flood's ack comes back inside the path the message took, and the
           // radio says it learned that path just before it says the ack came.
           const update = this.lastPathUpdate;
@@ -4172,9 +4191,10 @@ export class MeshSession {
         const client = this.client;
         if (!client) return;
         const at = this.now();
+        // The radio learns a route from a packet the contact sent back itself (firmware `onContactPathRecv`).
         const record = client
           .getContactByKey(frame.publicKey)
-          .then((c) => this.upsertContact(c, false, at))
+          .then((c) => this.upsertContact(c, true, at))
           .catch(() => {
             this.queueContactsRefresh();
             return null;

@@ -1697,6 +1697,44 @@ test("neighbours come back under the radio's tag, with prefixes, age and SNR", a
   ]);
 });
 
+test("a contact is heard when it writes, acknowledges, sends a route back or answers, never by a name in a channel", async () => {
+  let now = 1_700_000_000_000;
+  const { radio, session } = await nodeSession({ now: () => now });
+  const heard = (key: string) => session.getState().contacts[key]?.lastHeardAt ?? null;
+
+  // Bob's clock runs ahead of ours: his message counts as heard now, not at his stamp.
+  radio.queue.push(dmFrame(BOB, "hi"), channelFrame(0, "Hill: me too"));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(5);
+  assert.equal(heard(bobKey()), now);
+  // Anyone may write under Hill's name.
+  assert.equal(heard(HILL_KEY), null);
+
+  // A message that waited in the radio's queue counts from the sender's stamp.
+  now = 1_700_000_100_000;
+  radio.queue.push(dmFrame(BOB, "while you were away"));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(5);
+  assert.equal(heard(bobKey()), 1_700_000_050_000);
+
+  now = 1_700_000_200_000;
+  await session.sendText(contactConversation(bobKey()), "yo");
+  radio.push(new ByteWriter().u8(Push.SendConfirmed).u32(radio.nextAck).u32(1500).toBytes());
+  await tick();
+  assert.equal(heard(bobKey()), now);
+
+  radio.push(new ByteWriter().u8(Push.PathUpdated).bytes(ROOM).toBytes());
+  await tick(5);
+  assert.equal(heard(ROOM_KEY), now);
+
+  // A binary answer names no node, only the tag of the request it answers.
+  const request = session.requestNeighbours(HILL_KEY);
+  await sentOne(radio, Cmd.SendBinaryReq);
+  radio.push(neighboursReply(radio, 0, []));
+  await request;
+  assert.equal(heard(HILL_KEY), now);
+});
+
 function neighboursReply(radio: ScriptedRadio, total: number, rows: [string, number, number][]): Uint8Array {
   const w = new ByteWriter().u8(Push.BinaryResponse).u8(0).u32(radio.binaryTag).u16(total).u16(rows.length);
   for (const [prefix, secs, snr] of rows) w.bytes(fromHex(prefix)).u32(secs).i8(snr * 4);

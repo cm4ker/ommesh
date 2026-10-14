@@ -20,6 +20,7 @@ import { t } from "../i18n/index.js";
 import { clusterPoints } from "./cluster.js";
 import { ago, hue, trailingEmoji } from "./format.js";
 import { freshness } from "./geo.js";
+import { heardAt } from "./nodes.js";
 
 /** How close, in screen pixels, two markers may come before they are gathered: a marker and its name. */
 const CLUSTER_RADIUS = 44;
@@ -400,14 +401,15 @@ export class NodeCanvas {
     singles.sort((a, b) => {
       const ca = a.group.members[0]!;
       const cb = b.group.members[0]!;
-      return rank(cb) - rank(ca) || cb.lastAdvert - ca.lastAdvert;
+      return rank(cb) - rank(ca) || heardAt(cb) - heardAt(ca);
     });
     for (const d of singles) {
       const c = d.group.members[0]!;
-      const age = c.lastAdvert > 0 ? nowSec - c.lastAdvert : Infinity;
+      const at = heardAt(c);
+      const age = at > 0 ? nowSec - at / 1000 : Infinity;
       const state = freshness(c.type, age);
       const name = c.name || c.prefix;
-      const heard = Number.isFinite(age) ? ago(c.lastAdvert * 1000) : "";
+      const heard = Number.isFinite(age) ? ago(at) : "";
       const when = heard ? ` · ${heard === justNow ? now : heard}` : "";
       const left = d.x + (numbers[c.key] ? 19 : d.r + 4);
       let width = this.width(ctx, name);
@@ -456,7 +458,8 @@ export class NodeCanvas {
   private pin(ctx: CanvasRenderingContext2D, pal: Palette, d: Drawn, nowSec: number): void {
     const c = d.group.members[0]!;
     const { x, y } = d;
-    const age = c.lastAdvert > 0 ? nowSec - c.lastAdvert : Infinity;
+    const at = heardAt(c);
+    const age = at > 0 ? nowSec - at / 1000 : Infinity;
     const state = freshness(c.type, age);
     const stale = state === "stale";
     const selected = c.key === this.data.selected;

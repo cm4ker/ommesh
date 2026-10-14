@@ -9,6 +9,7 @@
 
 ### Mesh and the map
 - When a node was last heard now counts more than its adverts: a direct message from it, its acknowledgement of yours, the route it sends back and its answers to your requests count too. A node that rarely advertises but writes to you no longer looks long gone in the list, its profile and Clean up. A message that waited in the radio while the app was closed counts from when it was sent. A channel message does not count: it carries only a name, and anyone may write under any name. The map's labels and faded pins now go by the same time as the list.
+- The Mesh list's switch in Show and order now puts only favourites on top. Repeaters and rooms you once signed in to, even as a guest, or asked for their status no longer hang above the rest; the Yours filter still shows them.
 
 ### Settings
 - The radio's private key can be saved to a file and given back to the radio: Settings › Advanced › Radio key. A radio wiped by a crash, a flash or a factory reset is the same node again with its old key: the mesh knows it as before, and its chats open on this device again. Restore the key takes the file, or the key pasted as text, 128 hex digits, as the MeshCore app and a repeater's get prv.key give it. Before anything is sent, it says whose key it is and whether its chats are on this device, or why the radio would not take it. The radio then reboots with the key, and with its old name when the key came from a file. The factory reset's question now offers Save the key first. The file holds the key itself: keep it like a password.

@@ -123,6 +123,17 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
     }
   };
 
+  // With a real keyboard, a chat opened is a chat to write in: the caret waits in the field, so
+  // what is typed next goes there without a click on it first. A field that already has the focus
+  // keeps it: the chat's own search, opened with it, or the list's, stepped through with Alt+arrows.
+  // On a phone the keyboard would come up over the chat, so there the field waits for a tap.
+  useLayoutEffect(() => {
+    const el = field.current;
+    if (touch || !el || document.activeElement?.closest("input, textarea, [contenteditable]")) return;
+    el.focus({ preventScroll: true });
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [conversation]);
+
   // A reply chosen is a reply to be written: the start of the message it answers heads the field,
   // the caret goes under it, and on a phone the keyboard comes up.
   useLayoutEffect(() => {

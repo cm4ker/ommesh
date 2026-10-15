@@ -10,6 +10,7 @@
 
 ### Mesh and the map
 - When a node was last heard now counts more than its adverts: a direct message from it, its acknowledgement of yours, the route it sends back and its answers to your requests count too. A node that rarely advertises but writes to you no longer looks long gone in the list, its profile and Clean up. A message that waited in the radio while the app was closed counts from when it was sent. A channel message does not count: it carries only a name, and anyone may write under any name. The map's labels and faded pins now go by the same time as the list.
+- A repeater or a sensor can be set to Always flood, as a person or a room could: on the map, open the route to it and look under ⋯. Every request to it then goes to the whole mesh instead of along a route that may be stale: sign-in, status, readings, neighbours, settings and console commands. That helps on the move, but each request takes the whole mesh's air. A route you set by hand comes back when you turn it off, now for people and rooms too.
 - The Mesh list's switch in Show and order now puts only favourites on top. Repeaters and rooms you once signed in to, even as a guest, or asked for their status no longer hang above the rest; the Yours filter still shows them.
 
 ### Settings

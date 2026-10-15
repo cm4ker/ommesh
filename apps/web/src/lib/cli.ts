@@ -131,7 +131,7 @@ const PLAIN: CliCommand[] = [
   { text: "sensor get ", arg: "node.cli.key" },
   { text: "sensor set ", arg: "node.cli.keyValue" },
   { text: "gps" },
-  { text: "gps ", values: ["on", "off", "sync", "setloc", "advert"] },
+  { text: "gps ", values: ["on", "off", "sync", "setloc", "advert", "diag"] },
   { text: "gps advert ", values: ["none", "share", "prefs"] },
   { text: "region" },
   { text: "region ", values: ["load", "save", "home", "default", "get ", "put ", "remove ", "allowf ", "denyf ", "list ", "def "] },
@@ -147,6 +147,9 @@ const PLAIN: CliCommand[] = [
   { text: "reboot" },
   { text: "clkreboot" },
   { text: "poweroff" },
+  { text: "shutdown" },
+  // 1.18: battery, USB, solar charger and charging as the board sees them.
+  { text: "power" },
   { text: "start ota" },
   // MeshCoreTel.
   { text: "memory" },
@@ -179,6 +182,8 @@ const RADIO_SETTINGS: Setting[] = [
   { key: "radio.rxgain", values: ONOFF },
   { key: "int.thresh", arg: "node.cli.intThresh" },
   { key: "cad", values: ONOFF },
+  // Heltec V4, V4 R8, Tracker V2 and T096 only; other boards answer "Unknown command".
+  { key: "radio.fem.rxgain", values: ONOFF },
   { key: "agc.reset.interval", arg: "node.cli.agcReset" },
   { key: "path.hash.mode", values: ["0", "1", "2"], arg: "node.cli.pathHash" },
   { key: "txdelay", arg: "node.cli.txdelay" },
@@ -189,13 +194,13 @@ const RADIO_SETTINGS: Setting[] = [
   { key: "pin", get: false, arg: "node.cli.pin" },
   { key: "tz.offset", arg: "node.cli.tzOffset" },
   { key: "wifi.ssid", arg: "node.cli.ssid" },
-  { key: "wifi.pwd", get: false, arg: "node.cli.password" },
+  { key: "wifi.pwd", arg: "node.cli.password" },
   { key: "wifi.enabled", values: ["0", "1"] },
   { key: "wifi.status", set: false },
   { key: "wifi.ip", set: false },
 ];
 
-const RADIO_PLAIN: CliCommand[] = [{ text: "ver" }, { text: "board" }, { text: "set wifi.clear" }, { text: "reboot" }, { text: "poweroff" }];
+const RADIO_PLAIN: CliCommand[] = [{ text: "ver" }, { text: "board" }, { text: "set wifi.clear" }, { text: "reboot" }, { text: "poweroff" }, { text: "shutdown" }];
 
 export const RADIO_COMMANDS: CliCommand[] = commandsOf(RADIO_PLAIN, RADIO_SETTINGS);
 

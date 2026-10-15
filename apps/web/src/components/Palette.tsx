@@ -9,11 +9,13 @@ import { kindLabel } from "../lib/nodes.js";
 import { goSection, openConversation, openProfile, openRadioPage, type RadioPage } from "../lib/nav.js";
 import { session, useSession } from "../lib/session.js";
 import { useOwnConsole } from "../lib/ownConsole.js";
+import { openSetting, settingName, settingPlace, settingRows } from "../lib/settingsSearch.js";
 import { act } from "../lib/toast.js";
 import { Avatar } from "./Avatar.js";
 import { NEW_CHAT_EVENT } from "./ChatList.js";
 import { AirIcon, PlusIcon, RefreshIcon, SearchIcon, SlidersIcon, LinkOffIcon } from "./Icons.js";
 import { RADIO_INNER, RADIO_TITLES, radioTitle } from "./RadioPages.js";
+import { useSettingContext } from "./SettingsFind.js";
 
 interface Item {
   group: string;
@@ -30,6 +32,7 @@ interface Item {
 export function Palette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const state = useSession();
   const hasConsole = useOwnConsole();
+  const settings = useSettingContext();
   const [query, setQuery] = useState("");
   const [at, setAt] = useState(0);
   const field = useRef<HTMLInputElement>(null);
@@ -48,6 +51,8 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
     const chats: Item[] = summarize(state).map((row) => ({ group: t("app.palette.group.chats"), label: row.title, hint: row.preview ?? undefined, icon: <Avatar name={row.title} type={row.contact?.type} channel={row.kind === "channel" ? chatAccess(row.id, row.channel) : undefined} size={22} />, run: () => openConversation(row.id) }));
     const nodes: Item[] = Object.values(state.contacts).map((c) => ({ group: t("app.palette.group.mesh"), label: c.name || c.prefix, hint: kindLabel(c.type), icon: <Avatar name={c.name || c.prefix} type={c.type} size={22} />, run: () => openProfile(c.key, true) }));
     const pages: Item[] = (Object.keys(RADIO_TITLES) as RadioPage[]).filter((page) => !RADIO_INNER.has(page) && (page !== "console" || hasConsole)).map((page) => ({ group: t("app.palette.group.settings"), label: radioTitle(page), icon: <SlidersIcon size={16} />, run: () => openRadioPage(page) }));
+    // The rows inside the pages too, each with where it is, opened with the row lit.
+    const rows: Item[] = settingRows(settings).map((s) => ({ group: t("app.palette.group.settings"), label: settingName(s, settings), hint: settingPlace(s), icon: <SlidersIcon size={16} />, run: () => openSetting(s, settings) }));
     const commands: Item[] = [
       { group: t("app.palette.group.commands"), label: t("app.palette.newChat"), icon: <PlusIcon size={16} />, run: () => { goSection("chats"); setTimeout(() => window.dispatchEvent(new Event(NEW_CHAT_EVENT))); } },
       ...(online
@@ -59,8 +64,8 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
         : []),
       { group: t("app.palette.group.commands"), label: t("app.palette.disconnect"), icon: <LinkOffIcon size={16} />, run: () => void disconnect() },
     ];
-    return [...chats, ...nodes, ...pages, ...commands];
-  }, [state, hasConsole]);
+    return [...chats, ...nodes, ...pages, ...rows, ...commands];
+  }, [state, hasConsole, settings]);
 
   const q = query.trim().toLowerCase();
   const shown = q ? items.filter((i) => i.label.toLowerCase().includes(q) || (i.hint ?? "").toLowerCase().includes(q)) : items;

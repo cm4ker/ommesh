@@ -84,6 +84,12 @@
   min-height: calc(52px + var(--safe-top));
   padding: var(--safe-top) var(--space-2) 0 var(--space-4);
 }
+/* Settings' search on a phone: the field in the title's place, Cancel after it. */
+.settings-find-head .search {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
 .app.wide .list-head {
   min-height: 52px;
   padding-top: 0;

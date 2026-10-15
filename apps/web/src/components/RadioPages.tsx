@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AdvertLocPolicy, AdvType, canControl, isTrusted, regionSupport, TelemMode, type ContactRecord, type SessionState } from "@meshnet/meshcore";
 import { autostartEnabled, autostartLabel, hasAutostart, setAutostart } from "../lib/autostart.js";
 import { agoPhrase, dayLabel, timeOfDay } from "../lib/format.js";
@@ -46,6 +46,7 @@ import { OwnReadings } from "./NodeReadings.js";
 import { HistoryPage } from "./HistoryPage.js";
 import { KeyPage } from "./KeyPage.js";
 import { PinPage } from "./PinPage.js";
+import { useSettingFlash } from "./SettingsFind.js";
 import { WifiPage } from "./WifiPage.js";
 import { regionLabel, RegionSheet } from "./RegionSheet.js";
 import { ScreenHead, type Chrome } from "./ScreenHead.js";
@@ -236,12 +237,15 @@ function setPosition(text: string, one: (n: number) => Promise<void>): Promise<v
 }
 
 export function RadioPageView({ page, chrome }: { page: RadioPage; chrome: Chrome }) {
+  const scroller = useRef<HTMLDivElement>(null);
+  // A setting found by the search is lit once its page is up.
+  useSettingFlash(page, scroller);
   return (
     <div className="screen">
       <ScreenHead chrome={chrome}>
         <span className="screen-name">{radioTitle(page)}</span>
       </ScreenHead>
-      {page === "log" ? <LogView /> : page === "air" ? <AirView /> : page === "console" ? <OwnConsole /> : <div className="screen-scroll">{<PageBody page={page} />}</div>}
+      {page === "log" ? <LogView /> : page === "air" ? <AirView /> : page === "console" ? <OwnConsole /> : <div className="screen-scroll" ref={scroller}>{<PageBody page={page} />}</div>}
     </div>
   );
 }

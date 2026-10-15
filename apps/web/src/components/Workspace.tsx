@@ -6,6 +6,7 @@ import { summarize, totalUnread } from "../lib/conversations.js";
 import { pairLink, reconnectNow, useLink } from "../lib/link.js";
 import { useWide } from "../lib/layout.js";
 import { back, focusOnMap, getNav, goSection, openConversation, setStack, shownConversation, topOf, useNav, type Nav, type Screen, type Section } from "../lib/nav.js";
+import { setSettingsFind } from "../lib/settingsSearch.js";
 import { useMeshTool, type MeshTool } from "../lib/meshTool.js";
 import { isTauri } from "../lib/platform.js";
 import { useSelector, useSession } from "../lib/session.js";
@@ -596,6 +597,10 @@ function useDesktopKeys({ openPalette, togglePanel, escape }: { openPalette: () 
           e.preventDefault();
           find.focus();
           find.select();
+        } else if (getNav().section === "radio") {
+          // Settings keep their field behind the magnifier: this opens it, and the field takes the keys.
+          e.preventDefault();
+          setSettingsFind({ open: true });
         }
       } else if (mod && key === "i") {
         e.preventDefault();

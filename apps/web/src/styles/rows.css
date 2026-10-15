@@ -35,6 +35,19 @@
 .screen-scroll > .search {
   margin-top: var(--space-3);
 }
+/* A setting a search opened: lit for a moment where it sits on its page. */
+.setting-flash {
+  animation: setting-flash 2s ease-out;
+}
+@keyframes setting-flash {
+  0%,
+  40% {
+    background: color-mix(in oklab, var(--accent) 22%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
 .line {
   position: relative;
   width: 100%;

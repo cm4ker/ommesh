@@ -6,6 +6,8 @@ import { battery, batteryPercent, lowCharge, ownBatteryMv } from "../lib/format.
 import { disconnect, useLink } from "../lib/link.js";
 import { useLookalikePrefs } from "../lib/lookalikes.js";
 import { openRadioPage, type RadioPage } from "../lib/nav.js";
+import { useWide } from "../lib/layout.js";
+import { findSettings, getSettingsFind, openSetting, setSettingsFind, subscribeSettingsFind } from "../lib/settingsSearch.js";
 import { canHover } from "../lib/platform.js";
 import { placeOpen } from "../lib/privacy.js";
 import { PULL_TRIGGER, usePull } from "../lib/pull.js";
@@ -18,12 +20,14 @@ import { memoryUse } from "../lib/tidy.js";
 import { getPreference, subscribeTheme } from "../theme/store.js";
 import { findTheme } from "../theme/themes.js";
 import { Button, IconButton } from "../ui/Button.js";
+import { SearchField } from "../ui/Field.js";
 import { Group, LinkRow } from "../ui/List.js";
 import { showMenu } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
-import { AirIcon, AlertIcon, BellIcon, FileIcon, GaugeIcon, InfoIcon, LinkIcon, LogIcon, PaletteIcon, PersonIcon, PowerIcon, RadioIcon, RefreshIcon, ShieldIcon, SlidersIcon, TextIcon, UsersIcon, WavesIcon } from "./Icons.js";
+import { AirIcon, AlertIcon, BellIcon, FileIcon, GaugeIcon, InfoIcon, LinkIcon, LogIcon, PaletteIcon, PersonIcon, PowerIcon, RadioIcon, RefreshIcon, SearchIcon, ShieldIcon, SlidersIcon, TextIcon, UsersIcon, WavesIcon } from "./Icons.js";
 import { presetName, radioTitle } from "./RadioPages.js";
 import { readingsSummary } from "./Readings.js";
+import { SettingsResults, useSettingContext } from "./SettingsFind.js";
 
 
 /** Advertising: once to the neighbours, or flooded across the mesh. */
@@ -64,18 +68,58 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
   const link = useLink();
   const scroller = useRef<HTMLDivElement>(null);
   const pull = usePull(scroller, onPull, online && !reading);
+  // The field lives behind the magnifier: pulling the list down is taken, it reads the radio again.
+  const find = useSyncExternalStore(subscribeSettingsFind, getSettingsFind);
+  const ctx = useSettingContext();
+  const wide = useWide();
+  const searching = find.open && find.query.trim() !== "";
+  const closeFind = () => setSettingsFind({ open: false, query: "" });
+  const field = (
+    <SearchField
+      value={find.query}
+      onValue={(query) => setSettingsFind({ query })}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          closeFind();
+        } else if (e.key === "Enter") {
+          const first = findSettings(find.query, ctx)[0];
+          if (first) openSetting(first, ctx);
+        }
+      }}
+      placeholder={t("radio.search.open")}
+      aria-label={t("radio.search.open")}
+      enterKeyHint="search"
+      autoFocus
+      data-find
+    />
+  );
 
   return (
     <div className="list-pane radio-home">
-      <header className="list-head">
-        <h1>{t("radio.home.title")}</h1>
-        {/* A phone pulls the list down instead. */}
-        {canHover() ? (
-          <IconButton label={t("radio.home.resync")} disabled={!online || !!reading} onClick={onPull}>
-            <RefreshIcon size={17} className={reading ? "spin" : ""} />
+      {find.open && !wide ? (
+        // On a phone the open field takes the title's place, with Cancel beside it, as iOS has it.
+        <header className="list-head settings-find-head">
+          {field}
+          <Button variant="ghost" onClick={closeFind}>
+            {t("common.cancel")}
+          </Button>
+        </header>
+      ) : (
+        <header className="list-head">
+          <h1>{t("radio.home.title")}</h1>
+          {/* A phone pulls the list down instead. */}
+          {canHover() ? (
+            <IconButton label={t("radio.home.resync")} disabled={!online || !!reading} onClick={onPull}>
+              <RefreshIcon size={17} className={reading ? "spin" : ""} />
+            </IconButton>
+          ) : null}
+          <IconButton label={t("radio.search.open")} className={find.open ? "on" : undefined} aria-pressed={find.open} onClick={() => (find.open ? closeFind() : setSettingsFind({ open: true }))}>
+            <SearchIcon size={18} />
           </IconButton>
-        ) : null}
-      </header>
+        </header>
+      )}
+      {find.open && wide ? field : null}
       {reading ? (
         <div className="resync-bar" role="progressbar" aria-valuemin={0} aria-valuemax={STEP_COUNT} aria-valuenow={reading.index}>
           <i style={{ width: `${((reading.index + 0.5) / STEP_COUNT) * 100}%` }} />
@@ -88,32 +132,36 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
             <span>{pull >= PULL_TRIGGER ? t("radio.home.release") : t("radio.home.pull")}</span>
           </div>
         ) : null}
-        <div className="radio-card">
-          <div className="radio-card-head">
-            {/* A glyph, not initials: "Node-21" would read "NO". The fallback name only picks the hue, the same in every language. */}
-            <Avatar name={self?.name ?? "Radio"} size={44} icon={<RadioIcon size={22} />} />
-            <span className="row-main">
-              <span className="row-title">{self?.name ?? t("connect.rail.theRadio")}</span>
-              <span className={["row-sub", online ? "muted" : "danger"].join(" ")}>
-                {!online
-                  ? link.phase === "connecting"
-                    ? t("radio.home.offlineReconnecting")
-                    : t("radio.home.offline")
-                  : reading
-                    ? t("radio.home.resyncStep", { step: stepLabel(reading.step), index: reading.index + 1, total: STEP_COUNT })
-                    : state.link
-                      ? state.link.label
-                      : t("radio.home.online")}
-              </span>
-            </span>
-            <button type="button" className="radio-battery" disabled={!self} title={t("radio.titles.readings")} onClick={() => openRadioPage("readings")}>
-              {mv !== null ? (
-                <>
-                  <b className={low ? "low" : undefined} title={low ? t("node.readings.lowCharge") : undefined}>
-                    {low ? <AlertIcon size={13} role="img" aria-hidden={false} aria-label={t("node.readings.lowCharge")} /> : null}
-                    {batteryPercent(mv, cell)}%
-                  </b>
-                  <small>{battery(mv)}</small>
+        {searching ? (
+          <SettingsResults query={find.query} />
+        ) : (
+          <>
+            <div className="radio-card">
+              <div className="radio-card-head">
+                {/* A glyph, not initials: "Node-21" would read "NO". The fallback name only picks the hue, the same in every language. */}
+                <Avatar name={self?.name ?? "Radio"} size={44} icon={<RadioIcon size={22} />} />
+                <span className="row-main">
+                  <span className="row-title">{self?.name ?? t("connect.rail.theRadio")}</span>
+                  <span className={["row-sub", online ? "muted" : "danger"].join(" ")}>
+                    {!online
+                      ? link.phase === "connecting"
+                        ? t("radio.home.offlineReconnecting")
+                        : t("radio.home.offline")
+                      : reading
+                        ? t("radio.home.resyncStep", { step: stepLabel(reading.step), index: reading.index + 1, total: STEP_COUNT })
+                        : state.link
+                          ? state.link.label
+                          : t("radio.home.online")}
+                  </span>
+                </span>
+                <button type="button" className="radio-battery" disabled={!self} title={t("radio.titles.readings")} onClick={() => openRadioPage("readings")}>
+                  {mv !== null ? (
+                    <>
+                      <b className={low ? "low" : undefined} title={low ? t("node.readings.lowCharge") : undefined}>
+                        {low ? <AlertIcon size={13} role="img" aria-hidden={false} aria-label={t("node.readings.lowCharge")} /> : null}
+                        {batteryPercent(mv, cell)}%
+                      </b>
+                      <small>{battery(mv)}</small>
                 </>
               ) : (
                 <b>—</b>
@@ -152,6 +200,8 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
           {row("power", <PowerIcon size={17} />)}
           {row("about", <InfoIcon size={17} />, appInfo.version)}
         </Group>
+          </>
+        )}
       </div>
     </div>
   );

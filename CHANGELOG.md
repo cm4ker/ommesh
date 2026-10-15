@@ -4,6 +4,9 @@
 
 ## Unreleased
 
+### Connecting
+- A radio in the connect list that is no longer there can be forgotten: hold its row, or right-click it on a PC, and choose Forget. A radio wiped or flashed afresh often comes back at a new Bluetooth address, and its old address used to stay in the list for good, a faded row beside the new one. Now the old one goes by itself the first time you connect to the radio at its new address. Forget also works for network addresses you no longer use.
+
 ### Chats
 - On a PC, a chat you open is ready to write in: the cursor waits in the message field, so you can start typing at once. Before, what you typed after picking a chat in the list went nowhere until you clicked the field.
 - The place pin in an empty message field puts a place in only when held: a tap on it just says to hold it. Right after a message goes, the send arrow under your thumb turns into the pin, and a second tap used to put a place in by mistake. With a mouse a click still puts one, and so does Enter.

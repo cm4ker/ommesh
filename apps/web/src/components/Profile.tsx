@@ -31,6 +31,8 @@ const PAGES: Record<NodePage, { label: Key; icon: React.ReactNode; admin: boolea
   settings: { label: "mesh.tab.settings", icon: <SlidersIcon size={17} />, admin: true },
   access: { label: "mesh.tab.access", icon: <ShieldIcon size={17} />, admin: true },
   console: { label: "mesh.tab.console", icon: <TerminalIcon size={17} />, admin: true },
+  // Opened from the readings, not listed with the others.
+  push: { label: "node.page.push", icon: <ChartIcon size={17} />, admin: false },
 };
 
 /** A sign-in's role, as the firmware's ACL has it (`aclRoleName`), in the reader's words. */

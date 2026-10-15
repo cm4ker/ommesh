@@ -4,7 +4,7 @@ import { ByteWriter, fromHex, fromUtf8, toHex } from "./protocol/bytes.js";
 import { Cmd, ContactFlag, ErrCode, Push, Resp, TxtType } from "./protocol/codes.js";
 import { groupDataPayload, groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
 import { crockford, decodeReaction, encodeReaction, messageHash, REACTION_DATA_TYPE } from "./protocol/reaction.js";
-import { canControl, channelConversation, CLOCK_RESET_TIME, ClockAheadError, contactConversation, isTrusted, KEYLESS_CONVERSATION, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
+import { canControl, channelConversation, PushRefusedError, CLOCK_RESET_TIME, ClockAheadError, contactConversation, isTrusted, KEYLESS_CONVERSATION, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
 import { BaseTransport } from "./transport.js";
 import { TimeoutError, TransportClosedError } from "./client.js";
 
@@ -3086,7 +3086,7 @@ test("a radio without a console of its own says so on the line", async () => {
   assert.deepEqual([entry.status, entry.error], ["failed", "This radio has no console."]);
 });
 
-test("someone asking this radio to run a console command is not a chat line", async () => {
+test("someone asking this radio to run a console command is not a message: it is kept as a command not run", async () => {
   const radio = new ScriptedRadio();
   radio.queue.push(
     new ByteWriter().u8(Resp.ContactMsgRecvV3).i8(20).u16(0).bytes(BOB.subarray(0, 6)).u8(0).u8(TxtType.CliCommand).u32(1_700_000_070).string("reboot").toBytes(),
@@ -3094,8 +3094,9 @@ test("someone asking this radio to run a console command is not a chat line", as
   );
   const session = new MeshSession({ now: () => 1_700_000_100_000 });
   await session.connect(radio);
-  await until(() => session.getState().messages.length > 0);
-  assert.deepEqual(session.getState().messages.map((m) => m.text), ["hello"]);
+  await until(() => session.getState().messages.length > 1);
+  assert.deepEqual(session.getState().messages.filter((m) => m.txtType !== TxtType.CliCommand).map((m) => m.text), ["hello"]);
+  assert.equal(session.getState().unread[contactConversation(toHex(BOB))], 1, "only the message is unread");
 });
 
 test("a key given to the radio goes with its name, the history is saved under the old key, and the radio reboots", async () => {
@@ -3359,5 +3360,68 @@ test("a person's radio is sent a console command of its own kind, and its answer
   radio.push(new Uint8Array([Push.MsgWaiting]));
   assert.equal(await reply, "> Bob");
   assert.equal(session.getState().consoles[key]?.at(-1)?.status, "done");
+  await session.disconnect();
+});
+
+const WEATHER = fromHex("e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff00");
+const WEATHER_KEY = toHex(WEATHER);
+
+/** A radio that holds a sensor, and the session on it. */
+async function sensorSession() {
+  const radio = new ScriptedRadio();
+  radio.contacts = [contactFrame(WEATHER, "Weather", 10, 4)];
+  const session = new MeshSession({ now: () => 1_700_000_000_000, replyWaitMs: () => 2000 });
+  await session.connect(radio);
+  await settle();
+  return { radio, session };
+}
+
+test("a sensor asked to send by itself says for how long, and what it then sends is kept as its readings", async () => {
+  const { radio, session } = await sensorSession();
+  const asked = session.watchSensor(WEATHER_KEY, [{ channel: 2, type: "temperature", delta: 0.5 }]);
+  await tick();
+  const request = radio.sent.filter((f) => f[0] === Cmd.SendBinaryReq).at(-1)!;
+  assert.equal(request[33], 0x08, "a subscribe");
+  const tag = new DataView(request.buffer, request.byteOffset + 34, 4).getUint32(0, true);
+  assert.equal(session.getState().pushes[WEATHER_KEY]?.state, "asking");
+  radio.push(new ByteWriter().u8(Push.BinaryResponse).u8(0).u32(radio.binaryTag).u16(65535).u16(0).string("omsk").toBytes());
+  const watch = await asked;
+  assert.equal(watch.state, "on");
+  assert.equal(watch.tag, tag);
+  assert.equal(watch.region, "omsk");
+  assert.equal(watch.until, 1_700_000_000_000 + 65_535_000);
+  // Later, by itself: its clock, then its telemetry, under the tag.
+  radio.push(new ByteWriter().u8(Push.BinaryResponse).u8(0).u32(tag).u32(1_700_000_100).bytes(new Uint8Array([2, 103, 0, 148])).toBytes());
+  await settle();
+  assert.deepEqual(session.getState().telemetry[WEATHER_KEY]?.readings, [{ channel: 2, type: "temperature", celsius: 14.8 }]);
+  await session.disconnect();
+});
+
+test("a sensor with no region to send under says 0, and the switch is off again", async () => {
+  const { radio, session } = await sensorSession();
+  const asked = session.watchSensor(WEATHER_KEY, [{ channel: 2, type: "humidity", delta: 2 }]);
+  await tick();
+  radio.push(new ByteWriter().u8(Push.BinaryResponse).u8(0).u32(radio.binaryTag).u16(0).u16(0).toBytes());
+  await assert.rejects(asked, PushRefusedError);
+  assert.equal(session.getState().pushes[WEATHER_KEY]?.state, "refused");
+  await session.disconnect();
+});
+
+test("stopping forgets the sensor's tag at once and tells it once", async () => {
+  const { radio, session } = await sensorSession();
+  const asked = session.watchSensor(WEATHER_KEY, [{ channel: 2, type: "temperature", delta: 0.5 }]);
+  await tick();
+  radio.push(new ByteWriter().u8(Push.BinaryResponse).u8(0).u32(radio.binaryTag).u16(600).u16(0).toBytes());
+  const { tag } = await asked;
+  const stopped = session.unwatchSensor(WEATHER_KEY);
+  assert.equal(session.getState().pushes[WEATHER_KEY], undefined);
+  await tick();
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.SendBinaryReq).at(-1)![33], 0x09, "an unsubscribe");
+  radio.push(new ByteWriter().u8(Push.BinaryResponse).u8(0).u32(radio.binaryTag).bytes(new Uint8Array(10)).toBytes());
+  await stopped;
+  // Its last sends, before it heard, are not readings any more.
+  radio.push(new ByteWriter().u8(Push.BinaryResponse).u8(0).u32(tag).u32(1_700_000_100).bytes(new Uint8Array([2, 103, 0, 148])).toBytes());
+  await settle();
+  assert.equal(session.getState().telemetry[WEATHER_KEY], undefined);
   await session.disconnect();
 });

@@ -17,6 +17,7 @@ import { publicKeyOf } from "./protocol/identity.js";
 import { REACTION_DATA_TYPE, decodeReaction, directReactionText, encodeReaction, messageHash, parseDirectReaction, parseTextReaction } from "./protocol/reaction.js";
 import { PayloadType, parseRawPacket, type RawPacket } from "./protocol/packet.js";
 import { UNSCOPED, readRegionList, regionKey, regionsRequest } from "./protocol/region.js";
+import { PUSH_MAX_SECS, readPushed, readSubscribeAnswer, subscribeRequest, unsubscribeRequest, type PushThreshold } from "./protocol/push.js";
 import { AclRole, AdvType, Cmd, ContactFlag, ControlType, DIRECT_TEXT_LEN, ErrCode, MAX_TEXT_LEN, NeighbourOrder, OUT_PATH_UNKNOWN, PUB_KEY_PREFIX_SIZE, ROOM_TEXT_LEN, StatsType, TxtType } from "./protocol/codes.js";
 import {
   accessListRequest,
@@ -440,6 +441,8 @@ export interface SessionState {
   sharedAt: number | null;
   /** The radio's Wi-Fi (MeshCore 1.18); null when it has none, or before it is read. */
   wifi: RadioWifi | null;
+  /** The sensors asked to send their readings by themselves (MeshCore 1.18), by key. */
+  pushes: Record<string, PushWatch>;
 }
 
 /** What survives a disconnect, per radio. */
@@ -464,6 +467,8 @@ export interface PersistedState {
   consoles?: Record<string, ConsoleEntry[]>;
   /** Absent in history saved before a channel could have a region of its own. */
   channelRegions?: Record<string, string>;
+  /** Absent in history saved before sensors sent their readings by themselves. */
+  pushes?: Record<string, PushWatch>;
 }
 
 /** History brought in from a file, as `importHistory` takes it. */
@@ -521,6 +526,33 @@ export interface RadioWifi {
   /** Written since the radio last started: what is shown takes effect at its next start. */
   pending: boolean;
 }
+
+/** A sensor asked to send its readings by itself when they move (MeshCore 1.18). */
+export interface PushWatch {
+  /** What the sensor sends them under, chosen here. */
+  tag: number;
+  thresholds: PushThreshold[];
+  /** `asking` until it answers; `on` while it sends; `refused` when it said 0 (no region); `silent` when it said nothing. */
+  state: "asking" | "on" | "refused" | "silent";
+  /** When it stops sending unless asked again, ms; null until it agreed. */
+  until: number | null;
+  /** The region it sends under, as it said. */
+  region: string | null;
+  /** When it was last asked, ms. */
+  askedAt: number;
+}
+
+/** A sensor said it will not send by itself: it has no region to send under. */
+export class PushRefusedError extends Error {
+  constructor() {
+    super("the sensor has no region to send its readings under");
+    this.name = "PushRefusedError";
+  }
+}
+
+/** A sensor is asked again this long before it would stop sending, and not more often than `PUSH_RETRY_MS`. */
+const PUSH_RENEW_MS = 2 * 3600 * 1000;
+const PUSH_RETRY_MS = 30 * 60 * 1000;
 
 /** The longest network name and password the firmware keeps (`wifi_ssid[33]`, `wifi_pwd[64]`). */
 export const WIFI_SSID_MAX = 32;
@@ -883,8 +915,8 @@ function guessPathSince(lastMod: number, now: number): number {
 
 /** The part of the state that is kept per radio. */
 function historyOf(state: SessionState): PersistedState {
-  const { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles, channelRegions } = state;
-  return { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles, channelRegions };
+  const { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles, channelRegions, pushes } = state;
+  return { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles, channelRegions, pushes };
 }
 
 /**
@@ -990,6 +1022,7 @@ const EMPTY: SessionState = {
   connectStep: null,
   sharedAt: null,
   wifi: null,
+  pushes: {},
 };
 
 /** How long after sending a channel message its echoes are still looked for. */
@@ -1407,7 +1440,10 @@ export class MeshSession {
       // meanwhile, with the stored contacts and channels.
       this.set({ status: "ready", connectStep: null });
       onReady?.();
-      this.routeTimer = setInterval(() => void this.sweepRoutes(), ROUTE_SWEEP_MS);
+      this.routeTimer = setInterval(() => {
+        void this.sweepRoutes();
+        void this.renewPushes();
+      }, ROUTE_SWEEP_MS);
       // Node keeps a process alive for an interval; a browser has no such notion.
       (this.routeTimer as { unref?: () => void }).unref?.();
       this.retryTimer = setInterval(() => void this.sweepRetries(), RETRY_SWEEP_MS);
@@ -1488,6 +1524,7 @@ export class MeshSession {
       routing: persisted?.routing ?? EMPTY.routing,
       consoles: restoredConsoles(persisted?.consoles),
       channelRegions: persisted?.channelRegions ?? {},
+      pushes: persisted?.pushes ?? {},
     };
   }
 
@@ -3903,6 +3940,97 @@ export class MeshSession {
     await this.need().runCliCommandUnanswered("poweroff");
   }
 
+  /**
+   * Asks a sensor to send its readings by itself whenever one moves past its
+   * threshold (MeshCore 1.18), for as long as it takes: the app asks again
+   * before that runs out while this stays on. It needs a sign-in that may read,
+   * and a region on the sensor to send under; without one it says so with a
+   * `PushRefusedError`. One that says nothing throws `NoReplyError`.
+   */
+  async watchSensor(key: string, thresholds: PushThreshold[]): Promise<PushWatch> {
+    this.needContact(key);
+    const kept = this.state.pushes[key];
+    // A tag of its own, kept over a renewal, so what the sensor sends is known by it alone.
+    const tag = kept?.tag || (Math.floor(Math.random() * 0xfffffffe) + 1) >>> 0;
+    const body = subscribeRequest(tag, PUSH_MAX_SECS, thresholds);
+    this.setPush(key, { tag, thresholds, state: kept?.state === "on" ? "on" : "asking", until: kept?.until ?? null, region: kept?.region ?? null, askedAt: this.now() });
+    try {
+      return await this.binaryRequest(key, "readings by itself", body, (data) => this.tookSubscribe(key, tag, data));
+    } catch (error) {
+      const now = this.state.pushes[key];
+      if (now?.tag === tag && now.state === "asking") this.setPush(key, { ...now, state: error instanceof PushRefusedError ? "refused" : "silent" });
+      throw error;
+    }
+  }
+
+  private tookSubscribe(key: string, tag: number, data: Uint8Array): PushWatch {
+    const { secs, region } = readSubscribeAnswer(data);
+    const kept = this.state.pushes[key];
+    if (!kept || kept.tag !== tag) throw new Error("no longer asked for");
+    if (secs === 0) {
+      this.setPush(key, { ...kept, state: "refused", until: null });
+      throw new PushRefusedError();
+    }
+    const watch: PushWatch = { ...kept, state: "on", until: this.now() + secs * 1000, region };
+    this.setPush(key, watch);
+    this.log("telemetry", `${this.state.contacts[key]?.name ?? key} sends its readings by itself for ${Math.round(secs / 60)} min${region ? ` under ${region}` : ""}`);
+    return watch;
+  }
+
+  /** Stops a sensor sending by itself. It is forgotten here at once; the sensor is told once, and stops when its time runs out if it does not hear. */
+  async unwatchSensor(key: string): Promise<void> {
+    const pushes = { ...this.state.pushes };
+    delete pushes[key];
+    this.set({ pushes });
+    try {
+      await this.binaryRequest(key, "readings by itself, no more", unsubscribeRequest(), () => undefined);
+    } catch (error) {
+      this.log("telemetry", `stop not heard: ${(error as Error).message}`);
+    }
+  }
+
+  private setPush(key: string, watch: PushWatch): void {
+    this.set({ pushes: { ...this.state.pushes, [key]: watch } });
+  }
+
+  /** Readings a sensor sent by itself, known by their tag: kept as an answer to a telemetry request is. */
+  private takePushed(tag: number, data: Uint8Array): boolean {
+    const entry = Object.entries(this.state.pushes).find(([, w]) => w.tag === tag);
+    if (!entry) return false;
+    const [key] = entry;
+    let readings: LppReading[];
+    try {
+      readings = readPushed(data).readings;
+    } catch (error) {
+      this.log("error", `readings sent by ${key}: ${(error as Error).message}`);
+      return true;
+    }
+    const battery = readings.find((r) => r.channel === TELEMETRY_SELF_CHANNEL && r.type === "voltage");
+    this.set({
+      telemetry: { ...this.state.telemetry, [key]: { readings, at: this.now() } },
+      ...(battery?.type === "voltage" ? this.noteBattery(key, Math.round(battery.volts * 1000)) : {}),
+      ...this.noteReadings(key, readings),
+    });
+    this.heardFrom(key, this.now());
+    this.log("telemetry", `${this.state.contacts[key]?.name ?? key} sent ${readings.length} reading(s) by itself`);
+    return true;
+  }
+
+  /**
+   * Asks each sensor that sends by itself again before its time runs out:
+   * once, and again no sooner than half an hour after. Ones whose time ran out
+   * are left alone.
+   */
+  private async renewPushes(): Promise<void> {
+    if (this.state.status !== "ready") return;
+    const now = this.now();
+    for (const [key, w] of Object.entries(this.state.pushes)) {
+      if (w.state !== "on" || w.until === null || w.until < now || w.until - now > PUSH_RENEW_MS || now - w.askedAt < PUSH_RETRY_MS) continue;
+      if (!this.state.contacts[key]) continue;
+      await this.watchSensor(key, w.thresholds).catch((error: unknown) => this.log("telemetry", `asking ${key} again: ${(error as Error).message}`));
+    }
+  }
+
   // ---- repeaters, rooms and sensors ----
   //
   // The radio keeps one request to a remote node pending at a time: each new
@@ -4776,6 +4904,7 @@ export class MeshSession {
         return;
       }
       case "binaryResponse":
+        if (this.takePushed(frame.tag, frame.data)) return;
         this.log("binary", `tag ${frame.tag.toString(16)}: ${frame.data.length} byte(s)`);
         this.remoteEvent({ kind: "binary", tag: frame.tag, data: frame.data });
         return;

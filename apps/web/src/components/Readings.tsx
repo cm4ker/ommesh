@@ -37,6 +37,11 @@ const LABELS: Record<LppReading["type"], Key> = {
   unknown: "radio.readings.unknown",
 };
 
+/** What a kind of reading measures, in the reader's language: "Temperature". */
+export function readingName(type: LppReading["type"]): string {
+  return t(LABELS[type]);
+}
+
 /** The channel the firmware gives the radio itself: its battery, its processor's temperature, its GPS. */
 const SELF_CHANNEL = 1;
 /** How far back a reading's line goes; the session trims what is older only as the next answer comes. */

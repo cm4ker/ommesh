@@ -10,6 +10,7 @@ import { reach } from "../lib/privacy.js";
 import { useFollowStatus } from "../lib/followPhone.js";
 import { act, toast } from "../lib/toast.js";
 import { ActionRow, ChoiceRow, Group, InfoRow, LinkRow } from "../ui/List.js";
+import { PushRows } from "./node/SensorPush.js";
 import { Sheet } from "../ui/Sheet.js";
 import { AlertIcon } from "./Icons.js";
 import { numberText, Readings } from "./Readings.js";
@@ -208,6 +209,8 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
           <TileGrid tiles={batteryTiles} />
           {telemetry ? <Readings readings={telemetry.readings} history={state.readingHistory[key]} skipBattery titled from={state.self} onMap={() => showOnMap(key, true)} /> : null}
           {contact.type === AdvType.Sensor && login?.ok ? <LinkRow label={t("node.page.history")} value={t("node.readings.historyHint")} onClick={() => openNodePage(key, "history")} /> : null}
+          {/* A sensor on 1.18 sends by itself; only a radio on 1.18 hands up what it sends. */}
+          {contact.type === AdvType.Sensor && login?.ok && (state.device?.firmwareVerCode ?? 0) >= 14 ? <PushRows contact={contact} online={online} /> : null}
           <ActionRow label={t("node.readings.refresh")} air busy={busy === "telemetry"} disabled={!online || busy !== null} onClick={askTelemetry} />
         </Group>
         {sheet}

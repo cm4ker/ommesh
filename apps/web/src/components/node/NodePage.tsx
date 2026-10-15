@@ -12,6 +12,7 @@ import { Console } from "./Console.js";
 import { History } from "./History.js";
 import { Neighbours } from "./Neighbours.js";
 import { QueuePill } from "./QueuePill.js";
+import { PushPage } from "./SensorPush.js";
 import { Settings } from "./Settings.js";
 
 const LABELS: Record<NodePage, Key> = {
@@ -20,6 +21,7 @@ const LABELS: Record<NodePage, Key> = {
   settings: "node.page.settings",
   access: "node.page.access",
   console: "node.page.console",
+  push: "node.page.push",
 };
 const ADMIN_ONLY = new Set<NodePage>(["settings", "access", "console"]);
 
@@ -59,6 +61,7 @@ export function NodePageView({ contactKey, page, chrome, tabs }: { contactKey: s
   else if (page === "history") body = <History contact={contact} />;
   else if (page === "settings") body = <Settings contact={contact} />;
   else if (page === "access") body = <Access contact={contact} />;
+  else if (page === "push") body = <PushPage contact={contact} />;
   else body = <Console contact={contact} />;
 
   const kind = nodeKindName(contact.type);

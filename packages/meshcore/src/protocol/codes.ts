@@ -278,6 +278,9 @@ export const ReqType = {
   GetNeighbours: 0x06,
   /** Repeaters only, firmware level 2 and up. */
   GetOwnerInfo: 0x07,
+  /** Sensors on MeshCore 1.18: send the readings by themselves when they move (see `protocol/push.ts`). */
+  Subscribe: 0x08,
+  Unsubscribe: 0x09,
 } as const;
 
 /** The low two bits of a client's permissions on a repeater, room or sensor (`ClientACL.h`). */

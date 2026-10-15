@@ -335,6 +335,16 @@ function demoTelemetrySelf(): Uint8Array {
 /** What anyone else's radio answers: its battery (4.02 V), its processor (28.0 °C) and its GPS. */
 const DEMO_TELEMETRY_OTHER = new Uint8Array([1, 0x74, 0x01, 0x92, 1, 0x67, 0x01, 0x18, 1, 0x88, 0x08, 0x65, 0xac, 0x0b, 0x31, 0xe4, 0x00, 0x23, 0x28]);
 
+/** The weather sensor's air on its channel 2, drifting a little: temperature, humidity, pressure, as LPP. */
+function weatherLpp(): Uint8Array {
+  const minute = Date.now() / 60_000;
+  const celsius = 14.2 + Math.sin(minute / 3) * 0.8;
+  const humidity = 63 + Math.sin(minute / 5) * 3;
+  const hpa = 1012.4 + Math.sin(minute / 7) * 0.6;
+  const be = (v: number) => [(v >> 8) & 0xff, v & 0xff];
+  return new Uint8Array([2, 0x67, ...be(Math.round(celsius * 10)), 2, 0x68, Math.round(humidity * 2), 2, 0x73, ...be(Math.round(hpa * 10))]);
+}
+
 function heardAt(hash: number): number {
   return Math.round(((HEARS[hash] ?? -4) + (Math.random() * 2 - 1)) * 4) / 4;
 }
@@ -431,6 +441,8 @@ class DemoRadio extends BaseTransport {
   /** Texts on Friends whose first send the repeaters already missed. */
   private missed = new Set<string>();
   private murmur: ReturnType<typeof setInterval> | null = null;
+  /** The weather sensor sending its readings by itself, while asked to. */
+  private pushTimer: ReturnType<typeof setInterval> | null = null;
   /** When the demo radio came up, unix seconds: the stamp the queued messages are dated from. */
   private readonly started = Math.floor(Date.now() / 1000);
 
@@ -765,6 +777,26 @@ class DemoRadio extends BaseTransport {
         return w.toBytes();
       case ReqType.GetOwnerInfo:
         return w.string(`v1.17.1\n${p.name}\n${this.prefs.get(p)!["owner.info"]!.replace(/\|/g, "\n")}`).toBytes();
+      case ReqType.Subscribe: {
+        // MeshCore 1.18: the sensor sends its readings by itself under the app's tag, here every 20 s,
+        // for as long as it was asked (its region is the demo's). The app's own clock tells the time.
+        if (p.type !== 4) return null;
+        const pushTag = (req[1] ?? 0) | ((req[2] ?? 0) << 8) | ((req[3] ?? 0) << 16) | ((req[4] ?? 0) << 24);
+        const secs = (req[5] ?? 0) | ((req[6] ?? 0) << 8);
+        if (this.pushTimer) clearInterval(this.pushTimer);
+        const until = Date.now() + secs * 1000;
+        this.pushTimer = setInterval(() => {
+          if (Date.now() > until) return;
+          this.emitFrame(
+            new ByteWriter().u8(Push.BinaryResponse).u8(0).u32(pushTag >>> 0).u32(Math.floor(Date.now() / 1000)).bytes(DEMO_TELEMETRY_OTHER).bytes(weatherLpp()).toBytes(),
+          );
+        }, 20_000);
+        return w.u16(secs).u16(0).string("omsk").toBytes();
+      }
+      case ReqType.Unsubscribe:
+        if (this.pushTimer) clearInterval(this.pushTimer);
+        this.pushTimer = null;
+        return w.zeros(10).toBytes();
       case ReqType.GetAvgMinMax: {
         const span = (req[1] ?? 0) | ((req[2] ?? 0) << 8) | ((req[3] ?? 0) << 16);
         const wide = Math.min(1, span / (7 * 86400));
@@ -1145,6 +1177,7 @@ class DemoRadio extends BaseTransport {
             .u8(0)
             .bytes(prefix)
             .bytes(frame.length > 4 ? DEMO_TELEMETRY_OTHER : demoTelemetrySelf())
+            .bytes(frame.length > 4 && this.person(frame.subarray(4, 10))?.type === 4 ? weatherLpp() : new Uint8Array())
             .toBytes(),
         );
         return frame.length > 4 ? [this.sent(this.acks++, this.floods(this.person(frame.subarray(4, 10))))] : [];
@@ -1330,6 +1363,7 @@ class DemoRadio extends BaseTransport {
     for (const t of this.timers) clearTimeout(t);
     if (this.chatter) clearInterval(this.chatter);
     if (this.murmur) clearInterval(this.murmur);
+    if (this.pushTimer) clearInterval(this.pushTimer);
   }
 }
 

@@ -15,7 +15,7 @@ import { readSetting, writeSetting } from "./storage.js";
 export type Section = "chats" | "mesh" | "radio";
 
 /** A repeater's, room's or sensor's own screens, past its profile. */
-export type NodePage = "neighbours" | "history" | "settings" | "access" | "console";
+export type NodePage = "neighbours" | "history" | "settings" | "access" | "console" | "push";
 
 /** The radio section's pages, as a list too: a news file's Show names one (news.ts). */
 export const RADIO_PAGES = ["name", "frequency", "readings", "privacy", "trusted", "remote", "contacts", "removed", "advanced", "console", "key", "pin", "wifi", "notifications", "sound", "soundDirect", "soundChats", "soundNodes", "messages", "history", "appearance", "background", "connection", "air", "log", "power", "about", "people", "news"] as const;

@@ -476,10 +476,21 @@ export function getDefaultFloodScope(): Uint8Array {
   return new ByteWriter().u8(Cmd.GetDefaultFloodScope).toBytes();
 }
 
-/** A raw datagram down an explicit path. Flooding is not offered by the firmware. */
-export function sendRawData(path: Uint8Array, payload: Uint8Array): Uint8Array {
+/**
+ * A path's length byte as the firmware reads it (`Packet::writePath`): the
+ * hops in the low six bits, the bytes per hop less one in the top two.
+ */
+export function encodedPathLen(path: Uint8Array, hashSize = 1): number {
+  if (hashSize < 1 || hashSize > 3 || path.length % hashSize !== 0) throw new Error(`a path of ${path.length} bytes is not made of ${hashSize}-byte hops`);
+  const hops = path.length / hashSize;
+  if (hops > 63) throw new Error("a path is at most 63 hops");
+  return ((hashSize - 1) << 6) | hops;
+}
+
+/** A raw datagram down an explicit path, `hashSize` bytes per hop. Flooding is not offered by the firmware. */
+export function sendRawData(path: Uint8Array, payload: Uint8Array, hashSize = 1): Uint8Array {
   if (payload.length < 4) throw new Error("a raw payload is at least 4 bytes");
-  return new ByteWriter().u8(Cmd.SendRawData).u8(path.length).bytes(path).bytes(payload).toBytes();
+  return new ByteWriter().u8(Cmd.SendRawData).u8(encodedPathLen(path, hashSize)).bytes(path).bytes(payload).toBytes();
 }
 
 export function sendChannelData(
@@ -487,10 +498,11 @@ export function sendChannelData(
   dataType: number,
   payload: Uint8Array,
   path?: Uint8Array,
+  hashSize = 1,
 ): Uint8Array {
   const w = new ByteWriter().u8(Cmd.SendChannelData).u8(channelIndex);
   if (path) {
-    w.u8(path.length).bytes(path);
+    w.u8(encodedPathLen(path, hashSize)).bytes(path);
   } else {
     w.u8(OUT_PATH_UNKNOWN);
   }

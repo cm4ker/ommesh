@@ -102,3 +102,13 @@ test("other params pack three telemetry modes into one byte", () => {
 test("a key of the wrong length is refused", () => {
   assert.throws(() => cmd.removeContact(new Uint8Array(31)), /32 bytes/);
 });
+
+test("a path's length byte carries the hops and the bytes per hop, as the firmware reads it", () => {
+  // Two hops of two bytes each: hash size 2 in the top bits, two hops below.
+  const raw = cmd.sendRawData(fromHex("a1b2c3d4"), fromHex("00112233"), 2);
+  assert.deepEqual([...raw.subarray(0, 6)], [Cmd.SendRawData, (1 << 6) | 2, 0xa1, 0xb2, 0xc3, 0xd4]);
+  // One-byte hops read as before 1.18: the length is the hop count.
+  assert.equal(cmd.sendRawData(fromHex("a1b2"), fromHex("00112233"))[1], 2);
+  assert.equal(cmd.sendChannelData(1, 0xff0e, fromHex("01"), fromHex("a1b2c3"), 3)[2], (2 << 6) | 1);
+  assert.throws(() => cmd.sendRawData(fromHex("a1b2c3"), fromHex("00112233"), 2), /2-byte hops/);
+});

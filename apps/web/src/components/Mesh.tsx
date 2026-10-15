@@ -796,6 +796,8 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
   const sheet = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const head = useRef<HTMLDivElement>(null);
+  // A finger that came down on the search field or the filter button, until it shows whether it taps or pulls.
+  const press = useRef<{ id: number; x: number; y: number; pulling: boolean } | null>(null);
   // The box's height, how much of its top the notch or the status bar takes, where the chips end in
   // the sheet, and how tall the tool or the list of nodes at one spot is.
   const [space, setSpace] = useState({ height: 0, top: 0, peek: 0, card: 0 });
@@ -1047,13 +1049,46 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
           ref={head}
           className="mesh-sheet-head"
           onPointerDown={(e) => {
-            if (e.button !== 0 || (e.target as HTMLElement).closest("input, button, label")) return;
+            if (e.button !== 0) return;
+            press.current = null;
+            if ((e.target as HTMLElement).closest("input, button, label")) {
+              // At the lowest position the search field and the filter button fill nearly all of the sheet that
+              // shows, so a finger that moves on them pulls it; one that lifts where it landed still taps them (#96).
+              // A mouse there selects text instead.
+              if (e.pointerType !== "mouse") press.current = { id: e.pointerId, x: e.clientX, y: e.clientY, pulling: false };
+              return;
+            }
             e.currentTarget.setPointerCapture(e.pointerId);
             motion.begin(e.clientY);
           }}
-          onPointerMove={(e) => motion.follow(e.clientY)}
-          onPointerUp={() => motion.release(true)}
-          onPointerCancel={() => motion.release(false)}
+          onPointerMove={(e) => {
+            const p = press.current;
+            if (p && !p.pulling) {
+              // Decided once the finger is past a tap's wobble: up or down pulls, sideways is left alone.
+              const dx = e.clientX - p.x;
+              const dy = e.clientY - p.y;
+              if (p.id !== e.pointerId || Math.hypot(dx, dy) <= 10) return;
+              if (Math.abs(dy) <= Math.abs(dx)) {
+                press.current = null;
+                return;
+              }
+              p.pulling = true;
+              e.currentTarget.setPointerCapture(e.pointerId);
+              motion.begin(e.clientY);
+              return;
+            }
+            motion.follow(e.clientY);
+          }}
+          onPointerUp={() => {
+            // A pull that began on the field or the button is no tap on the handle, however little it went.
+            const tap = press.current === null;
+            press.current = null;
+            motion.release(tap);
+          }}
+          onPointerCancel={() => {
+            press.current = null;
+            motion.release(false);
+          }}
         >
           <div className="sheet-grab" />
           {listed ? (

@@ -2,6 +2,11 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
+## Unreleased
+
+### Chats
+- Tap the start of a reply to go to the message it answers: the chat scrolls to it and it flashes. This works for replies from Ommesh and from MCO Advanced, MeshCore One and MeshTrax, which quote the start of the message. A reply that only names whom it answers, as the official app sends, goes to that person's latest message before it, and the arrows below step through their other messages. Quotes in Ommesh's replies now end in three dots instead of "…", as MCO Advanced writes them, so that app finds the message too. When the person wrote other messages starting the same way, the quote runs a little longer to tell them apart.
+
 ## 0.9.0 — 2026-10-16
 
 ### Connecting

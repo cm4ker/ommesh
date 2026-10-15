@@ -17,7 +17,7 @@ import type { LinkRadio } from "../lib/los.js";
 import { useDiscovery } from "../lib/discovery.js";
 import { FOLLOW_MOVE_M, followsPhone, radioHasGps, useFollowStatus } from "../lib/followPhone.js";
 import { locateOnce, locateText, phoneLocates, usePhone } from "../lib/phonePosition.js";
-import { contactEnd, defaultHeight, discoveryOverlay, EMPTY_OVERLAY, editOverlay, hearsOverlay, losOverlay, neighboursOverlay, relayOf, routeOverlay, selfEnd, spanOverlay, surveyOverlay, type MapDot, type MapHandle, type MapOverlay } from "../lib/mapOverlay.js";
+import { contactEnd, defaultHeight, directOverlay, discoveryOverlay, EMPTY_OVERLAY, editOverlay, hearsOverlay, losOverlay, neighboursOverlay, relayOf, routeOverlay, selfEnd, spanOverlay, surveyOverlay, type MapDot, type MapHandle, type MapOverlay } from "../lib/mapOverlay.js";
 import { setMeshTool, useMeshTool, type LosEnd, type MeshTool, type SurveyTool } from "../lib/meshTool.js";
 import { clearMeshPlace, useMeshPlace } from "../lib/meshPlace.js";
 import { useSurveys, type SurveysState } from "../lib/survey.js";
@@ -27,7 +27,7 @@ import { heardAt as heard, kindLabel } from "../lib/nodes.js";
 import { DEFAULT_NODE_ORDER, NODE_ORDERS, nodeComparator, orderInForce, pinnedFirst, placed, setNodeOrder, useNodeOrder } from "../lib/nodeOrder.js";
 import { endNodePick, extendNodePick, nodePick, pickedShown, startNodePick, toggleAllNodes, toggleNodePick, useNodePick } from "../lib/nodePick.js";
 import { usePress, type MenuAt } from "../lib/press.js";
-import { usePing, measuredLegs, spanKey } from "../lib/ping.js";
+import { directKey, usePing, measuredLegs, spanKey } from "../lib/ping.js";
 import { routeWords } from "../lib/routes.js";
 import { useSavedPasswords } from "../lib/secrets.js";
 import { openCleanUp, removeNodes } from "../lib/cleanUp.js";
@@ -597,7 +597,7 @@ function useMeshOverlay(selected: string | null, state: SessionState): MapOverla
   const tool = useMeshTool();
   const surveys = useSurveys();
   const focus = tool?.kind === "route" ? tool.key : tool?.kind === "span" ? tool.from : selected;
-  const ping = usePing(tool?.kind === "span" ? (tool.to ? spanKey(tool.from, tool.to) : null) : focus);
+  const ping = usePing(tool?.kind === "span" ? (tool.to ? spanKey(tool.from, tool.to) : null) : tool?.kind === "direct" ? directKey(tool.key) : focus);
   // A link between neighbours being checked marches.
   const linkPing = usePing(tool?.kind === "neighbours" && tool.link ? spanKey(tool.key, tool.link) : null);
   const discovery = useDiscovery(focus);
@@ -629,6 +629,8 @@ function useMeshOverlay(selected: string | null, state: SessionState): MapOverla
           ? hearsOverlay(hears, state)
         : tool?.kind === "survey"
           ? surveyOverlay(shownSurvey(tool, surveys), shownPoint(tool, surveys), state)
+          : tool?.kind === "direct"
+            ? directOverlay(tool.key, state, ping)
           : tool?.kind === "span"
             ? spanOverlay(tool.from, tool.to, state, ping)
           : tool?.kind === "neighbours"
@@ -738,7 +740,7 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
   const only = tool?.kind === "survey" ? tool.only : null;
   const dots = useMemo<MapDot[] | null>(() => (survey ? survey.points.map((p) => ({ lat: p.lat, lon: p.lon, tone: toneFor(p, only) })) : null), [survey, only]);
   const onDot = tool?.kind === "survey" ? (index: number) => setMeshTool({ ...tool, point: index }) : undefined;
-  const ping = usePing(tool?.kind === "span" ? (tool.to ? spanKey(tool.from, tool.to) : null) : selected);
+  const ping = usePing(tool?.kind === "span" ? (tool.to ? spanKey(tool.from, tool.to) : null) : tool?.kind === "direct" ? directKey(tool.key) : selected);
   const overlay = useMeshOverlay(selected, state);
   // The map redraws markers when the filter function changes, so it changes only with what it filters by.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -771,9 +773,9 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
     const back = tool?.kind === "los" ? tool.back : selected;
     let heard: [number, number | null] | null = null;
     const span = tool?.kind === "span";
-    if ((!tool || (tool.kind === "route" && !tool.draft) || span) && (selected || span) && ping && !ping.via) {
+    if ((!tool || (tool.kind === "route" && !tool.draft) || tool.kind === "direct" || span) && (selected || span) && ping && !ping.via) {
       const relays = span || !ping.targetInChain ? ping.chain : ping.chain.slice(0, -1);
-      const keys = ["self", ...relays.map((h) => relayOf(h, state.contacts)?.key ?? h), ...(span ? [] : [selected])];
+      const keys = ["self", ...relays.map((h) => relayOf(h, state.contacts)?.key ?? h), ...(span ? [] : [tool?.kind === "direct" ? tool.key : selected])];
       const index = keys.findIndex((k, i) => k === from.key && keys[i + 1] === to.key);
       heard = index >= 0 ? (measuredLegs(ping)[index] ?? null) : null;
     }
@@ -815,6 +817,10 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
     if (overlay.tail) points.push([overlay.tail.lat, overlay.tail.lon]);
     routeFit = { id: `route:${routeTo.key}:${points.length > 0}`, points };
   }
+  // A repeater checked with no relays between is brought into view with this radio, once.
+  const directTo = tool?.kind === "direct" ? state.contacts[tool.key] : undefined;
+  const radioEnd = selfEnd(state);
+  const directFit = directTo && radioEnd && hasPosition(directTo.lat, directTo.lon) ? { id: `direct:${directTo.key}`, points: [[radioEnd.lat, radioEnd.lon], [directTo.lat, directTo.lon]] as [number, number][] } : null;
   // A place from a chat is brought into view each time it is shown.
   const place = useMeshPlace();
   const placeFit = place ? { id: `place:${place.id}`, points: [[place.lat, place.lon]] as [number, number][] } : null;
@@ -833,7 +839,7 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
     }
     hearsFit = { id: `hears:${hears.at}:${hears.listening ? "asked" : "answered"}`, points };
   }
-  const fit = hub ? { id: `${hub}:${whole ? "all" : "part"}:${refit}`, points: fitPoints } : (surveyFit ?? routeFit ?? hearsFit ?? placeFit);
+  const fit = hub ? { id: `${hub}:${whole ? "all" : "part"}:${refit}`, points: fitPoints } : (surveyFit ?? routeFit ?? directFit ?? hearsFit ?? placeFit);
   // A point of it opened, the map goes on following: the answers there are read with the phone still in sight.
   const running = tool?.kind === "survey" && tool.view === "run" && surveying;
   // A new list only when a repeater answers for the first time or one of them moves, so the map is not fitted on every render.

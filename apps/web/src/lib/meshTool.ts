@@ -1,8 +1,8 @@
 /**
  * What the map is being used for besides picking a node: a line of sight
- * between two points, the route to a contact, the way between two
- * repeaters, the answers to "who hears me", or the repeaters one repeater
- * hears. One at a time; the sheet on a phone and the panel on a desktop show
+ * between two points, the route to a contact, a repeater checked with no
+ * relays between, the way between two repeaters, the answers to "who hears
+ * me", or the repeaters one repeater hears. One at a time; the sheet on a phone and the panel on a desktop show
  * it, and the map draws it. It lives only while the app runs, like the map's
  * own view.
  */
@@ -29,10 +29,11 @@ export type MeshTool =
       back: string | null;
       /** How the leg sounded when last pinged, out and back, dB; back is null when the trace came home another way. */
       heard?: [number, number | null] | null;
-      /** The route, the way between two repeaters, or the link between neighbours it was opened from, to go back to. */
-      prev?: RouteTool | SpanTool | NeighboursTool | null;
+      /** The route, the check with no relays, the way between two repeaters, or the link between neighbours it was opened from, to go back to. */
+      prev?: RouteTool | DirectTool | SpanTool | NeighboursTool | null;
     }
   | RouteTool
+  | DirectTool
   | SpanTool
   | NeighboursTool
   | { kind: "hears" }
@@ -64,6 +65,17 @@ export interface RouteTool {
   key: string;
   draft: string[] | null;
   returnTo?: { section: Section; focus: string | null; stack?: Screen[] } | null;
+}
+
+/**
+ * A repeater checked with no relays between (#95): whether it hears this
+ * radio from where it stands, and this radio hears it, whatever route the
+ * radio holds to it. `prev` is the route it was opened from, to go back to.
+ */
+export interface DirectTool {
+  kind: "direct";
+  key: string;
+  prev: RouteTool | null;
 }
 
 /**

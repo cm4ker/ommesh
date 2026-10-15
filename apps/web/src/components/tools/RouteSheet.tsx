@@ -7,8 +7,9 @@
  * repeater tapped on the map starts a change, and so does a relay of the
  * chain tapped, or the + before its end, which picks one from a list and so
  * reaches repeaters with no place on the map. The same button checks the
- * change and then saves it. Asking the whole mesh (a flood), the way from
- * here to another repeater, and how long a learned route lasts are in ⋯.
+ * change and then saves it. A check with no relays, asking the whole mesh
+ * (a flood), the way from here to another repeater, and how long a learned
+ * route lasts are in ⋯.
  * Everywhere else a route is one row that opens this.
  */
 
@@ -30,7 +31,7 @@ import { relayChoices, type RelayChoice } from "../../lib/relayPick.js";
 import { inMinutes, limitLabel, ROUTE_LIMITS, routeStatus, useNow } from "../../lib/routes.js";
 import { session, useSession } from "../../lib/session.js";
 import { act, toast } from "../../lib/toast.js";
-import { cancelRouteEdit, editRoute, forgetRoute, openLineOfSight, openRoute, openSpan } from "../../lib/toolActions.js";
+import { cancelRouteEdit, editRoute, forgetRoute, openDirect, openLineOfSight, openRoute, openSpan } from "../../lib/toolActions.js";
 import { Button, IconButton } from "../../ui/Button.js";
 import { SearchField } from "../../ui/Field.js";
 import { ActionRow, glue, LinkRow } from "../../ui/List.js";
@@ -257,14 +258,17 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
   const settings = () => {
     // A route written by hand waits out a pinned flood and comes back when it ends.
     const unpinned = state.routing.contacts[key]?.manual ? t("tools.route.putBack") : t("tools.route.learnedAgain");
-    const items: MenuItem[] = [
-      {
-        label: t("tools.route.askMesh"),
-        hint: needsSignIn ? t("tools.route.askMeshSignIn") : t("tools.route.askMeshHint"),
-        disabled: !online || flooded || running,
-        onSelect: flood,
-      },
-    ];
+    const items: MenuItem[] = [];
+    // A repeater the radio already reaches with no relays is checked that way by the button itself.
+    if (relaysItself && !(held !== null && held.length === 0)) {
+      items.push({ label: t("tools.direct.menu"), hint: t("tools.direct.menuHint"), disabled: !online || running || flooded, onSelect: () => openDirect(key) });
+    }
+    items.push({
+      label: t("tools.route.askMesh"),
+      hint: needsSignIn ? t("tools.route.askMeshSignIn") : t("tools.route.askMeshHint"),
+      disabled: !online || flooded || running,
+      onSelect: flood,
+    });
     if (relaysItself) items.push({ label: t("tools.route.checkFrom"), hint: t("tools.route.checkFromHint"), disabled: !online, onSelect: () => openSpan(key) });
     items.push({
       label: flooding ? t("tools.route.useLearned") : t("tools.route.alwaysFlood"),
@@ -522,7 +526,7 @@ function SearchResult({ d, contact, state }: { d: Discovery; contact: ContactRec
   );
 }
 
-function Dots({ marks, total, live }: { marks: boolean[]; total: number; live: boolean }) {
+export function Dots({ marks, total, live }: { marks: boolean[]; total: number; live: boolean }) {
   return (
     <span className="dots" aria-hidden="true">
       {Array.from({ length: total }, (_, i) => (

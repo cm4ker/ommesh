@@ -275,6 +275,21 @@ export function spanOverlay(from: string, to: string | null, state: SessionState
   return { ...way, lines: [...trail, ...way.lines.map((l) => (l.tone === "was" ? { ...l, tappable: false } : l))] };
 }
 
+/**
+ * A repeater checked with no relays between: one line from this radio to
+ * it, coloured by how it sounded, marked where it broke when nothing came
+ * back. The route held to it is not drawn: the check does not go along it.
+ */
+export function directOverlay(key: string, state: SessionState, ping: Ping | null): MapOverlay {
+  const contact = state.contacts[key];
+  const me = selfEnd(state);
+  const target = contact ? contactEnd(contact) : null;
+  if (!me || !target) return EMPTY_OVERLAY;
+  const silent = !!ping && !ping.running && ping.runs.length > 0 && !ping.runs.some((r) => r.ok);
+  const tone: LineTone = !ping ? "unknown" : silent ? "fail" : pingTone(ping, 1, false)(0);
+  return { ...EMPTY_OVERLAY, lines: [{ from: me, to: target, tone, tappable: !ping?.running, label: silent ? t("mesh.leg.breaks") : undefined }] };
+}
+
 /** The nodes along relays given as hashes, from `from` to `to`; a relay not on the map is null. `not` is the route's end. */
 function along(from: LosEnd | null, relays: string[], to: LosEnd | null, contacts: Record<string, ContactRecord>, not?: string): (LosEnd | null)[] {
   return [from, ...relays.map((h) => endOfHash(h, contacts, not)), to];

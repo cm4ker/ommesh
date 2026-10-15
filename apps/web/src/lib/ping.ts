@@ -7,7 +7,10 @@
  * looking" tries four more from where it stopped. A way that comes back
  * becomes the route, and the one before can be put back. A route being
  * changed on the map is checked the same way, but only to see where it
- * breaks: a way round is not looked for.
+ * breaks: a way round is not looked for. A repeater can also be checked
+ * with no relays between, whatever the route (`directKey`): the trace names
+ * only it, so it comes back only if the two hear each other from where they
+ * stand.
  *
  * Only a tap starts any of it; nothing here repeats on its own.
  */
@@ -106,6 +109,16 @@ export function spanKey(from: string, to: string): string {
 function spanEnds(key: string): [string, string] | null {
   const m = /^span:([0-9a-f]+):([0-9a-f]+)$/.exec(key);
   return m ? [m[1]!, m[2]!] : null;
+}
+
+/** The key a check of a repeater with no relays between is kept under, apart from the check of its route. */
+export function directKey(key: string): string {
+  return `direct:${key}`;
+}
+
+function directOf(key: string): string | null {
+  const m = /^direct:([0-9a-f]+)$/.exec(key);
+  return m ? m[1]! : null;
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -217,8 +230,13 @@ export async function ping(key: string, via: string[] | null = null): Promise<vo
   publish(p);
   try {
     const span = spanEnds(key);
+    const direct = directOf(key);
     let path: { relays: string[]; target: string | null } | null;
-    if (span) {
+    if (direct) {
+      // Only a repeater passes a trace on, so only one can be asked by itself.
+      const contact = session.getState().contacts[direct];
+      path = contact?.type === AdvType.Repeater ? { relays: [], target: direct.slice(0, hashSize(session.getState(), direct) * 2) } : null;
+    } else if (span) {
       const found = spanPath(span[0], span[1], buildGraph(linkBook(), session.getState(), Date.now()));
       if (!found) {
         p.running = false;
@@ -231,7 +249,7 @@ export async function ping(key: string, via: string[] | null = null): Promise<vo
       path = via ? pathVia(key, via) : await session.pingPath(key);
     }
     if (!path) {
-      if (via) {
+      if (via || direct) {
         p.running = false;
         p.error = t("tools.contactGone");
         return publish(p);
@@ -266,7 +284,8 @@ export async function ping(key: string, via: string[] | null = null): Promise<vo
     }
     if (p.runs.some((r) => r.ok) || stopped.has(key)) return finish(p);
     await locate(p, heard);
-    if (stopped.has(key) || via) return finish(p);
+    // With no relays there is no way round to look for: that it stays silent is the answer.
+    if (stopped.has(key) || via || direct) return finish(p);
     await search(p, p.broken, heard);
   } catch (error) {
     p.error = errorText(error);
@@ -461,6 +480,13 @@ export function settlePing(key: string, relays: string[]): void {
   const p = pings.get(key);
   if (p?.via && !p.running && p.via.length === relays.length && p.via.every((h, i) => h === relays[i])) publish({ ...p, via: null });
   else clearPing(key);
+}
+
+/** The route to a repeater was set to none, after it was heard with no relays between: what was measured is now the route's. */
+export function settleDirect(key: string): void {
+  const p = pings.get(directKey(key));
+  clearPing(key);
+  if (p && !p.running) publish({ ...p, key });
 }
 
 /** The legs measured last, from the last trace that came back. */

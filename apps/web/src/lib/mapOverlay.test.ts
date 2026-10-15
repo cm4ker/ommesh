@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { ContactRecord, SessionState } from "@meshnet/meshcore";
-import { neighboursOverlay, routeOverlay } from "./mapOverlay.js";
+import { directOverlay, neighboursOverlay, routeOverlay } from "./mapOverlay.js";
+import type { Ping } from "./ping.js";
 import type { NeighboursTool } from "./meshTool.js";
 import { NO_FILTER, type NeighbourFilter } from "./neighbours.js";
 
@@ -53,4 +54,17 @@ test("a leg that goes round relays off the map says which", () => {
   const overlay = routeOverlay(ROOM, routed(55.2), null);
   assert.deepEqual(overlay.lines.map((l) => [l.from.key, l.to.key, l.note ?? null]), [["self", TOWER, null], [TOWER, ROOM, "via KZN-7, 94"]]);
   assert.equal(overlay.tail, undefined);
+});
+
+// A repeater checked with no relays between: one line, whatever the route held to it goes through.
+const direct = (runs: Ping["runs"], running = false): Ping => ({ key: `direct:${TOWER}`, chain: ["a3"], targetInChain: true, via: null, from: -1, runs, running, stage: running ? "rounds" : null, broken: null, search: null, error: null, at: 0 });
+
+test("a check with no relays draws one line, coloured by how it sounded", () => {
+  const state = routed(55.2);
+  const line = (p: Ping | null) => directOverlay(TOWER, state, p).lines.map((l) => [l.from.key, l.to.key, l.tone, l.label ?? null]);
+  assert.deepEqual(line(null), [["self", TOWER, "unknown", null]]);
+  assert.deepEqual(line(direct([], true)), [["self", TOWER, "flight", null]]);
+  assert.deepEqual(line(direct([{ ok: true, rttMs: 300, legs: [[-3, -4]] }])), [["self", TOWER, "fair", null]]);
+  // Nothing came back: the line is marked where it breaks.
+  assert.deepEqual(line(direct([{ ok: false, rttMs: null, legs: [] }])), [["self", TOWER, "fail", "breaks"]]);
 });

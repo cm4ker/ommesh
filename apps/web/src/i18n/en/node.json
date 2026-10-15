@@ -115,6 +115,7 @@
   "console.copyCommand": "Copy the command",
   "console.copyReply": "Copy the answer",
   "console.wayBack": "The commands may have arrived and the answers been lost: the node answers along its own way to you.",
+  "console.personNoReply": "No answer: you have no right to control this radio, its firmware is older than 1.18, or it did not hear you.",
   "console.relearn": "Renew the way back",
   "console.relearned": "{name} knows the way to you again",
 

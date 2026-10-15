@@ -116,8 +116,8 @@ export function writeHistory(state: Pick<SessionState, "self" | "channels" | "co
   const secrets = new Map(state.channels.map((c) => [c.index, c.secret]));
   const messages: HistoryMessage[] = [];
   for (const m of state.messages) {
-    // A node's console lives in its own log, not in a chat.
-    if (m.txtType === TxtType.CliData) continue;
+    // A node's console lives in its own log, not in a chat; nor is a command this radio did not run a message.
+    if (m.txtType === TxtType.CliData || m.txtType === TxtType.CliCommand) continue;
     const conversation = parseConversation(m.conversation);
     let chat: HistoryChat;
     if (conversation.kind === "channel") {

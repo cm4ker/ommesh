@@ -1,4 +1,4 @@
-import { isNodeType } from "@meshnet/meshcore";
+import { AdvType, isNodeType } from "@meshnet/meshcore";
 import { t, type Key } from "../../i18n/index.js";
 import { openNodePage, type NodePage } from "../../lib/nav.js";
 import { isAdmin, nodeKindName } from "../../lib/nodes.js";
@@ -31,6 +31,22 @@ const ADMIN_ONLY = new Set<NodePage>(["settings", "access", "console"]);
 export function NodePageView({ contactKey, page, chrome, tabs }: { contactKey: string; page: NodePage; chrome: Chrome; tabs: boolean }) {
   const state = useSession();
   const contact = state.contacts[contactKey];
+  // A person's radio has a console of its own, with nothing to sign in to (MeshCore 1.18).
+  if (contact?.type === AdvType.Chat && page === "console") {
+    const name = contact.name || contact.prefix;
+    return (
+      <div className="screen node">
+        <ScreenHead chrome={chrome} actions={<QueuePill nodeKey={contact.key} />}>
+          <Avatar name={name} type={contact.type} size={28} />
+          <span className="screen-name-stack">
+            <span className="screen-name">{t("mesh.profile.console")}</span>
+            <span className="muted small">{name}</span>
+          </span>
+        </ScreenHead>
+        <Console contact={contact} />
+      </div>
+    );
+  }
   if (!contact || !isNodeType(contact.type)) return <Gone chrome={chrome} title={t(LABELS[page])} text={t("node.page.gone")} />;
   const login = state.logins[contact.key];
   const admin = isAdmin(login);

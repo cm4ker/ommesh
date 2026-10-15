@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { AdvertLocPolicy, AdvType, isTrusted, regionSupport, TelemMode, type ContactRecord, type SessionState } from "@meshnet/meshcore";
+import { AdvertLocPolicy, AdvType, canControl, isTrusted, regionSupport, TelemMode, type ContactRecord, type SessionState } from "@meshnet/meshcore";
 import { autostartEnabled, autostartLabel, hasAutostart, setAutostart } from "../lib/autostart.js";
 import { agoPhrase, dayLabel, timeOfDay } from "../lib/format.js";
 import { saveKey, useKeyNote } from "../lib/radioKey.js";
@@ -37,7 +37,7 @@ import { SearchField } from "../ui/Field.js";
 import { ActionRow, Block, ChoiceRow, Group, InfoRow, LinkRow, SelectRow, StepperRow, SwitchRow } from "../ui/List.js";
 import { Avatar, SenderName } from "./Avatar.js";
 import { ChatBackdrop } from "./ChatBackdrop.js";
-import { BluetoothIcon, CopyIcon, PictureIcon, WifiIcon } from "./Icons.js";
+import { AlertIcon, BluetoothIcon, CopyIcon, PictureIcon, WifiIcon } from "./Icons.js";
 import { ContactsPage, RemovedPage } from "./ContactsPages.js";
 import { Console } from "./node/Console.js";
 import { LogView } from "./LogView.js";
@@ -70,6 +70,7 @@ export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = {
   people: "about",
   news: "about",
   trusted: "privacy",
+  remote: "privacy",
   console: "advanced",
   key: "advanced",
   pin: "advanced",
@@ -87,6 +88,7 @@ export const RADIO_TITLES: Record<RadioPage, Key> = {
   readings: "radio.titles.readings",
   privacy: "radio.titles.privacy",
   trusted: "radio.titles.trusted",
+  remote: "radio.titles.remote",
   contacts: "radio.titles.contacts",
   removed: "radio.titles.removed",
   advanced: "radio.titles.advanced",
@@ -259,6 +261,8 @@ function PageBody({ page }: { page: RadioPage }) {
       return self ? <PrivacyPage self={self} online={online} /> : <Offline />;
     case "trusted":
       return self ? <TrustedPage online={online} /> : <Offline />;
+    case "remote":
+      return self ? <RemotePage online={online} /> : <Offline />;
     case "contacts":
       return <ContactsPage />;
     case "removed":
@@ -330,7 +334,7 @@ function NamePage({ self, online }: { self: Self; online: boolean }) {
  */
 function PrivacyPage({ self, online }: { self: Self; online: boolean }) {
   const follow = useFollowStatus(self.key);
-  const contacts = useSession().contacts;
+  const { contacts, device } = useSession();
   const [locating, setLocating] = useState(false);
   // The radio's own GPS writes its position itself, so the phone does not follow it there. A position typed or taken
   // from this device still stands until the GPS has a fix: that is the way out when the GPS is slow to find one.
@@ -417,6 +421,79 @@ function PrivacyPage({ self, online }: { self: Self; online: boolean }) {
         ) : null}
         {trustUsed(self, follow.gps) ? <LinkRow label={radioTitle("trusted")} value={String(trusted)} onClick={() => push({ kind: "radio", page: "trusted" })} /> : null}
       </Group>
+      {/* MeshCore 1.18 runs console commands from the people it is told to. */}
+      {(device?.firmwareVerCode ?? 0) >= 14 ? (
+        <Group title={t("radio.privacy.remoteGroup")}>
+          <LinkRow label={radioTitle("remote")} value={controllers(contacts)} onClick={() => push({ kind: "radio", page: "remote" })} />
+        </Group>
+      ) : null}
+    </>
+  );
+}
+
+/** Who may control the radio, in a word: nobody, one name, or how many. */
+function controllers(contacts: Record<string, ContactRecord>): string {
+  const allowed = Object.values(contacts).filter((c) => !c.unsaved && canControl(c));
+  if (allowed.length === 0) return t("radio.remote.nobody");
+  if (allowed.length === 1) return allowed[0]!.name || allowed[0]!.prefix;
+  return t("radio.remote.count", { count: allowed.length });
+}
+
+/**
+ * The people this radio runs console commands from, over the air (MeshCore 1.18), each with a
+ * switch. Letting someone in is asked first: they may then do all the console does. The order
+ * is taken as the page opens, so a row stays under the finger when it is switched.
+ */
+function RemotePage({ online }: { online: boolean }) {
+  const { contacts, self } = useSession();
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [asking, setAsking] = useState<ContactRecord | null>(null);
+  const [first] = useState(() => new Set(Object.values(contacts).filter(canControl).map((c) => c.key)));
+  const name = (c: ContactRecord) => c.name || c.prefix;
+  const all = Object.values(contacts).filter((c) => !c.unsaved && (c.type === AdvType.Chat || canControl(c)));
+  const q = query.trim().toLowerCase();
+  const rows = all.filter((c) => !q || name(c).toLowerCase().includes(q)).sort((a, b) => Number(first.has(b.key)) - Number(first.has(a.key)) || name(a).localeCompare(name(b)));
+  const toggle = async (key: string, on: boolean) => {
+    setBusy(key);
+    await act(() => session.setRemoteControl(key, on));
+    setBusy(null);
+  };
+  return (
+    <>
+      <div className="memory-strip warn remote-warn" role="note">
+        <AlertIcon size={16} />
+        <span className="grow">{t("radio.remote.warn")}</span>
+      </div>
+      {all.length === 0 ? (
+        <p className="group-note">{t("radio.remote.nobodyYet")}</p>
+      ) : (
+        <>
+          <SearchField value={query} onValue={setQuery} placeholder={t("chats.list.find")} aria-label={t("radio.remote.find")} />
+          {rows.length ? (
+            <Group>
+              {rows.map((c) => (
+                <SwitchRow key={c.key} icon={<Avatar name={name(c)} type={c.type} size={28} />} label={name(c)} checked={canControl(c)} disabled={!online || busy !== null} onChange={(v) => (v ? setAsking(c) : void toggle(c.key, false))} />
+              ))}
+            </Group>
+          ) : (
+            <p className="group-note">{t("radio.trusted.nobodyNamed")}</p>
+          )}
+        </>
+      )}
+      <Confirm
+        open={asking !== null}
+        title={t("radio.remote.askTitle", { name: asking ? name(asking) : "" })}
+        body={<p>{t("radio.remote.askBody", { name: asking ? name(asking) : "", radio: self?.name ?? "" })}</p>}
+        confirmLabel={t("radio.remote.give")}
+        danger
+        onCancel={() => setAsking(null)}
+        onConfirm={async () => {
+          const who = asking;
+          setAsking(null);
+          if (who) await toggle(who.key, true);
+        }}
+      />
     </>
   );
 }

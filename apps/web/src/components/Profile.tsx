@@ -129,6 +129,8 @@ export function Profile({ contactKey, chrome }: { contactKey: string; chrome: Ch
       { label: t("mesh.profile.shareOnAir"), icon: <AirIcon size={17} />, air: true, disabled: !online, onSelect: () => void act(() => session.shareContact(key), t("mesh.profile.shared", { name })) },
       { label: t("mesh.profile.copyKey"), icon: <CopyIcon size={17} />, onSelect: () => void navigator.clipboard?.writeText(key).then(() => toast(t("common.copied"))) },
     ];
+    // A person's radio on MeshCore 1.18 runs console commands from those it lets; only a radio on 1.18 sends them.
+    if (contact.type === AdvType.Chat && (state.device?.firmwareVerCode ?? 0) >= 14) items.push({ label: t("mesh.profile.console"), icon: <TerminalIcon size={17} />, onSelect: () => openNodePage(key, "console") });
     if (admin) {
       items.push(
         { label: t("mesh.profile.advertMesh"), icon: <AirIcon size={17} />, air: true, disabled: !online, onSelect: cli("advert", t("mesh.profile.advertised", { name })) },

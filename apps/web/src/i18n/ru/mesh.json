@@ -105,6 +105,7 @@
   "profile.shareOnAir": "Поделиться в эфире",
   "profile.shared": "Контакт {name} отправлен в эфир",
   "profile.copyKey": "Копировать открытый ключ",
+  "profile.console": "Консоль радио",
   "profile.advertMesh": "Отправить анонс на всю сеть",
   "profile.advertised": "{name}: анонс отправлен",
   "profile.advertNear": "Отправить анонс соседям",

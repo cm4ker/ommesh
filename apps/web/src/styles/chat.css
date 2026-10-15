@@ -469,3 +469,35 @@
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
+
+/* A console command the radio did not run (MeshCore 1.18): a quiet line between messages, like the date's, that opens who may control the radio. */
+.refused-line {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: fit-content;
+  max-width: min(88%, 420px);
+  margin: var(--space-2) auto;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+.refused-line svg {
+  flex: none;
+  margin-top: 2px;
+}
+.refused-line span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.refused-line small {
+  display: block;
+  font-size: var(--text-xs);
+}

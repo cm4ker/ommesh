@@ -32,6 +32,8 @@ export interface ConversationSummary {
 }
 
 function preview(message: MessageRecord, kind: ConversationSummary["kind"]): string {
+  // A console command this radio did not run is said as such, not as a message.
+  if (message.txtType === TxtType.CliCommand) return t("chats.refused.preview", { command: message.text });
   // A place is a word here: the row has no room for its map.
   const text = textWithPlaces(message.text);
   if (message.direction === "out") return t("chats.conversation.you", { text });

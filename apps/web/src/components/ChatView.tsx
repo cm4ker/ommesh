@@ -1,5 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { AdvType, isConversationType, isDirect, KEYLESS_INDEX, parseConversation, type MessageRecord, type SessionState } from "@meshnet/meshcore";
+import { AdvType, isConversationType, isDirect, KEYLESS_INDEX, parseConversation, TxtType, type MessageRecord, type SessionState } from "@meshnet/meshcore";
 import { useBackLayer } from "../lib/back.js";
 import { chatAccess } from "../lib/channels.js";
 import { onAsk, takeAsk } from "../lib/chatAsk.js";
@@ -20,7 +20,7 @@ import { onJump, takeJump, type Jump } from "../lib/jump.js";
 import { useWide } from "../lib/layout.js";
 import { copiedText, toggled } from "../lib/messagePick.js";
 import { findMessages, messagesFrom, searchTerm, type Sender } from "../lib/messageSearch.js";
-import { openChannel, openConversation, openMessage, openPlace, openProfile } from "../lib/nav.js";
+import { openChannel, openConversation, openMessage, openPlace, openProfile, openRadioPage } from "../lib/nav.js";
 import { cameByPull, nextUnreadChat, openNextChat } from "../lib/nextChat.js";
 import { noteShown } from "../lib/recentChats.js";
 import { openRoute } from "../lib/toolActions.js";
@@ -64,6 +64,7 @@ import {
   SelectIcon,
   SendIcon,
   StopIcon,
+  TerminalIcon,
   TrashIcon,
   UpIcon,
   WavesIcon,
@@ -663,6 +664,9 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
               <div key={m.id} data-id={m.id}>
                 {newDay ? <div className="day">{dayLabel(at.at)}</div> : null}
                 {opens && unread ? <div className="unread-line">{t("chats.chat.newMessages", { count: unread.count })}</div> : null}
+                {m.txtType === TxtType.CliCommand ? (
+                  <RefusedLine message={m} who={m.sender ?? title} />
+                ) : (
                 <Message
                   message={m}
                   at={at.at}
@@ -682,6 +686,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
                   picked={pickedSet.has(m.id)}
                   onPick={pick}
                 />
+                )}
               </div>
             );
           })}
@@ -1410,4 +1415,20 @@ function useReveal(scroller: React.RefObject<HTMLDivElement | null>, inner: Reac
       el.removeEventListener("touchcancel", up);
     };
   }, [scroller, inner]);
+}
+
+/**
+ * A console command someone sent this radio without the right to run it (MeshCore 1.18): a quiet
+ * line between the messages, and a tap on it opens who may control the radio.
+ */
+function RefusedLine({ message, who }: { message: MessageRecord; who: string }) {
+  return (
+    <button type="button" className="refused-line" onClick={() => openRadioPage("remote")}>
+      <TerminalIcon size={15} />
+      <span>
+        {t("chats.refused.line", { name: who, command: message.text })}
+        <small>{t("chats.refused.why")}</small>
+      </span>
+    </button>
+  );
 }

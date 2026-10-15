@@ -455,6 +455,14 @@ class DemoRadio extends BaseTransport {
       this.queue.push(this.reaction(0, hash, "👍", "Alice"), this.channel(0, "Kolya ⛺", `@[Bob (bike)]❤️\n${crockford(hash)}`));
       this.emitFrame(new Uint8Array([Push.MsgWaiting]));
     });
+    // Bob, on 1.18 too, tries this radio's console. Without the right the radio hands his command up (protocol 14);
+    // with it the radio would run it and answer him, and the app would hear nothing.
+    this.later(20_000, () => {
+      const bob = PEOPLE.find((q) => q.name.startsWith("Bob"));
+      if (!bob || ((this.flags.get(bob) ?? 0) & 0x10) !== 0) return;
+      this.queue.push(new ByteWriter().u8(Resp.ContactMsgRecvV3).i8(18).u16(0).bytes(bob.key.subarray(0, 6)).u8(bob.hops).u8(TxtType.CliCommand).u32(Math.floor(Date.now() / 1000)).string("reboot").toBytes());
+      this.emitFrame(new Uint8Array([Push.MsgWaiting]));
+    });
     this.chatter = setInterval(() => void this.chat(), 25_000);
     this.murmur = setInterval(() => this.overhear(), 3_500);
     // The town's floods: every link once at first, so there is something to look through from the start.
@@ -1016,6 +1024,18 @@ class DemoRadio extends BaseTransport {
         return [new ByteWriter().u8(Resp.CliReply).string(tag + this.ownCli(text)).toBytes()];
       }
       case Cmd.SendTxtMsg: {
+        if (frame[1] === TxtType.CliCommand) {
+          const p = this.person(frame.subarray(7, 13));
+          const text = fromUtf8(frame.subarray(13));
+          const tagged = /^([0-9a-f]{2})\|(.*)$/s.exec(text);
+          const command = tagged ? tagged[2]! : text;
+          // Alice gave this radio the right to control hers (MeshCore 1.18); Bob and Kolya did not, and say nothing.
+          if (p?.name === "Alice") {
+            const reply = command === "ver" ? "v1.18.0 (Build: 15 Oct 2026)" : command === "get name" ? "> Alice" : command === "board" ? "Heltec V4" : command === "get tz.offset" ? "> 6" : "Unknown command";
+            this.cliReply(p, tagged ? `${tagged[1]}|${reply}` : reply);
+          }
+          return [this.sent(0, this.floods(p))];
+        }
         if (frame[1] === TxtType.CliData) {
           const p = this.person(frame.subarray(7, 13));
           const text = fromUtf8(frame.subarray(13));

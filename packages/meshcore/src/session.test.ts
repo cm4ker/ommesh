@@ -4,7 +4,7 @@ import { ByteWriter, fromHex, fromUtf8, toHex } from "./protocol/bytes.js";
 import { Cmd, ContactFlag, ErrCode, Push, Resp, TxtType } from "./protocol/codes.js";
 import { groupDataPayload, groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
 import { crockford, decodeReaction, encodeReaction, messageHash, REACTION_DATA_TYPE } from "./protocol/reaction.js";
-import { channelConversation, CLOCK_RESET_TIME, ClockAheadError, contactConversation, isTrusted, KEYLESS_CONVERSATION, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
+import { canControl, channelConversation, CLOCK_RESET_TIME, ClockAheadError, contactConversation, isTrusted, KEYLESS_CONVERSATION, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
 import { BaseTransport } from "./transport.js";
 import { TimeoutError, TransportClosedError } from "./client.js";
 
@@ -3301,5 +3301,63 @@ test("the repeaters around are asked for their regions, a routeless one given a 
   // Bob holds a route, and is asked along it with nothing written.
   assert.deepEqual(asked(bobKey()), [Cmd.SendAnonReq]);
   assert.deepEqual([...radio.sent.find((f) => f[0] === Cmd.SendAnonReq)!.subarray(33)], [0x01, 0x00]);
+  await session.disconnect();
+});
+
+/** A console command someone sent this radio without the right, as the radio hands it up (protocol 14). */
+function refusedFrame(from: Uint8Array, text: string, stamp = 1_700_000_090): Uint8Array {
+  return new ByteWriter().u8(Resp.ContactMsgRecvV3).i8(20).u16(0).bytes(from.subarray(0, 6)).u8(0).u8(TxtType.CliCommand).u32(stamp).string(text).toBytes();
+}
+
+test("a command this radio did not run is a quiet line in the sender's chat, once", async () => {
+  const radio = new ScriptedRadio();
+  radio.queue.push(refusedFrame(BOB, "reboot"), refusedFrame(BOB, "reboot"));
+  const announced: string[] = [];
+  const session = new MeshSession();
+  session.onReceived((m) => announced.push(m.text));
+  await session.connect(radio);
+  await settle();
+  const lines = session.getState().messages.filter((m) => m.txtType === TxtType.CliCommand);
+  assert.deepEqual(
+    lines.map((m) => [m.conversation, m.text, m.sender]),
+    [[contactConversation(toHex(BOB)), "reboot", "Bob"]],
+  );
+  assert.equal(session.getState().unread[contactConversation(toHex(BOB))] ?? 0, 0, "not unread");
+  assert.deepEqual(announced, [], "not announced");
+  await session.disconnect();
+});
+
+test("letting a person control the radio sets their flag and keeps the others", async () => {
+  const radio = new ScriptedRadio();
+  radio.contacts = [contactFrame(BOB, "Bob", 10)];
+  radio.contacts[0]![34] = ContactFlag.Favourite;
+  const session = new MeshSession();
+  await session.connect(radio);
+  const key = toHex(BOB);
+  assert.ok(!canControl(session.getState().contacts[key]!));
+  await session.setRemoteControl(key, true);
+  assert.equal(session.getState().contacts[key]!.flags, ContactFlag.Favourite | ContactFlag.RemoteCli);
+  assert.ok(canControl(session.getState().contacts[key]!));
+  await session.setRemoteControl(key, false);
+  assert.equal(session.getState().contacts[key]!.flags, ContactFlag.Favourite);
+  await session.disconnect();
+});
+
+test("a person's radio is sent a console command of its own kind, and its answer comes as console data", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ replyWaitMs: () => 2000 });
+  await session.connect(radio);
+  await settle();
+  const key = toHex(BOB);
+  const reply = session.runCli(key, "get name");
+  await tick();
+  const sent = radio.sent.filter((f) => f[0] === Cmd.SendTxtMsg).at(-1)!;
+  assert.equal(sent[1], TxtType.CliCommand);
+  const tag = sentText(sent).slice(0, 2);
+  assert.match(sentText(sent), /^[0-9a-f]{2}\|get name$/);
+  radio.queue.push(cliFrame(BOB, `${tag}|> Bob`));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  assert.equal(await reply, "> Bob");
+  assert.equal(session.getState().consoles[key]?.at(-1)?.status, "done");
   await session.disconnect();
 });

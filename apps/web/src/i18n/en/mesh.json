@@ -105,6 +105,7 @@
   "profile.shareOnAir": "Share on the air",
   "profile.shared": "{name} shared on the air",
   "profile.copyKey": "Copy the public key",
+  "profile.console": "Radio console",
   "profile.advertMesh": "Advertise across the mesh",
   "profile.advertised": "{name} advertised",
   "profile.advertNear": "Advertise to its neighbours",

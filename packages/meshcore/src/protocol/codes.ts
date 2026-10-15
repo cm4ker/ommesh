@@ -246,6 +246,11 @@ export const ContactFlag = {
   TelemetryBase: 0x02,
   TelemetryLocation: 0x04,
   TelemetryEnvironment: 0x08,
+  /**
+   * Protocol 14: this radio runs the console commands the contact sends
+   * (`TxtType.CliCommand`) and answers them; without it, it hands them up.
+   */
+  RemoteCli: 0x10,
 } as const;
 
 export const AutoAdd = {

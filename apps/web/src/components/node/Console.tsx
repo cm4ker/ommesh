@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from "react";
-import type { ConsoleEntry, ContactRecord } from "@meshnet/meshcore";
+import { AdvType, type ConsoleEntry, type ContactRecord } from "@meshnet/meshcore";
 import { t } from "../../i18n/index.js";
 import { suggest } from "../../lib/cli.js";
 import { dayLabel, timeOfDay } from "../../lib/format.js";
@@ -47,6 +47,8 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
   // from before the app started says nothing of the way now.
   const last = entries.at(-1);
   const lost = contact !== null && last?.status === "timeout" && last.at >= STARTED;
+  // A person's radio (MeshCore 1.18) answers only those it lets control it, and there is no sign-in to find a way back with.
+  const person = contact?.type === AdvType.Chat;
 
   /** A sign-in by flood with the saved password, or the sheet to type one. */
   const relearn = async () => {
@@ -116,7 +118,7 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
   };
 
   const typed = draft.trim();
-  const { chips, hint } = suggest(draft, contact ? "node" : "radio");
+  const { chips, hint } = suggest(draft, contact && !person ? "node" : "radio");
 
   const past = entries.filter((e) => e.command && !e.command.includes("••")).map((e) => e.command);
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -145,7 +147,11 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
             <Entry entry={entry} onRetry={() => again(entry.command)} onMenu={(e) => menuOf(entry, e)} />
           </Fragment>
         ))}
-        {lost ? (
+        {lost && person ? (
+          <div className="c-wayback">
+            <span className="muted small">{t("node.console.personNoReply")}</span>
+          </div>
+        ) : lost ? (
           <div className="c-wayback">
             <span className="muted small">{t("node.console.wayBack")}</span>
             <Button size="sm" busy={relearning} disabled={!online || relearning} onClick={() => void relearn()}>
@@ -208,7 +214,7 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
           </div>
         </div>
       </form>
-      {contact ? (
+      {contact && !person ? (
         <SignIn
           open={asking}
           nodeKey={key}

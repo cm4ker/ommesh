@@ -704,6 +704,11 @@ export function isTrusted(contact: ContactRecord): boolean {
   return (contact.flags & TRUSTED) !== 0;
 }
 
+/** Whether this radio runs the console commands the contact sends over the air (MeshCore 1.18). */
+export function canControl(contact: ContactRecord): boolean {
+  return (contact.flags & ContactFlag.RemoteCli) !== 0;
+}
+
 export function contactHops(contact: ContactRecord): number | null {
   return contact.outPathLen === 0xff ? null : contact.outPathLen & 63;
 }
@@ -1975,6 +1980,19 @@ export class MeshSession {
     await this.writeContact({ ...contact, flags });
   }
 
+  /**
+   * Lets a person run console commands on this radio over the air, or stops
+   * it (MeshCore 1.18): reboot it, turn it off, change its name, PIN and
+   * frequency, read its Wi-Fi password. The radio keeps it as a contact flag.
+   */
+  async setRemoteControl(key: string, allowed: boolean): Promise<void> {
+    const contact = this.state.contacts[key];
+    if (!contact) throw new Error("unknown contact");
+    const flags = allowed ? contact.flags | ContactFlag.RemoteCli : contact.flags & ~ContactFlag.RemoteCli;
+    await this.writeContact({ ...contact, flags });
+    this.log("contact", `${contact.name || contact.prefix} ${allowed ? "may" : "may no longer"} run commands on this radio`);
+  }
+
   async renameContact(key: string, name: string): Promise<void> {
     const contact = this.state.contacts[key];
     if (!contact) throw new Error("unknown contact");
@@ -2372,6 +2390,40 @@ export class MeshSession {
     this.set({ sharedAt: this.now() });
   }
 
+  /**
+   * A console command this radio did not run, kept in the chat with its
+   * sender as a line of `TxtType.CliCommand`: neither unread nor announced.
+   * A sender that heard nothing back sends it again, so a copy is left out.
+   */
+  private keepRefused(conversation: string, prefix: string, frame: { timestamp: number; text: string; snr: number | null; pathLen: number | null }, now: number): void {
+    const twin = this.state.messages.some((m) => m.conversation === conversation && m.txtType === TxtType.CliCommand && m.timestamp === frame.timestamp && m.text === frame.text);
+    if (twin) return;
+    const contact = this.contactByPrefix(prefix);
+    const line: MessageRecord = {
+      id: newId(now),
+      conversation,
+      direction: "in",
+      text: frame.text,
+      sender: contact?.name ?? null,
+      senderPrefix: prefix,
+      timestamp: frame.timestamp,
+      receivedAt: now,
+      snr: frame.snr,
+      hops: frame.pathLen,
+      txtType: TxtType.CliCommand,
+      status: null,
+      ackTag: null,
+      roundTripMs: null,
+      flood: null,
+      attempt: 0,
+      error: null,
+      echoes: [],
+      route: null,
+      retryPlan: null,
+    };
+    this.set({ messages: [...this.state.messages, line] });
+  }
+
   private async receive(frame: NonNullable<Awaited<ReturnType<MeshCoreClient["syncNextMessage"]>>>): Promise<void> {
     const now = this.now();
     let message: MessageRecord;
@@ -2393,8 +2445,9 @@ export class MeshSession {
       }
       if (frame.txtType === TxtType.CliCommand) {
         // Someone without the right asked this radio to run a console command (protocol 14).
-        // The radio hands it up instead of running it; it is not a chat line.
+        // The radio hands it up instead of running it: a quiet line in the chat, not a message.
         this.log("message", `${contact?.name ?? prefix} asked this radio to run "${frame.text}"; not run`);
+        this.keepRefused(contact ? contactConversation(contact.key) : `p:${prefix}`, prefix, frame, now);
         return;
       }
       if (!contact) this.queueContactsRefresh();
@@ -4158,7 +4211,12 @@ export class MeshSession {
       const event = await this.remoteRequest(
         key,
         options.mask ?? command,
-        (client) => client.sendCliCommand(prefix, `${tag}|${command}`, this.cliStamp(key)),
+        // A person's radio takes a console command as one of its own kind (MeshCore 1.18), with no sign-in:
+        // it runs it if we may control it, and answers as console data either way it runs.
+        (client) =>
+          contact.type === AdvType.Chat
+            ? client.sendTextMessage(prefix, `${tag}|${command}`, { txtType: TxtType.CliCommand, timestamp: this.cliStamp(key) })
+            : client.sendCliCommand(prefix, `${tag}|${command}`, this.cliStamp(key)),
         (event) => event.kind === "cli" && event.prefix === contact.prefix && event.tag === tag,
         {
           // A text: its stamp, a byte of flags, then the tagged command.

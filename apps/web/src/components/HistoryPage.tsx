@@ -26,7 +26,7 @@ export function HistoryPage({ self }: { self: Self }) {
   const [plan, setPlan] = useState<ImportPlan | null>(null);
 
   const held = useMemo(() => {
-    const messages = state.messages.filter((m) => m.txtType !== TxtType.CliData);
+    const messages = state.messages.filter((m) => m.txtType !== TxtType.CliData && m.txtType !== TxtType.CliCommand);
     return { messages: messages.length, chats: new Set(messages.map((m) => m.conversation)).size, contacts: Object.keys(state.contacts).length + Object.keys(state.removed).length };
   }, [state.messages, state.contacts, state.removed]);
 

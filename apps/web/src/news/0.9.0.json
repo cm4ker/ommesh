@@ -1,0 +1,86 @@
+{
+  "version": "0.9.0",
+  "date": "2026-10-16",
+  "items": [
+    {
+      "kind": "new",
+      "show": "radio/frequency",
+      "en": {
+        "title": "Send under a region, for the radio or one channel",
+        "text": "Large meshes such as Moscow's now ask for one. Frequency and power › Region: ask the repeaters nearby which they carry, or type it. A channel can take its own."
+      },
+      "ru": {
+        "title": "Регион для радио и для канала",
+        "text": "Большие сети вроде московской теперь просят регион. «Частота и мощность › Регион»: спросите репитеры рядом или наберите название. У канала может быть свой."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "radio/connection",
+      "en": {
+        "title": "Set up Wi-Fi and more on MeshCore 1.18",
+        "text": "Turn the radio's Wi-Fi on and set its network, let people you choose control it, have a sensor send its readings by itself, turn the radio off. Two apps can share it."
+      },
+      "ru": {
+        "title": "Wi-Fi и другое на MeshCore 1.18",
+        "text": "Включите Wi-Fi радио и задайте сеть, разрешите выбранным людям управлять им, пусть датчик сам присылает показания, выключите радио. Им могут пользоваться два приложения сразу."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "radio/key",
+      "en": {
+        "title": "Keep your radio's key in a file",
+        "text": "Advanced › Radio key saves it. After a crash, a flash or a reset, give it back, and the radio is the same node again, with its chats. Keep the file like a password."
+      },
+      "ru": {
+        "title": "Ключ радио в файле",
+        "text": "«Дополнительно › Ключ радио» сохраняет его. После сбоя, прошивки или сброса верните ключ — и радио снова тот же узел, с теми же чатами. Храните файл как пароль."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "mesh",
+      "en": {
+        "title": "Remove several nodes at once",
+        "text": "Hold a node in the Mesh list, or right-click it on a PC, and tap the others; All picks what the search shows. Removed nodes can be searched and forgotten too."
+      },
+      "ru": {
+        "title": "Удалить несколько узлов разом",
+        "text": "Удержите узел в списке «Сеть» (на компьютере — правой кнопкой) и коснитесь остальных; «Все» выбирает найденные. Удалённые узлы тоже можно искать и забывать."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "mesh",
+      "en": {
+        "title": "Check whether a repeater hears you direct",
+        "text": "On the map, open the route to it and tap Check direct under ⋯. Traces go to it alone, with no relays between, and show how each way sounded."
+      },
+      "ru": {
+        "title": "Проверить репитер напрямую",
+        "text": "На карте откройте маршрут до него и в ⋯ выберите «Проверить напрямую». Трассировки идут только к нему, без ретрансляторов, и видно, как прошёл сигнал в каждую сторону."
+      }
+    },
+    {
+      "kind": "fix",
+      "en": "On an iPhone, the keyboard no longer covers a window's buttons.",
+      "ru": "На iPhone клавиатура больше не закрывает кнопки окна."
+    },
+    {
+      "kind": "fix",
+      "en": "A PC using the radio through a phone reconnects by itself after the phone's app restarts.",
+      "ru": "Компьютер, работающий с радио через телефон, сам переподключается после перезапуска приложения на телефоне."
+    },
+    {
+      "kind": "fix",
+      "en": "On a phone, the Mesh list comes back up with a swipe on its search field.",
+      "ru": "На телефоне список «Сеть» снова поднимается свайпом по строке поиска."
+    },
+    {
+      "kind": "fix",
+      "en": "A node that writes to you no longer looks long gone.",
+      "ru": "Узел, который пишет вам, больше не выглядит давно пропавшим."
+    }
+  ]
+}

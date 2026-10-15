@@ -9,7 +9,7 @@ import { BaseTransport } from "@meshnet/meshcore";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { NeedsPairingError, type Connector, type FoundDevice } from "./types.js";
-import { readSetting, writeSetting } from "../lib/storage.js";
+import { knownList } from "./known.js";
 import { t } from "../i18n/index.js";
 
 interface Found {
@@ -76,17 +76,9 @@ export class TauriWinBleTransport extends BaseTransport {
 }
 
 /** Radios connected to before, so a launch can reach one without a scan. */
-const KNOWN_KEY = "meshnet.winble.known";
+const known = knownList("meshnet.winble.known", "ble");
 /** How the firmware names a radio; anything else with its service is a phone sharing one. */
 const RADIO_PREFIX = "MeshCore-";
-
-function known(): FoundDevice[] {
-  return readSetting<FoundDevice[]>(KNOWN_KEY, []);
-}
-
-function remember(device: FoundDevice): void {
-  writeSetting(KNOWN_KEY, [device, ...known().filter((d) => d.id !== device.id)].slice(0, 8));
-}
 
 export const tauriWinBleConnector: Connector = {
   id: "tauri-winble",
@@ -112,8 +104,14 @@ export const tauriWinBleConnector: Connector = {
   },
 
   async remembered() {
-    return known();
+    return known.list();
   },
+
+  async forget(id) {
+    known.forget(id);
+  },
+
+  identify: (id, radioKey) => known.identify(id, radioKey),
 
   async connect(device) {
     if (!device) throw new Error(t("connect.error.pickRadio"));
@@ -143,7 +141,7 @@ export const tauriWinBleConnector: Connector = {
     }
     transport = new TauriWinBleTransport(name || device.name, link);
     await transport.watch();
-    remember({ ...device, name: name || device.name });
+    known.remember({ ...device, name: name || device.name });
     return transport;
   },
 

@@ -7,7 +7,7 @@
 
 import { BaseTransport, frameForStream, StreamFrameDecoder } from "@meshnet/meshcore";
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { addressOf, knownAddresses, rememberAddress, TCP_CONNECT_TIMEOUT_S } from "./tcp.js";
+import { addressOf, knownAddresses, TCP_CONNECT_TIMEOUT_S } from "./tcp.js";
 import type { Connector } from "./types.js";
 import { t } from "../i18n/index.js";
 
@@ -54,7 +54,11 @@ export const tauriTcpConnector: Connector = {
   mode: "address",
 
   async remembered() {
-    return knownAddresses();
+    return knownAddresses.list();
+  },
+
+  async forget(id) {
+    knownAddresses.forget(id);
   },
 
   async connect(device) {
@@ -66,7 +70,7 @@ export const tauriTcpConnector: Connector = {
     } catch (error) {
       throw new Error(String(error));
     }
-    rememberAddress(device);
+    knownAddresses.remember(device);
     return transport;
   },
 };

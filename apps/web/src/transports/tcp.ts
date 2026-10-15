@@ -7,7 +7,7 @@
  */
 
 import type { FoundDevice } from "./types.js";
-import { readSetting, writeSetting } from "../lib/storage.js";
+import { knownList } from "./known.js";
 import { t } from "../i18n/index.js";
 
 /** The port companion firmware listens on unless it was built with another. */
@@ -52,13 +52,9 @@ export function addressDevice(text: string): FoundDevice | null {
   return { id: label, name: label, detail: null, rssi: null };
 }
 
-/** Addresses connected to before, newest first. */
-const KNOWN_KEY = "meshnet.tcp.known";
-
-export function knownAddresses(): FoundDevice[] {
-  return readSetting<FoundDevice[]>(KNOWN_KEY, []);
-}
-
-export function rememberAddress(device: FoundDevice): void {
-  writeSetting(KNOWN_KEY, [device, ...knownAddresses().filter((d) => d.id !== device.id)].slice(0, 8));
-}
+/**
+ * Addresses connected to before, newest first. One radio may be reached at
+ * several (at home and through a tunnel), so a radio found at a new one
+ * leaves the old ones be.
+ */
+export const knownAddresses = knownList("meshnet.tcp.known", "tcp");

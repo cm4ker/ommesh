@@ -4,12 +4,14 @@ import { addressDevice, type Connector, type FoundDevice } from "../../transport
 import { roleOf } from "../../transports/role.js";
 import { Button } from "../../ui/Button.js";
 import { Input } from "../../ui/Field.js";
-import { ChevronDownIcon, PlusIcon } from "../Icons.js";
+import { ChevronDownIcon, PlusIcon, TrashIcon } from "../Icons.js";
 import { t } from "../../i18n/index.js";
 import { errorText } from "../../i18n/errors.js";
 import { DeviceIcon, nameOf, rowLine, SignalBars, type CardSignal } from "./parts.js";
 import { closeJournal } from "../../lib/portJournal.js";
 import { PortRowSummary } from "./PortSettings.js";
+import { usePress } from "../../lib/press.js";
+import { showMenu } from "../../ui/Menu.js";
 
 /** How long a Bluetooth radio missing from a pass stays listed: one quiet pass should not make the rows jump. */
 const KEEP_MS = 30_000;
@@ -115,6 +117,10 @@ export function ConnectorPanel({
   for (const d of remembered) shown.set(d.id, d);
   for (const d of found) shown.set(d.id, { ...(shown.get(d.id) ?? d), ...d });
   const heard = new Set(found.map((d) => d.id));
+  const kept = new Set(remembered.map((d) => d.id));
+  // A remembered radio can be let go, such as one flashed afresh that came back at a new address.
+  const forget = (id: string) =>
+    void connector.forget?.(id).then(() => setRemembered((list) => list.filter((d) => d.id !== id)), () => undefined);
   const all = [...shown.values()].filter((d) => d.id !== hideId);
   // Heard ones first, the strongest on top; remembered ones not heard now after them.
   const radios = all
@@ -122,7 +128,14 @@ export function ConnectorPanel({
     .sort((a, b) => Number(heard.has(b.id)) - Number(heard.has(a.id)) || (b.rssi ?? -999) - (a.rssi ?? -999));
   const others = all.filter((d) => roleOf(d, connector.kind) !== "radio");
   const row = (d: FoundDevice) => (
-    <DeviceRow key={d.id} device={d} connector={connector} faint={connector.mode === "scan" && !heard.has(d.id)} onClick={() => connect(d)} />
+    <DeviceRow
+      key={d.id}
+      device={d}
+      connector={connector}
+      faint={connector.mode === "scan" && !heard.has(d.id)}
+      onClick={() => connect(d)}
+      onForget={connector.forget && kept.has(d.id) ? () => forget(d.id) : undefined}
+    />
   );
 
   if (connector.id === "demo") {
@@ -205,12 +218,28 @@ export function ConnectorPanel({
   );
 }
 
-function DeviceRow({ device, connector, faint, onClick }: { device: FoundDevice; connector: Connector; faint: boolean; onClick: () => void }) {
+/** `onForget`: the row is a remembered device, and a long press or a right click offers to forget it. */
+function DeviceRow({
+  device,
+  connector,
+  faint,
+  onClick,
+  onForget,
+}: {
+  device: FoundDevice;
+  connector: Connector;
+  faint: boolean;
+  onClick: () => void;
+  onForget?: (() => void) | undefined;
+}) {
   const line = rowLine(device, connector);
   const nested = roleOf(device, connector.kind) !== "radio";
+  const press = usePress((at) => {
+    if (onForget) showMenu([{ label: t("connect.list.forget"), icon: <TrashIcon size={17} />, danger: true, onSelect: onForget }], { title: nameOf(device, connector), at });
+  });
   return (
     <li className={nested ? "nested" : undefined}>
-      <button type="button" className={["device", faint ? "faint" : ""].join(" ")} onClick={onClick}>
+      <button type="button" className={["device", faint ? "faint" : ""].join(" ")} onClick={onClick} {...(onForget ? press : {})}>
         <span className="device-icon">
           <DeviceIcon device={device} connector={connector} />
         </span>

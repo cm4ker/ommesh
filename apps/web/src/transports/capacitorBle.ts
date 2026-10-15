@@ -8,7 +8,7 @@ import { BaseTransport, BLE } from "@meshnet/meshcore";
 import { BluetoothOffError, NeedsPairingError, type Connector, type FoundDevice, type ReachOptions } from "./types.js";
 import { nativePlatform } from "../lib/platform.js";
 import { openRelay, relayComesUp, relayHolds, type RelayLink } from "../lib/relay.js";
-import { readSetting, writeSetting } from "../lib/storage.js";
+import { knownList } from "./known.js";
 import { t } from "../i18n/index.js";
 
 type BleModule = typeof import("@capacitor-community/bluetooth-le");
@@ -151,15 +151,7 @@ async function takeOver(device: FoundDevice): Promise<CapacitorBleTransport> {
 }
 
 /** Radios connected to before, by the id the phone gave them, so they can be reached without a scan. */
-const KNOWN_KEY = "meshnet.ble.known";
-
-function known(): FoundDevice[] {
-  return readSetting<FoundDevice[]>(KNOWN_KEY, []);
-}
-
-function remember(device: FoundDevice): void {
-  writeSetting(KNOWN_KEY, [device, ...known().filter((d) => d.id !== device.id)].slice(0, 8));
-}
+const known = knownList("meshnet.ble.known", "ble");
 
 export const capacitorBleConnector: Connector = {
   id: "cap-ble",
@@ -198,15 +190,15 @@ export const capacitorBleConnector: Connector = {
     };
     signal.addEventListener("abort", () => clearTimeout(later), { once: true });
     await client.requestLEScan({ services: [BLE.service], allowDuplicates: true }, (result) => {
-      const known = seen.get(result.device.deviceId);
+      const before = seen.get(result.device.deviceId);
       // Not every advert carries the name: one without keeps the name heard before.
       seen.set(result.device.deviceId, {
         id: result.device.deviceId,
-        name: result.localName ?? result.device.name ?? known?.name ?? "MeshCore",
+        name: result.localName ?? result.device.name ?? before?.name ?? "MeshCore",
         detail: null,
-        rssi: result.rssi ?? known?.rssi ?? null,
+        rssi: result.rssi ?? before?.rssi ?? null,
       });
-      if (!known || Date.now() - told >= UPDATE_MS) tell();
+      if (!before || Date.now() - told >= UPDATE_MS) tell();
       else later ??= setTimeout(tell, UPDATE_MS - (Date.now() - told));
     });
     // The plugin scans until told to stop and resolves as soon as it starts.
@@ -224,8 +216,14 @@ export const capacitorBleConnector: Connector = {
   },
 
   async remembered() {
-    return known();
+    return known.list();
   },
+
+  async forget(id) {
+    known.forget(id);
+  },
+
+  identify: (id, radioKey) => known.identify(id, radioKey),
 
   async connect(device, options) {
     if (!device) throw new Error(t("connect.error.pickRadio"));
@@ -276,7 +274,7 @@ export const capacitorBleConnector: Connector = {
       await transport.close().catch(() => undefined);
       throw error;
     }
-    remember(device);
+    known.remember(device);
     return transport;
   },
 };

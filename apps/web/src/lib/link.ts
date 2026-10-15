@@ -149,6 +149,8 @@ async function reach(connector: Connector, device: FoundDevice | null, dropped: 
       await session.connect(transport, () => {
         if (gen !== generation) return;
         usable = true;
+        const radioKey = session.getState().self?.key;
+        if (device && radioKey) connector.identify?.(device.id, radioKey);
         rememberLink({
           connectorId: connector.id,
           device: device ?? { id: "", name: transport.label, detail: null, rssi: null },

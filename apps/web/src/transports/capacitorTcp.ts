@@ -7,7 +7,7 @@
 
 import type { PluginListenerHandle } from "@capacitor/core";
 import { BaseTransport, frameForStream, StreamFrameDecoder } from "@meshnet/meshcore";
-import { addressOf, knownAddresses, rememberAddress, TCP_CONNECT_TIMEOUT_S } from "./tcp.js";
+import { addressOf, knownAddresses, TCP_CONNECT_TIMEOUT_S } from "./tcp.js";
 import type { Connector } from "./types.js";
 import { t } from "../i18n/index.js";
 
@@ -106,7 +106,11 @@ export const capacitorTcpConnector: Connector = {
   mode: "address",
 
   async remembered() {
-    return knownAddresses();
+    return knownAddresses.list();
+  },
+
+  async forget(id) {
+    knownAddresses.forget(id);
   },
 
   async connect(device) {
@@ -116,7 +120,7 @@ export const capacitorTcpConnector: Connector = {
       await listen(api);
       const { id } = await api.open({ ...address, timeout: TCP_CONNECT_TIMEOUT_S });
       const transport = new CapacitorTcpTransport(api, id, device.name);
-      rememberAddress(device);
+      knownAddresses.remember(device);
       return transport;
     });
   },

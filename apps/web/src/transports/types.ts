@@ -17,6 +17,8 @@ export interface FoundDevice {
   role?: DeviceRole;
   /** A USB port's maker and product, where the platform says: what kind of board is on the other end. */
   usb?: { vid: number; pid: number } | undefined;
+  /** The public key of the radio last reached this way, in hex, where the connector keeps its own list. */
+  radioKey?: string | undefined;
 }
 
 /** What a connector to a serial port offers beyond connecting. */
@@ -48,6 +50,10 @@ export interface Connector {
   scan?(onFound: (devices: FoundDevice[]) => void, signal: AbortSignal, options?: ReachOptions): Promise<void>;
   /** Devices this platform can reconnect to without a scan or a chooser. */
   remembered(): Promise<FoundDevice[]>;
+  /** Takes a device off the remembered ones, where the app keeps that list itself. */
+  forget?(id: string): Promise<void>;
+  /** The remembered device `id` is the radio with this public key (hex): its other, older addresses are let go. */
+  identify?(id: string, radioKey: string): void;
   /** `null` asks the picker; a device connects to it. */
   connect(device: FoundDevice | null, options?: ReachOptions): Promise<Transport>;
   /**

@@ -54,6 +54,7 @@
   "list.more": { "one": "{count} more device", "other": "{count} more devices" },
   "list.morePhones": "Phones sharing a radio",
   "list.morePorts": "Ports that do not look like a radio",
+  "list.forget": "Forget",
   "tips.open": "Can't see your radio?",
   "tips.close": "Hide the tip",
   "tips.ble": "The radio is on, close by, and not connected to another phone or computer: a radio connected elsewhere stops showing itself.",

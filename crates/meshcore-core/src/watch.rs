@@ -648,8 +648,8 @@ impl Watch {
                 signer,
                 text,
             } => {
-                if txt_type == TXT_TYPE_CLI_DATA {
-                    return None; // a console's answer, not a message
+                if txt_type == TXT_TYPE_CLI_DATA || txt_type == TXT_TYPE_CLI_COMMAND {
+                    return None; // a console's answer, or a command this radio did not run: not a message
                 }
                 let prefix = hex(&sender_prefix);
                 let contact = find(&prefix);
@@ -1152,6 +1152,15 @@ mod tests {
             ],
             "a quiet chat posts with no sound, the rest with theirs"
         );
+    }
+
+    #[test]
+    fn a_console_command_this_radio_did_not_run_is_no_notice() {
+        let mut rig = Rig::new(config());
+        let mut frame = direct(&ALICE[..12], 1, "reboot");
+        frame[11] = TXT_TYPE_CLI_COMMAND;
+        rig.arrives(frame).grace_ends();
+        assert!(rig.posted.is_empty(), "{:?}", rig.titles());
     }
 
     #[test]

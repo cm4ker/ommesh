@@ -48,6 +48,8 @@ pub const CTL_TYPE_NODE_DISCOVER_RESP: u8 = 0x90;
 // Text types.
 pub const TXT_TYPE_CLI_DATA: u8 = 1;
 pub const TXT_TYPE_SIGNED_PLAIN: u8 = 2;
+/// Protocol 14: someone asked this radio to run a console command it would not run.
+pub const TXT_TYPE_CLI_COMMAND: u8 = 3;
 
 // Advert types: what kind of node a contact is.
 pub const ADV_TYPE_CHAT: u8 = 1;

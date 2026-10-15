@@ -38,6 +38,7 @@
 - On an iPhone, the keyboard no longer covers a window that asks for something, such as Sign in to a repeater: the window moves up above the keyboard, and its buttons stay in sight.
 - A PC using the radio through a phone gets the link back by itself after the phone's app is updated or restarted. The PC went on showing the radio as connected while nothing reached it: everything ended in Radio stopped answering, Try again did not help, and only Disconnect and connecting again did. Now the phone takes the PC back as soon as it writes, or has it connect again, and the PC reconnects on its own with the chats left on screen.
 - A phone shows no notice for a console command someone sent your radio without the right to run it (MeshCore 1.18). It would have rung as a message from them while the app was in the background.
+- On a phone, the list on the Mesh tab comes back up after it was pulled all the way down: a swipe up on its search field or filter button now lifts it. Only the thin bar above them used to take the swipe, so the list seemed stuck at the bottom until the app was restarted, mostly on Android. A tap on the field or the button still opens the search or the filter.
 
 ## 0.8.0 — 2026-10-12
 

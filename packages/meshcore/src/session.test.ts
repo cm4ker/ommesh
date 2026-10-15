@@ -1381,6 +1381,23 @@ test("removed contacts are kept to be put back, and a node the radio did not kee
   assert.deepEqual(second.getState().removed, {});
 });
 
+test("removed contacts forgotten are gone for good, the next session included", async () => {
+  const storage = new MemoryStorage();
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ storage, now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  await session.removeContact(bobKey());
+  assert.ok(session.getState().removed[bobKey()]);
+  session.forgetRemoved([bobKey(), "d0".repeat(32)]);
+  assert.deepEqual(session.getState().removed, {});
+  await session.disconnect();
+
+  const second = new MeshSession({ storage, now: () => 1_700_000_000_000 });
+  await second.connect(radio);
+  assert.deepEqual(second.getState().removed, {});
+  await assert.rejects(second.restoreContact(bobKey()), /unknown contact/);
+});
+
 test("a contact the radio already let go of counts as removed", async () => {
   const radio = new ScriptedRadio();
   const session = new MeshSession({ now: () => 1_700_000_000_000 });

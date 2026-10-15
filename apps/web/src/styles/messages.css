@@ -461,6 +461,10 @@ button.react-chip {
 .chat-pick-bar > button.danger {
   color: var(--danger);
 }
+.chat-pick-bar > button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 .chat-pick-bar > button:active {
   background: var(--hover);
 }

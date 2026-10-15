@@ -25,24 +25,25 @@ import { toneFor, type Survey } from "../lib/surveyData.js";
 import { focusOnMap, openProfile, takeListLowered, useNav } from "../lib/nav.js";
 import { heardAt as heard, kindLabel } from "../lib/nodes.js";
 import { DEFAULT_NODE_ORDER, NODE_ORDERS, nodeComparator, orderInForce, pinnedFirst, placed, setNodeOrder, useNodeOrder } from "../lib/nodeOrder.js";
-import type { MenuAt } from "../lib/press.js";
+import { endNodePick, extendNodePick, nodePick, pickedShown, startNodePick, toggleAllNodes, toggleNodePick, useNodePick } from "../lib/nodePick.js";
+import { usePress, type MenuAt } from "../lib/press.js";
 import { usePing, measuredLegs, spanKey } from "../lib/ping.js";
 import { routeWords } from "../lib/routes.js";
 import { useSavedPasswords } from "../lib/secrets.js";
-import { openCleanUp } from "../lib/cleanUp.js";
+import { openCleanUp, removeNodes } from "../lib/cleanUp.js";
 import { isYours, memoryTight, memoryUse } from "../lib/tidy.js";
 import { session, useSelector, useSession } from "../lib/session.js";
 import { act, toast } from "../lib/toast.js";
 import { isComplete, neighbourRows, passes } from "../lib/neighbours.js";
 import { closeAllTools, closeTool, dropOnRoute, lineOfSightTo, openLineOfSight, openNeighbourLink, surveyAtOnce, tapInNeighbours, tapInRoute, tapInSpan, whoHearsMe } from "../lib/toolActions.js";
 import { getTextScale, subscribeTextSize } from "../theme/textSize.js";
-import { IconButton } from "../ui/Button.js";
+import { Button, IconButton } from "../ui/Button.js";
 import { SearchField } from "../ui/Field.js";
 import { ActionRow, Block, Group, SwitchRow } from "../ui/List.js";
 import { showMenu } from "../ui/Menu.js";
 import { Sheet } from "../ui/Sheet.js";
 import { Avatar } from "./Avatar.js";
-import { AlertIcon, ChartIcon, CloseIcon, CopyIcon, LocationIcon, SlidersIcon, StarFilledIcon } from "./Icons.js";
+import { AlertIcon, ChartIcon, CheckIcon, CloseIcon, CopyIcon, DoubleCheckIcon, LocationIcon, SlidersIcon, StarFilledIcon, TrashIcon } from "./Icons.js";
 import { RadioTag } from "./RadioTag.js";
 import { SurveyBadge } from "./tools/Survey.js";
 import { ToolPanel } from "./tools/ToolPanel.js";
@@ -148,10 +149,12 @@ function whereFrom(self: SessionState["self"], c: ContactRecord): string | null 
 // ---- the list ----
 
 export function MeshList({ selected, onOpen, head = true, only }: { selected: string | null; onOpen: (key: string) => void; head?: boolean | undefined; only?: string[] | undefined }) {
+  const picking = useNodePick() !== null && !only;
   return (
     <div className="list-pane">
-      {head ? <MeshListHead /> : null}
+      {head ? picking ? <MeshPickHead wide /> : <MeshListHead /> : null}
       <MeshListBody selected={selected} onOpen={onOpen} only={only} hideSearch={!!only} />
+      {picking ? <MeshPickBar /> : null}
       {only ? null : <FilterSheetHost />}
     </div>
   );
@@ -298,10 +301,34 @@ function MeshListBody({ selected, onOpen, hideSearch = false, only }: { selected
   const all = Object.values(state.contacts);
   const rows = all.filter(only ? (c) => only.includes(c.key) : matcher(state, saved, kind, query)).sort(nodeComparator(order, state.self));
   const list = pinnedFirst(rows, pinned);
-  // Rows are memoised, so they get a stable opener and the minute their "5 min" is counted from.
+  // Rows are memoised, so they get a stable tap and hold and the minute their "5 min" is counted from.
   const openRef = useRef(onOpen);
   openRef.current = onOpen;
-  const open = useCallback((key: string) => openRef.current(key), []);
+  const orderRef = useRef<string[]>([]);
+  orderRef.current = list.map((c) => c.key);
+  // The nodes at one spot are a list of their own, where nothing is picked.
+  const pickable = !only;
+  const pick = useNodePick();
+  const picking = pickable && pick !== null;
+  const picked = useMemo(() => new Set(pick?.keys ?? []), [pick]);
+  const tap = useCallback(
+    (key: string, e: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) => {
+      if (pickable && nodePick()) {
+        if (e.shiftKey) extendNodePick(orderRef.current, key);
+        else toggleNodePick(key);
+      } else if (pickable && (e.ctrlKey || e.metaKey)) startNodePick(key);
+      else openRef.current(key);
+    },
+    [pickable],
+  );
+  const hold = useCallback(
+    (key: string) => {
+      if (!pickable) return;
+      if (nodePick()) toggleNodePick(key);
+      else startNodePick(key);
+    },
+    [pickable],
+  );
   const minute = Math.floor(Date.now() / 60_000);
 
   return (
@@ -313,7 +340,7 @@ function MeshListBody({ selected, onOpen, hideSearch = false, only }: { selected
         </div>
       )}
       {only ? null : <ActiveFilters self={state.self} />}
-      <div className="list mesh-list">
+      <div className={["list", "mesh-list", picking ? "picking" : ""].join(" ")}>
         {all.length === 0 ? (
           <div className="empty muted">{t("mesh.list.empty")}</div>
         ) : rows.length === 0 ? (
@@ -327,8 +354,11 @@ function MeshListBody({ selected, onOpen, hideSearch = false, only }: { selected
                   key={c.key}
                   contact={c}
                   selected={selected === c.key}
+                  picking={picking}
+                  picked={picking && picked.has(c.key)}
                   yours={isYours(state, saved, c)}
-                  onOpen={open}
+                  onTap={tap}
+                  onHold={hold}
                   login={state.logins[c.key]}
                   mv={statusMv(state.statusHistory[c.key])}
                   cell={cells[c.key]}
@@ -387,8 +417,13 @@ function MemoryStrip({ state }: { state: SessionState }) {
 interface NodeRowProps {
   contact: ContactRecord;
   selected: boolean;
+  /** Nodes are being picked to be removed: a ring at the row's start, and a tap picks rather than opens. */
+  picking: boolean;
+  picked: boolean;
   yours: boolean;
-  onOpen: (key: string) => void;
+  onTap: (key: string, e: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) => void;
+  /** A finger held on the row, or a right click: it starts the picking. */
+  onHold: (key: string) => void;
   login: SessionState["logins"][string] | undefined;
   /** The node's battery by its status answers, steadied; none before one. */
   mv: number | null;
@@ -403,7 +438,8 @@ interface NodeRowProps {
  * One node in the list. Memoised: an advert changes one contact, and the other rows,
  * eighty of them in a busy mesh, have nothing new to draw.
  */
-const NodeRow = memo(function NodeRow({ contact: c, selected, yours, onOpen, login, mv, cell, self }: NodeRowProps) {
+const NodeRow = memo(function NodeRow({ contact: c, selected, picking, picked, yours, onTap, onHold, login, mv, cell, self }: NodeRowProps) {
+  const press = usePress(() => onHold(c.key));
   // Most nodes have no route and flood, and many no position: said on every row it says nothing, so the profile says it.
   const route = yours ? null : routeWords(c);
   const bits = yours
@@ -414,7 +450,8 @@ const NodeRow = memo(function NodeRow({ contact: c, selected, yours, onOpen, log
   const low = mv !== null && lowCharge(mv, cell);
   return (
     <li>
-      <button type="button" className={["row", selected ? "selected" : ""].join(" ")} onClick={() => onOpen(c.key)}>
+      <button type="button" className={["row", selected && !picking ? "selected" : "", picked ? "picked" : ""].join(" ")} aria-pressed={picking ? picked : undefined} onClick={(e) => onTap(c.key, e)} {...press}>
+        {picking ? <span className="row-ring" aria-hidden="true">{picked ? <CheckIcon size={14} /> : null}</span> : null}
         <Avatar name={c.name || c.prefix} type={c.type} size={40} />
         <span className="row-main">
           <span className="row-top">
@@ -444,6 +481,85 @@ const NodeRow = memo(function NodeRow({ contact: c, selected, yours, onOpen, log
     </li>
   );
 });
+
+// ---- picking nodes to remove together (#93) ----
+
+/** The keys of the nodes the list shows, in its order: by the kind, the search and the order picked. */
+function useShownKeys(): string[] {
+  const state = useSession();
+  const saved = useSavedPasswords();
+  const { kind, query } = useFilter();
+  const { order, pinned } = useNodeOrder();
+  const rows = Object.values(state.contacts).filter(matcher(state, saved, kind, query)).sort(nodeComparator(order, state.self));
+  return pinnedFirst(rows, pinned).map((c) => c.key);
+}
+
+/** The picked nodes the list shows go, all at once, with Undo; the picking ends. */
+function removePicked(keys: string[]): void {
+  endNodePick();
+  void removeNodes(keys, false, "you");
+}
+
+/**
+ * In place of the list's head while nodes are picked, above the search on a phone: a cross, the count and All;
+ * Remove is in the bar below. With a mouse, Delete removes too and Escape lets go.
+ */
+function MeshPickHead({ wide }: { wide: boolean }) {
+  const pick = useNodePick();
+  const order = useShownKeys();
+  const ready = useSelector((s) => s.status === "ready" && !s.removing);
+  const keys = pick ? pickedShown(pick.keys, order) : [];
+  const live = useRef({ keys, ready });
+  live.current = { keys, ready };
+  useEffect(() => {
+    if (!wide) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      const typing = e.target instanceof Element && !!e.target.closest("input, textarea, select, [contenteditable]");
+      if (e.key === "Escape") {
+        e.preventDefault();
+        endNodePick();
+      } else if (e.key === "Delete" && !typing && live.current.ready && live.current.keys.length) {
+        e.preventDefault();
+        removePicked(live.current.keys);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [wide]);
+  if (!pick) return null;
+  const all = order.length > 0 && keys.length === order.length;
+  const parts = (
+    <>
+      <IconButton label={t("mesh.pick.clear")} onClick={endNodePick}>
+        <CloseIcon size={20} />
+      </IconButton>
+      <span className="mesh-pick-count" aria-live="polite">
+        {t("mesh.pick.count", { count: keys.length })}
+      </span>
+      <Button size="sm" disabled={order.length === 0} onClick={() => toggleAllNodes(order)}>
+        <DoubleCheckIcon size={15} /> {all ? t("mesh.pick.none") : t("mesh.pick.all")}
+      </Button>
+    </>
+  );
+  return wide ? <header className="list-head mesh-pick-head">{parts}</header> : <div className="mesh-pick-head in-sheet">{parts}</div>;
+}
+
+/** Below the list while nodes are picked, in the tabs' place on a phone: Remove, within reach of the thumb. */
+export function MeshPickBar() {
+  const pick = useNodePick();
+  const order = useShownKeys();
+  const ready = useSelector((s) => s.status === "ready" && !s.removing);
+  const keys = pick ? pickedShown(pick.keys, order) : [];
+  return (
+    <footer className="chat-pick-bar">
+      <button type="button" className="danger" disabled={!ready || keys.length === 0} onClick={() => removePicked(keys)}>
+        <TrashIcon size={22} />
+        {t("mesh.pick.remove", { count: keys.length })}
+      </button>
+    </footer>
+  );
+}
 
 // ---- the map ----
 
@@ -816,6 +932,12 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
   useBackLayer(!hidden && group !== null, () => setGroup(null));
   useBackLayer(!hidden && listed && mapped && detent === "full", () => setDetent("half"));
   useBackLayer(!hidden && tool !== null, closeTool);
+  // Nodes picked to be removed: Back lets them go, and so does leaving the list for a profile, a tool or another tab.
+  const picking = useNodePick() !== null && listed;
+  useBackLayer(!hidden && picking, endNodePick);
+  useEffect(() => {
+    if (hidden || !listed) endNodePick();
+  }, [hidden, listed]);
 
   // A pick leaves some map in view, ringed with its route, when the list was pulled all the way up: back from
   // its profile, or "On map" in a profile. Decided while rendering, so the map learns in the same pass how much
@@ -867,7 +989,7 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
     const edge = chips ? chips.getBoundingClientRect().bottom + scroller.scrollTop : top.getBoundingClientRect().bottom;
     const peek = Math.round(edge - el.getBoundingClientRect().top);
     setSpace((s) => (s.peek === peek ? s : { ...s, peek }));
-  }, [listed, space.height, hidden, textScale, filtered]);
+  }, [listed, space.height, hidden, textScale, filtered, picking]);
 
   // A tool or the list of nodes at one spot sits at its own height instead of the list's middle one, so more
   // of the map shows around it.
@@ -1091,6 +1213,7 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
           }}
         >
           <div className="sheet-grab" />
+          {picking ? <MeshPickHead wide={false} /> : null}
           {listed ? (
             <div className="mesh-sheet-tools">
               <MeshSearchInline onFocus={() => detent !== "full" && setDetent("full")} />

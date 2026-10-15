@@ -1,11 +1,12 @@
 /**
  * Taking contacts off the radio in bulk: the clean-up sheet, opened from the
- * Mesh list or the Contacts page, and the tidy-up rule that runs by itself
- * while the radio is connected. Both go through `removeNodes`, which says
- * what it did and offers to undo it.
+ * Mesh list or the Contacts page, the nodes picked in the Mesh list, and the
+ * tidy-up rule that runs by itself while the radio is connected. All go
+ * through `removeNodes`, which says what it did and offers to undo it.
  */
 
 import { useSyncExternalStore } from "react";
+import type { RemovedBy } from "@meshnet/meshcore";
 import { errorText } from "../i18n/errors.js";
 import { t } from "../i18n/index.js";
 import { hasSavedPassword } from "./secrets.js";
@@ -40,12 +41,15 @@ export function useCleanUpOpen(): boolean {
 
 // ---- removing ----
 
-/** Takes these off the radio as a clean-up, then says how many went and how full it is, with Undo. `rule`: the tidy-up rule did it. */
-export async function removeNodes(keys: string[], rule = false): Promise<void> {
+/**
+ * Takes these off the radio, then says how many went and how full it is, with Undo. `rule`: the tidy-up rule did
+ * it; `by`: who the Removed page says took them off, a clean-up unless they were picked in the Mesh list.
+ */
+export async function removeNodes(keys: string[], rule = false, by: RemovedBy = "tidy"): Promise<void> {
   if (keys.length === 0) return;
   let result: Awaited<ReturnType<typeof session.removeContacts>>;
   try {
-    result = await session.removeContacts(keys, "tidy");
+    result = await session.removeContacts(keys, by);
   } catch (error) {
     toast(errorText(error), "error");
     return;
@@ -66,9 +70,11 @@ export async function removeNodes(keys: string[], rule = false): Promise<void> {
     {
       label: t("common.undo"),
       run: async () => {
+        // A node the radio never kept only left the list, and has nothing to be put back from.
+        const back = removed.filter((k) => session.getState().removed[k]);
         try {
-          await session.restoreContacts(removed);
-          toast(t("contacts.cleanUp.putBack", { count: removed.length }));
+          await session.restoreContacts(back);
+          toast(t("contacts.cleanUp.putBack", { count: back.length }));
         } catch (e) {
           toast(errorText(e), "error");
         }

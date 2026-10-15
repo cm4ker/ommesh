@@ -8,6 +8,7 @@ import { useWide } from "../lib/layout.js";
 import { back, focusOnMap, getNav, goSection, openConversation, setStack, shownConversation, topOf, useNav, type Nav, type Screen, type Section } from "../lib/nav.js";
 import { setSettingsFind } from "../lib/settingsSearch.js";
 import { useMeshTool, type MeshTool } from "../lib/meshTool.js";
+import { useNodePick } from "../lib/nodePick.js";
 import { isTauri } from "../lib/platform.js";
 import { useSelector, useSession } from "../lib/session.js";
 import { useSurveying } from "../lib/survey.js";
@@ -24,7 +25,7 @@ import { ChatSwitcher } from "./ChatSwitcher.js";
 import { ChatList, NEW_CHAT_EVENT } from "./ChatList.js";
 import { ChatView, FIND_IN_CHAT_EVENT } from "./ChatView.js";
 import { ChatIcon, NodesIcon, SearchIcon, SettingsIcon } from "./Icons.js";
-import { MeshList, MeshMap, MeshPhone, useMeshAttention } from "./Mesh.js";
+import { MeshList, MeshMap, MeshPhone, MeshPickBar, useMeshAttention } from "./Mesh.js";
 import { MessageView } from "./MessageView.js";
 import { NodePageView } from "./node/NodePage.js";
 import { Palette } from "./Palette.js";
@@ -205,6 +206,8 @@ function Phone() {
   // The screen under a conversation has the tabs, though, and they go and come with it: drawn
   // under the conversation as it slides in, and as a swipe back uncovers that screen.
   const underTabs = !tabs && (screens.length < 2 || screens[screens.length - 2]!.kind !== "chat");
+  // Nodes picked in the Mesh list: their Remove takes the tabs' place, as a chat's picked messages take the field's.
+  const picking = useNodePick() !== null && nav.section === "mesh" && shown === null;
   const tabbar = (className: string) => (
     <nav className={className} aria-label={t("connect.tabs.label")} {...(className === "tabbar" ? {} : { inert: true, "aria-hidden": true })}>
       {SECTIONS.map((s) => (
@@ -238,7 +241,7 @@ function Phone() {
         {underTabs ? tabbar(["tabbar", "under-tabs", slide ? "leave" : ""].join(" ")) : null}
         <div className="layer-dim" aria-hidden="true" />
       </main>
-      {tabs ? tabbar("tabbar") : null}
+      {tabs ? picking ? <MeshPickBar /> : tabbar("tabbar") : null}
       <Sheet open={sheet !== null} onClose={back} title={t("connect.sheet.travelled")}>
         {sheet ? <MessageView conversation={sheet.conversation} id={sheet.id} chrome={{}} bare /> : null}
       </Sheet>

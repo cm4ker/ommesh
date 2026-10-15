@@ -1,4 +1,4 @@
-/* ---- contacts: how full the radio is, the clean-up sheet, a contact not on the radio ---- */
+/* ---- contacts: how full the radio is, the clean-up sheet, a contact not on the radio, the Removed page, nodes picked to be removed ---- */
 
 .memory-strip {
   display: flex;
@@ -140,4 +140,65 @@
 .check-result b.found-head {
   font-size: var(--text-lg);
   font-weight: 600;
+}
+
+/* The Removed page (#93): how many, or how many a search found, and Forget for those shown. */
+.removed-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: calc(32px * var(--box-scale));
+  margin: var(--space-2) var(--space-3) 0;
+  padding: 0 var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.removed-head > span {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Nodes picked in the Mesh list to be removed together (#93): a ring at the row's start, filled for those picked, as a phone's picked messages have. */
+.row-ring {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  box-sizing: border-box;
+  border: 1.5px solid color-mix(in oklab, var(--text) 40%, transparent);
+  border-radius: 50%;
+  color: var(--accent-contrast);
+}
+.row.picked {
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+}
+.row.picked .row-ring {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.mesh-list.picking .row {
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* In the list's head while picking; on a phone, in the sheet's head above the search. Either starts at its cross. */
+.mesh-pick-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.list-head.mesh-pick-head {
+  padding-left: var(--space-2);
+}
+.mesh-pick-head.in-sheet {
+  padding: 0 var(--space-3) var(--space-2) var(--space-1);
+}
+.mesh-pick-count {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -1992,6 +1992,12 @@ export class MeshSession {
     this.set({ removed: this.withoutRemoved([key]) });
   }
 
+  /** Drops these from the removed contacts for good, before their 90 days are up: they can no longer be put back. */
+  forgetRemoved(keys: readonly string[]): void {
+    if (!keys.some((k) => this.state.removed[k])) return;
+    this.set({ removed: this.withoutRemoved([...keys]) });
+  }
+
   /** Puts these back one at a time; stops at the first that fails. */
   async restoreContacts(keys: string[]): Promise<number> {
     let n = 0;

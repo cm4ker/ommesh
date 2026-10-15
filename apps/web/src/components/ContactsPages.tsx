@@ -18,8 +18,10 @@ import { chatKeys, isYours, memoryUse, setTidyDays, TIDY_DAYS, useTidyDays } fro
 import { act, toast } from "../lib/toast.js";
 import { Button } from "../ui/Button.js";
 import { Confirm } from "../ui/Dialog.js";
+import { SearchField } from "../ui/Field.js";
 import { ActionRow, Group, InfoRow, LinkRow, SelectRow, SwitchRow } from "../ui/List.js";
 import { Avatar } from "./Avatar.js";
+import { TrashIcon } from "./Icons.js";
 
 type Self = NonNullable<SessionState["self"]>;
 type Mode = "all" | "kinds" | "manual";
@@ -183,13 +185,24 @@ const BY: Record<RemovedContact["by"], Key> = {
   radio: "contacts.by.radio",
 };
 
-/** The contacts taken off the radio in the last 90 days, newest first, each with Put back. */
+/**
+ * The contacts taken off the radio in the last 90 days, newest first, each with Put back. A search finds one
+ * among hundreds (#93), and Forget drops those shown before their 90 days are up, but for the nodes there is a
+ * chat with: the chat takes its name from what is kept here.
+ */
 export function RemovedPage() {
   const state = useSession();
   const online = state.status === "ready";
   const [busy, setBusy] = useState<string | null>(null);
-  const rows = Object.values(state.removed).sort((a, b) => b.at - a.at);
-  if (rows.length === 0) return <div className="empty muted">{t("contacts.removedPage.empty")}</div>;
+  const [query, setQuery] = useState("");
+  const [ask, setAsk] = useState(false);
+  const all = Object.values(state.removed).sort((a, b) => b.at - a.at);
+  if (all.length === 0) return <div className="empty muted">{t("contacts.removedPage.empty")}</div>;
+  const q = query.trim().toLowerCase();
+  const rows = q ? all.filter((r) => (r.contact.name || r.contact.prefix).toLowerCase().includes(q) || r.contact.key.startsWith(q)) : all;
+  const chats = chatKeys(state);
+  const forgettable = rows.filter((r) => !chats.has(r.contact.key)).map((r) => r.contact.key);
+  const kept = rows.length - forgettable.length;
   const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
   const recent = rows.filter((r) => r.at >= weekAgo);
   const earlier = rows.filter((r) => r.at < weekAgo);
@@ -221,11 +234,38 @@ export function RemovedPage() {
         })}
       </Group>
     ) : null;
+  const forget = () => {
+    setAsk(false);
+    session.forgetRemoved(forgettable);
+    toast(t("contacts.removedPage.forgotten", { count: forgettable.length }));
+  };
   return (
     <>
+      <SearchField value={query} onValue={setQuery} placeholder={t("contacts.removedPage.find")} aria-label={t("contacts.removedPage.find")} />
+      <div className="removed-head">
+        <span>{q ? t("contacts.removedPage.found", { shown: rows.length, count: all.length }) : t("contacts.removedPage.total", { count: all.length })}</span>
+        <Button variant="danger" size="sm" disabled={forgettable.length === 0} onClick={() => setAsk(true)}>
+          <TrashIcon size={15} /> {!q ? t("contacts.removedPage.forgetAll") : forgettable.length ? t("contacts.removedPage.forgetSome", { count: forgettable.length }) : t("contacts.removedPage.forget")}
+        </Button>
+      </div>
+      {rows.length === 0 ? <div className="empty muted">{t("contacts.removedPage.noMatch")}</div> : null}
       {list(t("contacts.removedPage.thisWeek"), recent)}
       {list(t("contacts.removedPage.earlier"), earlier)}
       <p className="group-note">{t("contacts.removedPage.note")}</p>
+      <Confirm
+        open={ask}
+        danger
+        title={t("contacts.removedPage.forgetTitle", { count: forgettable.length })}
+        body={
+          <>
+            <p>{t("contacts.removedPage.forgetBody")}</p>
+            {kept ? <p>{t("contacts.removedPage.forgetKeeps", { count: kept })}</p> : null}
+          </>
+        }
+        confirmLabel={t("contacts.removedPage.forget")}
+        onCancel={() => setAsk(false)}
+        onConfirm={forget}
+      />
     </>
   );
 }

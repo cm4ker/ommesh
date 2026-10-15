@@ -7,6 +7,11 @@
  * in flight; every push goes to the push listeners. Some commands answer with
  * several frames (`getContacts` streams them), so a request carries a
  * predicate that says when its answer is complete.
+ *
+ * A radio with Bluetooth and Wi-Fi at once (MeshCore 1.18) writes every answer
+ * to every link, so another app on the other link sees ours and we see its. A
+ * request that names the kinds of answer it takes leaves the others alone, and
+ * they go to the stray listeners with the answers nobody here asked for.
  */
 
 import { errorName } from "./protocol/codes.js";
@@ -54,6 +59,8 @@ interface Pending {
   name: string;
   bytes: Uint8Array;
   complete: Completion;
+  /** The kinds of answer this command takes besides an error; null takes any. */
+  expect: ReadonlySet<ResponseFrame["kind"]> | null;
   timeoutMs: number;
   /** Set when the firmware answers nothing at all, as on reboot. */
   fireAndForget: boolean;
@@ -70,9 +77,22 @@ export interface ClientOptions {
   savingTimeoutMs?: number;
   /** Every frame in either direction, for a log pane. */
   trace?: (direction: "in" | "out", bytes: Uint8Array, frame?: Frame) => void;
+  /** The clock a stray answer is dated by, milliseconds. */
+  now?: () => number;
 }
 
 const single: Completion = () => "done";
+
+/**
+ * An answer that comes this long after one of ours went unanswered, or after
+ * the link opened, is more likely that late answer, or one from before this
+ * client, than another app's.
+ */
+const LATE_ANSWER_MS = 60_000;
+const OPENING_MS = 5_000;
+
+/** The answers that carry a message from the radio's queue, and the one that says it is empty. */
+const SYNC_ANSWERS: ResponseFrame["kind"][] = ["contactMessage", "channelMessage", "channelData", "noMoreMessages"];
 
 /**
  * Some firmware (Smart UI 0.05 on a Heltec) writes its whole contacts file to
@@ -98,17 +118,23 @@ export class MeshCoreClient {
   private queue: Pending[] = [];
   private inFlight: Pending | null = null;
   private pushListeners = new Set<(frame: PushFrame) => void>();
+  private strayListeners = new Set<(frame: ResponseFrame, late: boolean) => void>();
   private closeListeners = new Set<(reason: Error | null) => void>();
   private closedWith: Error | null | undefined;
   private readonly timeoutMs: number;
   private readonly savingTimeoutMs: number;
   private readonly trace: ClientOptions["trace"];
+  private readonly now: () => number;
+  private readonly openedAt: number;
+  private timedOutAt = -Infinity;
   private readonly unsubscribe: (() => void)[] = [];
 
   constructor(readonly transport: Transport, options: ClientOptions = {}) {
     this.timeoutMs = options.timeoutMs ?? 8000;
     this.savingTimeoutMs = options.savingTimeoutMs ?? Math.max(SAVING_TIMEOUT_MS, this.timeoutMs);
     this.trace = options.trace;
+    this.now = options.now ?? Date.now;
+    this.openedAt = this.now();
     this.unsubscribe.push(transport.onFrame((bytes) => this.onBytes(bytes)));
     this.unsubscribe.push(transport.onClose((reason) => this.onClosed(reason)));
   }
@@ -125,6 +151,15 @@ export class MeshCoreClient {
   onPush(listener: (frame: PushFrame) => void): () => void {
     this.pushListeners.add(listener);
     return () => this.pushListeners.delete(listener);
+  }
+
+  /**
+   * An answer no command here is waiting for: another app's, on a radio that
+   * answers every link, or `late`, when it may be a late answer to one of ours.
+   */
+  onStray(listener: (frame: ResponseFrame, late: boolean) => void): () => void {
+    this.strayListeners.add(listener);
+    return () => this.strayListeners.delete(listener);
   }
 
   onClose(listener: (reason: Error | null) => void): () => void {
@@ -159,9 +194,11 @@ export class MeshCoreClient {
       return;
     }
     const pending = this.inFlight;
-    if (!pending) {
-      // The firmware finishing an answer to a command that timed out, or a
-      // frame from before this client attached. Nothing to give it to.
+    // Nothing waits for it, or what waits takes another kind: the firmware
+    // finishing an answer to a command that timed out, a frame from before
+    // this client attached, or another app's answer.
+    if (!pending || (pending.expect && frame.kind !== "err" && !pending.expect.has(frame.kind))) {
+      this.stray(frame);
       return;
     }
     if (frame.kind === "err") {
@@ -173,6 +210,18 @@ export class MeshCoreClient {
       this.finish(null);
     } else {
       this.armTimer(pending);
+    }
+  }
+
+  private stray(frame: ResponseFrame): void {
+    const now = this.now();
+    const late = now - this.timedOutAt < LATE_ANSWER_MS || now - this.openedAt < OPENING_MS;
+    for (const listener of this.strayListeners) {
+      try {
+        listener(frame, late);
+      } catch (error) {
+        console.error("stray listener threw", error);
+      }
     }
   }
 
@@ -202,8 +251,12 @@ export class MeshCoreClient {
     if (pending.timer) clearTimeout(pending.timer);
     pending.timer = setTimeout(() => {
       if (this.inFlight === pending) {
-        if (pending.fireAndForget) this.finish(null);
-        else this.finish(new TimeoutError(pending.name, pending.timeoutMs));
+        if (pending.fireAndForget) {
+          this.finish(null);
+        } else {
+          this.timedOutAt = this.now();
+          this.finish(new TimeoutError(pending.name, pending.timeoutMs));
+        }
       }
     }, pending.timeoutMs);
   }
@@ -240,7 +293,7 @@ export class MeshCoreClient {
   request(
     name: string,
     bytes: Uint8Array,
-    options: { complete?: Completion; timeoutMs?: number; fireAndForget?: boolean } = {},
+    options: { complete?: Completion; expect?: ResponseFrame["kind"][]; timeoutMs?: number; fireAndForget?: boolean } = {},
   ): Promise<ResponseFrame[]> {
     if (this.closedWith !== undefined) {
       return Promise.reject(new TransportClosedError(this.closedWith));
@@ -250,6 +303,7 @@ export class MeshCoreClient {
         name,
         bytes,
         complete: options.complete ?? single,
+        expect: options.expect ? new Set(options.expect) : null,
         timeoutMs: options.timeoutMs ?? this.timeoutMs,
         fireAndForget: options.fireAndForget ?? false,
         collected: [],
@@ -267,7 +321,7 @@ export class MeshCoreClient {
     kind: K,
     timeoutMs?: number,
   ): Promise<Extract<ResponseFrame, { kind: K }>> {
-    const frames = await this.request(name, bytes, timeoutMs === undefined ? {} : { timeoutMs });
+    const frames = await this.request(name, bytes, timeoutMs === undefined ? { expect: [kind] } : { expect: [kind], timeoutMs });
     const frame = frames[0];
     if (!frame || frame.kind !== kind) {
       throw new Error(`${name}: expected ${kind}, got ${frame?.kind ?? "nothing"}`);
@@ -296,6 +350,7 @@ export class MeshCoreClient {
   async getContacts(since?: number): Promise<{ total: number; contacts: Contact[]; mostRecentLastMod: number }> {
     const frames = await this.request("getContacts", cmd.getContacts(since), {
       complete: (frame) => (frame.kind === "endOfContacts" ? "done" : "more"),
+      expect: ["contactsStart", "contact", "endOfContacts"],
       // A hundred contacts over BLE, paced by the firmware's write-busy check.
       timeoutMs: 20000,
     });
@@ -335,7 +390,7 @@ export class MeshCoreClient {
 
   /** The next queued message, or null when the radio's queue is empty. */
   async syncNextMessage(): Promise<MessageFrame | null> {
-    const frames = await this.request("syncNextMessage", cmd.syncNextMessage());
+    const frames = await this.request("syncNextMessage", cmd.syncNextMessage(), { expect: SYNC_ANSWERS });
     const frame = frames[0];
     if (!frame || frame.kind === "noMoreMessages") return null;
     if (frame.kind === "contactMessage" || frame.kind === "channelMessage" || frame.kind === "channelData") {
@@ -507,7 +562,7 @@ export class MeshCoreClient {
   }
 
   async getStats(type: number): Promise<Extract<ResponseFrame, { kind: "statsCore" | "statsRadio" | "statsPackets" }>> {
-    const frames = await this.request("getStats", cmd.getStats(type));
+    const frames = await this.request("getStats", cmd.getStats(type), { expect: ["statsCore", "statsRadio", "statsPackets"] });
     const frame = frames[0];
     if (frame && (frame.kind === "statsCore" || frame.kind === "statsRadio" || frame.kind === "statsPackets")) {
       return frame;
@@ -533,7 +588,7 @@ export class MeshCoreClient {
 
   /** The radio's private key, 64 bytes; null when its firmware was built not to give it (`ENABLE_PRIVATE_KEY_EXPORT`). */
   async exportPrivateKey(): Promise<Uint8Array | null> {
-    const [frame] = await this.request("exportPrivateKey", cmd.exportPrivateKey());
+    const [frame] = await this.request("exportPrivateKey", cmd.exportPrivateKey(), { expect: ["disabled", "privateKey"] });
     if (frame?.kind === "disabled") return null;
     if (frame?.kind !== "privateKey") throw new Error(`exportPrivateKey: expected privateKey, got ${frame?.kind ?? "nothing"}`);
     return frame.key;
@@ -545,7 +600,7 @@ export class MeshCoreClient {
    * is refused as an illegal argument.
    */
   async importPrivateKey(privateKey: Uint8Array): Promise<boolean> {
-    const [frame] = await this.request("importPrivateKey", cmd.importPrivateKey(privateKey));
+    const [frame] = await this.request("importPrivateKey", cmd.importPrivateKey(privateKey), { expect: ["disabled", "ok"] });
     if (frame?.kind === "disabled") return false;
     if (frame?.kind !== "ok") throw new Error(`importPrivateKey: expected ok, got ${frame?.kind ?? "nothing"}`);
     return true;
@@ -573,11 +628,11 @@ export class MeshCoreClient {
     return this.ok("sendControlData", cmd.sendControlData(payload));
   }
 
-  sendRawData(path: Uint8Array, payload: Uint8Array): Promise<void> {
-    return this.ok("sendRawData", cmd.sendRawData(path, payload));
+  sendRawData(path: Uint8Array, payload: Uint8Array, hashSize = 1): Promise<void> {
+    return this.ok("sendRawData", cmd.sendRawData(path, payload, hashSize));
   }
 
-  sendChannelData(channelIndex: number, dataType: number, payload: Uint8Array, path?: Uint8Array): Promise<void> {
-    return this.ok("sendChannelData", cmd.sendChannelData(channelIndex, dataType, payload, path));
+  sendChannelData(channelIndex: number, dataType: number, payload: Uint8Array, path?: Uint8Array, hashSize = 1): Promise<void> {
+    return this.ok("sendChannelData", cmd.sendChannelData(channelIndex, dataType, payload, path, hashSize));
   }
 }

@@ -80,6 +80,7 @@ function initial(messages: MessageRecord[] = [], unread: Record<string, number> 
     error: null,
     syncing: false,
     connectStep: null,
+    sharedAt: null,
   };
 }
 

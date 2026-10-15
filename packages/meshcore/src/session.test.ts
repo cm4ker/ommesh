@@ -314,6 +314,63 @@ function tick(ms = 0): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+test("another app's answers on the same radio: its message is taken here, and the radio is marked shared", async () => {
+  let now = 1_700_000_000_000;
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => now });
+  await session.connect(radio);
+  await settle();
+  assert.equal(session.getState().sharedAt, null, "nothing strange at connect");
+  now += 10_000;
+  // The other app read the radio's queue: the radio hands its answer to both links.
+  radio.push(dmFrame(BOB, "to whoever reads first"));
+  radio.push(new Uint8Array([Resp.NoMoreMessages]));
+  await settle();
+  assert.deepEqual(
+    session.getState().messages.map((m) => m.text),
+    ["to whoever reads first"],
+  );
+  assert.equal(session.getState().sharedAt, now);
+  await session.disconnect();
+});
+
+test("an answer to another app's command does not end ours", async () => {
+  let now = 1_700_000_000_000;
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => now });
+  await session.connect(radio);
+  await settle();
+  now += 10_000;
+  // Ours waits for the battery; the other app's read of the queue is answered first.
+  const send = radio.send.bind(radio);
+  radio.send = async (frame) => {
+    if (frame[0] === Cmd.GetBattAndStorage) radio.push(channelFrame(0, "Alice: in between"));
+    await send(frame);
+  };
+  await session.refreshBattery();
+  await settle();
+  assert.equal(session.getState().battery?.mv, 4100);
+  assert.deepEqual(
+    session.getState().messages.map((m) => m.text),
+    ["in between"],
+  );
+  assert.notEqual(session.getState().sharedAt, null);
+  await session.disconnect();
+});
+
+test("a late answer of our own is not taken for another app", async () => {
+  let now = 1_700_000_000_000;
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => now });
+  await session.connect(radio);
+  await settle();
+  // Within the first seconds of the link, what comes unasked is left from before it.
+  radio.push(new Uint8Array([Resp.Ok]));
+  await settle();
+  assert.equal(session.getState().sharedAt, null);
+  await session.disconnect();
+});
+
 test("USB message sync retries a lost reply and keeps the session connected", async () => {
   const radio = new ScriptedRadio("serial");
   radio.queue.push(channelFrame(0, "Alice: after the lost reply"));

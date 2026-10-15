@@ -38,6 +38,7 @@ import {
   type DeviceInfo,
   type NodeStats,
   type PushFrame,
+  type ResponseFrame,
   type SelfInfo,
   type SeriesSummary,
 } from "./protocol/frames.js";
@@ -431,6 +432,12 @@ export interface SessionState {
    * read back; null otherwise.
    */
   connectStep: "hello" | "history" | null;
+  /**
+   * When the radio last answered something this app did not ask, ms: another
+   * app is connected to it as well, over its other link (Bluetooth and Wi-Fi at
+   * once, MeshCore 1.18). Null while nothing says so.
+   */
+  sharedAt: number | null;
 }
 
 /** What survives a disconnect, per radio. */
@@ -949,6 +956,7 @@ const EMPTY: SessionState = {
   error: null,
   syncing: false,
   connectStep: null,
+  sharedAt: null,
 };
 
 /** How long after sending a channel message its echoes are still looked for. */
@@ -1111,6 +1119,8 @@ export class MeshSession {
   /** The history of the radio last connected, kept through failed attempts to connect again. */
   private held: { key: string; history: PersistedState } | null = null;
   private syncQueued = false;
+  /** Messages read out of another app's answers, one after another. */
+  private strayReceived: Promise<void> = Promise.resolve();
   private contactsRefreshQueued = false;
   private focused: string | null = null;
   private ackTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -1307,7 +1317,7 @@ export class MeshSession {
     // leaves the state empty and a weak link can take a few. A history that
     // could not be read at connect is read again instead.
     if (this.state.self) this.held = this.unreadHistory === this.state.self.key ? null : { key: this.state.self.key, history: historyOf(this.state) };
-    const client = new MeshCoreClient(transport, this.trace ? { trace: this.trace } : {});
+    const client = new MeshCoreClient(transport, { ...(this.trace ? { trace: this.trace } : {}), now: () => this.now() });
     this.client = client;
     // While it connects again, the radio and its history stay in sight, so the
     // chats stay on screen rather than giving way to the connect screen.
@@ -1321,6 +1331,7 @@ export class MeshSession {
       log: this.state.log,
     });
     client.onPush((frame) => this.onPush(frame));
+    client.onStray((frame, late) => this.onStray(client, frame, late));
     client.onClose((reason) => {
       if (this.client !== client) return;
       this.client = null;
@@ -2309,6 +2320,25 @@ export class MeshSession {
     } finally {
       if (this.client === client) this.set({ syncing: false });
     }
+  }
+
+  /**
+   * An answer nobody here asked for. A radio on Bluetooth and Wi-Fi at once
+   * answers both links, so another app's read of the queue hands us its
+   * message too: the radio gives each message out once, so it is taken here or
+   * not at all. Anything but a likely late answer of our own says another app
+   * is on the radio.
+   */
+  private onStray(client: MeshCoreClient, frame: ResponseFrame, late: boolean): void {
+    if (this.client !== client) return;
+    if (frame.kind === "contactMessage" || frame.kind === "channelMessage" || frame.kind === "channelData") {
+      this.strayReceived = this.strayReceived
+        .then(() => this.receive(frame))
+        .catch((error: unknown) => this.log("error", `a message from another app's answer: ${(error as Error).message}`));
+    }
+    if (late) return;
+    if (this.state.sharedAt === null) this.log("link", `the radio answered something this app did not ask (${frame.kind}): another app is on it`);
+    this.set({ sharedAt: this.now() });
   }
 
   private async receive(frame: NonNullable<Awaited<ReturnType<MeshCoreClient["syncNextMessage"]>>>): Promise<void> {

@@ -14,8 +14,8 @@ import { usePress, type MenuAt } from "../lib/press.js";
 import { session, useSession } from "../lib/session.js";
 import { dropShared, useShared } from "../lib/shareIn.js";
 import { toast } from "../lib/toast.js";
-import { IconButton } from "../ui/Button.js";
-import { Confirm } from "../ui/Dialog.js";
+import { Button, IconButton } from "../ui/Button.js";
+import { Confirm, Dialog } from "../ui/Dialog.js";
 import { SearchField } from "../ui/Field.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
@@ -99,6 +99,7 @@ export function ChatList({ selected }: { selected: string | null }) {
         data-find
       />
       <SharedStrip />
+      <TwoAppsStrip />
       <NewsStrip />
       <NewBuildStrip />
       {rows.length === 0 ? (
@@ -176,6 +177,41 @@ export function ChatList({ selected }: { selected: string | null }) {
         }}
       />
     </div>
+  );
+}
+
+/** How long the strip about another app stays after the radio last answered that app. */
+const TWO_APPS_MS = 5 * 60 * 1000;
+
+/**
+ * A radio on Bluetooth and Wi-Fi at once answers both links (MeshCore 1.18):
+ * while another app is seen on it, a strip says so, and why it matters behind a tap.
+ */
+function TwoAppsStrip() {
+  const { sharedAt, self } = useSession();
+  const [open, setOpen] = useState(false);
+  const [, rerender] = useState(0);
+  const left = sharedAt === null ? 0 : sharedAt + TWO_APPS_MS - Date.now();
+  useEffect(() => {
+    if (sharedAt === null) return;
+    const timer = setTimeout(() => rerender((n) => n + 1), Math.max(0, sharedAt + TWO_APPS_MS - Date.now()) + 50);
+    return () => clearTimeout(timer);
+  }, [sharedAt]);
+  return (
+    <>
+      {left > 0 ? (
+        <div className="memory-strip news" role="status">
+          <span className="grow">{t("chats.twoApps.strip")}</span>
+          <button type="button" className="memory-act" onClick={() => setOpen(true)}>
+            {t("chats.twoApps.more")}
+          </button>
+        </div>
+      ) : null}
+      <Dialog open={open} title={t("chats.twoApps.strip")} onClose={() => setOpen(false)} footer={<Button onClick={() => setOpen(false)}>{t("common.ok")}</Button>}>
+        <p>{t("chats.twoApps.body", { name: self?.name ?? "" })}</p>
+        <p>{t("chats.twoApps.body2")}</p>
+      </Dialog>
+    </>
   );
 }
 

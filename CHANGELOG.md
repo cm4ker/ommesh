@@ -29,6 +29,7 @@
 - A radio on MeshCore 1.18 can be turned off from the app: Settings › Reboot, reset, erase › Turn the radio off. Only the button on the radio turns it on again.
 - A radio on MeshCore 1.18 with a screen shows the time in your time zone: the app gives it yours when it connects and with Set the radio's clock.
 - The console suggests the commands MeshCore 1.18 added: on your radio get wifi.pwd, shutdown and radio.fem.rxgain, on a repeater, room or sensor power and gps diag.
+- Settings can be searched, as on an iPhone: tap the magnifier at the top of Settings, or press Ctrl+F on a PC, and type. A setting is found by its name, by the words it is often called by (password finds the Bluetooth PIN and the Wi-Fi password, 868 the frequency) and by the page it is on. Each result says where it sits and, for some, what it is set to now; a tap opens its page with the row lit for a moment, and Back comes back to the results. Ctrl+K finds the rows inside the pages too, not only the pages.
 
 ### Desktop
 - Ommesh's button on the Windows taskbar shows how many messages are unread: a red circle with the count while a person has written to you, amber when only channels and rooms have something new, and 99+ past 99. Before, only the dot on the icon by the clock said so, and Windows often hides that icon behind the arrow.

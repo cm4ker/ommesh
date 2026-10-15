@@ -438,6 +438,8 @@ export interface SessionState {
    * once, MeshCore 1.18). Null while nothing says so.
    */
   sharedAt: number | null;
+  /** The radio's Wi-Fi (MeshCore 1.18); null when it has none, or before it is read. */
+  wifi: RadioWifi | null;
 }
 
 /** What survives a disconnect, per radio. */
@@ -502,6 +504,31 @@ export interface SessionOptions {
   traceWaitMs?: (estimateMs: number) => number;
   /** How long a neighbour search waits for the neighbours' answers, from the time worked out for it; for tests. */
   searchWaitMs?: (estimateMs: number) => number;
+  /** Minutes this device's clock is ahead of UTC; for tests. */
+  zoneOffsetMin?: () => number;
+}
+
+/** The radio's Wi-Fi, as its console tells it (MeshCore 1.18). */
+export interface RadioWifi {
+  /** The network it joins; null when none is set. */
+  ssid: string | null;
+  /** Whether it starts Wi-Fi at all. */
+  enabled: boolean;
+  /** Whether it is on the network now. */
+  connected: boolean;
+  /** Its address on the network while connected. */
+  ip: string | null;
+  /** Written since the radio last started: what is shown takes effect at its next start. */
+  pending: boolean;
+}
+
+/** The longest network name and password the firmware keeps (`wifi_ssid[33]`, `wifi_pwd[64]`). */
+export const WIFI_SSID_MAX = 32;
+export const WIFI_PASSWORD_MAX = 63;
+
+/** The whole hours a radio's `tz.offset` takes for a zone so many minutes ahead of UTC: cut toward zero, −12 to +14. */
+export function timeZoneHours(offsetMin: number): number {
+  return Math.min(14, Math.max(-12, Math.trunc(offsetMin / 60)));
 }
 
 /** One trace that came back. */
@@ -957,6 +984,7 @@ const EMPTY: SessionState = {
   syncing: false,
   connectStep: null,
   sharedAt: null,
+  wifi: null,
 };
 
 /** How long after sending a channel message its echoes are still looked for. */
@@ -1119,6 +1147,7 @@ export class MeshSession {
   /** The history of the radio last connected, kept through failed attempts to connect again. */
   private held: { key: string; history: PersistedState } | null = null;
   private syncQueued = false;
+  private readonly zoneOffsetMin: () => number;
   /** Messages read out of another app's answers, one after another. */
   private strayReceived: Promise<void> = Promise.resolve();
   private contactsRefreshQueued = false;
@@ -1179,6 +1208,7 @@ export class MeshSession {
     this.replyWait = options.replyWaitMs ?? ((budget) => budget);
     this.traceWait = options.traceWaitMs ?? ((budget) => Math.min(30_000, Math.max(2_500, budget)));
     this.searchWait = options.searchWaitMs ?? ((budget) => budget);
+    this.zoneOffsetMin = options.zoneOffsetMin ?? (() => -new Date().getTimezoneOffset());
     this.trace = options.trace;
   }
 
@@ -1389,6 +1419,7 @@ export class MeshSession {
       await this.readAutoAdd(client);
       await this.readRepeatFreqs(client);
       await this.readRegion(client);
+      await this.readOwnConsole(client);
       void this.refreshBattery();
       void this.sweepRoutes();
     } catch (error) {
@@ -3698,6 +3729,125 @@ export class MeshSession {
       this.patchConsole(key, entry.id, { status: "failed", error: unsupported ? "This radio has no console." : (error as Error).message });
       throw error;
     }
+  }
+
+  /**
+   * A console line on the connected radio that the app runs for itself, kept
+   * out of the console's log: the answer without the reflected tag or the
+   * firmware's `> ` before a value. Null when the radio does not know the
+   * command ("Unknown command"), as a build without Wi-Fi says for `wifi.*`.
+   */
+  private async quietCli(client: MeshCoreClient, command: string): Promise<string | null> {
+    const tag = (this.cliTag++ & 0xff).toString(16).padStart(2, "0");
+    const raw = await client.runCliCommand(`${tag}|${command}`);
+    const reply = (raw.startsWith(`${tag}|`) ? raw.slice(tag.length + 1) : raw).trim();
+    if (reply.startsWith("Unknown command")) return null;
+    return reply.startsWith("> ") ? reply.slice(2) : reply;
+  }
+
+  /**
+   * What the radio's own console tells at connect (MeshCore 1.18): its Wi-Fi,
+   * and its time zone set to ours. Neither stops a connect when it fails.
+   */
+  private async readOwnConsole(client: MeshCoreClient): Promise<void> {
+    if (!this.hasOwnCli()) return;
+    try {
+      await this.readWifi(client);
+    } catch (error) {
+      this.log("error", `Wi-Fi not read: ${(error as Error).message}`);
+    }
+    try {
+      await this.syncTimeZone(client);
+    } catch (error) {
+      this.log("error", `time zone not set: ${(error as Error).message}`);
+    }
+  }
+
+  /** Whether the connected radio runs console lines of its own (MeshCore 1.18, protocol 14). */
+  private hasOwnCli(): boolean {
+    return (this.state.device?.firmwareVerCode ?? 0) >= 14;
+  }
+
+  /**
+   * The radio's Wi-Fi as its console tells it (MeshCore 1.18), into `wifi`:
+   * null when the radio has no console or was built without Wi-Fi. What was
+   * written since the radio last started stays marked as waiting for a restart.
+   */
+  async readWifi(client = this.need()): Promise<RadioWifi | null> {
+    if (!this.hasOwnCli()) {
+      this.set({ wifi: null });
+      return null;
+    }
+    const ssid = await this.quietCli(client, "get wifi.ssid");
+    if (ssid === null) {
+      this.set({ wifi: null });
+      return null;
+    }
+    const enabled = await this.quietCli(client, "get wifi.enabled");
+    const status = await this.quietCli(client, "get wifi.status");
+    const ip = await this.quietCli(client, "get wifi.ip");
+    const connected = status === "connected";
+    const wifi: RadioWifi = {
+      ssid: ssid === "(not set)" || ssid === "" ? null : ssid,
+      enabled: enabled !== "0",
+      connected,
+      ip: connected && ip && /^[0-9a-f.:]+$/i.test(ip) ? ip : null,
+      pending: this.state.wifi?.pending ?? false,
+    };
+    this.set({ wifi });
+    return wifi;
+  }
+
+  /** The Wi-Fi password the radio keeps, as its console gives it (`get wifi.pwd`, MeshCore 1.18). */
+  async readWifiPassword(): Promise<string> {
+    return (await this.quietCli(this.need(), "get wifi.pwd")) ?? "";
+  }
+
+  /**
+   * The network the radio joins, and its password: both together, since the
+   * firmware takes the password of the network it is given. They are used
+   * from the radio's next start.
+   */
+  async setWifiNetwork(ssid: string, password: string): Promise<void> {
+    const client = this.need();
+    if (!ssid || ssid.length > WIFI_SSID_MAX) throw new Error(`a network name is 1 to ${WIFI_SSID_MAX} characters`);
+    if (password.length > WIFI_PASSWORD_MAX) throw new Error(`a Wi-Fi password is at most ${WIFI_PASSWORD_MAX} characters`);
+    await this.quietCli(client, `set wifi.ssid ${ssid}`);
+    await this.quietCli(client, `set wifi.pwd ${password}`);
+    this.log("wifi", `network set to ${ssid}; used from the radio's next start`);
+    const wifi = this.state.wifi;
+    this.set({ wifi: wifi ? { ...wifi, ssid, pending: true } : { ssid, enabled: true, connected: false, ip: null, pending: true } });
+  }
+
+  /** Turns the radio's Wi-Fi on or off from its next start. */
+  async setWifiEnabled(on: boolean): Promise<void> {
+    const client = this.need();
+    await this.quietCli(client, `set wifi.enabled ${on ? 1 : 0}`);
+    this.log("wifi", `Wi-Fi ${on ? "on" : "off"} from the radio's next start`);
+    const wifi = this.state.wifi;
+    if (wifi) this.set({ wifi: { ...wifi, enabled: on, pending: true } });
+  }
+
+  /**
+   * The radio keeps the hours its screen adds to UTC (MeshCore 1.18,
+   * `tz.offset`, whole hours from −12 to +14); it is set to this device's
+   * when it differs. A radio without its own console is left alone.
+   */
+  async syncTimeZone(client = this.need()): Promise<void> {
+    if (!this.hasOwnCli()) return;
+    const ours = timeZoneHours(this.zoneOffsetMin());
+    const theirs = await this.quietCli(client, "get tz.offset");
+    if (theirs === null || Number(theirs) === ours) return;
+    await this.quietCli(client, `set tz.offset ${ours}`);
+    this.log("clock", `radio time zone was ${theirs} h; set to ${ours} h`);
+  }
+
+  /**
+   * Turns the radio off (MeshCore 1.18, `poweroff`). It answers nothing and
+   * leaves every link; only its own button brings it back.
+   */
+  async powerOff(): Promise<void> {
+    await this.need().runCliCommandUnanswered("poweroff");
   }
 
   // ---- repeaters, rooms and sensors ----

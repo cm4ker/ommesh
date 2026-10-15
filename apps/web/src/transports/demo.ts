@@ -46,6 +46,12 @@ import { t } from "../i18n/index.js";
 const DEMO_KEY = fromHex("1088b9a5a4103e31b859e71fa9723589219e5651a7bd90a1a04b81a5024cc157b8460e03da7d62cf6b03cb648efca994eaf82acf07358dfe9892d2f7e71142fd");
 const own = { privateKey: DEMO_KEY, publicKey: publicKeyOf(DEMO_KEY), name: "Demo radio", blePin: 0 };
 
+/**
+ * The demo radio's Wi-Fi (MeshCore 1.18) and the time zone its screen shows, kept over a reboot as a
+ * radio keeps them: `wifi` as written, `started` as the radio took it when it last started.
+ */
+const ownWifi = { wifi: { ssid: "HomeNet", pwd: "radio-pass-2026", enabled: 1 }, started: { ssid: "HomeNet", enabled: 1 }, tzOffset: 0 };
+
 interface Person {
   key: Uint8Array;
   name: string;
@@ -792,9 +798,47 @@ class DemoRadio extends BaseTransport {
   /** A few of upstream's companion console commands, word for word; the rest are unknown as they would be there. */
   private ownCli(command: string): string {
     const { frequencyKhz, bandwidthHz, spreadingFactor, codingRate, pathHashMode } = this.radio;
+    // It is on the network it was given before its last start.
+    const running = ownWifi.started;
+    const wifi = ownWifi.wifi;
+    switch (command) {
+      case "get wifi.ssid":
+        return `> ${wifi.ssid || "(not set)"}`;
+      case "get wifi.pwd":
+        return `> ${wifi.pwd}`;
+      case "get wifi.enabled":
+        return `> ${wifi.enabled}`;
+      case "get wifi.status":
+        return running.enabled && running.ssid ? "> connected" : "> disconnected";
+      case "get wifi.ip":
+        return running.enabled && running.ssid ? "> 192.168.1.42" : "> (not connected)";
+      case "set wifi.clear":
+        ownWifi.wifi = { ...wifi, ssid: "", pwd: "" };
+        return "> wifi config cleared (reboot to apply)";
+      case "get tz.offset":
+        return `> ${ownWifi.tzOffset}`;
+    }
+    if (command.startsWith("set wifi.ssid ")) {
+      wifi.ssid = command.slice(14, 14 + 32);
+      return `> wifi.ssid is now ${wifi.ssid} (set wifi.pwd too, then reboot)`;
+    }
+    if (command.startsWith("set wifi.pwd ")) {
+      wifi.pwd = command.slice(13, 13 + 63);
+      return "> wifi.pwd updated (reboot to apply)";
+    }
+    if (command.startsWith("set wifi.enabled ")) {
+      wifi.enabled = Number(command.slice(17)) ? 1 : 0;
+      return `> wifi.enabled is now ${wifi.enabled} (reboot to apply)`;
+    }
+    if (command.startsWith("set tz.offset ")) {
+      const tz = Math.trunc(Number(command.slice(14)));
+      if (!(tz >= -12 && tz <= 14)) return "Error, must be from -12 to +14";
+      ownWifi.tzOffset = tz;
+      return "OK";
+    }
     switch (command) {
       case "ver":
-        return "v1.17.1 (Build: 14 Aug 2026)";
+        return "v1.18.0 (Build: 15 Oct 2026)";
       case "board":
         return "Demo board";
       case "get name":
@@ -840,9 +884,9 @@ class DemoRadio extends BaseTransport {
             .u8(50)
             .u8(8)
             .u32(own.blePin)
-            .fixedString("14 Aug 2026", 12)
+            .fixedString("15 Oct 2026", 12)
             .fixedString("Demo board", 40)
-            .fixedString("v1.17.1", 20)
+            .fixedString("v1.18.0", 20)
             .u8(this.radio.repeat ? 1 : 0)
             .u8(this.radio.pathHashMode)
             .toBytes(),
@@ -959,6 +1003,7 @@ class DemoRadio extends BaseTransport {
         let tag = "";
         if (text.length > 4 && text[2] === "|") [tag, text] = [text.slice(0, 3), text.slice(3)];
         if (text === "reboot" || text === "poweroff" || text === "shutdown") {
+          ownWifi.started = { ssid: ownWifi.wifi.ssid, enabled: ownWifi.wifi.enabled };
           // Upstream answers neither: the radio is gone from this link.
           this.timers.push(
             setTimeout(() => {
@@ -1246,7 +1291,8 @@ class DemoRadio extends BaseTransport {
         return [new Uint8Array([Resp.Ok])];
       }
       case Cmd.Reboot:
-        // A radio that reboots says nothing more on this link.
+        // A radio that reboots says nothing more on this link, and starts with the Wi-Fi it was given.
+        ownWifi.started = { ssid: ownWifi.wifi.ssid, enabled: ownWifi.wifi.enabled };
         this.timers.push(
           setTimeout(() => {
             void this.shutdown();

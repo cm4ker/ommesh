@@ -96,3 +96,31 @@
   outline: 1px solid var(--danger);
   outline-offset: -2px;
 }
+
+/* The radio's Wi-Fi (MeshCore 1.18): a change waits for a reboot, said on top with the button for it. The words wrap; the button keeps its edge. */
+.wifi-pending {
+  background: var(--warning-subtle);
+}
+.wifi-pending .line-text {
+  flex: 1;
+  min-width: 0;
+}
+.wifi-pending .button {
+  flex: none;
+}
+.wifi-pending-mark {
+  flex: none;
+  color: var(--warning);
+}
+.wifi-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.wifi-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--success);
+}

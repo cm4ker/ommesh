@@ -20,6 +20,7 @@ import { startCoreWatch } from "./lib/coreWatch.js";
 import { startTidyRule } from "./lib/cleanUp.js";
 import { startFollowPhone } from "./lib/followPhone.js";
 import { startShareIn } from "./lib/shareIn.js";
+import { startWifiAddress } from "./lib/radioWifi.js";
 import { isWide, subscribeWide } from "./lib/layout.js";
 import { getNav, openConversation, openProfile, shownConversation, subscribeNav } from "./lib/nav.js";
 
@@ -120,6 +121,7 @@ export function App() {
 
   // What other apps share to this one (#88), waiting over the chat list for a chat.
   useEffect(() => startShareIn(), []);
+  useEffect(() => startWifiAddress(), []);
 
   // A click on a notice opens what it was about.
   useEffect(() => {

@@ -88,6 +88,7 @@ function state(messages: MessageRecord[]): SessionState {
     syncing: false,
     connectStep: null,
     sharedAt: null,
+    wifi: null,
   };
 }
 

@@ -10,7 +10,8 @@ import { t } from "../i18n/index.js";
 import { errorText } from "../i18n/errors.js";
 
 /**
- * The PIN the radio asks a new phone or computer for when it pairs. The
+ * The radio's Bluetooth, under Advanced › Connection beside its Wi-Fi: for
+ * now the PIN it asks a new phone or computer for when it pairs. The
  * radio reports only the PIN it keeps, so a random one is never known here:
  * it is on the radio's screen. Saving reboots the radio, as only a radio that
  * starts takes a PIN.
@@ -47,7 +48,7 @@ export function PinPage({ online }: { online: boolean }) {
 
   return (
     <>
-      <Group note={t("radio.pin.note")}>
+      <Group title={t("radio.pin.group")} note={t("radio.pin.note")}>
         <ChoiceRow label={t("radio.pin.random")} hint={t("radio.pin.randomHint")} checked={!own} disabled={!online} onSelect={() => setOwn(false)} />
         <ChoiceRow
           label={t("radio.pin.own")}

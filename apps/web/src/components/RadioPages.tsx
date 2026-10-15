@@ -37,7 +37,7 @@ import { SearchField } from "../ui/Field.js";
 import { ActionRow, Block, ChoiceRow, Group, InfoRow, LinkRow, SelectRow, StepperRow, SwitchRow } from "../ui/List.js";
 import { Avatar, SenderName } from "./Avatar.js";
 import { ChatBackdrop } from "./ChatBackdrop.js";
-import { CopyIcon, PictureIcon } from "./Icons.js";
+import { BluetoothIcon, CopyIcon, PictureIcon, WifiIcon } from "./Icons.js";
 import { ContactsPage, RemovedPage } from "./ContactsPages.js";
 import { Console } from "./node/Console.js";
 import { LogView } from "./LogView.js";
@@ -46,6 +46,7 @@ import { OwnReadings } from "./NodeReadings.js";
 import { HistoryPage } from "./HistoryPage.js";
 import { KeyPage } from "./KeyPage.js";
 import { PinPage } from "./PinPage.js";
+import { WifiPage } from "./WifiPage.js";
 import { regionLabel, RegionSheet } from "./RegionSheet.js";
 import { ScreenHead, type Chrome } from "./ScreenHead.js";
 import { UpdateButton } from "./Updates.js";
@@ -71,6 +72,8 @@ export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = {
   trusted: "privacy",
   console: "advanced",
   key: "advanced",
+  pin: "advanced",
+  wifi: "advanced",
   background: "appearance",
 };
 
@@ -90,6 +93,7 @@ export const RADIO_TITLES: Record<RadioPage, Key> = {
   console: "radio.titles.console",
   key: "radio.titles.key",
   pin: "radio.titles.pin",
+  wifi: "radio.titles.wifi",
   notifications: "radio.titles.notifications",
   sound: "radio.titles.sound",
   soundDirect: "radio.notifications.direct",
@@ -265,6 +269,8 @@ function PageBody({ page }: { page: RadioPage }) {
       return self ? <KeyPage self={self} online={online} /> : <Offline />;
     case "pin":
       return state.device ? <PinPage online={online} /> : <Offline />;
+    case "wifi":
+      return self ? <WifiPage online={online} /> : <Offline />;
     case "notifications":
       return <NotificationsPage />;
     case "sound":
@@ -633,13 +639,32 @@ function confirmNotes(c: { radioChanged: boolean; repeatChanged: boolean; repeat
  * percent it would give now, so the one that looks right is plain to see.
  */
 function AdvancedPage({ self, online }: { self: Self; online: boolean }) {
-  const device = useSession().device;
+  const { device, wifi } = useSession();
   const hasConsole = useOwnConsole();
   return (
     <>
       {hasConsole ? (
         <Group title={t("radio.advanced.manage")}>
           <LinkRow label={t("radio.titles.console")} hint={t("radio.advanced.consoleHint")} onClick={() => push({ kind: "radio", page: "console" })} />
+        </Group>
+      ) : null}
+      {device ? (
+        // The ways a phone or a computer reaches the radio, each with its settings behind it. Wi-Fi only on a radio built with it (MeshCore 1.18).
+        <Group title={t("radio.advanced.link")}>
+          <LinkRow
+            icon={<BluetoothIcon size={17} />}
+            label={t("radio.titles.pin")}
+            value={device.blePin ? t("radio.advanced.blePinValue", { pin: String(device.blePin).padStart(6, "0") }) : t("radio.advanced.blePinRandom")}
+            onClick={() => push({ kind: "radio", page: "pin" })}
+          />
+          {wifi ? (
+            <LinkRow
+              icon={<WifiIcon size={17} />}
+              label={t("radio.titles.wifi")}
+              value={!wifi.enabled ? t("radio.advanced.wifiOff") : wifi.ip ? <span className="mono">{wifi.ip}</span> : t("radio.advanced.wifiAway")}
+              onClick={() => push({ kind: "radio", page: "wifi" })}
+            />
+          ) : null}
         </Group>
       ) : null}
       <Group title={t("radio.advanced.device")}>
@@ -650,11 +675,6 @@ function AdvancedPage({ self, online }: { self: Self; online: boolean }) {
             <InfoRow label={t("radio.advanced.capacity")}>
               {t("radio.advanced.capacityValue", { contacts: t("radio.advanced.contacts", { count: device.maxContacts }), channels: t("radio.advanced.channels", { count: device.maxChannels }) })}
             </InfoRow>
-            <LinkRow
-              label={t("radio.advanced.blePin")}
-              value={device.blePin ? <span className="mono">{String(device.blePin).padStart(6, "0")}</span> : t("radio.pin.random")}
-              onClick={() => push({ kind: "radio", page: "pin" })}
-            />
           </>
         ) : null}
         <LinkRow label={t("radio.advanced.publicKey")} value={<span className="mono">{self.key.slice(0, 16)}…</span>} trailing={<CopyIcon size={14} className="line-chev" />} onClick={() => void navigator.clipboard?.writeText(self.key).then(() => toast(t("common.copied")))} />
@@ -668,6 +688,8 @@ function AdvancedPage({ self, online }: { self: Self; online: boolean }) {
             void act(async () => {
               // The radio takes no time behind its own, so one that runs ahead is only told about.
               const ahead = await session.syncClock(0);
+              // A 1.18 radio's screen shows the time in its own time zone: ours, as the clock is.
+              await session.syncTimeZone();
               if (ahead > CLOCK_LEAD_S) toast(t("radio.advanced.clockAhead", { seconds: ahead }), "error");
               else toast(t("radio.advanced.clockSet"));
             })
@@ -1241,12 +1263,28 @@ function ConnectionPage() {
 function PowerPage() {
   const state = useSession();
   const online = state.status === "ready";
-  const [ask, setAsk] = useState<"reboot" | "reset" | "forget" | null>(null);
+  const [ask, setAsk] = useState<"reboot" | "off" | "reset" | "forget" | null>(null);
+  // MeshCore 1.18 turns off on a console line; an older radio has no way to be told.
+  const canTurnOff = (state.device?.firmwareVerCode ?? 0) >= 14;
   return (
     <>
       <Group>
         <ActionRow label={t("radio.power.reboot")} disabled={!online} onClick={() => setAsk("reboot")} />
+        {canTurnOff ? <ActionRow label={t("radio.power.off")} disabled={!online} onClick={() => setAsk("off")} /> : null}
       </Group>
+      <Confirm
+        open={ask === "off"}
+        title={t("radio.power.offTitle")}
+        body={<p>{t("radio.power.offBody", { name: state.self?.name ?? "" })}</p>}
+        confirmLabel={t("radio.power.offConfirm")}
+        onCancel={() => setAsk(null)}
+        onConfirm={async () => {
+          // It answers nothing and is gone: the app lets go of it rather than look for it again.
+          const ok = await act(() => session.powerOff(), t("radio.power.offDone"));
+          setAsk(null);
+          if (ok) await disconnect();
+        }}
+      />
       <Group note={t("radio.power.note")}>
         <ActionRow label={t("radio.power.reset")} danger disabled={!online} onClick={() => setAsk("reset")} />
         <ActionRow label={t("radio.power.forget")} danger disabled={!state.self} onClick={() => setAsk("forget")} />

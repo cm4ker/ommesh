@@ -38,6 +38,11 @@ class ScriptedRadio extends BaseTransport {
   slots: Record<number, { name: string; secret: Uint8Array }> = {};
   /** Whether it runs console lines of its own (protocol 14); an older radio refuses the command. */
   console = false;
+  /** The protocol its firmware says it speaks: 13 is MeshCore 1.17, 14 is 1.18. */
+  protocol = 13;
+  /** What its own console answers, line by line, besides `get tx`; and every line it was given. */
+  cli: Record<string, string> = {};
+  cliLines: string[] = [];
   /** Whether its firmware takes a private key, and the key it was last given. */
   keys = true;
   privateKey: Uint8Array | null = null;
@@ -62,7 +67,7 @@ class ScriptedRadio extends BaseTransport {
   private answer(frame: Uint8Array): Uint8Array[] {
     switch (frame[0]) {
       case Cmd.DeviceQuery: {
-        const w = new ByteWriter().u8(Resp.DeviceInfo).u8(13).u8(50).u8(2).u32(this.blePin).fixedString("d", 12).fixedString("m", 40).fixedString("v1.17.1", 20);
+        const w = new ByteWriter().u8(Resp.DeviceInfo).u8(this.protocol).u8(50).u8(2).u32(this.blePin).fixedString("d", 12).fixedString("m", 40).fixedString(this.protocol >= 14 ? "v1.18.0" : "v1.17.1", 20);
         if (this.network) w.u8(this.network.repeat ? 1 : 0).u8(this.network.hashMode);
         return [w.toBytes()];
       }
@@ -181,7 +186,10 @@ class ScriptedRadio extends BaseTransport {
         const text = new TextDecoder().decode(frame.subarray(1));
         const tag = text.length > 4 && text[2] === "|" ? text.slice(0, 3) : "";
         const command = text.slice(tag.length);
-        return [new ByteWriter().u8(Resp.CliReply).string(tag + (command === "get tx" ? "> 22" : "Unknown command")).toBytes()];
+        this.cliLines.push(command);
+        if (command === "poweroff") return [];
+        const reply = this.cli[command] ?? (command === "get tx" ? "> 22" : command.startsWith("set ") && this.cli[`get ${command.slice(4).split(" ")[0]}`] !== undefined ? "OK" : "Unknown command");
+        return [new ByteWriter().u8(Resp.CliReply).string(tag + reply).toBytes()];
       }
       case Cmd.ImportPrivateKey:
         if (!this.keys) return [new Uint8Array([Resp.Disabled])];
@@ -368,6 +376,79 @@ test("a late answer of our own is not taken for another app", async () => {
   radio.push(new Uint8Array([Resp.Ok]));
   await settle();
   assert.equal(session.getState().sharedAt, null);
+  await session.disconnect();
+});
+
+/** A MeshCore 1.18 radio built with Wi-Fi, on a network, its screen two hours ahead of UTC. */
+function wifiRadio(): ScriptedRadio {
+  const radio = new ScriptedRadio();
+  radio.console = true;
+  radio.protocol = 14;
+  radio.cli = {
+    "get wifi.ssid": "> HomeNet",
+    "get wifi.enabled": "> 1",
+    "get wifi.status": "> connected",
+    "get wifi.ip": "> 192.168.1.42",
+    "get wifi.pwd": "> radio-pass",
+    "get tz.offset": "> 2",
+  };
+  return radio;
+}
+
+test("a 1.18 radio's Wi-Fi is read at connect, and its time zone set to ours when it differs", async () => {
+  const radio = wifiRadio();
+  const session = new MeshSession({ zoneOffsetMin: () => 330 });
+  await session.connect(radio);
+  await settle();
+  assert.deepEqual(session.getState().wifi, { ssid: "HomeNet", enabled: true, connected: true, ip: "192.168.1.42", pending: false });
+  // +5:30 is cut to the whole hours the firmware keeps.
+  assert.ok(radio.cliLines.includes("set tz.offset 5"));
+  assert.ok(!session.getState().consoles[session.getState().self!.key]?.length, "kept out of the console's log");
+  await session.disconnect();
+});
+
+test("Wi-Fi settings are written together and wait for the radio's next start", async () => {
+  const radio = wifiRadio();
+  const session = new MeshSession({ zoneOffsetMin: () => 120 });
+  await session.connect(radio);
+  await settle();
+  assert.ok(!radio.cliLines.some((l) => l.startsWith("set tz.offset")), "a time zone that matches is left alone");
+  assert.equal(await session.readWifiPassword(), "radio-pass");
+  await session.setWifiNetwork("Office 5G", "two words");
+  assert.deepEqual(radio.cliLines.slice(-2), ["set wifi.ssid Office 5G", "set wifi.pwd two words"]);
+  assert.equal(session.getState().wifi?.ssid, "Office 5G");
+  assert.equal(session.getState().wifi?.pending, true);
+  await session.setWifiEnabled(false);
+  assert.equal(radio.cliLines.at(-1), "set wifi.enabled 0");
+  await assert.rejects(session.setWifiNetwork("x".repeat(33), ""), /1 to 32/);
+  await session.disconnect();
+});
+
+test("a radio built without Wi-Fi has none, and a 1.17 radio is asked nothing new", async () => {
+  const noWifi = new ScriptedRadio();
+  noWifi.console = true;
+  noWifi.protocol = 14;
+  const session = new MeshSession();
+  await session.connect(noWifi);
+  await settle();
+  assert.equal(session.getState().wifi, null);
+  await session.disconnect();
+
+  const old = new ScriptedRadio();
+  await session.connect(old);
+  await settle();
+  assert.equal(session.getState().wifi, null);
+  assert.ok(!old.sent.some((f) => f[0] === Cmd.RunCliCommand), "no console lines to 1.17");
+  await session.disconnect();
+});
+
+test("power off goes out unanswered", async () => {
+  const radio = wifiRadio();
+  const session = new MeshSession();
+  await session.connect(radio);
+  await settle();
+  await session.powerOff();
+  assert.equal(radio.cliLines.at(-1), "poweroff");
   await session.disconnect();
 });
 

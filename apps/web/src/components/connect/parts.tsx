@@ -26,7 +26,8 @@ export function rowLine(device: FoundDevice, connector: Connector): string | nul
     return radio ? t("connect.device.sharesRadio", { name: radio }) : t("connect.device.phoneShares");
   }
   if (connector.kind === "ble") return bleAddress(device) ?? device.detail;
-  if (connector.kind === "tcp") return null;
+  // An address the radio said itself is listed under the radio's name, its address below.
+  if (connector.kind === "tcp") return device.name !== device.id ? device.id : null;
   return device.detail;
 }
 

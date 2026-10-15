@@ -611,6 +611,11 @@ export class MeshCoreClient {
     return this.one("runCliCommand", cmd.runCliCommand(text), "cliReply").then((f) => f.text);
   }
 
+  /** A console line the radio does not answer, as it reboots or turns off at once (`poweroff`). */
+  async runCliCommandUnanswered(text: string): Promise<void> {
+    await this.request("runCliCommand", cmd.runCliCommand(text), { fireAndForget: true, timeoutMs: 1500 });
+  }
+
   setAutoAddConfig(config: number, maxHops?: number): Promise<void> {
     return this.ok("setAutoAddConfig", cmd.setAutoAddConfig(config, maxHops));
   }

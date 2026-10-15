@@ -38,12 +38,13 @@ import { t } from "../i18n/index.js";
 
 /**
  * Who the demo radio is: its private key, the public key that comes of it,
- * and its name. They last as long as the page rather than one link, as a
- * radio keeps them over a reboot, so a key or a name given to it in Settings
- * is what it comes back with.
+ * its name and its Bluetooth PIN (0 for the firmware's own). They last as
+ * long as the page rather than one link, as a radio keeps them over a
+ * reboot, so a key, a name or a PIN given to it in Settings is what it comes
+ * back with.
  */
 const DEMO_KEY = fromHex("1088b9a5a4103e31b859e71fa9723589219e5651a7bd90a1a04b81a5024cc157b8460e03da7d62cf6b03cb648efca994eaf82acf07358dfe9892d2f7e71142fd");
-const own = { privateKey: DEMO_KEY, publicKey: publicKeyOf(DEMO_KEY), name: "Demo radio" };
+const own = { privateKey: DEMO_KEY, publicKey: publicKeyOf(DEMO_KEY), name: "Demo radio", blePin: 0 };
 
 interface Person {
   key: Uint8Array;
@@ -824,7 +825,7 @@ class DemoRadio extends BaseTransport {
             .u8(14)
             .u8(50)
             .u8(8)
-            .u32(123456)
+            .u32(own.blePin)
             .fixedString("14 Aug 2026", 12)
             .fixedString("Demo board", 40)
             .fixedString("v1.17.1", 20)
@@ -1210,6 +1211,13 @@ class DemoRadio extends BaseTransport {
       case Cmd.SetAdvertName:
         own.name = new TextDecoder().decode(frame.subarray(1));
         return [new Uint8Array([Resp.Ok])];
+      case Cmd.SetDevicePin: {
+        // As the firmware: the PIN of its own, or six digits that do not start with 0.
+        const pin = new DataView(frame.buffer, frame.byteOffset + 1, 4).getUint32(0, true);
+        if (pin !== 0 && (pin < 100_000 || pin > 999_999)) return [new Uint8Array([Resp.Err, 6])];
+        own.blePin = pin;
+        return [new Uint8Array([Resp.Ok])];
+      }
       case Cmd.Reboot:
         // A radio that reboots says nothing more on this link.
         this.timers.push(
@@ -1246,8 +1254,9 @@ export const demoConnector: Connector = {
     onFound([{ id: "demo", name: "MeshCore-demo", detail: t("connect.device.noHardware"), rssi: -42 }]);
   },
   async remembered() {
-    return [];
+    return [{ id: "old", name: "MeshCore-Wan11", detail: "E5:21:8C:AA:52:A5", rssi: null }];
   },
+  async forget() {},
   async connect(): Promise<Transport> {
     const radio = new DemoRadio();
     radio.start();

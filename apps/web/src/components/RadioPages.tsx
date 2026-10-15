@@ -45,6 +45,7 @@ import { AirView } from "./AirView.js";
 import { OwnReadings } from "./NodeReadings.js";
 import { HistoryPage } from "./HistoryPage.js";
 import { KeyPage } from "./KeyPage.js";
+import { PinPage } from "./PinPage.js";
 import { ScreenHead, type Chrome } from "./ScreenHead.js";
 import { UpdateButton } from "./Updates.js";
 import { useDesktopUpdateInfo } from "../lib/updates.js";
@@ -87,6 +88,7 @@ export const RADIO_TITLES: Record<RadioPage, Key> = {
   advanced: "radio.titles.advanced",
   console: "radio.titles.console",
   key: "radio.titles.key",
+  pin: "radio.titles.pin",
   notifications: "radio.titles.notifications",
   sound: "radio.titles.sound",
   soundDirect: "radio.notifications.direct",
@@ -260,6 +262,8 @@ function PageBody({ page }: { page: RadioPage }) {
       return self ? <AdvancedPage self={self} online={online} /> : <Offline />;
     case "key":
       return self ? <KeyPage self={self} online={online} /> : <Offline />;
+    case "pin":
+      return state.device ? <PinPage online={online} /> : <Offline />;
     case "notifications":
       return <NotificationsPage />;
     case "sound":
@@ -640,11 +644,11 @@ function AdvancedPage({ self, online }: { self: Self; online: boolean }) {
             <InfoRow label={t("radio.advanced.capacity")}>
               {t("radio.advanced.capacityValue", { contacts: t("radio.advanced.contacts", { count: device.maxContacts }), channels: t("radio.advanced.channels", { count: device.maxChannels }) })}
             </InfoRow>
-            {device.blePin ? (
-              <InfoRow label={t("radio.advanced.blePin")} mono>
-                {String(device.blePin).padStart(6, "0")}
-              </InfoRow>
-            ) : null}
+            <LinkRow
+              label={t("radio.advanced.blePin")}
+              value={device.blePin ? <span className="mono">{String(device.blePin).padStart(6, "0")}</span> : t("radio.pin.random")}
+              onClick={() => push({ kind: "radio", page: "pin" })}
+            />
           </>
         ) : null}
         <LinkRow label={t("radio.advanced.publicKey")} value={<span className="mono">{self.key.slice(0, 16)}…</span>} trailing={<CopyIcon size={14} className="line-chev" />} onClick={() => void navigator.clipboard?.writeText(self.key).then(() => toast(t("common.copied")))} />

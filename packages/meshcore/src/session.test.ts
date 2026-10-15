@@ -1,7 +1,7 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { ByteWriter, fromHex } from "./protocol/bytes.js";
-import { Cmd, ContactFlag, Push, Resp, TxtType } from "./protocol/codes.js";
+import { Cmd, ContactFlag, ErrCode, Push, Resp, TxtType } from "./protocol/codes.js";
 import { groupDataPayload, groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
 import { crockford, decodeReaction, encodeReaction, messageHash, REACTION_DATA_TYPE } from "./protocol/reaction.js";
 import { channelConversation, CLOCK_RESET_TIME, ClockAheadError, contactConversation, isTrusted, KEYLESS_CONVERSATION, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
@@ -41,6 +41,8 @@ class ScriptedRadio extends BaseTransport {
   /** Whether its firmware takes a private key, and the key it was last given. */
   keys = true;
   privateKey: Uint8Array | null = null;
+  /** The Bluetooth PIN it keeps; 0 for the firmware's own. */
+  blePin = 0;
 
   async send(frame: Uint8Array): Promise<void> {
     this.sent.push(frame);
@@ -53,7 +55,7 @@ class ScriptedRadio extends BaseTransport {
   private answer(frame: Uint8Array): Uint8Array[] {
     switch (frame[0]) {
       case Cmd.DeviceQuery: {
-        const w = new ByteWriter().u8(Resp.DeviceInfo).u8(13).u8(50).u8(2).u32(0).fixedString("d", 12).fixedString("m", 40).fixedString("v1.17.1", 20);
+        const w = new ByteWriter().u8(Resp.DeviceInfo).u8(13).u8(50).u8(2).u32(this.blePin).fixedString("d", 12).fixedString("m", 40).fixedString("v1.17.1", 20);
         if (this.network) w.u8(this.network.repeat ? 1 : 0).u8(this.network.hashMode);
         return [w.toBytes()];
       }
@@ -180,6 +182,12 @@ class ScriptedRadio extends BaseTransport {
         return [new Uint8Array([Resp.Ok])];
       case Cmd.SetAdvertName:
         return [new Uint8Array([Resp.Ok])];
+      case Cmd.SetDevicePin: {
+        const pin = new DataView(frame.buffer, frame.byteOffset + 1, 4).getUint32(0, true);
+        if (pin !== 0 && (pin < 100_000 || pin > 999_999)) return [new Uint8Array([Resp.Err, ErrCode.IllegalArg])];
+        this.blePin = pin;
+        return [new Uint8Array([Resp.Ok])];
+      }
       case Cmd.Reboot:
         // A radio that reboots says nothing more on this link.
         queueMicrotask(() => this.drop());
@@ -2937,6 +2945,29 @@ test("a key given to the radio goes with its name, the history is saved under th
   assert.deepEqual(order, [Cmd.ImportPrivateKey, Cmd.SetAdvertName, Cmd.Reboot]);
   assert.deepEqual(storage.saved.get(SELF_KEY)?.messages.map((m) => m.text), ["kept"]);
   await until(() => session.getState().status === "closed");
+});
+
+test("a new Bluetooth PIN is kept by the radio, shown at once, and taken at the reboot that follows", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  assert.equal(session.getState().device?.blePin, 0);
+  await session.setBlePin(482_913);
+  assert.equal(radio.blePin, 482_913);
+  assert.equal(session.getState().device?.blePin, 482_913);
+  const order = radio.sent.map((f) => f[0]).filter((c) => c === Cmd.SetDevicePin || c === Cmd.Reboot);
+  assert.deepEqual(order, [Cmd.SetDevicePin, Cmd.Reboot]);
+  await until(() => session.getState().status === "closed");
+});
+
+test("a Bluetooth PIN the radio refuses leaves it as it was, without a reboot", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  await assert.rejects(session.setBlePin(12_345));
+  assert.equal(radio.blePin, 0);
+  assert.equal(session.getState().device?.blePin, 0);
+  assert.ok(!radio.sent.some((f) => f[0] === Cmd.Reboot));
 });
 
 test("a radio whose firmware takes no key is left as it was", async () => {

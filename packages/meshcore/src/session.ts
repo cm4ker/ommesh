@@ -3202,6 +3202,22 @@ export class MeshSession {
     if (device) this.set({ device: { ...device, pathHashMode: mode } });
   }
 
+  /**
+   * The Bluetooth PIN the radio asks a new phone or computer for: six digits
+   * that do not start with 0, or 0 for the firmware's own, which is a new one
+   * on every start where the radio has a screen to show it and 123456 where it
+   * has none. The radio takes a PIN only when it starts, so it is rebooted.
+   */
+  async setBlePin(pin: number): Promise<void> {
+    const client = this.need();
+    await client.setDevicePin(pin);
+    const device = this.state.device;
+    if (device) this.set({ device: { ...device, blePin: pin } });
+    this.log("link", "the radio took a new Bluetooth PIN; rebooting it");
+    await this.flush().catch(() => undefined);
+    await client.reboot();
+  }
+
   async setTxPower(dbm: number): Promise<void> {
     await this.need().setRadioTxPower(dbm);
     if (this.state.self) this.set({ self: { ...this.state.self, txPower: dbm } });

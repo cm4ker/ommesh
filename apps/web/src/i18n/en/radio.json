@@ -9,6 +9,7 @@
   "titles.advanced": "Advanced",
   "titles.console": "Radio console",
   "titles.key": "Restore the key",
+  "titles.pin": "Bluetooth PIN",
   "titles.sensors": "Sensors",
   "titles.notifications": "Notifications",
   "titles.sound": "Sound",
@@ -456,5 +457,18 @@
   "key.refused": "This radio's firmware does not take a key",
   "key.unfit": "The radio refused this key",
   "key.rebooting": "Key written, the radio is rebooting",
-  "key.back": "The radio is now {name}"
+  "key.back": "The radio is now {name}",
+  "pin.random": "Random",
+  "pin.randomHint": "A radio with a screen shows a new one each time it starts. Without a screen, 123456.",
+  "pin.own": "My own",
+  "pin.ownHint": "Six digits, always the same",
+  "pin.field": "Your own PIN",
+  "pin.zero": "A PIN cannot start with 0",
+  "pin.note": "The PIN is asked for only at the first pairing: phones and computers paired already connect without it. Write your own PIN down for a radio without a screen: a forgotten one can be reset only over USB.",
+  "pin.apply": "Save and reboot",
+  "pin.askTitle": "Reboot the radio?",
+  "pin.askOwn": "The new PIN is {pin}. It takes effect after the reboot, and the link comes back by itself.",
+  "pin.askRandom": "A radio with a screen will show a new PIN each time it starts, one without a screen takes 123456. This takes effect after the reboot, and the link comes back by itself.",
+  "pin.reboot": "Reboot",
+  "pin.rebooting": "PIN saved, the radio is rebooting"
 }

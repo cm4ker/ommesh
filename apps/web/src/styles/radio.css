@@ -85,3 +85,14 @@
   gap: var(--space-2);
   padding: var(--space-3);
 }
+/* The Bluetooth PIN: six digits spaced out, read off here and typed in on a phone. */
+.pin-field {
+  height: var(--control-h-lg);
+  font-size: calc(20px * var(--text-scale));
+  letter-spacing: 0.3em;
+}
+.pin-field.bad {
+  border-color: var(--danger);
+  outline: 1px solid var(--danger);
+  outline-offset: -2px;
+}

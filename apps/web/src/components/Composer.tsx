@@ -29,8 +29,9 @@ import { ClockIcon, CloseIcon, LocationIcon, ReplyIcon, SendIcon, TextIcon, Wave
 import { t } from "../i18n/index.js";
 import { tx } from "../i18n/rich.js";
 
-/** A message being answered: on the air, only its author's name before the text. */
+/** A message being answered: on the air, its author's name and the start of it before the text. */
 export interface Reply {
+  id: string;
   name: string;
   text: string;
 }
@@ -140,7 +141,10 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   useLayoutEffect(() => {
     const el = field.current;
     if (!reply || !el) return;
-    const said = quoteOf(reply.text);
+    // Their later messages here, for the quote to run on until it tells this one from them.
+    const at = messages.findIndex((m) => m.id === reply.id);
+    const later = at < 0 ? [] : messages.slice(at + 1).filter((m) => m.direction === "in" && m.sender === reply.name).map((m) => m.text);
+    const said = quoteOf(reply.text, later);
     const line = said ? `>${said}\n` : "";
     const was = quoted.current && el.value.startsWith(quoted.current) ? quoted.current.length : 0;
     quoted.current = line;
@@ -256,9 +260,10 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
     const lead = mention + takePlace();
     const out = lead + (empty ? "" : how.raw ? body : pack(body));
     const original = lead + (empty ? "" : body);
+    const replyTo = reply?.id;
     cleared();
     try {
-      await session.sendText(conversation, out, { original, ...(how.flood ? { flood: true } : {}) });
+      await session.sendText(conversation, out, { original, ...(how.flood ? { flood: true } : {}), ...(replyTo ? { replyTo } : {}) });
     } catch {
       // The message's own row says it failed, and offers to try again.
     }
@@ -267,10 +272,11 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   const sendSplit = async () => {
     const parts = splitParts(pack(body), cost.budget);
     const first = mention + takePlace();
+    const replyTo = reply?.id;
     cleared();
     for (const [i, part] of parts.entries()) {
       try {
-        await session.sendText(conversation, (i === 0 ? first : "") + part);
+        await session.sendText(conversation, (i === 0 ? first : "") + part, i === 0 && replyTo ? { replyTo } : {});
       } catch {
         return;
       }

@@ -10,6 +10,26 @@
   border-radius: 4px;
   background: var(--accent-subtle);
 }
+/*
+ * A reply's head (#32): the mention and the start of the message it answers, still text as it
+ * came, one tap from that message. The quote takes the accent's colour, as a link does.
+ */
+.msg-reply-head {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  white-space: inherit;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+}
+.msg-quote {
+  color: var(--accent);
+}
 /* A web address. No callout on a long press: that is the message's menu. */
 .msg-link {
   color: var(--accent);

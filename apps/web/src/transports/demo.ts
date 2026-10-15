@@ -459,6 +459,15 @@ class DemoRadio extends BaseTransport {
       this.channel(0, "Bob (bike)", "Public channel works too", this.started - 120),
       this.channel(0, "Bob (bike)", "geo:55.06,73.43;u=1000 Somewhere round here today"),
       this.channel(0, "Bob (bike)", "What LoRa is, for the newcomers: https://en.wikipedia.org/wiki/LoRa"),
+      // Replies (#32) as other apps send them: MCO Advanced quotes the start, MeshCore One puts the quote on a
+      // line of its own, the official app names whom alone. Mira's message was before this radio listened.
+      this.channel(0, "Bob (bike)", "Raised the antenna on the mast, now it reaches town"),
+      this.channel(0, "Alice", "Who hears the Tower today?"),
+      this.channel(0, "Bob (bike)", "Raised the antenna another metre"),
+      this.channel(0, "Kolya ⛺", "@[Bob (bike)] >Raised the antenna on the mast...\nHow tall is the mast?"),
+      this.channel(0, "Alice", "@[Bob (bike)] Nice, I hear you from the bridge now"),
+      this.channel(0, "Kolya ⛺", "@[Bob (bike)]\n>Public cha..\nWorks here too"),
+      this.channel(0, "Kolya ⛺", "@[Mira] >Who is on the hill...\nMe, till midnight"),
       // Somebody writing in a channel their radio no longer has: the all-zero key, filed in the first empty slot.
       this.channel(2, "Wanderer", "Anyone else see this channel with no name?"),
     );

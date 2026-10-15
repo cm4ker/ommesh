@@ -154,8 +154,19 @@ export function mentionOf(name: string): string {
 
 /** How much of a message a reply quotes: a few words, enough to tell which message it was. */
 const QUOTE_CHARS = 15;
-/** A reply's head, as the composer writes it: the mention, then the quoted line. */
-const QUOTE_HEAD = /^(?:@\[[^\]\n]{1,32}\] )?>[^\n]*\n/;
+/** How far a quote may run to tell its message from the sender's later ones, in bytes on the air (#32). */
+const QUOTE_BYTES = 30;
+/**
+ * Where a quote stops short of its message. Three dots, as MCO Advanced cuts its quotes: it
+ * finds the message a reply answers by the quote, and takes the dots off before it looks.
+ * They cost the bytes "…" did.
+ */
+export const QUOTE_CUT = "...";
+/**
+ * A reply's head, as the composer writes it: the mention, then the quoted line. MeshCore One
+ * puts the quote on a line of its own under the mention.
+ */
+const QUOTE_HEAD = /^(?:@\[[^\]\n]{1,32}\][ \n])?>[^\n]*\n/;
 
 /** How long the head a reply puts before its own words is: 0 for a message that answers nothing. */
 export function quoteHeadLength(text: string): number {
@@ -163,22 +174,59 @@ export function quoteHeadLength(text: string): number {
 }
 
 /**
- * The start of a message, for the line a reply puts at the head of the field:
- * its own quote and the names it opens with left out, cut at a word, and "…"
- * where something was cut. A place is quoted in words: cut, its numbers would
- * read as another place, far from the first.
+ * What of a message a quote is taken from: its own quote and the names it opens with left
+ * out, a place in words, the spaces and line breaks run into single spaces.
  */
-export function quoteOf(text: string): string {
-  const said = textWithPlaces(text.replace(QUOTE_HEAD, "").replace(/^(?:@\[[^\]\n]{1,32}\] ?)+/, ""))
+export function quoteSource(text: string): string {
+  return textWithPlaces(text.replace(QUOTE_HEAD, "").replace(/^(?:@\[[^\]\n]{1,32}\] ?)+/, ""))
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * The start of a message, for the line a reply puts at the head of the field:
+ * cut at a word, and "..." where something was cut. A place is quoted in words:
+ * cut, its numbers would read as another place, far from the first.
+ *
+ * Whoever reads the reply looks for the latest message of its sender that
+ * starts with the quote, so a quote that also starts one of the sender's
+ * `later` messages would lead there. It runs on to where the two differ, to
+ * the end of that word if the bytes allow.
+ */
+export function quoteOf(text: string, later: readonly string[] = []): string {
+  const said = quoteSource(text);
   const chars = Array.from(said);
-  if (chars.length <= QUOTE_CHARS) return said;
-  let cut = chars.slice(0, QUOTE_CHARS).join("");
-  const space = cut.lastIndexOf(" ");
-  // Cut inside a word: back to the space before it, unless that leaves too little.
-  if (chars[QUOTE_CHARS] !== " " && space >= 8) cut = cut.slice(0, space);
-  return `${cut.replace(/[\s.,;:!?-]+$/, "")}…`;
+  // How far the quote must run to part from each later message. One that runs on past this one's
+  // end asks for all of it: a quote with no dots is the whole message, which tells it from a longer one.
+  let need = 0;
+  for (const other of later) need = Math.max(need, sharedStart(chars, Array.from(quoteSource(other))) + 1);
+  const fits = (n: number) => bytes(chars.slice(0, n).join("")) <= QUOTE_BYTES;
+  const reach = Math.min(need, chars.length);
+  let n: number;
+  if (need > QUOTE_CHARS && fits(reach)) {
+    // To the end of the word they part in, if the bytes allow.
+    n = reach;
+    let end = n;
+    while (end < chars.length && chars[end] !== " ") end++;
+    if (fits(end)) n = end;
+    if (n >= chars.length) return said;
+  } else {
+    // Alike for longer than the bytes allow, the later message cannot be told from this one anyway.
+    const floor = need <= QUOTE_CHARS ? need : 0;
+    if (chars.length <= QUOTE_CHARS) return said;
+    n = QUOTE_CHARS;
+    const space = chars.lastIndexOf(" ", n - 1);
+    // Cut inside a word: back to the space before it, unless that leaves too little.
+    if (chars[n] !== " " && space >= Math.max(8, floor)) n = space;
+  }
+  return `${chars.slice(0, n).join("").replace(/[\s.,;:!?-]+$/, "")}${QUOTE_CUT}`;
+}
+
+/** How many characters two texts start with alike. */
+function sharedStart(a: string[], b: string[]): number {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  return i;
 }
 
 /**

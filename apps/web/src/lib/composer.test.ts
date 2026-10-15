@@ -78,21 +78,21 @@ test("a mention is being typed after @ at the start or after a space, not inside
 test("a reply quotes the start of a message, cut at a word", () => {
   assert.equal(quoteOf("Я слышу, SNR +6"), "Я слышу, SNR +6");
   // "кто-нибудь" is one word, and the cut falls inside it.
-  assert.equal(quoteOf("А с моста кто-нибудь пробовал?"), "А с моста…");
+  assert.equal(quoteOf("А с моста кто-нибудь пробовал?"), "А с моста...");
   // The fifteenth character ends a word: nothing to go back for.
-  assert.equal(quoteOf("Repeater on the hill is back up"), "Repeater on the…");
+  assert.equal(quoteOf("Repeater on the hill is back up"), "Repeater on the...");
   // A word longer than the quote is cut where it must be.
-  assert.equal(quoteOf("Перераспределение частот"), "Перераспределен…");
-  assert.equal(quoteOf("Привет, как дела у вас"), "Привет, как…");
-  // Punctuation does not stand before the ellipsis.
-  assert.equal(quoteOf("Проверка связи, приём"), "Проверка связи…");
+  assert.equal(quoteOf("Перераспределение частот"), "Перераспределен...");
+  assert.equal(quoteOf("Привет, как дела у вас"), "Привет, как...");
+  // Punctuation does not stand before the dots.
+  assert.equal(quoteOf("Проверка связи, приём"), "Проверка связи...");
 });
 
 test("a reply's quote leaves out the names a message opens with, and the quote it carries", () => {
-  assert.equal(quoteOf("@[Mira] Проверь антенну вечером"), "Проверь антенну…");
+  assert.equal(quoteOf("@[Mira] Проверь антенну вечером"), "Проверь антенну...");
   assert.equal(quoteOf("@[Kolya] >А с моста…\nС балкона тоже"), "С балкона тоже");
   assert.equal(quoteOf(">Слышу\nИ я"), "И я");
-  assert.equal(quoteOf("Две\nстроки   текста"), "Две строки…");
+  assert.equal(quoteOf("Две\nстроки   текста"), "Две строки...");
 });
 
 test("a reply quotes a place in words, never as numbers cut short", () => {
@@ -102,8 +102,32 @@ test("a reply quotes a place in words, never as numbers cut short", () => {
   assert.equal(quoteHeadLength("On my way"), 0);
 });
 
+test("a reply's quote runs on until it parts from the sender's later messages, as far as 30 bytes", () => {
+  const first = "Поднял антенну на мачту, теперь бьёт до самого города";
+  // Fifteen characters would lead a reader to the later message, which starts the same.
+  assert.equal(quoteOf(first), "Поднял антенну...");
+  assert.equal(quoteOf(first, ["Поднял антенну ещё на метр"]), "Поднял антенну н...");
+  // Where the word they part in ends within the bytes, the quote takes it whole.
+  assert.equal(quoteOf("Repeater on the hill is back up", ["Repeater on the roof is down"]), "Repeater on the hill...");
+  // A later message that only starts alike earlier needs nothing more.
+  assert.equal(quoteOf(first, ["Поднял флаг"]), "Поднял антенну...");
+  // One that goes on past this one's end: the whole message is quoted, which tells it apart.
+  assert.equal(quoteOf("Ок", ["Ок, понял"]), "Ок");
+  // One alike for longer than 30 bytes cannot be told apart: the quote is cut as if it were not there.
+  const long = "Проверка связи на дальность с холма";
+  assert.equal(quoteOf(long, ["Проверка связи на дальность с крыши"]), "Проверка связи...");
+  // A cut inside a word does not go back before where the messages part.
+  assert.equal(quoteOf("А с моста кто-нибудь пробовал?", ["А с моста к тебе"]), "А с моста кто-н...");
+});
+
+test("a reply's head is the mention and the quote, on one line or on two", () => {
+  assert.equal(quoteHeadLength("@[Bob] >Поднял...\nДа"), "@[Bob] >Поднял...\n".length);
+  assert.equal(quoteHeadLength("@[Bob]\n>Поднял ант..\nДа"), "@[Bob]\n>Поднял ант..\n".length);
+  assert.equal(quoteOf("@[Bob]\n>Поднял ант..\nВысота метров десять"), "Высота метров...");
+});
+
 test("a reply's quote counts characters, so an emoji is never cut in half", () => {
-  assert.equal(quoteOf("📡📡📡📡📡📡📡📡📡📡📡📡📡📡📡📡📡"), `${"📡".repeat(15)}…`);
+  assert.equal(quoteOf("📡📡📡📡📡📡📡📡📡📡📡📡📡📡📡📡📡"), `${"📡".repeat(15)}...`);
   assert.equal(quoteOf(""), "");
 });
 

@@ -19,6 +19,7 @@ import { moveForKeyboard } from "../lib/keyboard.js";
 import { onJump, takeJump, type Jump } from "../lib/jump.js";
 import { useWide } from "../lib/layout.js";
 import { copiedText, toggled } from "../lib/messagePick.js";
+import { replyHead, sourceOf, type ReplyHead } from "../lib/replySource.js";
 import { findMessages, messagesFrom, searchTerm, type Sender } from "../lib/messageSearch.js";
 import { openChannel, openConversation, openMessage, openPlace, openProfile, openRadioPage } from "../lib/nav.js";
 import { cameByPull, nextUnreadChat, openNextChat } from "../lib/nextChat.js";
@@ -120,7 +121,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   const answer = useCallback((message: MessageRecord) => {
     if (!message.sender) return;
     answering.current = message.id;
-    setReply({ name: message.sender, text: message.text });
+    setReply({ id: message.id, name: message.sender, text: message.text });
   }, []);
   // Who wrote it: the profile, when the radio knows one node by that name; else a choice.
   const who = useCallback(
@@ -448,6 +449,35 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     [conversation, closeFind],
   );
 
+  // A reply tapped at its head (#32): the message it answers flashes in the middle, as a search result
+  // does. Answered by a mention alone, it is a guess, so the chat's search goes through that sender's
+  // messages with the guess in sight. Read from the latest messages without drawing every bubble anew.
+  const latest = useRef({ messages, me: state.self?.name ?? null });
+  latest.current = { messages, me: state.self?.name ?? null };
+  const toSource = useCallback(
+    (message: MessageRecord) => {
+      const source = sourceOf(latest.current.messages, message, latest.current.me);
+      if (!source) return;
+      const lookThrough = (name: string, mine: boolean, id: string | null) => {
+        setFound(null);
+        setFindQuery("");
+        setFindFrom({ name, mine });
+        setPicked(id);
+        setFinding(true);
+      };
+      if (source.kind === "found") {
+        closeFind();
+        setFound({ conversation, id: source.id, query: "" });
+        setFlashing(source.id);
+      } else if (source.kind === "guess") {
+        lookThrough(source.name, source.mine, source.id);
+      } else {
+        toast(t("chats.reply.notFound"), "", source.theirs ? { label: t("chats.reply.lookThrough"), run: () => lookThrough(source.name, source.mine, null) } : undefined);
+      }
+    },
+    [conversation, closeFind],
+  );
+
   // Messages picked to copy or delete, as Telegram picks them (ChatPick.tsx).
   const wide = useWide();
   const [chosen, setChosen] = useState<string[]>([]);
@@ -676,6 +706,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
                   me={me}
                   peer={title}
                   onReply={voice && m.sender ? answer : undefined}
+                  onSource={toSource}
                   onWho={voice ? who : undefined}
                   contacts={m.direction === "out" ? state.contacts : undefined}
                   mark={finding ? (matched.has(m.id) ? findQuery : undefined) : found?.id === m.id ? found.query : undefined}
@@ -905,6 +936,8 @@ interface MessageProps {
   /** Who the conversation is with: the sender of a direct message heard, which carries no name of its own. */
   peer: string;
   onReply: ((message: MessageRecord) => void) | undefined;
+  /** Goes to the message a reply answers. */
+  onSource: (message: MessageRecord) => void;
   onWho: ((message: MessageRecord) => void) | undefined;
   /** For a message of ours only: the relays that echoed it are named from them. */
   contacts: SessionState["contacts"] | undefined;
@@ -927,7 +960,7 @@ interface MessageProps {
  * One bubble. Memoised: a message arriving, or an echo of one, changes one record, and the
  * other bubbles of a long conversation have nothing new to draw.
  */
-const Message = memo(function Message({ message, at, lead, showSender, avatar, me, peer, onReply: replyTo, onWho, contacts, mark, current, faded, flash, selecting, picked, onPick }: MessageProps) {
+const Message = memo(function Message({ message, at, lead, showSender, avatar, me, peer, onReply: replyTo, onSource, onWho, contacts, mark, current, faded, flash, selecting, picked, onPick }: MessageProps) {
   const out = message.direction === "out";
   const [busy, setBusy] = useState(false);
   const bubble = useRef<HTMLDivElement>(null);
@@ -955,6 +988,7 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
   // One place and nothing else to it but words: a map with them under it.
   // A place in the line a reply quotes is the answered message's, and does not make this one a place.
   const placed = useMemo(() => (jumbo ? null : placeMessage(message.text, quoteHeadLength(message.text))), [jumbo, message.text]);
+  const head = useMemo(() => (jumbo || placed ? null : replyHead(message.text)), [jumbo, placed, message.text]);
   const from = out ? null : message.sender || peer;
   const showPlace = (text: string) => openPlace(text, from, at);
   const reactable = session.canReact(message);
@@ -1051,7 +1085,10 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
           {placed ? (
             placed.place.label || placed.caption ? <span className="msg-text place-caption">{richText([placed.place.label, placed.caption].filter(Boolean).join("\n"), me, mark, showPlace)}</span> : null
           ) : (
-            <span className="msg-text">{richText(message.text, me, mark, showPlace, previews ? linkMark : undefined)}</span>
+            <span className="msg-text">
+              {head ? <ReplyHeadText head={head} me={me} mark={mark} onTap={selecting ? undefined : () => onSource(message)} /> : null}
+              {richText(head ? message.text.slice(head.length) : message.text, me, mark, showPlace, previews ? linkMark : undefined)}
+            </span>
           )}
           {previews && !placed && !jumbo ? <LinkCards text={message.text} message={message.id} /> : null}
           {message.reactions?.length ? (
@@ -1085,6 +1122,52 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
     </div>
   );
 });
+
+/**
+ * How a reply opens: the mention, and the start of the message it answers in the accent's colour,
+ * still text as it came (#30). A tap on either goes to that message; while messages are picked, a
+ * tap picks, as anywhere on the bubble.
+ */
+function ReplyHeadText({ head, me, mark, onTap }: { head: ReplyHead; me: string | null; mark: string | undefined; onTap: (() => void) | undefined }) {
+  const mention = <span className={head.name === me ? "mention me" : "mention"}>@{head.name}</span>;
+  const quote = head.quote !== null ? <span className="msg-quote">&gt;{marked(head.quote, mark)}</span> : null;
+  // After a mention alone, what follows it is the reply's own; after a quote, the reply starts on the next line.
+  const inner = quote ? (
+    <>
+      {mention}
+      {head.gap}
+      {quote}
+    </>
+  ) : (
+    mention
+  );
+  const after = quote ? "\n" : head.gap;
+  if (!onTap)
+    return (
+      <>
+        {inner}
+        {after}
+      </>
+    );
+  return (
+    <>
+      <button
+        type="button"
+        className="msg-reply-head"
+        aria-label={t("chats.reply.toSource", { name: head.name })}
+        // The bubble opens the message's details on a tap; this opens the message answered.
+        onClick={(e) => {
+          e.stopPropagation();
+          onTap();
+        }}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        {inner}
+      </button>
+      {after}
+    </>
+  );
+}
 
 /** What "Keep trying" commits to, said before it is chosen. */
 function loopHint(): string {

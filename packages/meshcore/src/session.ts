@@ -182,6 +182,11 @@ export interface MessageRecord {
    * one names it by its stamp.
    */
   pastStamps?: number[];
+  /**
+   * Our reply: the message it answers (#32). On the air a reply names it only by the
+   * sender's name and the start of the text, which others match as best they can.
+   */
+  replyTo?: string;
 }
 
 /** An emoji someone put on a message. */
@@ -2886,7 +2891,7 @@ export class MeshSession {
    * `flood` drops a contact's route first, so that this message floods. With
    * the radio away the message is queued, and goes out once it is back.
    */
-  async sendText(conversation: string, text: string, options: { original?: string; flood?: boolean } = {}): Promise<MessageRecord> {
+  async sendText(conversation: string, text: string, options: { original?: string; flood?: boolean; replyTo?: string } = {}): Promise<MessageRecord> {
     const target = parseConversation(conversation);
     if (target.kind === "prefix") throw new Error("this sender is not in the contacts yet");
     const client = this.isReady ? this.client : null;
@@ -2914,6 +2919,7 @@ export class MeshSession {
       route: null,
       retryPlan: null,
       ...(options.original !== undefined && options.original !== text ? { original: options.original } : {}),
+      ...(options.replyTo !== undefined ? { replyTo: options.replyTo } : {}),
     };
     this.set({ messages: [...this.state.messages, message] });
     if (!client) return message;

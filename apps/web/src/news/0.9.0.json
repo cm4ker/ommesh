@@ -7,11 +7,11 @@
       "show": "radio/frequency",
       "en": {
         "title": "Send under a region, for the radio or one channel",
-        "text": "Large meshes such as Moscow's now ask for one. Frequency and power › Region: ask the repeaters nearby which they carry, or type it. A channel can take its own."
+        "text": "Where repeaters are set to regions, a message may need one to go far. Frequency and power › Region: ask the repeaters nearby which they carry, or type it. A channel can take its own."
       },
       "ru": {
         "title": "Регион для радио и для канала",
-        "text": "Большие сети вроде московской теперь просят регион. «Частота и мощность › Регион»: спросите репитеры рядом или наберите название. У канала может быть свой."
+        "text": "Где репитеры настроены на регионы, сообщению может понадобиться регион, чтобы уйти далеко. «Частота и мощность › Регион»: спросите репитеры рядом или наберите название. У канала может быть свой."
       }
     },
     {

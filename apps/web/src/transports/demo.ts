@@ -1254,9 +1254,8 @@ export const demoConnector: Connector = {
     onFound([{ id: "demo", name: "MeshCore-demo", detail: t("connect.device.noHardware"), rssi: -42 }]);
   },
   async remembered() {
-    return [{ id: "old", name: "MeshCore-Wan11", detail: "E5:21:8C:AA:52:A5", rssi: null }];
+    return [];
   },
-  async forget() {},
   async connect(): Promise<Transport> {
     const radio = new DemoRadio();
     radio.start();

@@ -2,7 +2,7 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
-## Unreleased
+## 0.9.0 — 2026-10-16
 
 ### Connecting
 - A radio in the connect list that is no longer there can be forgotten: hold its row, or right-click it on a PC, and choose Forget. A radio wiped or flashed afresh often comes back at a new Bluetooth address, and its old address used to stay in the list for good, a faded row beside the new one. Now the old one goes by itself the first time you connect to the radio at its new address. Forget also works for network addresses you no longer use.

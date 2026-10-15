@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { channelConversation, fromHex, KEYLESS_CONVERSATION, KEYLESS_INDEX } from "@meshnet/meshcore";
+import { channelConversation, fromHex, KEYLESS_CONVERSATION, KEYLESS_INDEX, regionSupport } from "@meshnet/meshcore";
 import { channelAccess } from "../lib/channels.js";
 import { messagesIn } from "../lib/conversations.js";
 import { openConversation, openWriters } from "../lib/nav.js";
@@ -11,17 +11,19 @@ import { ActionRow, Block, Group, LinkRow } from "../ui/List.js";
 import { Avatar } from "./Avatar.js";
 import { ChatNotices } from "./ChatNotices.js";
 import { HeroName } from "./HeroName.js";
-import { CopyIcon } from "./Icons.js";
+import { CopyIcon, MapIcon } from "./Icons.js";
+import { regionLabel, RegionSheet } from "./RegionSheet.js";
 import { Gone, ScreenHead, type Chrome } from "./ScreenHead.js";
 import { t } from "../i18n/index.js";
 
-/** A channel's own page, opened from its conversation: who writes in it, its name, its key, and leaving it. */
+/** A channel's own page, opened from its conversation: who writes in it, the region it floods under, its name, its key, and leaving it. */
 export function ChannelView({ index, chrome }: { index: number; chrome: Chrome }) {
   const state = useSession();
   const channel = state.channels.find((c) => c.index === index);
   const online = state.status === "ready";
   const [name, setName] = useState(channel?.name ?? "");
   const [removing, setRemoving] = useState(false);
+  const [regionOpen, setRegionOpen] = useState(false);
   const writers = useMemo(() => writersIn(messagesIn(state, channelConversation(index))), [state, index]);
 
   useEffect(() => setName(channel?.name ?? ""), [channel?.name]);
@@ -47,6 +49,16 @@ export function ChannelView({ index, chrome }: { index: number; chrome: Chrome }
           <span className="muted">{t("chats.channel.slot", { index: channel.index })}</span>
         </div>
         <ChatNotices conversation={channelConversation(channel.index)} direct={false} />
+        {regionSupport(state.device).channel ? (
+          <Group>
+            <LinkRow
+              label={t("chats.channel.region")}
+              icon={<MapIcon size={17} />}
+              value={regionLabel(state.channelRegions[channel.secret] ?? null, state.region?.name ?? null, true)}
+              onClick={() => setRegionOpen(true)}
+            />
+          </Group>
+        ) : null}
         {writers.length > 0 ? (
           <Group>
             <LinkRow
@@ -94,6 +106,7 @@ export function ChannelView({ index, chrome }: { index: number; chrome: Chrome }
           </Group>
         )}
       </div>
+      <RegionSheet open={regionOpen} onClose={() => setRegionOpen(false)} target={{ kind: "channel", index: channel.index }} />
       <Confirm
         open={removing}
         title={t("chats.channel.removeTitle", { name: channel.name || t("chats.channel.fallbackName", { index: channel.index }) })}

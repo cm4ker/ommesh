@@ -474,6 +474,30 @@ export class MeshCoreClient {
     return this.one("sendBinaryReq", cmd.sendBinaryReq(publicKey, request), "sent");
   }
 
+  sendAnonReq(publicKey: Uint8Array, request: Uint8Array): Promise<TextSendResult> {
+    return this.one("sendAnonReq", cmd.sendAnonReq(publicKey, request), "sent");
+  }
+
+  /** The region floods are marked with until the radio restarts; null goes back to the one it keeps. */
+  setFloodScope(regionKey: Uint8Array | null): Promise<void> {
+    return this.ok("setFloodScope", cmd.setFloodScope(regionKey));
+  }
+
+  /** Floods without a region until `setFloodScope` (protocol 12). */
+  setFloodUnscoped(): Promise<void> {
+    return this.ok("setFloodUnscoped", cmd.setFloodUnscoped());
+  }
+
+  setDefaultFloodScope(region: { name: string; key: Uint8Array } | null): Promise<void> {
+    return this.ok("setDefaultFloodScope", cmd.setDefaultFloodScope(region));
+  }
+
+  /** The region the radio keeps (protocol 11), or null when it keeps none. */
+  async getDefaultFloodScope(): Promise<{ name: string; key: Uint8Array } | null> {
+    const f = await this.one("getDefaultFloodScope", cmd.getDefaultFloodScope(), "defaultFloodScope");
+    return f.name && f.key ? { name: f.name, key: f.key } : null;
+  }
+
   sendTracePath(tag: number, auth: number, flags: number, path: Uint8Array): Promise<TextSendResult> {
     return this.one("sendTracePath", cmd.sendTracePath(tag, auth, flags, path), "sent");
   }

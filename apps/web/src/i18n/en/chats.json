@@ -223,6 +223,8 @@
   "keyless.about": "Somebody writes in a channel their radio no longer has, and the radio sends the message without a key. Any MeshCore radio with a free channel slot takes such a message in.",
   "channel.renamed": "Renamed",
   "channel.slot": "Channel {index} on the radio",
+  "channel.region": "Region",
+  "channel.regionRadio": "As the radio ({name})",
   "channel.name": "Name",
   "channel.nameLabel": "Channel name",
   "channel.key": "Key",

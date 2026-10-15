@@ -16,6 +16,7 @@ import { CHANNEL_TEXT_LEN, groupDataPayload, groupTextPayload, heardGroupTextPay
 import { publicKeyOf } from "./protocol/identity.js";
 import { REACTION_DATA_TYPE, decodeReaction, directReactionText, encodeReaction, messageHash, parseDirectReaction, parseTextReaction } from "./protocol/reaction.js";
 import { PayloadType, parseRawPacket, type RawPacket } from "./protocol/packet.js";
+import { UNSCOPED, readRegionList, regionKey, regionsRequest } from "./protocol/region.js";
 import { AclRole, AdvType, Cmd, ContactFlag, ControlType, DIRECT_TEXT_LEN, ErrCode, MAX_TEXT_LEN, NeighbourOrder, OUT_PATH_UNKNOWN, PUB_KEY_PREFIX_SIZE, ROOM_TEXT_LEN, StatsType, TxtType } from "./protocol/codes.js";
 import {
   accessListRequest,
@@ -373,6 +374,16 @@ export interface SessionState {
   autoAdd: { config: number; maxHops: number } | null;
   /** Where the radio lets itself repeat for others, kHz ranges; null when its firmware does not say. */
   repeatFreqs: { lowerKhz: number; upperKhz: number }[] | null;
+  /**
+   * The region the radio keeps and marks every flood with, its name null when
+   * it keeps none; null until it is read, and when the firmware keeps none.
+   */
+  region: { name: string | null } | null;
+  /**
+   * The channels that flood under a region of their own, by the channel's key:
+   * a region's name, or `UNSCOPED` for none at all. The others go under the radio's.
+   */
+  channelRegions: Record<string, string>;
   /** The radio said its memory is full and it dropped a node; cleared once there is room. */
   contactsFull: boolean;
   /** Contacts being taken off the radio one by one, while that runs. */
@@ -442,6 +453,8 @@ export interface PersistedState {
   routing?: RoutingSettings;
   /** Absent in history saved before a node's console was kept over a restart. */
   consoles?: Record<string, ConsoleEntry[]>;
+  /** Absent in history saved before a channel could have a region of its own. */
+  channelRegions?: Record<string, string>;
 }
 
 /** History brought in from a file, as `importHistory` takes it. */
@@ -518,6 +531,18 @@ export interface DiscoverReply {
   /** Local clock, ms. */
   at: number;
 }
+
+/** What the repeaters in direct range said of their regions. */
+export interface RegionSurvey {
+  /** How many of them were asked. */
+  asked: number;
+  answered: number;
+  /** Each region and how many carry it, the most carried first; `UNSCOPED` for floods without one. */
+  regions: { name: string; repeaters: number }[];
+}
+
+/** How far `askRegions` has got: listening for the repeaters around, then asking them one by one. */
+export type RegionSurveyStep = { step: "listening"; ms: number } | { step: "asking"; done: number; total: number };
 
 /** What a repeater's neighbour search found. */
 export interface NeighbourSearch {
@@ -647,6 +672,17 @@ export function isTrusted(contact: ContactRecord): boolean {
 
 export function contactHops(contact: ContactRecord): number | null {
   return contact.outPathLen === 0xff ? null : contact.outPathLen & 63;
+}
+
+/**
+ * What the radio's firmware can do with regions, by its protocol version:
+ * flood once under a region (8), keep a region of its own (11, firmware 1.15),
+ * flood once under none whatever it keeps (12), and send a request to a node
+ * that is not a contact (13), as when it asks a repeater for its regions.
+ */
+export function regionSupport(device: DeviceInfo | null): { channel: boolean; radio: boolean; unscoped: boolean; strangers: boolean } {
+  const code = device?.firmwareVerCode ?? 0;
+  return { channel: code >= 8, radio: code >= 11, unscoped: code >= 12, strangers: code >= 13 };
 }
 
 /** The hashes of a path as the firmware writes one: the low six bits of `pathLen` count them, the top two size them. */
@@ -808,8 +844,8 @@ function guessPathSince(lastMod: number, now: number): number {
 
 /** The part of the state that is kept per radio. */
 function historyOf(state: SessionState): PersistedState {
-  const { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles } = state;
-  return { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles };
+  const { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles, channelRegions } = state;
+  return { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles, channelRegions };
 }
 
 /**
@@ -886,6 +922,8 @@ const EMPTY: SessionState = {
   removed: {},
   autoAdd: null,
   repeatFreqs: null,
+  region: null,
+  channelRegions: {},
   contactsFull: false,
   removing: null,
   channels: [],
@@ -994,6 +1032,8 @@ interface RemoteJob {
   answers: (event: RemoteEvent, sent: TextSendResult | null) => boolean;
   /** What the request and its answer carry, for how long the answer should take. */
   size: ReplySize;
+  /** Asked and answered zero hop (`RemoteOptions.nearby`). */
+  nearby: boolean;
   /** Takes an answer that comes after the wait for it ran out. */
   late: ((event: RemoteEvent) => void) | null;
   /** What the radio said of the send, once it has. */
@@ -1009,6 +1049,8 @@ interface RemoteOptions {
   size?: ReplySize;
   late?: (event: RemoteEvent) => void;
   onStart?: () => void;
+  /** The node is in direct range and is asked zero hop, and answers so. */
+  nearby?: boolean;
 }
 
 /**
@@ -1031,6 +1073,11 @@ const REPLY_SIZE = {
 } as const;
 // A page of a list: ten neighbours of eleven bytes, the access list or a sensor's series.
 const BINARY_ANSWER_BYTES = 120;
+// A repeater's clock and a few region names.
+const REGION_ANSWER_BYTES = 48;
+/** How long `askRegions` listens for the repeaters around, and how many of them it asks. */
+const REGION_LISTEN_MS = 10_000;
+const REGION_ASK_MAX = 6;
 // Most console replies are a line; some run to a few.
 const CONSOLE_ANSWER_BYTES = 100;
 
@@ -1178,7 +1225,8 @@ export class MeshSession {
       "batteryHistory" in patch ||
       "readingHistory" in patch ||
       "routing" in patch ||
-      "consoles" in patch
+      "consoles" in patch ||
+      "channelRegions" in patch
     ) {
       this.scheduleSave();
     }
@@ -1302,7 +1350,7 @@ export class MeshSession {
       this.set({ connectStep: "history" });
       const persisted = this.held?.key === key ? this.held.history : await this.readHistory(key);
       this.held = null;
-      this.set({ device, self, ...this.restored(persisted), autoAdd: null, repeatFreqs: null, contactsFull: false, removing: null });
+      this.set({ device, self, ...this.restored(persisted), autoAdd: null, repeatFreqs: null, region: null, contactsFull: false, removing: null });
       this.log("link", `connected to ${self.name} (${device.firmwareVersion})`);
 
       await this.syncClock();
@@ -1329,6 +1377,7 @@ export class MeshSession {
       await this.refreshChannels();
       await this.readAutoAdd(client);
       await this.readRepeatFreqs(client);
+      await this.readRegion(client);
       void this.refreshBattery();
       void this.sweepRoutes();
     } catch (error) {
@@ -1391,6 +1440,7 @@ export class MeshSession {
       readingHistory: persisted?.readingHistory ?? {},
       routing: persisted?.routing ?? EMPTY.routing,
       consoles: restoredConsoles(persisted?.consoles),
+      channelRegions: persisted?.channelRegions ?? {},
     };
   }
 
@@ -1432,6 +1482,7 @@ export class MeshSession {
       device: async () => {
         this.set({ device: await client.deviceQuery() });
         await this.readRepeatFreqs(client);
+        await this.readRegion(client);
       },
       self: async () => {
         const { publicKey, ...rest } = await client.appStart(this.appName);
@@ -1600,6 +1651,93 @@ export class MeshSession {
     } catch (error) {
       if (!(error instanceof MeshCoreError)) throw error;
       this.set({ repeatFreqs: null });
+    }
+  }
+
+  // ---- regions ----
+  //
+  // The radio marks its floods with the region it keeps (see protocol/region.ts),
+  // and with none when it keeps none. A channel with a region of its own floods
+  // under it: the region is set on the radio for that one send and taken off
+  // after it, the three commands queued back to back so that nothing else the
+  // radio sends goes out under it.
+
+  /**
+   * Reads the region the radio keeps. A region set for one send stays on the
+   * radio until it restarts, so one left behind by a link that dropped in the
+   * middle of a send is taken off here.
+   */
+  private async readRegion(client: MeshCoreClient): Promise<void> {
+    if (!regionSupport(this.state.device).radio) {
+      this.set({ region: null });
+      return;
+    }
+    let kept: { name: string } | null;
+    try {
+      kept = await client.getDefaultFloodScope();
+    } catch (error) {
+      if (!(error instanceof MeshCoreError)) throw error;
+      this.set({ region: null });
+      return;
+    }
+    this.set({ region: { name: kept?.name.replace(/^#/, "") || null } });
+    await client.setFloodScope(null).catch((error: unknown) => {
+      if (!(error instanceof MeshCoreError)) throw error;
+    });
+  }
+
+  /** Has the radio keep `name` as its region, or none, and reads back what it kept. */
+  async setRadioRegion(name: string | null): Promise<void> {
+    const client = this.need();
+    await client.setDefaultFloodScope(name ? { name, key: await regionKey(name) } : null);
+    const kept = await client.getDefaultFloodScope();
+    this.set({ region: { name: kept?.name.replace(/^#/, "") || null } });
+    this.log("region", kept ? `the radio floods under ${kept.name}` : "the radio floods without a region");
+  }
+
+  /** A channel's own region, `UNSCOPED` for none at all; null when it goes under the radio's. */
+  channelRegion(index: number): string | null {
+    const channel = this.state.channels.find((c) => c.index === index);
+    return channel ? (this.state.channelRegions[channel.secret] ?? null) : null;
+  }
+
+  /** Gives a channel a region of its own, `UNSCOPED` for none; null puts it back under the radio's. */
+  setChannelRegion(index: number, region: string | null): void {
+    const channel = this.state.channels.find((c) => c.index === index);
+    if (!channel) throw new Error("this channel is not on the radio");
+    const channelRegions = { ...this.state.channelRegions };
+    if (region === null) delete channelRegions[channel.secret];
+    else channelRegions[channel.secret] = region;
+    this.set({ channelRegions });
+  }
+
+  /**
+   * Sends to a channel under its own region, if it has one that is not the
+   * radio's. `send` must queue its command at once, with no wait before it,
+   * so that it sits between the region going on and coming off.
+   */
+  private async inChannelRegion<T>(client: MeshCoreClient, index: number, send: () => Promise<T>): Promise<T> {
+    const own = this.channelRegion(index);
+    const support = regionSupport(this.state.device);
+    const radio = this.state.region?.name ?? null;
+    const unscoped = own === UNSCOPED && support.unscoped && radio !== null;
+    const scoped = own !== null && own !== UNSCOPED && own !== radio && support.channel;
+    if (!unscoped && !scoped) return send();
+    const key = scoped ? await regionKey(own) : null;
+    const on = (key ? client.setFloodScope(key) : client.setFloodUnscoped()).catch((error: Error) => {
+      this.log("error", `the channel's region was not set, so it went under the radio's: ${error.message}`);
+    });
+    const sent = send();
+    // A link that drops fails all three at once, before `sent` is waited on.
+    sent.catch(() => undefined);
+    const off = client.setFloodScope(null).catch((error: Error) => {
+      this.log("error", `the channel's region was not taken off: ${error.message}`);
+    });
+    await on;
+    try {
+      return await sent;
+    } finally {
+      await off;
     }
   }
 
@@ -2335,7 +2473,7 @@ export class MeshSession {
       const data = encodeReaction({ target: hash, emoji: emoji ?? "", by: self.name, stamp });
       if (emoji) await this.watchReaction(id, target.index, data);
       else this.stopReactionWatch(id);
-      await client.sendChannelData(target.index, REACTION_DATA_TYPE, data);
+      await this.inChannelRegion(client, target.index, () => client.sendChannelData(target.index, REACTION_DATA_TYPE, data));
     } else if (target.kind === "contact") {
       const contact = this.state.contacts[target.key];
       if (!contact) throw new Error("unknown contact");
@@ -2775,10 +2913,12 @@ export class MeshSession {
         // A slot with no channel sends with the all-zero key, for every radio around to read (see KEYLESS_INDEX).
         if (!this.state.channels.some((c) => c.index === target.index)) throw new Error("this channel is not on the radio");
         await this.watchEchoes(message, target.index);
-        await client.sendChannelTextMessage(target.index, message.text, {
-          timestamp: message.timestamp,
-          ...(this.state.self ? { senderName: this.state.self.name } : {}),
-        });
+        await this.inChannelRegion(client, target.index, () =>
+          client.sendChannelTextMessage(target.index, message.text, {
+            timestamp: message.timestamp,
+            ...(this.state.self ? { senderName: this.state.self.name } : {}),
+          }),
+        );
         // No copy of a message this long can reach us, so silence says nothing of it:
         // it is neither called unheard nor sent again by a loop (#84).
         if (this.canHearRelays(message)) {
@@ -3422,6 +3562,68 @@ export class MeshSession {
     return [...replies.values()];
   }
 
+  /**
+   * Finds the regions the repeaters around carry. Those in direct range are
+   * found as `discoverRepeaters` finds them, and each is asked for its list,
+   * the best heard first and no more than `REGION_ASK_MAX`. One that is not a
+   * contact can be asked from protocol 13 only.
+   */
+  async askRegions(onStep?: (step: RegionSurveyStep) => void, listenMs = REGION_LISTEN_MS): Promise<RegionSurvey> {
+    onStep?.({ step: "listening", ms: listenMs });
+    const heard = await this.discoverRepeaters(listenMs);
+    const strangers = regionSupport(this.state.device).strangers;
+    const ask = heard
+      .filter((r) => r.type === AdvType.Repeater && (r.known || (strangers && r.key.length === 64)))
+      .sort((a, b) => b.heardThem - a.heardThem)
+      .slice(0, REGION_ASK_MAX);
+    const counts = new Map<string, number>();
+    let answered = 0;
+    for (const [done, repeater] of ask.entries()) {
+      onStep?.({ step: "asking", done, total: ask.length });
+      try {
+        for (const name of await this.requestRegions(repeater.key)) counts.set(name, (counts.get(name) ?? 0) + 1);
+        answered += 1;
+      } catch (error) {
+        if (!this.isReady) throw error;
+        this.log("region", `${this.state.contacts[repeater.key]?.name || repeater.key.slice(0, 12)}: ${(error as Error).message}`);
+      }
+    }
+    const regions = [...counts].map(([name, repeaters]) => ({ name, repeaters })).sort((a, b) => b.repeaters - a.repeaters || a.name.localeCompare(b.name));
+    this.log("region", `${answered} of ${ask.length} repeater(s) said what they carry: ${regions.map((r) => `${r.name} ${r.repeaters}`).join(", ") || "nothing"}`);
+    return { asked: ask.length, answered, regions };
+  }
+
+  /**
+   * Asks a repeater in direct range which regions it carries. It answers only
+   * a request that reached it direct, and the radio floods one to a contact it
+   * holds no route for; such a contact is given the direct route for the
+   * request, and has it taken off again once the request is out.
+   */
+  private async requestRegions(key: string): Promise<string[]> {
+    const bytes = fromHex(key);
+    const body = regionsRequest();
+    // Along a route of several hops the request takes that long to get there; the answer comes back direct either way.
+    const held = this.state.contacts[key];
+    const nearby = !held || held.outPathLen === 0xff || (held.outPathLen & 63) === 0;
+    const event = await this.remoteRequest(
+      key,
+      "regions",
+      async (client) => {
+        const contact = this.state.contacts[key];
+        if (!contact || contact.outPathLen !== 0xff) return client.sendAnonReq(bytes, body);
+        await client.addUpdateContact({ publicKey: bytes, type: contact.type, flags: contact.flags, outPathLen: 0, outPath: new Uint8Array(0), name: contact.name, lastAdvert: contact.lastAdvert, lat: contact.lat, lon: contact.lon, lastMod: contact.lastMod });
+        try {
+          return await client.sendAnonReq(bytes, body);
+        } finally {
+          await client.resetPath(bytes).catch((error: Error) => this.log("error", `the route given to ${contact.name} for a question was not taken off: ${error.message}`));
+        }
+      },
+      (event, sent) => event.kind === "binary" && sent !== null && event.tag === sent.ackTag,
+      { size: { askBytes: 1 + 32 + sealedBytes(4 + body.length), answerBytes: REGION_ANSWER_BYTES, holdMs: ANSWER_HOLD_MS }, nearby },
+    );
+    return event.kind === "binary" ? readRegionList(event.data) : [];
+  }
+
   /** The radio's own uptime and battery. Asked of the radio, not of the air. */
   async coreStats(): Promise<CoreStats> {
     const frame = await this.need().getStats(StatsType.Core);
@@ -3962,7 +4164,7 @@ export class MeshSession {
     options: RemoteOptions = {},
   ): Promise<RemoteEvent> {
     if (!this.client || this.client.isClosed) return Promise.reject(new Error("not connected"));
-    const { size = REPLY_SIZE.status, late, onStart } = options;
+    const { size = REPLY_SIZE.status, late, onStart, nearby = false } = options;
     return new Promise((resolve, reject) => {
       this.jobCounter += 1;
       this.remoteQueue.push({
@@ -3973,6 +4175,7 @@ export class MeshSession {
         },
         answers,
         size,
+        nearby,
         late: late ?? null,
         sent: null,
         early: [],
@@ -4055,6 +4258,7 @@ export class MeshSession {
   private answerWait(job: RemoteJob, sent: TextSendResult): number {
     const self = this.state.self;
     if (!self || self.bandwidthHz <= 0) return replyWaitMs(sent.estTimeoutMs, job.size.holdMs, 0);
+    if (job.nearby) return replyWaitMs(sent.estTimeoutMs, job.size.holdMs, replyBudgetMs({ hops: 0, hashSize: 1, flood: false }, job.size, self));
     const contact = this.state.contacts[job.info.key];
     const routed = !sent.flood && contact !== undefined && contact.outPathLen !== 0xff;
     const hops = routed ? contact.outPathLen & 63 : this.floodReach();

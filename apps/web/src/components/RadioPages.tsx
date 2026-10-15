@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { AdvertLocPolicy, AdvType, isTrusted, TelemMode, type ContactRecord, type SessionState } from "@meshnet/meshcore";
+import { AdvertLocPolicy, AdvType, isTrusted, regionSupport, TelemMode, type ContactRecord, type SessionState } from "@meshnet/meshcore";
 import { autostartEnabled, autostartLabel, hasAutostart, setAutostart } from "../lib/autostart.js";
 import { agoPhrase, dayLabel, timeOfDay } from "../lib/format.js";
 import { saveKey, useKeyNote } from "../lib/radioKey.js";
@@ -46,6 +46,7 @@ import { OwnReadings } from "./NodeReadings.js";
 import { HistoryPage } from "./HistoryPage.js";
 import { KeyPage } from "./KeyPage.js";
 import { PinPage } from "./PinPage.js";
+import { regionLabel, RegionSheet } from "./RegionSheet.js";
 import { ScreenHead, type Chrome } from "./ScreenHead.js";
 import { UpdateButton } from "./Updates.js";
 import { useDesktopUpdateInfo } from "../lib/updates.js";
@@ -453,12 +454,15 @@ function TrustedPage({ online }: { online: boolean }) {
 
 /**
  * The radio's frequency and power, and below them its place in the mesh:
- * whether it repeats for others and how long a hash repeaters write into its
- * paths. The firmware takes repeat in the same command as the frequency, so
- * the whole page goes to the radio with one Apply.
+ * whether it repeats for others, how long a hash repeaters write into its
+ * paths, and the region it floods under. The firmware takes repeat in the
+ * same command as the frequency, so the page goes to the radio with one
+ * Apply; the region has its own sheet, and is saved from it.
  */
 function FrequencyPage({ self, online }: { self: Self; online: boolean }) {
-  const { device, repeatFreqs } = useSession();
+  const { device, repeatFreqs, region } = useSession();
+  const [regionOpen, setRegionOpen] = useState(false);
+  const regions = regionSupport(device).radio;
   const initial = () => ({
     frequency: (self.frequencyKhz / 1000).toFixed(3),
     bandwidth: (self.bandwidthHz / 1000).toString(),
@@ -570,9 +574,9 @@ function FrequencyPage({ self, online }: { self: Self; online: boolean }) {
           </div>
         </Block>
       </Group>
-      {device?.repeatEnabled != null || device?.pathHashMode != null ? (
+      {device?.repeatEnabled != null || device?.pathHashMode != null || regions ? (
         <Group title={t("radio.frequency.network")}>
-          {device.repeatEnabled != null ? (
+          {device?.repeatEnabled != null ? (
             <SwitchRow
               label={t("radio.frequency.repeat")}
               hint={canRepeat ? undefined : t("radio.frequency.repeatOnly", { list: repeatFreqsText(repeatFreqs ?? []) })}
@@ -581,7 +585,7 @@ function FrequencyPage({ self, online }: { self: Self; online: boolean }) {
               onChange={(v) => update({ repeat: v })}
             />
           ) : null}
-          {device.pathHashMode != null ? (
+          {device?.pathHashMode != null ? (
             <SelectRow
               label={t("radio.frequency.hash")}
               value={values.hash}
@@ -590,8 +594,10 @@ function FrequencyPage({ self, online }: { self: Self; online: boolean }) {
               onChange={(v) => update({ hash: v })}
             />
           ) : null}
+          {regions ? <LinkRow label={t("radio.region.title")} value={region ? regionLabel(region.name, null, false) : "…"} disabled={!online} onClick={() => setRegionOpen(true)} /> : null}
         </Group>
       ) : null}
+      <RegionSheet open={regionOpen} onClose={() => setRegionOpen(false)} target={{ kind: "radio" }} />
       <div className="page-actions">
         {dirty ? <Button onClick={() => setValues(initial())}>{t("radio.frequency.revert")}</Button> : null}
         <Button variant="primary" size="lg" disabled={!dirty || !valid || !online} busy={busy} onClick={() => setAsking(true)}>

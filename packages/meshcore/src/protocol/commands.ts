@@ -358,6 +358,15 @@ export function sendBinaryReq(publicKey: Uint8Array, request: Uint8Array): Uint8
 }
 
 /**
+ * A request sealed with this radio's key alone, for a node that need not know
+ * it, such as `regionsRequest`. Firmware from protocol 13 sends it to a node
+ * that is not a contact too, direct and zero hop.
+ */
+export function sendAnonReq(publicKey: Uint8Array, request: Uint8Array): Uint8Array {
+  return new ByteWriter().u8(Cmd.SendAnonReq).bytes(key(publicKey)).bytes(request).toBytes();
+}
+
+/**
  * A trace along an explicit path of node hashes. `flags & 3` is the hash size
  * class; with the default of one-byte hashes the path is one byte per hop.
  */
@@ -428,6 +437,43 @@ export function getAutoAddConfig(): Uint8Array {
 
 export function getAllowedRepeatFreq(): Uint8Array {
   return new ByteWriter().u8(Cmd.GetAllowedRepeatFreq).toBytes();
+}
+
+/**
+ * The region the radio marks its floods with until it restarts, over the one
+ * it keeps (`setDefaultFloodScope`); null goes back to that one.
+ */
+export function setFloodScope(regionKey: Uint8Array | null): Uint8Array {
+  const w = new ByteWriter().u8(Cmd.SetFloodScopeKey).u8(0);
+  if (regionKey) {
+    if (regionKey.length !== 16) throw new Error(`a region key is 16 bytes, got ${regionKey.length}`);
+    w.bytes(regionKey);
+  }
+  return w.toBytes();
+}
+
+/** Floods go without a region until `setFloodScope`, whatever region the radio keeps (protocol 12). */
+export function setFloodUnscoped(): Uint8Array {
+  return new ByteWriter().u8(Cmd.SetFloodScopeKey).u8(1).toBytes();
+}
+
+/**
+ * The region the radio keeps and marks every flood with, whoever sends it
+ * (protocol 11): its name, as the radio shows it, and its key. Null keeps none.
+ */
+export function setDefaultFloodScope(region: { name: string; key: Uint8Array } | null): Uint8Array {
+  const w = new ByteWriter().u8(Cmd.SetDefaultFloodScope);
+  if (region) {
+    const length = new TextEncoder().encode(region.name).length;
+    if (length === 0 || length > 30) throw new Error(`a region name is 1 to 30 bytes, got ${length}`);
+    if (region.key.length !== 16) throw new Error(`a region key is 16 bytes, got ${region.key.length}`);
+    w.fixedString(region.name, 31).bytes(region.key);
+  }
+  return w.toBytes();
+}
+
+export function getDefaultFloodScope(): Uint8Array {
+  return new ByteWriter().u8(Cmd.GetDefaultFloodScope).toBytes();
 }
 
 /** A raw datagram down an explicit path. Flooding is not offered by the firmware. */

@@ -1,6 +1,6 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { ByteWriter, fromHex } from "./protocol/bytes.js";
+import { ByteWriter, fromHex, fromUtf8, toHex } from "./protocol/bytes.js";
 import { Cmd, ContactFlag, ErrCode, Push, Resp, TxtType } from "./protocol/codes.js";
 import { groupDataPayload, groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
 import { crockford, decodeReaction, encodeReaction, messageHash, REACTION_DATA_TYPE } from "./protocol/reaction.js";
@@ -43,6 +43,13 @@ class ScriptedRadio extends BaseTransport {
   privateKey: Uint8Array | null = null;
   /** The Bluetooth PIN it keeps; 0 for the firmware's own. */
   blePin = 0;
+  /** Whether it keeps a region (protocol 11); an older radio refuses the commands. */
+  regions = false;
+  /** The region it keeps, and the one set for the sends to come: a key, "unscoped", or null to go with the kept one. */
+  region: { name: string; key: Uint8Array } | null = null;
+  scope: Uint8Array | "unscoped" | null = null;
+  /** What each repeater asked for its regions says after its clock, by its key. */
+  regionAnswers = new Map<string, string>();
 
   async send(frame: Uint8Array): Promise<void> {
     this.sent.push(frame);
@@ -187,6 +194,27 @@ class ScriptedRadio extends BaseTransport {
         if (pin !== 0 && (pin < 100_000 || pin > 999_999)) return [new Uint8Array([Resp.Err, ErrCode.IllegalArg])];
         this.blePin = pin;
         return [new Uint8Array([Resp.Ok])];
+      }
+      case Cmd.GetDefaultFloodScope:
+        if (!this.regions) return [new Uint8Array([Resp.Err, 1])];
+        return [this.region ? new ByteWriter().u8(Resp.DefaultFloodScope).fixedString(this.region.name, 31).bytes(this.region.key).toBytes() : new Uint8Array([Resp.DefaultFloodScope])];
+      case Cmd.SetDefaultFloodScope:
+        if (!this.regions) return [new Uint8Array([Resp.Err, 1])];
+        this.region = frame.length >= 48 ? { name: fromUtf8(frame.subarray(1, 32)), key: frame.slice(32, 48) } : null;
+        return [new Uint8Array([Resp.Ok])];
+      case Cmd.SetFloodScopeKey:
+        this.scope = frame[1] === 1 ? "unscoped" : frame.length >= 18 ? frame.slice(2, 18) : null;
+        return [new Uint8Array([Resp.Ok])];
+      case Cmd.SendAnonReq: {
+        // A contact without a route gets the request as a flood, which a repeater does not answer.
+        const contact = this.contactOf(frame);
+        const floods = contact !== undefined && contact[35] === 0xff;
+        const tag = this.binaryTag++;
+        const answer = this.regionAnswers.get(toHex(frame.subarray(1, 33)));
+        if (answer !== undefined && !floods) {
+          queueMicrotask(() => this.emitFrame(new ByteWriter().u8(Push.BinaryResponse).u8(0).u32(tag).u32(this.time).string(answer).toBytes()));
+        }
+        return [new ByteWriter().u8(Resp.Sent).u8(floods ? 1 : 0).u32(tag).u32(500).toBytes()];
       }
       case Cmd.Reboot:
         // A radio that reboots says nothing more on this link.
@@ -2978,4 +3006,162 @@ test("a radio whose firmware takes no key is left as it was", async () => {
   assert.equal(await session.importKey(new Uint8Array(64).fill(0x40), "Node-21"), false);
   assert.ok(!radio.sent.some((f) => f[0] === Cmd.SetAdvertName || f[0] === Cmd.Reboot));
   assert.equal(session.getState().status, "ready");
+});
+
+// ---- regions ----
+
+async function regionKeyOf(name: string): Promise<Uint8Array> {
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`#${name}`))).slice(0, 16);
+}
+
+/** The commands around the first channel text: the region going on, the text, the region coming off. */
+function aroundChannelSend(radio: ScriptedRadio): number[] {
+  const at = radio.sent.findIndex((f) => f[0] === Cmd.SendChannelTxtMsg);
+  return radio.sent.slice(Math.max(0, at - 1), at + 2).map((f) => f[0]!);
+}
+
+test("the radio's region is read at connect, and one left from a dropped send is taken off", async () => {
+  const radio = new ScriptedRadio();
+  radio.regions = true;
+  radio.region = { name: "msk", key: await regionKeyOf("msk") };
+  radio.scope = await regionKeyOf("msk-sao");
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  await until(() => radio.scope === null);
+  assert.deepEqual(session.getState().region, { name: "msk" });
+  await session.disconnect();
+});
+
+test("a radio whose firmware keeps no region has none to show, and its sends are left alone", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  await settle();
+  assert.equal(session.getState().region, null);
+  assert.ok(!radio.sent.some((f) => f[0] === Cmd.SetFloodScopeKey));
+  await session.disconnect();
+});
+
+test("the radio keeps a region set from here, with its key, and drops it again", async () => {
+  const radio = new ScriptedRadio();
+  radio.regions = true;
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  await session.setRadioRegion("mow");
+  assert.equal(radio.region?.name, "mow");
+  assert.deepEqual(radio.region?.key, await regionKeyOf("mow"));
+  assert.deepEqual(session.getState().region, { name: "mow" });
+  await session.setRadioRegion(null);
+  assert.equal(radio.region, null);
+  assert.deepEqual(session.getState().region, { name: null });
+  await session.disconnect();
+});
+
+test("a channel with a region of its own sends under it, and nothing after it does", async () => {
+  const radio = new ScriptedRadio();
+  radio.regions = true;
+  radio.region = { name: "msk", key: await regionKeyOf("msk") };
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  await settle();
+  session.setChannelRegion(0, "msk-sao");
+  assert.equal(session.channelRegion(0), "msk-sao");
+  radio.sent = [];
+  let during: Uint8Array | "unscoped" | null = null;
+  const send = radio.send.bind(radio);
+  radio.send = async (frame) => {
+    if (frame[0] === Cmd.SendChannelTxtMsg) during = radio.scope;
+    await send(frame);
+  };
+  await session.sendText(channelConversation(0), "south of the ring road");
+  assert.deepEqual(aroundChannelSend(radio), [Cmd.SetFloodScopeKey, Cmd.SendChannelTxtMsg, Cmd.SetFloodScopeKey]);
+  assert.deepEqual(during, await regionKeyOf("msk-sao"));
+  await until(() => radio.scope === null);
+  await session.disconnect();
+});
+
+test("a channel under the radio's own region, or the radio's, sends as it always did", async () => {
+  const radio = new ScriptedRadio();
+  radio.regions = true;
+  radio.region = { name: "msk", key: await regionKeyOf("msk") };
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  await settle();
+  session.setChannelRegion(0, "msk");
+  radio.sent = [];
+  await session.sendText(channelConversation(0), "same as the radio");
+  session.setChannelRegion(0, null);
+  await session.sendText(channelConversation(0), "under the radio's");
+  assert.ok(!radio.sent.some((f) => f[0] === Cmd.SetFloodScopeKey));
+  await session.disconnect();
+});
+
+test("a channel set to no region floods without one, where the radio keeps a region", async () => {
+  const radio = new ScriptedRadio();
+  radio.regions = true;
+  radio.region = { name: "msk", key: await regionKeyOf("msk") };
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  await settle();
+  session.setChannelRegion(0, "*");
+  radio.sent = [];
+  await session.sendText(channelConversation(0), "to everyone in earshot");
+  const on = radio.sent.find((f) => f[0] === Cmd.SetFloodScopeKey)!;
+  assert.deepEqual([...on], [Cmd.SetFloodScopeKey, 1]);
+  assert.deepEqual(aroundChannelSend(radio), [Cmd.SetFloodScopeKey, Cmd.SendChannelTxtMsg, Cmd.SetFloodScopeKey]);
+  await session.disconnect();
+});
+
+test("a channel's region is kept with the radio's history, by the channel's key", async () => {
+  const storage = new MemoryStorage();
+  const session = new MeshSession({ storage, now: () => 1_700_000_000_000 });
+  await session.connect(new ScriptedRadio());
+  session.setChannelRegion(0, "mow");
+  await session.disconnect();
+  const again = new MeshSession({ storage, now: () => 1_700_000_000_000 });
+  await again.connect(new ScriptedRadio());
+  assert.equal(again.channelRegion(0), "mow");
+  assert.deepEqual(Object.values(again.getState().channelRegions), ["mow"]);
+  await again.disconnect();
+});
+
+test("the repeaters around are asked for their regions, a routeless one given a direct route only for the question", async () => {
+  const radio = new ScriptedRadio();
+  const HILL = fromHex("c1".repeat(32));
+  const STRANGER = fromHex("d2".repeat(32));
+  radio.contacts = [contactFrame(BOB, "Bob", 10, 2, [0x3f]), contactFrame(HILL, "Hill", 10, 2)];
+  radio.regionAnswers.set(toHex(BOB), "*,msk,mow");
+  radio.regionAnswers.set(toHex(HILL), "msk");
+  radio.regionAnswers.set(toHex(STRANGER), "*,msk");
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  await settle();
+  const steps: string[] = [];
+  const asking = session.askRegions((s) => steps.push(s.step === "listening" ? "listening" : `${s.done}/${s.total}`), 60);
+  await tick();
+  const tag = radio.sent.find((f) => f[0] === Cmd.SendControlData)!.subarray(3, 7);
+  for (const [key, snr] of [[BOB, 20], [HILL, 30], [STRANGER, 10]] as const) {
+    radio.push(new ByteWriter().u8(Push.ControlData).i8(snr).i8(-100).u8(0).u8(0x92).i8(-10).bytes(tag).bytes(key).toBytes());
+  }
+  const survey = await asking;
+  assert.deepEqual(survey, {
+    asked: 3,
+    answered: 3,
+    regions: [
+      { name: "msk", repeaters: 3 },
+      { name: "*", repeaters: 2 },
+      { name: "mow", repeaters: 1 },
+    ],
+  });
+  assert.deepEqual(steps, ["listening", "0/3", "1/3", "2/3"]);
+  // Hill, heard best, goes first: its route is set to direct for the request, and forgotten again after.
+  const hillKey = toHex(HILL);
+  const asked = (key: string) => radio.sent.filter((f) => ([Cmd.AddUpdateContact, Cmd.SendAnonReq, Cmd.ResetPath] as number[]).includes(f[0]!) && toHex(f.subarray(1, 33)) === key).map((f) => f[0]);
+  assert.deepEqual(asked(hillKey), [Cmd.AddUpdateContact, Cmd.SendAnonReq, Cmd.ResetPath]);
+  assert.equal(radio.sent.find((f) => f[0] === Cmd.AddUpdateContact)![35], 0);
+  assert.equal(session.getState().contacts[hillKey]?.outPathLen, 0xff);
+  // Bob holds a route, and is asked along it with nothing written.
+  assert.deepEqual(asked(bobKey()), [Cmd.SendAnonReq]);
+  assert.deepEqual([...radio.sent.find((f) => f[0] === Cmd.SendAnonReq)!.subarray(33)], [0x01, 0x00]);
+  await session.disconnect();
 });

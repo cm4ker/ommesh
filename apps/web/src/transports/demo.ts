@@ -96,6 +96,18 @@ TOWN.forEach(([first, name, lat, lon, route], i) => {
 const TOWN_HASHES = new Set(TOWN.map(([first]) => first));
 
 /**
+ * The regions the repeaters in range carry, as each lists them when asked:
+ * "*" first for one that passes on floods without a region, as all do here
+ * but K10, which carries its own part of town only.
+ */
+const REGIONS: Record<string, string> = {
+  "Hill Repeater": "*,omsk,oms",
+  "Tower Repeater": "*,omsk",
+  "K10 Юг Круг": "omsk,omsk-yug",
+  MIR: "*,omsk",
+};
+
+/**
  * Repeaters Hill hears from well out of town, and one on the next roof, so
  * its neighbours run from a few hundred metres to fifty km and a filter by
  * distance has something to sort (#51). Nobody else hears them.
@@ -382,6 +394,8 @@ class DemoRadio extends BaseTransport {
   private acks = 0x1000;
   /** The radio's own settings, kept as the firmware keeps them so a re-read brings back what was set. */
   private radio = { frequencyKhz: 868_731, bandwidthHz: 62_500, spreadingFactor: 7, codingRate: 7, repeat: false, pathHashMode: 0 };
+  /** The region the radio keeps, as the firmware keeps it: the name, then its key. */
+  private region: Uint8Array | null = null;
   private prefs = new Map<Person, Record<string, string>>(PEOPLE.filter((p) => p.type >= 2).map((p) => [p, nodePrefs(p)]));
   /** Nodes that took our admin password; only they answer the console. */
   private admins = new Set<Person>();
@@ -1077,6 +1091,19 @@ class DemoRadio extends BaseTransport {
         if (reply) this.later(1600, reply);
         return [this.sent(tag, this.floods(p))];
       }
+      case Cmd.SendAnonReq: {
+        // A repeater in range lists its regions after its clock; anyone else, or any other question, says nothing.
+        const p = this.person(frame.subarray(1, 33));
+        const tag = this.acks++;
+        const regions = p && frame[33] === 0x01 ? REGIONS[p.name] : undefined;
+        if (regions) this.later(900, new ByteWriter().u8(Push.BinaryResponse).u8(0).u32(tag).u32(Math.floor(Date.now() / 1000)).string(regions).toBytes());
+        return [this.sent(tag)];
+      }
+      case Cmd.GetDefaultFloodScope:
+        return [this.region ? new ByteWriter().u8(Resp.DefaultFloodScope).bytes(this.region).toBytes() : new Uint8Array([Resp.DefaultFloodScope])];
+      case Cmd.SetDefaultFloodScope:
+        this.region = frame.length >= 48 ? frame.slice(1, 48) : null;
+        return [new Uint8Array([Resp.Ok])];
       case Cmd.SendPathDiscoveryReq: {
         // The flood finds a shorter way than the one held, when there is one to shorten; the answer comes back the other way round.
         const p = this.person(frame.subarray(2, 34));

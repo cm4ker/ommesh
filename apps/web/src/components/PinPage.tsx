@@ -10,7 +10,7 @@ import { t } from "../i18n/index.js";
 import { errorText } from "../i18n/errors.js";
 
 /**
- * The radio's Bluetooth, under Advanced › Connection beside its Wi-Fi: for
+ * The radio's Bluetooth, under Connection beside its Wi-Fi: for
  * now the PIN it asks a new phone or computer for when it pairs. The
  * radio reports only the PIN it keeps, so a random one is never known here:
  * it is on the radio's screen. Saving reboots the radio, as only a radio that

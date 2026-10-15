@@ -73,8 +73,8 @@ export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = {
   remote: "privacy",
   console: "advanced",
   key: "advanced",
-  pin: "advanced",
-  wifi: "advanced",
+  pin: "connection",
+  wifi: "connection",
   background: "appearance",
 };
 
@@ -716,32 +716,13 @@ function confirmNotes(c: { radioChanged: boolean; repeatChanged: boolean; repeat
  * percent it would give now, so the one that looks right is plain to see.
  */
 function AdvancedPage({ self, online }: { self: Self; online: boolean }) {
-  const { device, wifi } = useSession();
+  const { device } = useSession();
   const hasConsole = useOwnConsole();
   return (
     <>
       {hasConsole ? (
         <Group title={t("radio.advanced.manage")}>
           <LinkRow label={t("radio.titles.console")} hint={t("radio.advanced.consoleHint")} onClick={() => push({ kind: "radio", page: "console" })} />
-        </Group>
-      ) : null}
-      {device ? (
-        // The ways a phone or a computer reaches the radio, each with its settings behind it. Wi-Fi only on a radio built with it (MeshCore 1.18).
-        <Group title={t("radio.advanced.link")}>
-          <LinkRow
-            icon={<BluetoothIcon size={17} />}
-            label={t("radio.titles.pin")}
-            value={device.blePin ? t("radio.advanced.blePinValue", { pin: String(device.blePin).padStart(6, "0") }) : t("radio.advanced.blePinRandom")}
-            onClick={() => push({ kind: "radio", page: "pin" })}
-          />
-          {wifi ? (
-            <LinkRow
-              icon={<WifiIcon size={17} />}
-              label={t("radio.titles.wifi")}
-              value={!wifi.enabled ? t("radio.advanced.wifiOff") : wifi.ip ? <span className="mono">{wifi.ip}</span> : t("radio.advanced.wifiAway")}
-              onClick={() => push({ kind: "radio", page: "wifi" })}
-            />
-          ) : null}
         </Group>
       ) : null}
       <Group title={t("radio.advanced.device")}>
@@ -1302,6 +1283,25 @@ function ConnectionPage() {
           />
         ) : null}
       </Group>
+      {state.device ? (
+        // How a phone or a computer reaches the radio, as the radio itself is set: each way with its settings behind it. Wi-Fi only on a radio built with it (MeshCore 1.18).
+        <Group title={t("radio.connection.onRadio")}>
+          <LinkRow
+            icon={<BluetoothIcon size={17} />}
+            label={t("radio.titles.pin")}
+            value={state.device.blePin ? t("radio.connection.blePinValue", { pin: String(state.device.blePin).padStart(6, "0") }) : t("radio.connection.blePinRandom")}
+            onClick={() => push({ kind: "radio", page: "pin" })}
+          />
+          {state.wifi ? (
+            <LinkRow
+              icon={<WifiIcon size={17} />}
+              label={t("radio.titles.wifi")}
+              value={!state.wifi.enabled ? t("radio.connection.wifiOff") : state.wifi.ip ? <span className="mono">{state.wifi.ip}</span> : t("radio.connection.wifiAway")}
+              onClick={() => push({ kind: "radio", page: "wifi" })}
+            />
+          ) : null}
+        </Group>
+      ) : null}
       {relayAvailable() && state.link?.kind === "ble" ? (
         <Group note={t("radio.connection.shareNote")}>
           <SwitchRow

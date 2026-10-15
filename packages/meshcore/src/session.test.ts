@@ -1590,6 +1590,37 @@ test("a sign-in by flood goes with no route and puts ours back the moment it has
   assert.ok(session.routeSetByHand(HILL_KEY));
 });
 
+test("a repeater pinned to flood is asked by flood, and its route set by hand comes back with the pin gone", async () => {
+  const { radio, session } = await nodeSession({ replyWaitMs: () => 20 });
+  await session.setRoute(HILL_KEY, ["3f", "a1"]);
+  await session.setFloodPinned(HILL_KEY, true);
+  assert.equal(session.getState().contacts[HILL_KEY]?.outPathLen, 0xff);
+  const writes = () => radio.sent.filter((f) => f[0] === Cmd.AddUpdateContact).length;
+  const pinned = writes();
+
+  // An answer brought a route: it goes, and the one set by hand stays away.
+  radio.contacts = [contactFrame(HILL, "Hill", 20, 2, [0xdc, 0x89])];
+  radio.push(new ByteWriter().u8(Push.PathUpdated).bytes(HILL).toBytes());
+  await tick(10);
+  assert.equal(session.getState().contacts[HILL_KEY]?.outPathLen, 0xff);
+  assert.equal(writes(), pinned);
+
+  // A route the radio holds when a request's turn comes is dropped before it goes.
+  radio.contacts = [contactFrame(HILL, "Hill", 30, 2, [0xdc])];
+  await session.refreshContacts(true);
+  assert.equal(writes(), pinned);
+  assert.equal(session.getState().contacts[HILL_KEY]?.outPathLen, 1);
+  const from = radio.sent.length;
+  await assert.rejects(session.requestStatus(HILL_KEY), /no reply/);
+  const order = radio.sent.slice(from).map((f) => f[0]).filter((c) => c === Cmd.ResetPath || c === Cmd.SendStatusReq);
+  assert.deepEqual(order, [Cmd.ResetPath, Cmd.SendStatusReq]);
+  assert.equal(session.getState().contacts[HILL_KEY]?.outPathLen, 0xff);
+
+  await session.setFloodPinned(HILL_KEY, false);
+  assert.ok(session.routeSetByHand(HILL_KEY));
+  assert.deepEqual([...radio.sent.filter((f) => f[0] === Cmd.AddUpdateContact).at(-1)!.subarray(35, 38)], [2, 0x3f, 0xa1]);
+});
+
 /** Waits until the scripted radio has been sent a frame of this kind, up to about a second. */
 async function sentOne(radio: ScriptedRadio, code: number, count = 1): Promise<void> {
   for (let i = 0; i < 200 && radio.sent.filter((f) => f[0] === code).length < count; i++) await tick(5);

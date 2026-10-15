@@ -221,7 +221,10 @@ const REACTION_REACH = 2000;
 
 /** How direct messages to one contact are routed; unset fields follow the defaults. */
 export interface RoutePolicy {
-  /** Every message floods: the learned route is dropped before each send, and whenever the radio learns one. */
+  /**
+   * Every message, or every request to a node, floods: the learned route is
+   * dropped before each send, and whenever the radio learns one.
+   */
   flood?: boolean;
   /** Minutes a learned route is kept before it is dropped; null keeps it. Absent follows `RoutingSettings.resetAfterMin`. */
   resetAfterMin?: number | null;
@@ -1841,10 +1844,10 @@ export class MeshSession {
   // The radio sends a direct message along the route it last learned for the
   // contact, and floods only when it knows none. It keeps a route until a new
   // one replaces it, however long ago the contact moved away. So the session
-  // drops routes: before every message to a contact whose flood is pinned, and
-  // once a route is older than its time limit. A dropped route costs nothing
-  // on the air; the next message floods and its acknowledgement brings a
-  // fresh route back.
+  // drops routes: before every message or request to a contact whose flood is
+  // pinned, and once a route to a chat or a room is older than its time limit.
+  // A dropped route costs nothing on the air; the next message floods and its
+  // acknowledgement brings a fresh route back.
 
   /** What governs this contact's route once the defaults are filled in. */
   routePolicy(key: string): { flood: boolean; resetAfterMin: number | null } {
@@ -1864,12 +1867,24 @@ export class MeshSession {
     return contact.pathSince + resetAfterMin * 60_000;
   }
 
-  /** Pins every message to this contact to a flood, or lets it use learned routes again. */
+  /**
+   * Pins every message or request to this contact to a flood, or lets it use
+   * routes again. A route written by hand waits out the pin and comes back
+   * with it; offline, the next read of the contacts writes it back.
+   */
   async setFloodPinned(key: string, flood: boolean): Promise<void> {
     const contact = this.needContact(key);
     this.setPolicy(key, { flood });
-    this.log("path", `${contact.name || key.slice(0, 12)}: ${flood ? "messages always flood" : "learned routes are used again"}`);
-    if (flood && this.isReady && contact.outPathLen !== 0xff) await this.dropRoute(this.need(), key, "flood pinned");
+    this.log("path", `${contact.name || key.slice(0, 12)}: ${flood ? "everything to it floods" : "routes are used again"}`);
+    if (!this.isReady) return;
+    if (flood) {
+      if (contact.outPathLen !== 0xff) await this.dropRoute(this.need(), key, "flood pinned");
+      return;
+    }
+    const manual = this.manualRoute(key);
+    if (!manual) return;
+    await this.writeContact({ ...(this.state.contacts[key] ?? contact), ...manual, pathSince: this.now() });
+    this.log("path", `${contact.name || key.slice(0, 12)}: route set by hand put back, ${pathHashes(manual.outPathLen, manual.outPath).join(" ") || "direct"}`);
   }
 
   /** Minutes a learned route to this contact is kept; null keeps it; undefined follows the default. */
@@ -1926,10 +1941,11 @@ export class MeshSession {
     this.log("path", `${contact.name || key.slice(0, 12)}: route set by hand, ${hashes.length ? hashes.join(" ") : "direct"}`);
   }
 
-  /** The route last written by hand for this contact, whatever the radio holds now. */
+  /** The route last written by hand for this contact, whatever the radio holds now; none while its flood is pinned. */
   private manualRoute(key: string): { outPathLen: number; outPath: string } | null {
-    const manual = this.state.routing.contacts[key]?.manual;
-    if (!manual || manual === "none") return null;
+    const own = this.state.routing.contacts[key];
+    const manual = own?.manual;
+    if (own?.flood || !manual || manual === "none") return null;
     const [len, hex = ""] = manual.split(":");
     return { outPathLen: Number(len), outPath: hex.padEnd(128, "0") };
   }
@@ -1943,10 +1959,11 @@ export class MeshSession {
 
   /** Why the route to this contact should go now, or null if it may stay. */
   private staleReason(contact: ContactRecord): string | null {
-    if (contact.outPathLen === 0xff || !isConversationType(contact.type)) return null;
+    if (contact.outPathLen === 0xff) return null;
     const { flood, resetAfterMin } = this.routePolicy(contact.key);
     if (flood) return "flood pinned";
-    if (this.routeSetByHand(contact.key)) return null;
+    // A route to a repeater or a sensor has no time limit: it is kept until someone drops it.
+    if (!isConversationType(contact.type) || this.routeSetByHand(contact.key)) return null;
     if (resetAfterMin === null || contact.pathSince === null) return null;
     return this.now() - contact.pathSince >= resetAfterMin * 60_000 ? `older than ${resetAfterMin} min` : null;
   }
@@ -3475,12 +3492,12 @@ export class MeshSession {
    * as a flood, and our own route to the node is put back the moment it has
    * gone: when the flooded answer reaches us, our radio, holding a route to the
    * node, sends it the way that answer came, directly along ours. Resolves like
-   * `login`.
+   * `login`. With the node's flood pinned no route is put back.
    */
   async relearnReturnPath(key: string, password: string): Promise<NodeLogin> {
     const contact = this.needContact(key);
     const bytes = fromHex(key);
-    const held = this.manualRoute(key) ?? (contact.outPathLen === 0xff ? null : { outPathLen: contact.outPathLen, outPath: contact.outPath });
+    const held = this.routePolicy(key).flood ? null : (this.manualRoute(key) ?? (contact.outPathLen === 0xff ? null : { outPathLen: contact.outPathLen, outPath: contact.outPath }));
     await this.remoteRequest(
       key,
       "sign in by flood",
@@ -3559,7 +3576,7 @@ export class MeshSession {
     const held = this.state.contacts[key] ?? contact;
     const outPath = event.outPath.padEnd(128, "0");
     const changed = routeKey(held.outPathLen, held.outPath) !== routeKey(event.outPathLen, outPath);
-    if (!(isConversationType(held.type) && this.routePolicy(key).flood) && this.isReady) {
+    if (!this.routePolicy(key).flood && this.isReady) {
       if (changed) {
         await this.writeContact({ ...held, outPathLen: event.outPathLen, outPath, pathSince: this.now() });
         this.log("path", `${held.name || key.slice(0, 12)}: route set from discovery, ${pathHashes(event.outPathLen, event.outPath).join(" ") || "direct"}`);
@@ -3966,6 +3983,7 @@ export class MeshSession {
    * Sends the request in the radio's slot and waits for its reply. Along a
    * route it goes that way, with none the radio floods it; silence drops
    * nothing, since a lost round trip on a weak route says nothing about it.
+   * To a node whose flood is pinned a route the radio holds is dropped first.
    */
   private async launchRemote(job: RemoteJob): Promise<void> {
     const client = this.client;
@@ -3973,8 +3991,17 @@ export class MeshSession {
       this.finishRemote(job, new Error("not connected"));
       return;
     }
-    const name = this.state.contacts[job.info.key]?.name || job.info.key.slice(0, 12);
+    const key = job.info.key;
+    const name = this.state.contacts[key]?.name || key.slice(0, 12);
     try {
+      if ((this.state.contacts[key]?.outPathLen ?? 0xff) !== 0xff && this.routePolicy(key).flood) {
+        try {
+          await this.dropRoute(client, key, "flood pinned");
+        } catch (error) {
+          this.log("error", `could not drop the route to ${name}: ${(error as Error).message}`);
+        }
+        if (this.remoteActive !== job) return;
+      }
       const sent = await job.start(client);
       if (this.remoteActive !== job) return;
       job.sent = sent;
@@ -4203,7 +4230,7 @@ export class MeshSession {
         // A contact pinned to flood keeps no route, not even for the acks the
         // radio sends back to its messages.
         void record.then((r) => {
-          if (r && r.outPathLen !== 0xff && isConversationType(r.type) && this.routePolicy(key).flood && this.client === client) {
+          if (r && r.outPathLen !== 0xff && this.routePolicy(key).flood && this.client === client) {
             this.dropRoute(client, key, "flood pinned").catch((e: Error) => this.log("error", e.message));
           }
           // The radio takes the way an answer came in as its route to the sender; a route set

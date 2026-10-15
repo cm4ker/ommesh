@@ -13,7 +13,7 @@
  */
 
 import { useSyncExternalStore } from "react";
-import { AdvType, contactRoute, isConversationType, traceLegs, type SessionState, type TraceResult } from "@meshnet/meshcore";
+import { AdvType, contactRoute, traceLegs, type SessionState, type TraceResult } from "@meshnet/meshcore";
 import { errorText } from "../i18n/errors.js";
 import { t } from "../i18n/index.js";
 import { buildGraph, findWay, isUnresolved, linkId, locateBreak, planWay, resolver, SELF, tracedLegs, wayLinks, type Graph, type PlannedWay, type WayOptions } from "./linkGraph.js";
@@ -427,7 +427,7 @@ async function goOn(p: Ping, look: Look): Promise<void> {
 async function keep(p: Ping, key: string, relays: string[]): Promise<void> {
   const contact = session.getState().contacts[key];
   if (!contact || !p.search) return;
-  if (isConversationType(contact.type) && session.routePolicy(key).flood) return;
+  if (session.routePolicy(key).flood) return;
   const before = { relays: contactRoute(contact), since: contact.pathSince };
   await session.setRoute(key, relays, { learnedAt: Date.now() });
   p.search.before = before;

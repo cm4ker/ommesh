@@ -63,12 +63,13 @@ export function RouteLink({ contactKey }: { contactKey: string }) {
 /**
  * Forgets the route, under the row that stands for it on a node's page. Only a repeater or a
  * sensor has it: a route to a chat or a room is forgotten by the app once it is old, and theirs
- * is kept until someone drops it. Where the radio holds no route there is nothing to forget.
+ * is kept until someone drops it. Where the radio holds no route, or holds one only until the
+ * pinned flood drops it, there is nothing to forget.
  */
 export function ForgetRouteRow({ contactKey }: { contactKey: string }) {
   const state = useSession();
   const contact = state.contacts[contactKey];
-  if (!contact || isConversationType(contact.type) || contactRoute(contact) === null) return null;
+  if (!contact || isConversationType(contact.type) || contactRoute(contact) === null || state.routing.contacts[contactKey]?.flood) return null;
   return <ActionRow label={t("tools.route.forget")} danger disabled={state.status !== "ready"} onClick={() => void forgetRoute(contactKey)} />;
 }
 
@@ -138,9 +139,10 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
   const name = contact.name || contact.prefix;
   const online = state.status === "ready";
   const relaysItself = contact.type === AdvType.Repeater;
+  // Messages go to a chat or a room, requests to every other node; only routes to the first age.
   const governed = isConversationType(contact.type);
   const policy = session.routePolicy(key);
-  const flooding = governed && policy.flood;
+  const flooding = policy.flood;
   const held = contactRoute(contact);
   const byHand = session.routeSetByHand(key);
   const expires = session.routeExpiresAt(key);
@@ -182,7 +184,7 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
 
   let sub: string;
   if (editing) sub = t("tools.route.notSaved");
-  else if (flooding) sub = t("tools.route.everyFloods");
+  else if (flooding) sub = governed ? t("tools.route.everyFloods") : t("tools.route.everyRequestFloods");
   else if (held === null) sub = relaysItself ? t("tools.route.noneWritten") : governed ? t("tools.route.noneKnown") : t("tools.route.noneKnownRequests");
   else {
     const bits = [byHand ? t("tools.route.byHand") : contact.pathSince ? t("tools.route.learned", { time: agoPhrase(contact.pathSince) }) : null, expires !== null ? t("tools.route.forgotten", { when: inMinutes(expires - now) }) : null].filter(Boolean).join(" · ");
@@ -253,6 +255,8 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
           : t("tools.route.hintNoPosition", { name });
 
   const settings = () => {
+    // A route written by hand waits out a pinned flood and comes back when it ends.
+    const unpinned = state.routing.contacts[key]?.manual ? t("tools.route.putBack") : t("tools.route.learnedAgain");
     const items: MenuItem[] = [
       {
         label: t("tools.route.askMesh"),
@@ -262,17 +266,19 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
       },
     ];
     if (relaysItself) items.push({ label: t("tools.route.checkFrom"), hint: t("tools.route.checkFromHint"), disabled: !online, onSelect: () => openSpan(key) });
-    if (governed) {
-      items.push({
-        label: flooding ? t("tools.route.useLearned") : t("tools.route.alwaysFlood"),
-        hint: flooding ? undefined : t("tools.route.alwaysFloodHint"),
-        disabled: !online,
-        onSelect: () => void act(() => session.setFloodPinned(key, !flooding), flooding ? t("tools.route.learnedAgain") : t("tools.route.everyToItFloods")),
-      });
-      if (!flooding) {
-        const own = state.routing.contacts[key]?.resetAfterMin;
-        items.push({ label: t("tools.route.forgetAfterValue", { value: own === undefined ? t("tools.route.default") : limitLabel(own).toLowerCase() }), onSelect: () => forgetAfter(key, own, state.routing.resetAfterMin) });
-      }
+    items.push({
+      label: flooding ? t("tools.route.useLearned") : t("tools.route.alwaysFlood"),
+      hint: flooding ? undefined : governed ? t("tools.route.alwaysFloodHint") : t("tools.route.alwaysFloodRequestsHint"),
+      disabled: !online,
+      onSelect: () =>
+        void act(
+          () => session.setFloodPinned(key, !flooding),
+          flooding ? unpinned : governed ? t("tools.route.everyToItFloods") : t("tools.route.everyRequestToItFloods"),
+        ),
+    });
+    if (governed && !flooding) {
+      const own = state.routing.contacts[key]?.resetAfterMin;
+      items.push({ label: t("tools.route.forgetAfterValue", { value: own === undefined ? t("tools.route.default") : limitLabel(own).toLowerCase() }), onSelect: () => forgetAfter(key, own, state.routing.resetAfterMin) });
     }
     items.push({ label: t("tools.route.forgetNow"), danger: true, disabled: !online || held === null || flooding, onSelect: () => void forgetRoute(key) });
     showMenu(items, { title: t("tools.route.to", { name }) });
@@ -482,7 +488,7 @@ function SearchResult({ d, contact, state }: { d: Discovery; contact: ContactRec
   }
   if (d.found) {
     const f = d.found;
-    const flooding = isConversationType(contact.type) && session.routePolicy(contact.key).flood;
+    const flooding = session.routePolicy(contact.key).flood;
     const head = f.out.length === 0 ? t("tools.search.direct") : f.changed ? t("tools.search.found", { count: f.out.length }) : t("tools.search.same");
     return (
       <div className="disc">

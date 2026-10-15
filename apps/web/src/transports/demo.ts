@@ -601,6 +601,11 @@ class DemoRadio extends BaseTransport {
     return new ByteWriter().u8(Resp.Sent).u8(flood ? 1 : 0).u32(tag).u32(2500).toBytes();
   }
 
+  /** Like the radio, what goes to a node floods when no route to it is held. */
+  private floods(p: Person | undefined): boolean {
+    return !p || this.routes.get(p) === 0xff;
+  }
+
   /**
    * A console reply: queued as a CliData message and announced, after the node's pause. Like
    * the firmware, it is stamped with the node's clock as it answers.
@@ -960,7 +965,7 @@ class DemoRadio extends BaseTransport {
             const reply = this.runCli(p, tagged ? tagged[2]! : text);
             if (reply !== null) this.cliReply(p, tagged ? `${tagged[1]}|${reply}` : reply);
           }
-          return [this.sent(0)];
+          return [this.sent(0, this.floods(p))];
         }
         const p = this.person(frame.subarray(7, 13));
         const tag = this.acks++;
@@ -1019,7 +1024,7 @@ class DemoRadio extends BaseTransport {
               .toBytes(),
           );
         }
-        return [new ByteWriter().u8(Resp.Sent).u8(0).bytes(p.key.subarray(0, 4)).u32(2500).toBytes()];
+        return [new ByteWriter().u8(Resp.Sent).u8(this.floods(p) ? 1 : 0).bytes(p.key.subarray(0, 4)).u32(2500).toBytes()];
       }
       case Cmd.SendStatusReq: {
         const p = this.person(frame.subarray(1, 33));
@@ -1049,7 +1054,7 @@ class DemoRadio extends BaseTransport {
         if (room) w.u16(184).u16(1203);
         else w.u32(111_600).u32(1_480);
         this.later(1500, w.toBytes());
-        return [this.sent(this.acks++)];
+        return [this.sent(this.acks++, this.floods(p))];
       }
       case Cmd.SendTelemetryReq: {
         const prefix = frame.length > 4 ? frame.subarray(4, 10) : own.publicKey.subarray(0, 6);
@@ -1062,14 +1067,14 @@ class DemoRadio extends BaseTransport {
             .bytes(frame.length > 4 ? DEMO_TELEMETRY_OTHER : demoTelemetrySelf())
             .toBytes(),
         );
-        return frame.length > 4 ? [this.sent(this.acks++)] : [];
+        return frame.length > 4 ? [this.sent(this.acks++, this.floods(this.person(frame.subarray(4, 10))))] : [];
       }
       case Cmd.SendBinaryReq: {
         const p = this.person(frame.subarray(1, 33));
         const tag = this.acks++;
         const reply = p ? this.binary(p, tag, frame.subarray(33)) : null;
         if (reply) this.later(1600, reply);
-        return [this.sent(tag, p?.hops === 0xff)];
+        return [this.sent(tag, this.floods(p))];
       }
       case Cmd.SendPathDiscoveryReq: {
         // The flood finds a shorter way than the one held, when there is one to shorten; the answer comes back the other way round.

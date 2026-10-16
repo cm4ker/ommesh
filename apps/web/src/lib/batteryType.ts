@@ -41,10 +41,19 @@ export function batteryTypeLabel(type: BatteryType): string {
   return BATTERY_TYPES.find((t) => t.value === type)?.label ?? type;
 }
 
-export function setBatteryType(radioKey: string, type: BatteryType): void {
-  types = { ...types, [radioKey]: type };
+/** A node's cell; null forgets it, and the node reads as Li-ion again. */
+export function setBatteryType(radioKey: string, type: BatteryType | null): void {
+  const next = { ...types };
+  if (type) next[radioKey] = type;
+  else delete next[radioKey];
+  types = next;
   writeSetting(KEY, types);
   for (const listener of listeners) listener();
+}
+
+/** Every cell picked so far, by node key. */
+export function batteryTypes(): Readonly<Record<string, BatteryType>> {
+  return types;
 }
 
 export function useBatteryType(radioKey: string | undefined): BatteryType {

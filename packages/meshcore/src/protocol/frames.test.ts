@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { ByteWriter, fromHex, pathByteLength, toHex } from "./bytes.js";
 import { Push, Resp, TxtType } from "./codes.js";
 import { decodeFrame, isPushFrame } from "./frames.js";
+import { peerEntry, readMarkOf, readMarkValue } from "./peer.js";
 
 const KEY = fromHex("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20");
 
@@ -271,4 +272,15 @@ test("stats come in three shapes by their second byte", () => {
   assert.deepEqual(core, { kind: "statsCore", batteryMv: 4100, uptimeSecs: 3600, errFlags: 0, queueLen: 2 });
   const radio = decodeFrame(new ByteWriter().u8(Resp.Stats).u8(1).u16(0xff9c).i8(-90).i8(20).u32(10).u32(20).toBytes());
   assert.deepEqual(radio, { kind: "statsRadio", noiseFloor: -100, lastRssi: -90, lastSnr: 5, txAirSecs: 10, rxAirSecs: 20 });
+});
+
+test("the phone's relay: its hello says which side this app is, and an entry carries a key and a value", () => {
+  assert.deepEqual(decodeFrame(new Uint8Array([Push.Peer, 0, 1, 1])), { kind: "peerHello", version: 1, side: "computer" });
+  assert.deepEqual(decodeFrame(new Uint8Array([Push.Peer, 0, 1, 0])), { kind: "peerHello", version: 1, side: "phone" });
+  const entry = decodeFrame(peerEntry("r:ch:0", new Uint8Array([1, 2, 3])));
+  assert.ok(isPushFrame(entry));
+  assert.deepEqual(entry, { kind: "peerEntry", key: "r:ch:0", value: new Uint8Array([1, 2, 3]) });
+  assert.equal(decodeFrame(new Uint8Array([Push.Peer, 1, 9, 65])).kind, "unknown", "one cut short");
+  assert.equal(decodeFrame(new Uint8Array([Push.Peer, 7])).kind, "unknown", "a kind this app does not know");
+  assert.deepEqual(readMarkOf(readMarkValue({ timestamp: 1_700_000_050, hash: 0xfedcba98 })), { timestamp: 1_700_000_050, hash: 0xfedcba98 });
 });

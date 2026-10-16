@@ -25,7 +25,9 @@ use std::collections::HashMap;
 use serde::Deserialize;
 
 use crate::codes::*;
-use crate::frames::{hex, read_message, read_new_advert, split_channel_text, Received};
+use crate::frames::{
+    hex, read_message, read_new_advert, split_channel_text, text_hash, ReadMark, Received,
+};
 use crate::{Effect, Timer};
 
 /// How long a message waits for an awake page to take it, in ms.
@@ -344,7 +346,21 @@ struct Line {
     text: String,
     timestamp: u32,
     mention: bool,
+    /// Where it came among the messages heard while the app is away.
+    seq: u64,
 }
+
+/// A message heard while the app is away whose grace is over, rung or not: where a read mark
+/// from the computer falls.
+struct Passed {
+    conversation: String,
+    timestamp: u32,
+    hash: u32,
+    seq: u64,
+}
+
+/// The messages past their grace kept for read marks at most.
+const PASSED_LIMIT: usize = 1000;
 
 /// A chat with messages announced since the app went to the background.
 #[derive(Clone, Debug)]
@@ -356,7 +372,8 @@ struct Chat {
 }
 
 enum Waiting {
-    Message(Vec<u8>),
+    /// A message, with where it came among the ones heard while the app is away.
+    Message(Vec<u8>, u64),
     Node(Notice),
 }
 
@@ -378,6 +395,9 @@ pub(crate) struct Watch {
     out: Vec<String>,
     all_out: bool,
     nodes_out: Vec<String>,
+    /// The number the next message heard takes.
+    next_seq: u64,
+    passed: Vec<Passed>,
     effects: Vec<Effect>,
 }
 
@@ -396,6 +416,8 @@ impl Watch {
             out: Vec::new(),
             all_out: false,
             nodes_out: Vec::new(),
+            next_seq: 0,
+            passed: Vec::new(),
             effects: Vec::new(),
         }
     }
@@ -433,6 +455,7 @@ impl Watch {
         }
         self.waiting.clear();
         self.chats.clear();
+        self.passed.clear();
         self.all_out = false;
         self.armed = false;
         self.busy = false;
@@ -446,7 +469,9 @@ impl Watch {
         if !self.background {
             return;
         }
-        self.waiting.push(Waiting::Message(frame.to_vec()));
+        self.waiting
+            .push(Waiting::Message(frame.to_vec(), self.next_seq));
+        self.next_seq += 1;
         self.news();
         self.arm();
     }
@@ -456,7 +481,7 @@ impl Watch {
         if let Some(at) = self
             .waiting
             .iter()
-            .position(|w| matches!(w, Waiting::Message(f) if f == frame))
+            .position(|w| matches!(w, Waiting::Message(f, _) if f == frame))
         {
             self.waiting.remove(at);
         }
@@ -507,6 +532,92 @@ impl Watch {
     pub fn announced(&mut self, tag: &str) {
         self.waiting
             .retain(|w| !matches!(w, Waiting::Node(n) if n.tag == tag));
+    }
+
+    /// The computer sharing the radio read a chat as far as this message: the chat's messages up
+    /// to it are news no more. Its notice is brought down to the ones after, or taken down.
+    pub fn read_elsewhere(&mut self, mark: &ReadMark) {
+        let is_it =
+            |line: &Line| line.timestamp == mark.timestamp && text_hash(&line.text) == mark.hash;
+        // The chat's messages still in their grace, by where each came.
+        let in_grace: Vec<(u64, Line)> = self
+            .waiting
+            .iter()
+            .filter_map(|w| match w {
+                Waiting::Message(frame, seq) => read_message(frame)
+                    .and_then(|m| self.resolve(m))
+                    .filter(|(chat, _)| chat.conversation == mark.conversation)
+                    .map(|(_, line)| (*seq, line)),
+                Waiting::Node(_) => None,
+            })
+            .collect();
+        // Where the message read came: in its grace, or past it, whether its chat rang for it or not.
+        let read = in_grace
+            .iter()
+            .rev()
+            .find(|(_, line)| is_it(line))
+            .map(|(seq, _)| *seq)
+            .or_else(|| {
+                self.passed
+                    .iter()
+                    .rev()
+                    .find(|p| {
+                        p.conversation == mark.conversation
+                            && p.timestamp == mark.timestamp
+                            && p.hash == mark.hash
+                    })
+                    .map(|p| p.seq)
+            });
+        let Some(read) = read else { return };
+        let gone: Vec<u64> = in_grace
+            .iter()
+            .map(|(seq, _)| *seq)
+            .filter(|seq| *seq <= read)
+            .collect();
+        self.waiting
+            .retain(|w| !matches!(w, Waiting::Message(_, seq) if gone.contains(seq)));
+        let mut changed = false;
+        if let Some(at) = self
+            .chats
+            .iter()
+            .position(|c| c.conversation == mark.conversation)
+        {
+            let lines = &mut self.chats[at].lines;
+            let before = lines.len();
+            lines.retain(|line| line.seq > read);
+            changed = lines.len() != before;
+            if lines.is_empty() {
+                self.chats.remove(at);
+            }
+        }
+        if !changed {
+            return;
+        }
+        if let Some(out) = self.out.iter().position(|c| *c == mark.conversation) {
+            match self
+                .chats
+                .iter()
+                .find(|c| c.conversation == mark.conversation)
+            {
+                Some(chat) => {
+                    let notice = chat_notice(chat, &self.config.words);
+                    self.repost(notice);
+                }
+                None => {
+                    self.out.remove(out);
+                    self.withdraw(tag_of(&mark.conversation));
+                }
+            }
+        }
+        if self.all_out {
+            if self.chats.is_empty() {
+                self.all_out = false;
+                self.withdraw(ALL_CHATS.to_string());
+            } else {
+                let notice = self.all_chats_notice();
+                self.repost(notice);
+            }
+        }
     }
 
     fn arm(&mut self) {
@@ -563,6 +674,13 @@ impl Watch {
         self.effects.push(Effect::Post { notice });
     }
 
+    /// Brings a notice out down to what is still news, without a sound: nothing new came.
+    fn repost(&mut self, mut notice: Notice) {
+        notice.sound = self.config.sound(&notice);
+        notice.silent = true;
+        self.effects.push(Effect::Post { notice });
+    }
+
     /// The grace is over: what the page left is announced.
     pub fn timeout(&mut self, generation: i32) {
         if generation != self.grace || !self.armed {
@@ -576,8 +694,8 @@ impl Watch {
                     self.nodes_out.push(notice.tag.clone());
                     self.post(notice);
                 }
-                Waiting::Message(frame) => {
-                    if let Some(conversation) = self.add(&frame) {
+                Waiting::Message(frame, seq) => {
+                    if let Some(conversation) = self.add(&frame, seq) {
                         if !fresh.contains(&conversation) {
                             fresh.push(conversation);
                         }
@@ -589,8 +707,18 @@ impl Watch {
     }
 
     /// Adds a message to its chat, if it should ring; its conversation, then.
-    fn add(&mut self, frame: &[u8]) -> Option<String> {
-        let (chat, line) = self.resolve(read_message(frame)?)?;
+    fn add(&mut self, frame: &[u8], seq: u64) -> Option<String> {
+        let (chat, mut line) = self.resolve(read_message(frame)?)?;
+        line.seq = seq;
+        self.passed.push(Passed {
+            conversation: chat.conversation.clone(),
+            timestamp: line.timestamp,
+            hash: text_hash(&line.text),
+            seq,
+        });
+        if self.passed.len() > PASSED_LIMIT {
+            self.passed.remove(0);
+        }
         let level = self
             .config
             .chat
@@ -739,6 +867,7 @@ impl Watch {
                 text,
                 timestamp,
                 mention,
+                seq: 0,
             },
         ))
     }
@@ -1024,6 +1153,21 @@ mod tests {
             self
         }
 
+        /// The computer sharing the radio read a chat as far as this message.
+        fn computer_reads(&mut self, conversation: &str, timestamp: u32, text: &str) -> &mut Self {
+            let key = format!("r:{conversation}");
+            let frame = [
+                &[PEER, PEER_ENTRY, key.len() as u8][..],
+                key.as_bytes(),
+                &timestamp.to_le_bytes(),
+                &text_hash(text).to_le_bytes(),
+            ]
+            .concat();
+            let effects = self.core.from_client(Client::Computer, frame, None);
+            self.note(effects);
+            self
+        }
+
         /// Whether each notice posted rang.
         fn rang(&self) -> Vec<bool> {
             self.posted.iter().map(|n| !n.silent).collect()
@@ -1032,6 +1176,85 @@ mod tests {
         fn titles(&self) -> Vec<&str> {
             self.posted.iter().map(|n| n.title.as_str()).collect()
         }
+    }
+
+    #[test]
+    fn what_the_computer_read_comes_off_the_phones_notice() {
+        let mut rig = Rig::new(config());
+        let alice = format!("c:{ALICE}");
+        rig.arrives(direct(ALICE, 5, "hi"))
+            .arrives(direct(ALICE, 6, "there"))
+            .grace_ends();
+        assert_eq!(rig.posted.len(), 1, "one notice for the chat");
+        rig.computer_reads(&alice, 5, "hi");
+        assert_eq!(rig.posted.len(), 2, "brought down to what is left");
+        let last = rig.posted.last().unwrap();
+        assert_eq!(last.tag, format!("c:{alice}"));
+        assert_eq!(last.body, "there");
+        assert!(last.silent, "without a sound");
+        rig.computer_reads(&alice, 6, "there");
+        assert_eq!(rig.withdrawn, vec![format!("c:{alice}")], "then taken down");
+        rig.computer_reads(&alice, 6, "there");
+        assert_eq!(rig.withdrawn.len(), 1, "once");
+    }
+
+    #[test]
+    fn a_message_the_computer_read_in_its_grace_is_never_announced() {
+        let mut rig = Rig::new(config());
+        rig.arrives(channel(1, "Bob: ping"))
+            .arrives(channel(0, "Eve: hello"));
+        rig.computer_reads("ch:1", 3, "ping").grace_ends();
+        assert_eq!(rig.posted.len(), 1, "only the chat left unread");
+        assert_eq!(rig.posted[0].tag, "c:ch:0");
+        rig.computer_reads("ch:0", 3, "other");
+        assert_eq!(
+            rig.posted.len(),
+            1,
+            "a message it does not have changes nothing"
+        );
+        assert!(rig.withdrawn.is_empty());
+    }
+
+    #[test]
+    fn a_message_read_that_did_not_ring_still_reads_the_ones_before_it() {
+        let mut config = config();
+        config.chat.insert("ch:1".into(), ChatLevel::Mentions);
+        let mut rig = Rig::new(config);
+        rig.arrives(channel(1, "Bob: @[Node-21] look"))
+            .grace_ends()
+            .arrives(channel(1, "Eve: chatter"))
+            .grace_ends();
+        assert_eq!(rig.posted.len(), 1, "only the mention rang");
+        rig.computer_reads("ch:1", 3, "chatter");
+        assert_eq!(rig.withdrawn, vec!["c:ch:1".to_string()]);
+    }
+
+    #[test]
+    fn the_notice_for_several_chats_follows_what_the_computer_read() {
+        let mut rig = Rig::new(config());
+        rig.arrives(direct(ALICE, 5, "a"))
+            .arrives(direct(BOB, 5, "b"))
+            .arrives(channel(0, "Eve: c"))
+            .arrives(channel(1, "Eve: d"))
+            .grace_ends();
+        assert_eq!(rig.posted.last().unwrap().tag, ALL_CHATS);
+        let before = rig.posted.len();
+        rig.computer_reads("ch:0", 3, "c");
+        assert_eq!(rig.posted.len(), before + 1);
+        assert_eq!(
+            rig.posted.last().unwrap().tag,
+            ALL_CHATS,
+            "still one for all"
+        );
+        assert!(rig.posted.last().unwrap().silent);
+        rig.computer_reads("ch:1", 3, "d")
+            .computer_reads(&format!("c:{ALICE}"), 5, "a")
+            .computer_reads(&format!("c:{BOB}"), 5, "b");
+        assert_eq!(
+            rig.withdrawn,
+            vec![ALL_CHATS.to_string()],
+            "taken down with the last"
+        );
     }
 
     #[test]

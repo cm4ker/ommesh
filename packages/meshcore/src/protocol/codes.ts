@@ -159,6 +159,12 @@ export const Push = {
    * length, the command, the answer.
    */
   Mirror: 0xf0,
+  /**
+   * Not the firmware's either: a frame between the two apps sharing the radio
+   * through the phone, which the relay passes from one to the other and never
+   * writes to the radio (see `peer.ts`). An app writes the same code to it.
+   */
+  Peer: 0xf1,
 } as const;
 
 export function isPushCode(code: number): boolean {

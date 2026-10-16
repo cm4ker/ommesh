@@ -174,6 +174,50 @@ pub fn split_channel_text(text: &str) -> (Option<&str>, &str) {
     }
 }
 
+/// An entry's head, up to the end of its key, which names what it is about; none for any other frame.
+pub fn entry_key(frame: &[u8]) -> Option<&[u8]> {
+    match frame {
+        [PEER, PEER_ENTRY, length, ..] if frame.len() >= 3 + *length as usize => {
+            Some(&frame[..3 + *length as usize])
+        }
+        _ => None,
+    }
+}
+
+/// A chat the other app read, as far as the newest message it has read there.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReadMark {
+    pub conversation: String,
+    /// That message's sender's stamp.
+    pub timestamp: u32,
+    /// [`text_hash`] of its text.
+    pub hash: u32,
+}
+
+/// A read mark (`r:<conversation>`, then the stamp and the hash, little-endian); `None` for any
+/// other frame.
+pub fn read_mark(frame: &[u8]) -> Option<ReadMark> {
+    let head = entry_key(frame)?;
+    let conversation = std::str::from_utf8(&head[3..]).ok()?.strip_prefix("r:")?;
+    let mut r = Reader(&frame[head.len()..]);
+    Some(ReadMark {
+        conversation: conversation.to_string(),
+        timestamp: r.u32()?,
+        hash: r.u32()?,
+    })
+}
+
+/// FNV-1a over a message's text as UTF-8. With its sender's stamp, it is how both apps name one
+/// message, each having its own copy (`textHash` in `packages/meshcore/src/protocol/peer.ts`).
+pub fn text_hash(text: &str) -> u32 {
+    let mut hash: u32 = 0x811c_9dc5;
+    for &byte in text.as_bytes() {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
+    hash
+}
+
 /// Lower-case hex, as the page writes keys.
 pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -206,6 +250,28 @@ mod tests {
 
     fn frame(parts: &[&[u8]]) -> Vec<u8> {
         parts.concat()
+    }
+
+    #[test]
+    fn reads_a_read_mark() {
+        let f = frame(&[
+            &[PEER, PEER_ENTRY, 6],
+            b"r:ch:3",
+            &[0x10, 0x20, 0x30, 0x40],
+            &[0xab, 0x2c, 0x9f, 0x4f],
+        ]);
+        assert_eq!(
+            read_mark(&f),
+            Some(ReadMark {
+                conversation: "ch:3".into(),
+                timestamp: 0x4030_2010,
+                hash: 0x4f9f_2cab,
+            })
+        );
+        assert_eq!(text_hash("hello"), 0x4f9f_2cab, "FNV-1a, as the page's");
+        let setting = frame(&[&[PEER, PEER_ENTRY, 7], b"s:theme", b"[1,0]"]);
+        assert_eq!(read_mark(&setting), None, "a setting is not one");
+        assert_eq!(read_mark(&f[..f.len() - 1]), None, "nor one cut short");
     }
 
     #[test]

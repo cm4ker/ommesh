@@ -4,6 +4,7 @@ import { ByteWriter, fromHex, fromUtf8, toHex } from "./protocol/bytes.js";
 import { Cmd, ContactFlag, ErrCode, Push, Resp, TxtType } from "./protocol/codes.js";
 import { groupDataPayload, groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
 import { crockford, decodeReaction, encodeReaction, messageHash, REACTION_DATA_TYPE } from "./protocol/reaction.js";
+import { PEER_ENTRY, PEER_HELLO, peerEntry, readMarkOf, readMarkValue, textHash } from "./protocol/peer.js";
 import { canControl, channelConversation, PushRefusedError, CLOCK_RESET_TIME, ClockAheadError, contactConversation, isTrusted, KEYLESS_CONVERSATION, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
 import { BaseTransport } from "./transport.js";
 import { TimeoutError, TransportClosedError } from "./client.js";
@@ -55,9 +56,17 @@ class ScriptedRadio extends BaseTransport {
   scope: Uint8Array | "unscoped" | null = null;
   /** What each repeater asked for its regions says after its clock, by its key. */
   regionAnswers = new Map<string, string>();
+  /** Shared through a phone, the side the relay says this app is after the radio says who it is; null for a radio reached directly. */
+  shared: "phone" | "computer" | null = null;
+  /** The frames for the other app, which the relay takes and answers nothing. */
+  told: Uint8Array[] = [];
 
   async send(frame: Uint8Array): Promise<void> {
     this.sent.push(frame);
+    if (frame[0] === Push.Peer) {
+      this.told.push(frame);
+      return;
+    }
     const replies = this.answer(frame);
     queueMicrotask(() => {
       for (const reply of replies) this.emitFrame(reply);
@@ -99,6 +108,7 @@ class ScriptedRadio extends BaseTransport {
             .u8(7)
             .string("Me")
             .toBytes(),
+          ...(this.shared ? [new Uint8Array([Push.Peer, PEER_HELLO, 1, this.shared === "computer" ? 1 : 0])] : []),
         ];
       case Cmd.GetDeviceTime:
         return [new ByteWriter().u8(Resp.CurrTime).u32(this.time).toBytes()];
@@ -607,6 +617,124 @@ test("a message-waiting push drains the queue again, and a focused conversation 
   const state = session.getState();
   assert.equal(state.messages.length, 1);
   assert.deepEqual(state.unread, {});
+});
+
+// ---- a radio shared through the phone ----
+
+/** The read marks the app told the other one, by chat. */
+function marksTold(radio: ScriptedRadio): { conversation: string; timestamp: number; hash: number }[] {
+  return radio.told.flatMap((frame) => {
+    const key = fromUtf8(frame.subarray(3, 3 + frame[2]!));
+    const mark = readMarkOf(frame.subarray(3 + frame[2]!));
+    return frame[1] === PEER_ENTRY && key.startsWith("r:") && mark ? [{ conversation: key.slice(2), ...mark }] : [];
+  });
+}
+
+/** The other app read a chat as far as this message. */
+function markFrom(conversation: string, timestamp: number, text: string): Uint8Array {
+  return peerEntry(`r:${conversation}`, readMarkValue({ timestamp, hash: textHash(text) }));
+}
+
+test("the hash that names a message to the other app is the core's", () => {
+  assert.equal(textHash("hello"), 0x4f9f2cab);
+  assert.equal(textHash(""), 0x811c9dc5);
+});
+
+test("on a radio shared through the phone, a chat read here is told to the other app", async () => {
+  const radio = new ScriptedRadio();
+  radio.shared = "computer";
+  radio.queue.push(dmFrame(BOB, "one"), dmFrame(BOB, "two"));
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  await settle();
+  assert.equal(session.getState().peer, "computer");
+  assert.deepEqual(marksTold(radio), [], "nothing is read yet");
+  const bob = contactConversation(bobKey());
+  session.focus(bob);
+  await tick(600);
+  assert.deepEqual(marksTold(radio), [{ conversation: bob, timestamp: 1_700_000_050, hash: textHash("two") }]);
+  radio.queue.push(dmFrame(BOB, "three"));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(600);
+  assert.equal(marksTold(radio).at(-1)?.hash, textHash("three"), "a message coming into the chat on screen is read too");
+  await session.disconnect();
+});
+
+test("a mark from the other app reads the chat here as far as it names, and never makes it unread", async () => {
+  const radio = new ScriptedRadio();
+  radio.shared = "phone";
+  radio.queue.push(dmFrame(BOB, "one"), dmFrame(BOB, "two"), dmFrame(BOB, "three"));
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  await settle();
+  const bob = contactConversation(bobKey());
+  assert.equal(session.getState().unread[bob], 3);
+  radio.push(markFrom(bob, 1_700_000_050, "one"));
+  await settle();
+  assert.equal(session.getState().unread[bob], 2);
+  radio.push(markFrom(bob, 1_700_000_050, "three"));
+  await settle();
+  assert.equal(session.getState().unread[bob], undefined);
+  radio.push(markFrom(bob, 1_700_000_050, "two"));
+  await settle();
+  assert.equal(session.getState().unread[bob], undefined, "an older mark changes nothing");
+  await tick(600);
+  assert.deepEqual(marksTold(radio), [], "and what the other app read is not told back to it");
+  await session.disconnect();
+});
+
+test("a mark for a message not here yet waits for it", async () => {
+  const radio = new ScriptedRadio();
+  radio.shared = "computer";
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  await settle();
+  const bob = contactConversation(bobKey());
+  radio.push(markFrom(bob, 1_700_000_050, "read on the phone"));
+  await settle();
+  radio.queue.push(dmFrame(BOB, "read on the phone"));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(5);
+  assert.equal(session.getState().messages.length, 1);
+  assert.deepEqual(session.getState().unread, {});
+  await session.disconnect();
+});
+
+test("what was read here while the other app was away is told when the radio is shared again", async () => {
+  const radio = new ScriptedRadio();
+  radio.queue.push(dmFrame(BOB, "one"));
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  await settle();
+  const bob = contactConversation(bobKey());
+  session.focus(bob);
+  session.focus(null);
+  await tick(600);
+  assert.equal(session.getState().peer, null);
+  assert.deepEqual(radio.told, [], "a radio reached directly hears nothing of it");
+  assert.equal(session.tellPeer("s:theme", new Uint8Array([1])), false);
+  await session.disconnect();
+  radio.shared = "phone";
+  await session.connect(radio);
+  await settle();
+  assert.deepEqual(marksTold(radio), [{ conversation: bob, timestamp: 1_700_000_050, hash: textHash("one") }]);
+  await session.disconnect();
+});
+
+test("what the other app keeps alike besides read marks goes to the app, once the radio is ready", async () => {
+  const radio = new ScriptedRadio();
+  radio.shared = "computer";
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  const heard: [string, string][] = [];
+  session.onPeerEntry((key, value) => heard.push([key, fromUtf8(value)]));
+  await session.connect(radio);
+  radio.push(peerEntry("s:theme", new TextEncoder().encode('[5,"amber"]')));
+  await settle();
+  assert.deepEqual(heard, [["s:theme", '[5,"amber"]']]);
+  assert.equal(session.tellPeer("s:jumbo", new TextEncoder().encode("[6,false]")), true);
+  await settle();
+  assert.equal(fromUtf8(radio.told.at(-1)!.subarray(3, 10)), "s:jumbo");
+  await session.disconnect();
 });
 
 test("only messages handed over by the radio are received; the history read back at connect is not", async () => {

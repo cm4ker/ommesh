@@ -118,6 +118,19 @@ export class IndexedDbStorage implements SessionStorage {
   }
 }
 
+const writtenListeners = new Set<() => void>();
+
+/** Told after every setting written, for what follows them all: the settings shared with another app (`sharedSettings.ts`). */
+export function onSettingWritten(listener: () => void): () => void {
+  writtenListeners.add(listener);
+  return () => writtenListeners.delete(listener);
+}
+
+/** For a store that writes its `localStorage` slot itself rather than through `writeSetting`. */
+export function settingWritten(): void {
+  for (const listener of writtenListeners) listener();
+}
+
 /** A `localStorage` slot with a JSON value, tolerant of private windows. */
 export function readSetting<T>(key: string, fallback: T): T {
   try {
@@ -135,4 +148,5 @@ export function writeSetting<T>(key: string, value: T | null): void {
   } catch {
     // Private window: the setting lives for this page only.
   }
+  settingWritten();
 }

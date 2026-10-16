@@ -23,7 +23,7 @@ export const EMOJI_GROUPS = [
 export type EmojiGroup = (typeof EMOJI_GROUPS)[number]["id"];
 
 const RECENT_KEY = "meshnet.recentReactions";
-/** The emoji chosen lately, the latest first; kept on this device only. */
+/** The emoji chosen lately, the latest first. */
 let recent = ((saved) => (Array.isArray(saved) ? saved.filter((e): e is string => typeof e === "string") : []))(readSetting<unknown>(RECENT_KEY, []));
 
 /** The strip's emoji: the ones chosen lately, then the first few until there are six. */
@@ -35,7 +35,15 @@ export function stripReactions(chosen: readonly string[] = recent): string[] {
 
 /** Puts an emoji at the head of the strip. */
 export function noteReaction(emoji: string): void {
-  recent = [emoji, ...recent.filter((e) => e !== emoji)].slice(0, STRIP_SIZE);
+  setRecentReactions([emoji, ...recent.filter((e) => e !== emoji)]);
+}
+
+export function recentReactions(): readonly string[] {
+  return recent;
+}
+
+export function setRecentReactions(emoji: readonly string[]): void {
+  recent = emoji.slice(0, STRIP_SIZE);
   writeSetting(RECENT_KEY, recent);
 }
 

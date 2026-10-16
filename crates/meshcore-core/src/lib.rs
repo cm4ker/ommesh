@@ -283,6 +283,13 @@ impl Core {
                     Event::Kept(frame) => self.watch.received(&frame),
                     Event::Taken(Client::Page, frame) => self.watch.taken(&frame),
                     Event::Taken(..) => {}
+                    // What the computer read is no news on the phone either.
+                    Event::Entry(Client::Computer, frame) => {
+                        if let Some(mark) = frames::read_mark(&frame) {
+                            self.watch.read_elsewhere(&mark);
+                        }
+                    }
+                    Event::Entry(..) => {}
                     Event::Asked(frame) => self.survey.asked(&frame),
                     Event::Answered(frame) => self.survey.answered(&frame),
                     Event::Unanswered => self.survey.unanswered(),

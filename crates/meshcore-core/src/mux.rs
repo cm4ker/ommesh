@@ -13,14 +13,24 @@
 //! to ask for it, and each client still gets all of them. A text or a channel
 //! datagram (a reaction) the radio took from one client goes to the others as a
 //! mirror push, kept in the inbox of a client that is away.
+//!
+//! The two apps also keep some things alike, what is read and the settings
+//! they share, in frames of their own ([`PEER`]) that the mux passes from one to
+//! the other and never writes to the radio. It tells each app that it shares
+//! the radio right after the radio said who it is, which is the first thing an
+//! app asks; a radio reached directly never says so, and the app sends none.
+//! For an app that is away, only the latest frame of each key waits.
 
 use std::collections::VecDeque;
 
 use crate::codes::*;
+use crate::frames::entry_key;
 use crate::{Client, Effect, Timer};
 
 /// Messages kept per client at most; the oldest go first.
 pub const INBOX_LIMIT: usize = 500;
+/// The other app's entries kept per client at most, one per key, beside the messages.
+pub const ENTRY_LIMIT: usize = 2000;
 
 /// What happened inside the mux that the rest of the core wants to know.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,6 +39,8 @@ pub(crate) enum Event {
     Kept(Vec<u8>),
     /// A client took this message from its inbox.
     Taken(Client, Vec<u8>),
+    /// A client sent the other an entry ([`PEER_ENTRY`]).
+    Entry(Client, Vec<u8>),
     /// A client's command went on the queue for the radio.
     Asked(Vec<u8>),
     /// The radio's answer to a command of the core's own ([`Mux::send_own`]).
@@ -139,6 +151,13 @@ impl Mux {
     /// A frame a client wrote; `write` is told when it reaches the radio, which for
     /// "next message" is at once, from the inbox.
     pub fn from_client(&mut self, client: Client, frame: Vec<u8>, write: Option<i64>) {
+        if frame.first() == Some(&PEER) {
+            if let Some(write) = write {
+                self.out.push(Effect::Written { write });
+            }
+            self.pass(client, frame);
+            return;
+        }
         if frame.is_empty() || frame[0] == CMD_SYNC_NEXT_MESSAGE {
             if let Some(write) = write {
                 self.out.push(Effect::Written { write });
@@ -171,7 +190,7 @@ impl Mux {
         self.radio_ready
     }
 
-    /// Mirrors kept for it go out as pushes first; then the next message is the answer.
+    /// Mirrors and entries kept for it go out as pushes first; then the next message is the answer.
     fn answer_from_inbox(&mut self, client: Client) {
         let mut answer = vec![RESP_NO_MORE_MESSAGES];
         let mut pushes = Vec::new();
@@ -179,7 +198,7 @@ impl Mux {
         while !self.inboxes[client.index()].is_empty() {
             let frame = self.inboxes[client.index()].remove(0);
             changed = true;
-            if frame[0] == PUSH_MIRROR {
+            if is_push(frame[0]) {
                 pushes.push(frame);
             } else {
                 self.events.push(Event::Taken(client, frame.clone()));
@@ -259,6 +278,13 @@ impl Mux {
             Source::Client(source) => {
                 if self.is_attached(source) {
                     self.tell(source, frame.to_vec());
+                    if command.frame[0] == CMD_APP_START && code == RESP_SELF_INFO {
+                        let side = match source {
+                            Client::Page => 0,
+                            Client::Computer => 1,
+                        };
+                        self.tell(source, vec![PEER, PEER_HELLO, PEER_VERSION, side]);
+                    }
                 }
                 self.mirror(&command.frame, frame, source);
             }
@@ -348,12 +374,68 @@ impl Mux {
         }
     }
 
+    /// An entry one app sent, for the other: at once, or kept until it comes back.
+    fn pass(&mut self, sender: Client, frame: Vec<u8>) {
+        if entry_key(&frame).is_none() {
+            self.out.push(Effect::Log {
+                line: format!(
+                    "an app's frame {:02x?} is not an entry",
+                    &frame[..frame.len().min(3)]
+                ),
+            });
+            return;
+        }
+        self.events.push(Event::Entry(sender, frame.clone()));
+        let mut kept = false;
+        for client in Client::ALL {
+            if client == sender {
+                continue;
+            }
+            if self.is_attached(client) {
+                self.tell(client, frame.clone());
+            } else {
+                self.add(frame.clone(), client);
+                kept = true;
+            }
+        }
+        if kept {
+            self.out.push(Effect::InboxesChanged);
+        }
+    }
+
+    /// Into a client's inbox: an entry in place of the one with its key, after what came before
+    /// it; messages and mirrors up to their limit, and entries up to theirs.
     fn add(&mut self, frame: Vec<u8>, client: Client) {
         let inbox = &mut self.inboxes[client.index()];
+        let entry = match entry_key(&frame) {
+            Some(key) => {
+                inbox.retain(|kept| entry_key(kept) != Some(key));
+                true
+            }
+            None => false,
+        };
         inbox.push(frame);
-        if inbox.len() > INBOX_LIMIT {
-            let excess = inbox.len() - INBOX_LIMIT;
-            inbox.drain(..excess);
+        let limit = if entry { ENTRY_LIMIT } else { INBOX_LIMIT };
+        let excess = inbox
+            .iter()
+            .filter(|kept| entry_key(kept).is_some() == entry)
+            .count()
+            .saturating_sub(limit);
+        let mut left = excess;
+        inbox.retain(|kept| {
+            if left > 0 && entry_key(kept).is_some() == entry {
+                left -= 1;
+                return false;
+            }
+            true
+        });
+        if entry && excess > 0 {
+            self.out.push(Effect::Log {
+                line: format!(
+                    "the {} app's inbox is full of entries: the oldest went",
+                    client.key()
+                ),
+            });
         }
     }
 
@@ -852,6 +934,137 @@ mod tests {
         assert!(
             !patience(&[39, 0, 0, 0, 1, 2, 3, 4, 5, 6]).1,
             "a contact's does"
+        );
+    }
+
+    fn entry(key: &str, value: &[u8]) -> Vec<u8> {
+        [
+            &[PEER, PEER_ENTRY, key.len() as u8][..],
+            key.as_bytes(),
+            value,
+        ]
+        .concat()
+    }
+
+    #[test]
+    fn each_app_hears_it_shares_the_radio_once_the_radio_says_who_it_is() {
+        let mut rig = Rig::new();
+        rig.attach(Page)
+            .attach(Computer)
+            .up()
+            .radio_says(NO_MORE)
+            .clear();
+        let self_info: &[u8] = &[5, 1, 2, 3];
+        rig.client_says(Computer, &[1, 0, 0, 0, 0, 0, 0, 0, 79])
+            .radio_says(self_info);
+        assert_eq!(
+            rig.computer,
+            v(&[self_info, &[PEER, PEER_HELLO, PEER_VERSION, 1]]),
+            "the computer hears it is the computer"
+        );
+        assert!(rig.page.is_empty(), "the page hears nothing of it");
+        rig.client_says(Page, &[1, 0, 0, 0, 0, 0, 0, 0, 79])
+            .radio_says(self_info);
+        assert_eq!(
+            rig.page,
+            v(&[self_info, &[PEER, PEER_HELLO, PEER_VERSION, 0]]),
+            "the page hears it is the phone's own"
+        );
+        rig.clear();
+        rig.client_says(Page, &[1, 0, 0, 0, 0, 0, 0, 0, 79])
+            .radio_says(&[1, 1]);
+        assert_eq!(rig.page, v(&[&[1, 1]]), "not after an error");
+    }
+
+    #[test]
+    fn an_entry_goes_to_the_other_app_and_never_to_the_radio() {
+        let mut rig = Rig::new();
+        rig.attach(Page)
+            .attach(Computer)
+            .up()
+            .radio_says(NO_MORE)
+            .clear();
+        let read = entry("r:ch:0", &[1, 2, 3, 4, 5, 6, 7, 8]);
+        rig.mux.from_client(Page, read.clone(), Some(7));
+        let (effects, events) = rig.mux.take();
+        assert_eq!(
+            events,
+            vec![Event::Entry(Page, read.clone())],
+            "the core hears of it"
+        );
+        assert_eq!(
+            effects,
+            vec![
+                Effect::Written { write: 7 },
+                Effect::ToClient {
+                    client: Computer,
+                    frame: read
+                },
+            ],
+            "the write is done at once, and only the computer gets it"
+        );
+        rig.clear();
+        rig.client_says(Computer, &[PEER, PEER_ENTRY, 9, 1]);
+        assert!(
+            rig.page.is_empty() && rig.radio.is_empty(),
+            "one cut short goes nowhere"
+        );
+    }
+
+    #[test]
+    fn for_an_app_away_only_the_latest_entry_of_a_key_waits() {
+        let mut rig = Rig::new();
+        rig.attach(Page).up().radio_says(NO_MORE);
+        rig.client_says(Page, &entry("r:ch:0", &[1]));
+        rig.radio_says(&[0x83])
+            .radio_says(MESSAGE)
+            .radio_says(NO_MORE);
+        rig.client_says(Page, &entry("s:theme", b"[1,\"amber\"]"))
+            .client_says(Page, &entry("r:ch:0", &[2]));
+        assert_eq!(
+            rig.mux.inbox(Computer).to_vec(),
+            vec![
+                MESSAGE.to_vec(),
+                entry("s:theme", b"[1,\"amber\"]"),
+                entry("r:ch:0", &[2]),
+            ],
+            "the newer read mark stands for the older, after the message it may name"
+        );
+        rig.attach(Computer).clear();
+        rig.client_says(Computer, SYNC);
+        assert_eq!(rig.computer, v(&[MESSAGE]), "the message first");
+        rig.client_says(Computer, SYNC);
+        assert_eq!(
+            rig.computer[1..],
+            vec![
+                entry("s:theme", b"[1,\"amber\"]"),
+                entry("r:ch:0", &[2]),
+                NO_MORE.to_vec(),
+            ],
+            "then the entries, as pushes"
+        );
+    }
+
+    #[test]
+    fn entries_waiting_do_not_crowd_out_messages() {
+        let mut rig = Rig::new();
+        rig.attach(Page).up();
+        for i in 0..10 {
+            rig.client_says(Page, &entry(&format!("r:c:{i}"), &[1]));
+        }
+        for i in 0..(INBOX_LIMIT + 2) {
+            rig.radio_says(&[16, (i % 256) as u8, (i / 256) as u8]);
+        }
+        let inbox = rig.mux.inbox(Computer);
+        assert_eq!(
+            inbox.iter().filter(|f| entry_key(f).is_some()).count(),
+            10,
+            "every entry kept"
+        );
+        assert_eq!(
+            inbox.len(),
+            INBOX_LIMIT + 10,
+            "and as many messages as ever"
         );
     }
 

@@ -20,6 +20,8 @@ export interface SettingContext {
   console: boolean;
   /** This phone can share its radio with a computer, and is on Bluetooth to it. */
   share: boolean;
+  /** The settings can be kept alike with another app: this phone shares its radio, or this computer reaches one through a phone. */
+  sharedSettings: boolean;
   /** Another copy of the app can be opened (the desktop). */
   another: boolean;
   /** The highest transmit power the radio takes, for the label that names it. */
@@ -151,6 +153,7 @@ export const SETTINGS: readonly Setting[] = [
   { page: "wifi", label: "radio.wifi.password", group: "radio.wifi.network", words: "radio.search.words.wifi" },
   { page: "wifi", label: "radio.wifi.address", group: "radio.wifi.now", words: "radio.search.words.wifi" },
   { page: "connection", label: "radio.connection.share", words: "radio.search.words.share", when: (c) => c.share },
+  { page: "connection", label: "radio.connection.sharedSettings", words: "radio.search.words.sharedSettings", when: (c) => c.sharedSettings },
   { page: "connection", label: "radio.connection.another", when: (c) => c.another },
   { page: "connection", label: "radio.connection.disconnect" },
 

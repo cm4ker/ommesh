@@ -5,6 +5,7 @@
 //! specification that cannot be out of date.
 
 // App → radio.
+pub const CMD_APP_START: u8 = 1;
 pub const CMD_SEND_TXT_MSG: u8 = 2;
 pub const CMD_SEND_CHANNEL_TXT_MSG: u8 = 3;
 pub const CMD_GET_CONTACTS: u8 = 4;
@@ -22,6 +23,7 @@ pub const CMD_SEND_CHANNEL_DATA: u8 = 62;
 pub const RESP_OK: u8 = 0;
 pub const RESP_ERR: u8 = 1;
 pub const RESP_END_OF_CONTACTS: u8 = 4;
+pub const RESP_SELF_INFO: u8 = 5;
 pub const RESP_SENT: u8 = 6;
 pub const RESP_CONTACT_MSG_RECV: u8 = 7;
 pub const RESP_CHANNEL_MSG_RECV: u8 = 8;
@@ -37,6 +39,18 @@ pub const PUSH_CONTROL_DATA: u8 = 0x8e;
 /// Not the firmware's: a text or a reaction the other client sharing the radio sent, as
 /// `0xf0`, the command's length, the command, then the radio's answer.
 pub const PUSH_MIRROR: u8 = 0xf0;
+/// Not the firmware's either: a frame between the two apps sharing the radio, which the mux
+/// takes and never writes to the radio. `0xf1`, then what it is: [`PEER_HELLO`] from the mux,
+/// or [`PEER_ENTRY`] from one app to the other.
+pub const PEER: u8 = 0xf1;
+/// `0xf1, 0, version, side`: the mux tells an app, after the radio said who it is, that it
+/// shares the radio through the phone, and which side it is (0 the phone's own page, 1 a computer).
+pub const PEER_HELLO: u8 = 0;
+/// `0xf1, 1, key length, key, value`: one thing the app keeps alike with the other, the latest
+/// by its key standing for every one before it (`r:<conversation>` a read mark, `s:<name>` a setting).
+pub const PEER_ENTRY: u8 = 1;
+/// What the mux's hello says it can do.
+pub const PEER_VERSION: u8 = 1;
 
 // Control packets, by the first byte of their payload (`onControlDataRecv` in
 // `examples/simple_repeater/MyMesh.cpp`).

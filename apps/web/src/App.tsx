@@ -19,6 +19,7 @@ import { startTray } from "./lib/tray.js";
 import { startCoreWatch } from "./lib/coreWatch.js";
 import { startTidyRule } from "./lib/cleanUp.js";
 import { startFollowPhone } from "./lib/followPhone.js";
+import { startSharedSettings } from "./lib/sharedSettings.js";
 import { startShareIn } from "./lib/shareIn.js";
 import { startWifiAddress } from "./lib/radioWifi.js";
 import { isWide, subscribeWide } from "./lib/layout.js";
@@ -118,6 +119,9 @@ export function App() {
 
   // Following the phone (#34), when it is on for the radio: its position moves after the phone while the app is open.
   useEffect(() => startFollowPhone(), []);
+
+  // On a radio shared through a phone, the settings both apps keep alike.
+  useEffect(() => startSharedSettings(), []);
 
   // What other apps share to this one (#88), waiting over the chat list for a chat.
   useEffect(() => startShareIn(), []);

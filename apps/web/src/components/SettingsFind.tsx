@@ -2,7 +2,7 @@ import { useEffect, type RefObject } from "react";
 import { type SessionState } from "@meshnet/meshcore";
 import { canOpenAnother } from "../lib/instance.js";
 import { useOwnConsole } from "../lib/ownConsole.js";
-import { relayAvailable } from "../lib/relay.js";
+import { relayAvailable, relayWanted } from "../lib/relay.js";
 import { useSession } from "../lib/session.js";
 import { findSettings, flashDone, flashFor, openSetting, settingName, settingPlace, type Setting, type SettingContext } from "../lib/settingsSearch.js";
 import type { RadioPage } from "../lib/nav.js";
@@ -19,6 +19,7 @@ export function useSettingContext(): SettingContext {
     wifi: state.wifi != null,
     console,
     share: relayAvailable() && state.link?.kind === "ble",
+    sharedSettings: (relayAvailable() && state.link?.kind === "ble" && relayWanted()) || state.peer === "computer",
     another: canOpenAnother(),
     maxTxPower: state.self?.maxTxPower ?? null,
   };

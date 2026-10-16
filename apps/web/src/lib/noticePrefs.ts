@@ -1,7 +1,8 @@
 /**
  * What the reader wants to hear about: which messages and which new nodes
- * become notices. Settings of this device, not of the radio, so a phone and
- * a computer on the same radio may differ.
+ * become notices. Settings of this app, not of the radio: a phone and a
+ * computer sharing the radio keep them alike only through their shared
+ * settings (`sharedSettings.ts`), and where notices show is each one's own.
  *
  * - Direct messages: on or off.
  * - Channels and rooms: every message, only the ones that mention this

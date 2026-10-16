@@ -23,12 +23,16 @@ import {
   heardGroupTextPayload,
   MAX_FRAME_SIZE,
   messageHash,
+  PEER_HELLO,
+  peerEntry,
   privateKeyFault,
   publicKeyOf,
   Push,
   REACTION_DATA_TYPE,
+  readMarkValue,
   ReqType,
   Resp,
+  textHash,
   toHex,
   TxtType,
   type Transport,
@@ -446,6 +450,14 @@ class DemoRadio extends BaseTransport {
   /** When the demo radio came up, unix seconds: the stamp the queued messages are dated from. */
   private readonly started = Math.floor(Date.now() / 1000);
 
+  /**
+   * Reached through a phone that shares it, as a computer is: the relay says so once the radio
+   * has said who it is, and the phone's app reads each message on Public a few seconds after it came.
+   */
+  constructor(private readonly throughPhone = false) {
+    super();
+  }
+
   start(): void {
     // Queued before the app connected: their packets were never heard, so their routes are unknown.
     // A place each: Alice's exact, sent from her phone, and a rough one on Public.
@@ -571,6 +583,7 @@ class DemoRadio extends BaseTransport {
     this.queue.push(this.channel(index, sender, text, timestamp, paths[0]!.length));
     this.emitFrame(new Uint8Array([Push.MsgWaiting]));
     paths.slice(1).forEach((path, i) => this.later(700 * (i + 1), this.heard(5, path, payload)));
+    if (this.throughPhone && index === 0) this.later(8000, peerEntry("r:ch:0", readMarkValue({ timestamp, hash: textHash(text) })));
   }
 
   /** A direct message that flooded here: its packet names us and the sender, and a second copy trails it. */
@@ -825,6 +838,8 @@ class DemoRadio extends BaseTransport {
   }
 
   async send(frame: Uint8Array): Promise<void> {
+    // For the phone's app, which the relay takes: nothing answers it.
+    if (frame[0] === Push.Peer) return;
     const replies = this.answer(frame);
     const t = setTimeout(() => {
       for (const r of replies) this.emitFrame(r);
@@ -960,6 +975,7 @@ class DemoRadio extends BaseTransport {
             .u8(this.radio.codingRate)
             .string(own.name)
             .toBytes(),
+          ...(this.throughPhone ? [new Uint8Array([Push.Peer, PEER_HELLO, 1, 1])] : []),
         ];
       case Cmd.GetDeviceTime:
         return [new ByteWriter().u8(Resp.CurrTime).u32(Math.floor(Date.now() / 1000)).toBytes()];
@@ -1387,13 +1403,17 @@ export const demoConnector: Connector = {
   },
   mode: "scan",
   async scan(onFound) {
-    onFound([{ id: "demo", name: "MeshCore-demo", detail: t("connect.device.noHardware"), rssi: -42 }]);
+    onFound([
+      { id: "demo", name: "MeshCore-demo", detail: t("connect.device.noHardware"), rssi: -42 },
+      // The same radio through a phone that shares it, for what two apps keep alike.
+      { id: "demo-phone", name: "Ommesh demo", detail: t("connect.device.noHardware"), rssi: -55 },
+    ]);
   },
   async remembered() {
     return [];
   },
-  async connect(): Promise<Transport> {
-    const radio = new DemoRadio();
+  async connect(device): Promise<Transport> {
+    const radio = new DemoRadio(device?.id === "demo-phone");
     radio.start();
     return radio;
   },

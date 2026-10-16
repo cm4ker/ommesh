@@ -14,21 +14,20 @@ import { formatDbm, formatSnr, lineOfSight, verdictWord, type LineOfSight, type 
 import { defaultHeight } from "../../lib/mapOverlay.js";
 import type { LosEnd, MeshTool } from "../../lib/meshTool.js";
 import { useSession } from "../../lib/session.js";
-import { readSetting, writeSetting } from "../../lib/storage.js";
+import { antennaHeights, setAntennaHeight } from "../../lib/antennas.js";
 import { IconButton } from "../../ui/Button.js";
 import { AlertIcon, BackIcon, CheckIcon, CloseIcon, MinusIcon, PlusIcon } from "../Icons.js";
 
 const HEIGHTS = [1, 1.5, 2, 3, 5, 8, 10, 12, 15, 20, 25, 30, 40, 50, 60, 80, 100];
-const HEIGHTS_KEY = "meshnet.antennas";
 
 function remembered(end: LosEnd): number | undefined {
   if (!end.key) return undefined;
-  return readSetting<Record<string, number>>(HEIGHTS_KEY, {})[end.key];
+  return antennaHeights()[end.key];
 }
 
 function remember(end: LosEnd, height: number): void {
   if (!end.key) return;
-  writeSetting(HEIGHTS_KEY, { ...readSetting<Record<string, number>>(HEIGHTS_KEY, {}), [end.key]: height });
+  setAntennaHeight(end.key, height);
 }
 
 /** The height an end's antenna is taken at: the one last set for it, or a guess by what it is. */

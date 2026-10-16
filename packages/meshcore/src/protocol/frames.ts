@@ -11,6 +11,7 @@
 import { ByteReader, fromUtf8, pathByteLength, pathHashCount } from "./bytes.js";
 import { MAX_PATH_SIZE, PUB_KEY_PREFIX_SIZE, PUB_KEY_SIZE, Push, Resp, StatsType, TxtType } from "./codes.js";
 import { decodeLpp, type LppReading } from "./lpp.js";
+import { PEER_ENTRY, PEER_HELLO, type PeerSide } from "./peer.js";
 
 /** A contact as the radio holds it. Positions are degrees; zeros mean none. */
 export interface Contact {
@@ -245,7 +246,11 @@ export type PushFrame =
   | { kind: "contactDeleted"; publicKey: Uint8Array }
   | { kind: "contactsFull" }
   /** A text or a reaction the other app sharing the radio sent: its command and the radio's answer (see `Push.Mirror`). */
-  | { kind: "mirror"; command: Uint8Array; answer: Uint8Array };
+  | { kind: "mirror"; command: Uint8Array; answer: Uint8Array }
+  /** The phone's relay says this app shares the radio, and as which side (see `peer.ts`). */
+  | { kind: "peerHello"; version: number; side: PeerSide }
+  /** Something the other app sharing the radio keeps alike with this one (see `peer.ts`). */
+  | { kind: "peerEntry"; key: string; value: Uint8Array };
 
 export type Frame = ResponseFrame | PushFrame | { kind: "unknown"; code: number; raw: Uint8Array };
 
@@ -270,6 +275,8 @@ export const PUSH_KINDS: ReadonlySet<FrameKind> = new Set<FrameKind>([
   "contactDeleted",
   "contactsFull",
   "mirror",
+  "peerHello",
+  "peerEntry",
 ]);
 
 export function isPushFrame(frame: Frame): frame is PushFrame {
@@ -695,6 +702,16 @@ function decodePush(code: number, r: ByteReader): PushFrame | null {
     case Push.Mirror: {
       const length = r.u8();
       return { kind: "mirror", command: r.take(length), answer: r.rest() };
+    }
+    case Push.Peer: {
+      const kind = r.u8();
+      if (kind === PEER_HELLO) {
+        const version = r.u8();
+        return { kind: "peerHello", version, side: r.u8() === 1 ? "computer" : "phone" };
+      }
+      if (kind !== PEER_ENTRY) return null;
+      const key = fromUtf8(r.take(r.u8()));
+      return { kind: "peerEntry", key, value: r.rest() };
     }
     case Push.RawData: {
       const snrValue = snr(r.i8());

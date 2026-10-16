@@ -18,7 +18,7 @@ import { REACTION_DATA_TYPE, decodeReaction, directReactionText, encodeReaction,
 import { PayloadType, parseRawPacket, type RawPacket } from "./protocol/packet.js";
 import { UNSCOPED, readRegionList, regionKey, regionsRequest } from "./protocol/region.js";
 import { PUSH_MAX_SECS, readPushed, readSubscribeAnswer, subscribeRequest, unsubscribeRequest, type PushThreshold } from "./protocol/push.js";
-import { AclRole, AdvType, Cmd, ContactFlag, ControlType, DIRECT_TEXT_LEN, ErrCode, MAX_TEXT_LEN, NeighbourOrder, OUT_PATH_UNKNOWN, PUB_KEY_PREFIX_SIZE, ROOM_TEXT_LEN, StatsType, TxtType } from "./protocol/codes.js";
+import { AclRole, AdvType, Cmd, ContactFlag, ControlType, DIRECT_TEXT_LEN, ErrCode, MAX_FRAME_SIZE, MAX_TEXT_LEN, NeighbourOrder, OUT_PATH_UNKNOWN, PUB_KEY_PREFIX_SIZE, ROOM_TEXT_LEN, StatsType, TxtType } from "./protocol/codes.js";
 import {
   accessListRequest,
   avgMinMaxRequest,
@@ -44,6 +44,7 @@ import {
   type SeriesSummary,
 } from "./protocol/frames.js";
 import type { LppReading } from "./protocol/lpp.js";
+import { peerEntry, READ_MARK_PREFIX, readMarkOf, readMarkValue, textHash, type PeerSide, type ReadMark } from "./protocol/peer.js";
 import type { Transport } from "./transport.js";
 
 export interface ContactRecord {
@@ -444,6 +445,13 @@ export interface SessionState {
    * once, MeshCore 1.18). Null while nothing says so.
    */
   sharedAt: number | null;
+  /**
+   * Which app this is on a radio shared through a phone, as the phone's relay
+   * says once the radio has said who it is: the phone's own, or a computer's
+   * through it. The two keep alike what is read, and the app the settings it
+   * shares (`onPeerEntry`). Null on a radio reached directly.
+   */
+  peer: PeerSide | null;
   /** The radio's Wi-Fi (MeshCore 1.18); null when it has none, or before it is read. */
   wifi: RadioWifi | null;
   /** The sensors asked to send their readings by themselves (MeshCore 1.18), by key. */
@@ -1026,6 +1034,7 @@ const EMPTY: SessionState = {
   syncing: false,
   connectStep: null,
   sharedAt: null,
+  peer: null,
   wifi: null,
   pushes: {},
 };
@@ -1166,6 +1175,10 @@ const FLOOD_REACH_MAX = 8;
 
 /** How long an answer that missed its wait is still taken. */
 const LATE_ANSWER_MS = 60_000;
+/** How long reading a chat must stop before the other app sharing the radio hears of it. */
+const MARK_DELAY_MS = 500;
+/** How long a read mark from the other app waits for the message it names. */
+const PENDING_MARK_MS = 60 * 60 * 1000;
 
 /** How long to wait for a remote node: the longer of the radio's estimate with room to spare and the time worked out for the answer, but not forever. */
 function replyWaitMs(estimateMs: number, holdMs: number, budgetMs: number): number {
@@ -1204,6 +1217,16 @@ export class MeshSession {
   private reactionWatch = new Map<string, { id: string; at: number }>();
   /** Our reactions waiting to hear a repeater send them on, by message id. */
   private reactionTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private peerListeners = new Set<(key: string, value: Uint8Array) => void>();
+  private peerReadyListeners = new Set<() => void>();
+  /** What the other app sharing the radio sent before this one was ready to take it. */
+  private peerBacklog: { key: string; value: Uint8Array }[] = [];
+  /** Chats read here whose mark goes to the other app in a moment, so reading on goes as one. */
+  private markTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** The mark each chat last had with the other app, either way, so the same one is not sent again. */
+  private marksTold = new Map<string, string>();
+  /** Marks from the other app naming a message not here yet: it read it first, and the copy here is on its way. */
+  private pendingMarks = new Map<string, ReadMark & { until: number }>();
   /** The stamp our last reaction went with: each goes with a later one, so no two are the same packet. */
   private reactionStamp = 0;
   /** How many tries a direct message gets before it is given up on; 1 leaves the next to the user. */
@@ -1291,6 +1314,41 @@ export class MeshSession {
   onHeard(listener: (packet: HeardPacket) => void): () => void {
     this.heardListeners.add(listener);
     return () => this.heardListeners.delete(listener);
+  }
+
+  /**
+   * What the other app sharing the radio keeps alike with this one, besides
+   * the read marks, which the session takes itself: a key and its value, once
+   * the radio is ready.
+   */
+  onPeerEntry(listener: (key: string, value: Uint8Array) => void): () => void {
+    this.peerListeners.add(listener);
+    return () => this.peerListeners.delete(listener);
+  }
+
+  /**
+   * A radio shared through a phone is connected and has read what it reads at
+   * connect: the time to tell the other app what changed here while apart.
+   */
+  onPeerReady(listener: () => void): () => void {
+    this.peerReadyListeners.add(listener);
+    return () => this.peerReadyListeners.delete(listener);
+  }
+
+  /**
+   * Hands the other app sharing the radio an entry, through the phone's relay;
+   * false when the radio is not shared so, or the entry is too long for a frame.
+   */
+  tellPeer(key: string, value: Uint8Array): boolean {
+    const client = this.client;
+    if (!client || !this.state.peer) return false;
+    const frame = peerEntry(key, value);
+    if (frame.length > MAX_FRAME_SIZE) {
+      this.log("link", `"${key}" is ${frame.length} bytes, too long to hand the other app`);
+      return false;
+    }
+    client.tell(frame).catch((e: Error) => this.log("error", `telling the other app "${key}": ${e.message}`));
+    return true;
   }
 
   private set(patch: Partial<SessionState>): void {
@@ -1420,7 +1478,12 @@ export class MeshSession {
       this.retryTimer = null;
       this.holdRetryPlans();
       this.dropRemoteJobs(reason ? `link dropped: ${reason.message}` : "disconnected");
-      this.set({ status: "closed", syncing: false, connectStep: null, error: reason ? reason.message : this.state.error });
+      // The marks still to go are told again, all of them, when the radio is shared once more.
+      for (const timer of this.markTimers.values()) clearTimeout(timer);
+      this.markTimers.clear();
+      this.marksTold.clear();
+      this.peerBacklog = [];
+      this.set({ status: "closed", syncing: false, connectStep: null, peer: null, error: reason ? reason.message : this.state.error });
       this.log("link", reason ? `link dropped: ${reason.message}` : "disconnected");
     });
 
@@ -1444,6 +1507,7 @@ export class MeshSession {
       // take 7–10 s and forty channel slots another 8. The chats are on screen
       // meanwhile, with the stored contacts and channels.
       this.set({ status: "ready", connectStep: null });
+      for (const { key, value } of this.peerBacklog.splice(0)) this.takePeerEntry(key, value);
       onReady?.();
       this.routeTimer = setInterval(() => {
         void this.sweepRoutes();
@@ -1466,6 +1530,11 @@ export class MeshSession {
       await this.readRepeatFreqs(client);
       await this.readRegion(client);
       await this.readOwnConsole(client);
+      // Each frame for the other app takes the link a moment, so the catching up waits for the rest.
+      if (this.state.peer) {
+        this.tellMarks();
+        for (const listener of this.peerReadyListeners) listener();
+      }
       void this.refreshBattery();
       void this.sweepRoutes();
     } catch (error) {
@@ -2318,9 +2387,12 @@ export class MeshSession {
     const unread = { ...this.state.unread };
     delete unread[conversation];
     this.set({ unread });
+    this.markLater(conversation);
   }
 
   deleteConversation(conversation: string): void {
+    this.marksTold.delete(conversation);
+    this.pendingMarks.delete(conversation);
     const unread = { ...this.state.unread };
     delete unread[conversation];
     this.set({ messages: this.state.messages.filter((m) => m.conversation !== conversation), unread });
@@ -2580,6 +2652,12 @@ export class MeshSession {
         ? this.state.unread
         : { ...this.state.unread, [message.conversation]: (this.state.unread[message.conversation] ?? 0) + 1 };
     this.set({ messages: [...this.state.messages, message], unread });
+    if (this.focused === message.conversation) this.markLater(message.conversation);
+    const pending = this.pendingMarks.get(message.conversation);
+    if (pending && (pending.until < now || (pending.timestamp === message.timestamp && pending.hash === textHash(message.text)))) {
+      this.pendingMarks.delete(message.conversation);
+      if (pending.until >= now) this.takeReadMark(message.conversation, pending);
+    }
     for (const listener of this.receivedListeners) {
       try {
         listener(message);
@@ -2593,6 +2671,89 @@ export class MeshSession {
       this.findDirectCopies(message.id, toHex(frame.senderPrefix), frame.pathLen);
     }
     if (this.pendingReactions.length) await this.adoptReactions(message);
+  }
+
+  // ---- read marks ----
+  //
+  // On a radio shared through a phone, each app keeps its own copy of every
+  // message and counts what is unread in it by itself. What one reads, it
+  // tells the other as the newest message read in the chat (`ReadMark`), and
+  // the other counts the messages it has after that one as unread, if that is
+  // fewer than it had. So a mark only ever takes unread away: an older one
+  // changes nothing, and reading on in one app never makes a chat in the other
+  // unread again.
+
+  /** A chat's messages that count toward its unread: the ones that came in, but a console command this radio refused. */
+  private counted(conversation: string): MessageRecord[] {
+    return this.state.messages.filter((m) => m.conversation === conversation && m.direction === "in" && m.txtType !== TxtType.CliCommand);
+  }
+
+  /** The newest message of a chat read here; null when none is. */
+  private readThrough(conversation: string): ReadMark | null {
+    const counted = this.counted(conversation);
+    const read = counted[counted.length - 1 - (this.state.unread[conversation] ?? 0)];
+    return read ? { timestamp: read.timestamp, hash: textHash(read.text) } : null;
+  }
+
+  /** The other app hears what was read in a chat here once the reading stops for a moment, so reading on goes as one. */
+  private markLater(conversation: string): void {
+    if (!this.state.peer) return;
+    clearTimeout(this.markTimers.get(conversation));
+    this.markTimers.set(
+      conversation,
+      setTimeout(() => {
+        this.markTimers.delete(conversation);
+        this.tellMark(conversation);
+      }, MARK_DELAY_MS),
+    );
+  }
+
+  private tellMark(conversation: string): void {
+    const mark = this.readThrough(conversation);
+    if (!mark) return;
+    const said = `${mark.timestamp}:${mark.hash}`;
+    if (this.marksTold.get(conversation) === said) return;
+    if (this.tellPeer(READ_MARK_PREFIX + conversation, readMarkValue(mark))) this.marksTold.set(conversation, said);
+  }
+
+  /** Every chat's mark, for the other app to catch up on what was read here while it was away. */
+  private tellMarks(): void {
+    const chats = new Set(this.state.messages.filter((m) => m.direction === "in").map((m) => m.conversation));
+    for (const conversation of chats) this.tellMark(conversation);
+  }
+
+  private takePeerEntry(key: string, value: Uint8Array): void {
+    if (key.startsWith(READ_MARK_PREFIX)) {
+      const mark = readMarkOf(value);
+      if (mark) this.takeReadMark(key.slice(READ_MARK_PREFIX.length), mark);
+      return;
+    }
+    for (const listener of this.peerListeners) {
+      try {
+        listener(key, value);
+      } catch (error) {
+        console.error("peer listener threw", error);
+      }
+    }
+  }
+
+  /** The other app read a chat as far as this message: what came before it is read here too. */
+  private takeReadMark(conversation: string, mark: ReadMark): void {
+    const counted = this.counted(conversation);
+    let at = counted.length - 1;
+    while (at >= 0 && !(counted[at]!.timestamp === mark.timestamp && textHash(counted[at]!.text) === mark.hash)) at--;
+    if (at < 0) {
+      this.pendingMarks.set(conversation, { timestamp: mark.timestamp, hash: mark.hash, until: this.now() + PENDING_MARK_MS });
+      return;
+    }
+    this.pendingMarks.delete(conversation);
+    this.marksTold.set(conversation, `${mark.timestamp}:${mark.hash}`);
+    const after = counted.length - 1 - at;
+    if (after >= (this.state.unread[conversation] ?? 0)) return;
+    const unread = { ...this.state.unread };
+    if (after) unread[conversation] = after;
+    else delete unread[conversation];
+    this.set({ unread });
   }
 
   // ---- reactions ----
@@ -4762,6 +4923,16 @@ export class MeshSession {
         return;
       case "mirror":
         this.mirrored(frame.command, frame.answer);
+        return;
+      case "peerHello":
+        if (this.state.peer !== frame.side) {
+          this.set({ peer: frame.side });
+          this.log("link", `the radio is shared through the phone, with this app as the ${frame.side}`);
+        }
+        return;
+      case "peerEntry":
+        if (this.state.status === "ready") this.takePeerEntry(frame.key, frame.value);
+        else this.peerBacklog.push({ key: frame.key, value: frame.value });
         return;
       case "sendConfirmed": {
         // The latest try's acknowledgement, or a late one of an earlier try: either way the text arrived.

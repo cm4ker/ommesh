@@ -212,3 +212,16 @@ test("a key the radio takes is true, a firmware built without import false, an u
   radio.script.set(Cmd.ImportPrivateKey, () => [new Uint8Array([Resp.Err, 6])]);
   await assert.rejects(client.importPrivateKey(key), (error: unknown) => error instanceof MeshCoreError && error.code === 6);
 });
+
+test("a frame nothing answers is done once written, and an answer that comes meanwhile is not its", async () => {
+  const radio = new FakeRadio();
+  // A late answer to some earlier command, arriving while the frame goes out.
+  radio.script.set(Push.Peer, () => [new Uint8Array([Resp.Ok])]);
+  radio.script.set(Cmd.GetDeviceTime, () => [new ByteWriter().u8(Resp.CurrTime).u32(1_700_000_000).toBytes()]);
+  const client = new MeshCoreClient(radio);
+  const strays: string[] = [];
+  client.onStray((frame) => strays.push(frame.kind));
+  await client.tell(new Uint8Array([Push.Peer, 1, 1, 65]));
+  assert.equal(await client.getDeviceTime(), 1_700_000_000);
+  assert.deepEqual(strays, ["ok"]);
+});

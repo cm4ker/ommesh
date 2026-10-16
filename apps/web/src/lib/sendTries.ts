@@ -28,6 +28,10 @@ export function setSendTries(n: number): void {
   for (const listener of listeners) listener();
 }
 
+export function getSendTries(): number {
+  return tries;
+}
+
 export function useSendTries(): number {
   return useSyncExternalStore(
     (listener) => {

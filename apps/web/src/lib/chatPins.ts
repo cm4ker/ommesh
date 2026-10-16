@@ -1,8 +1,9 @@
 /**
  * Chats pinned to the top of the chat list. Kept on this device and apart for
  * each radio, as drafts are: a channel's slot names a different channel on
- * another radio. The radio knows nothing of them and nothing goes on the air,
- * so a phone and a computer on the same radio each pin their own.
+ * another radio. The radio knows nothing of them and nothing goes on the air;
+ * a phone and a computer sharing the radio keep the same pins only through
+ * their shared settings (`sharedSettings.ts`).
  *
  * A radio nobody has pinned anything for has Public pinned, the channel most
  * radios talk on. Once the reader pins or unpins anything, the radio's pins
@@ -55,6 +56,16 @@ export function setPinned(radio: string, channels: readonly ChannelRecord[], row
   const mine = { ...radioPins(pins[radio], channels) };
   if (on) mine[row.id] = row.channel ? { at: Date.now(), name: row.channel.name } : { at: Date.now() };
   else delete mine[row.id];
+  pins = { ...pins, [radio]: mine };
+  writeSetting(KEY, pins);
+  for (const listener of listeners) listener();
+}
+
+/** One chat's pin as the other app sharing the radio has it, or null for none; the radio's pins are written down whole. */
+export function setPin(radio: string, channels: readonly ChannelRecord[], conversation: string, pin: Pin | null): void {
+  const mine = { ...radioPins(pins[radio], channels) };
+  if (pin) mine[conversation] = pin;
+  else delete mine[conversation];
   pins = { ...pins, [radio]: mine };
   writeSetting(KEY, pins);
   for (const listener of listeners) listener();

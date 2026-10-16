@@ -64,6 +64,8 @@ interface Pending {
   timeoutMs: number;
   /** Set when the firmware answers nothing at all, as on reboot. */
   fireAndForget: boolean;
+  /** Set for a frame nothing ever answers, which is done once it is written. */
+  answerless: boolean;
   collected: ResponseFrame[];
   resolve: (frames: ResponseFrame[]) => void;
   reject: (error: Error) => void;
@@ -196,8 +198,9 @@ export class MeshCoreClient {
     const pending = this.inFlight;
     // Nothing waits for it, or what waits takes another kind: the firmware
     // finishing an answer to a command that timed out, a frame from before
-    // this client attached, or another app's answer.
-    if (!pending || (pending.expect && frame.kind !== "err" && !pending.expect.has(frame.kind))) {
+    // this client attached, or another app's answer. A frame nothing answers
+    // waits for none.
+    if (!pending || pending.answerless || (pending.expect && frame.kind !== "err" && !pending.expect.has(frame.kind))) {
       this.stray(frame);
       return;
     }
@@ -279,7 +282,9 @@ export class MeshCoreClient {
     this.trace?.("out", next.bytes);
     this.transport.send(next.bytes).then(
       () => {
-        if (this.inFlight === next) this.armTimer(next);
+        if (this.inFlight !== next) return;
+        if (next.answerless) this.finish(null);
+        else this.armTimer(next);
       },
       (error: unknown) => {
         if (this.inFlight === next) {
@@ -293,7 +298,7 @@ export class MeshCoreClient {
   request(
     name: string,
     bytes: Uint8Array,
-    options: { complete?: Completion; expect?: ResponseFrame["kind"][]; timeoutMs?: number; fireAndForget?: boolean } = {},
+    options: { complete?: Completion; expect?: ResponseFrame["kind"][]; timeoutMs?: number; fireAndForget?: boolean; answerless?: boolean } = {},
   ): Promise<ResponseFrame[]> {
     if (this.closedWith !== undefined) {
       return Promise.reject(new TransportClosedError(this.closedWith));
@@ -306,6 +311,7 @@ export class MeshCoreClient {
         expect: options.expect ? new Set(options.expect) : null,
         timeoutMs: options.timeoutMs ?? this.timeoutMs,
         fireAndForget: options.fireAndForget ?? false,
+        answerless: options.answerless ?? false,
         collected: [],
         resolve,
         reject,
@@ -334,6 +340,15 @@ export class MeshCoreClient {
   }
 
   // ---- the commands, typed ----
+
+  /**
+   * A frame for the other app sharing the radio through the phone (`peer.ts`).
+   * The phone's relay takes it and answers nothing; it waits its turn behind
+   * the commands before it all the same, since a link writes one frame at a time.
+   */
+  async tell(bytes: Uint8Array): Promise<void> {
+    await this.request("tell", bytes, { answerless: true });
+  }
 
   deviceQuery(): Promise<DeviceInfo> {
     return this.one("deviceQuery", cmd.deviceQuery(), "deviceInfo").then((f) => f.info);

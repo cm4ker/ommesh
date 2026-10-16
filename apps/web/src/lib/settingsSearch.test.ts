@@ -6,7 +6,7 @@ import { getNav } from "./nav.js";
 import { findSettings, flashDone, flashFor, openSetting, SETTINGS, settingName, settingPlace, settingRows, type SettingContext } from "./settingsSearch.js";
 
 const device = (protocol: number) => ({ firmwareVerCode: protocol, maxContacts: 350, maxChannels: 40, blePin: 0, buildDate: "", manufacturer: "Xiao C6", firmwareVersion: "v1.18.0", repeatEnabled: false, pathHashMode: 0 }) as unknown as DeviceInfo;
-const ctx = (patch: Partial<SettingContext> = {}): SettingContext => ({ device: device(14), wifi: true, console: true, share: false, another: false, maxTxPower: 22, ...patch });
+const ctx = (patch: Partial<SettingContext> = {}): SettingContext => ({ device: device(14), wifi: true, console: true, share: false, sharedSettings: false, another: false, maxTxPower: 22, ...patch });
 const found = (query: string, c = ctx()) => findSettings(query, c);
 const pages = (query: string, c = ctx()) => found(query, c).map((s) => `${s.page}:${s.label ?? s.group ?? ""}`);
 

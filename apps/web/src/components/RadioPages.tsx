@@ -24,6 +24,7 @@ import { canLocate, locateOnce, locateText, phoneLocates } from "../lib/phonePos
 import { canHover, nativePlatform, shell } from "../lib/platform.js";
 import { reach, trustUsed, withBase } from "../lib/privacy.js";
 import { recentStops, relayAvailable, relayWanted, setRelayWanted, setSharing, useRelay, type AppStop } from "../lib/relay.js";
+import { setSharedSettings, useSharedSettings } from "../lib/sharedSettings.js";
 import { limitLabel, limitValue, parseLimit, ROUTE_LIMITS } from "../lib/routes.js";
 import { SEND_TRIES_MAX, setSendTries, triesSpanMs, useSendTries } from "../lib/sendTries.js";
 import { session, storage, useSession } from "../lib/session.js";
@@ -1253,6 +1254,10 @@ function ConnectionPage() {
   const [auto, setAuto] = useState(autoConnectWanted);
   const [lend, setLend] = useState(relayWanted);
   const relay = useRelay();
+  const sharedSettings = useSharedSettings();
+  const sharedSettingsRow = (
+    <SwitchRow label={t("radio.connection.sharedSettings")} hint={t("radio.connection.sharedSettingsHint")} checked={sharedSettings} onChange={setSharedSettings} />
+  );
   // Asked of the shell, since the entry can be removed outside the app; null until it answers.
   const [atLogin, setAtLogin] = useState<boolean | null>(null);
   useEffect(() => {
@@ -1287,6 +1292,8 @@ function ConnectionPage() {
           />
         ) : null}
       </Group>
+      {/* A computer on a radio the phone shares; the phone has the same switch under its sharing. */}
+      {state.peer === "computer" ? <Group>{sharedSettingsRow}</Group> : null}
       {state.device ? (
         // How a phone or a computer reaches the radio, as the radio itself is set: each way with its settings behind it. Wi-Fi only on a radio built with it (MeshCore 1.18).
         <Group title={t("radio.connection.onRadio")}>
@@ -1324,6 +1331,7 @@ function ConnectionPage() {
               }
             }}
           />
+          {lend ? sharedSettingsRow : null}
         </Group>
       ) : null}
       {canOpenAnother() ? (

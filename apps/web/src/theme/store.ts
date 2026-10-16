@@ -1,6 +1,7 @@
 import { locale, t } from "../i18n/index.js";
 import { bubbleVariable, cssVariable, defaultDark, defaultLight, findTheme, sharedTokens, themes, type BubbleToken, type SharedToken, type Theme, type ThemeToken } from "./themes.js";
 import { paintSystemBars } from "../lib/systemBars.js";
+import { settingWritten } from "../lib/storage.js";
 
 const BUBBLE_TOKENS: BubbleToken[] = ["text", "textMuted", "textFaint", "accent", "danger"];
 
@@ -57,6 +58,7 @@ export function setPreference(next: ThemePreference): void {
     // Private window.
   }
   apply();
+  settingWritten();
 }
 
 function apply(): void {

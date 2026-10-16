@@ -3,7 +3,7 @@ import { readSetting, writeSetting } from "./storage.js";
 
 /**
  * Whether a message of only emoji is drawn large, without a bubble (#41), or as an
- * ordinary bubble. Set in Appearance; kept on this device only.
+ * ordinary bubble. Set in Appearance.
  */
 
 const KEY = "meshnet.jumboEmoji";
@@ -14,6 +14,10 @@ export function setJumboEmoji(on: boolean): void {
   jumboEmoji = on;
   writeSetting(KEY, on);
   for (const listener of listeners) listener();
+}
+
+export function getJumboEmoji(): boolean {
+  return jumboEmoji;
 }
 
 export function useJumboEmoji(): boolean {

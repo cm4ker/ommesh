@@ -26,6 +26,10 @@ export function setNeighbourSort(next: NeighbourSort): void {
   for (const listener of listeners) listener();
 }
 
+export function getNeighbourSort(): NeighbourSort {
+  return sort;
+}
+
 export function useNeighbourSort(): NeighbourSort {
   return useSyncExternalStore(
     (listener) => {

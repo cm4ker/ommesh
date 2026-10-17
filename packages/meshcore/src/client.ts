@@ -14,7 +14,7 @@
  * they go to the stray listeners with the answers nobody here asked for.
  */
 
-import { errorName } from "./protocol/codes.js";
+import { ErrCode, errorName } from "./protocol/codes.js";
 import * as cmd from "./protocol/commands.js";
 import {
   decodeFrame,
@@ -36,6 +36,16 @@ export class MeshCoreError extends Error {
     super(`${command}: ${errorName(code)}`);
     this.name = "MeshCoreError";
   }
+}
+
+/**
+ * Whether the radio refused a send for want of a free packet. A companion has
+ * sixteen for everything it receives, sends and passes on, and a busy air
+ * keeps them queued; its "table full" to a send means that. An anonymous
+ * request says the same when the contacts are full, so it is left out.
+ */
+export function noRoom(error: unknown): error is MeshCoreError {
+  return error instanceof MeshCoreError && error.code === ErrCode.TableFull && error.command.startsWith("send") && error.command !== "sendAnonReq";
 }
 
 export class TransportClosedError extends Error {
@@ -122,6 +132,7 @@ export class MeshCoreClient {
   private pushListeners = new Set<(frame: PushFrame) => void>();
   private strayListeners = new Set<(frame: ResponseFrame, late: boolean) => void>();
   private closeListeners = new Set<(reason: Error | null) => void>();
+  private refusedListeners = new Set<(error: MeshCoreError) => void>();
   private closedWith: Error | null | undefined;
   private readonly timeoutMs: number;
   private readonly savingTimeoutMs: number;
@@ -169,6 +180,12 @@ export class MeshCoreClient {
     return () => this.closeListeners.delete(listener);
   }
 
+  /** A command the radio refused, heard before its caller hears it. */
+  onRefused(listener: (error: MeshCoreError) => void): () => void {
+    this.refusedListeners.add(listener);
+    return () => this.refusedListeners.delete(listener);
+  }
+
   async close(): Promise<void> {
     await this.transport.close();
   }
@@ -205,7 +222,15 @@ export class MeshCoreClient {
       return;
     }
     if (frame.kind === "err") {
-      this.finish(new MeshCoreError(frame.code, pending.name));
+      const error = new MeshCoreError(frame.code, pending.name);
+      for (const listener of this.refusedListeners) {
+        try {
+          listener(error);
+        } catch (failure) {
+          console.error("refused listener threw", failure);
+        }
+      }
+      this.finish(error);
       return;
     }
     pending.collected.push(frame);

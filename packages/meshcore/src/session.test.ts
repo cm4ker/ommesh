@@ -196,6 +196,8 @@ class ScriptedRadio extends BaseTransport {
         this.autoAdd = { config: frame[1]!, maxHops: frame[2] ?? 0 };
         return [new Uint8Array([Resp.Ok])];
       case Cmd.GetStats:
+        if (frame[1] === 0) return [new ByteWriter().u8(Resp.Stats).u8(0).u16(4100).u32(7200).u16(2).u8(16).toBytes()];
+        if (frame[1] === 2) return [new ByteWriter().u8(Resp.Stats).u8(2).u32(900).u32(40).u32(30).u32(10).u32(700).u32(200).u32(5).toBytes()];
         return [new ByteWriter().u8(Resp.Stats).u8(1).u16(-115 & 0xffff).i8(-90).i8(28).u32(120).u32(3400).toBytes()];
       case Cmd.RunCliCommand: {
         if (!this.console) return [new Uint8Array([Resp.Err, 1])];
@@ -3130,6 +3132,49 @@ test("the radio's own receiver is read without going on the air", async () => {
   assert.equal(stats.lastSnr, 7);
   assert.equal(stats.rxAirSecs, 3400);
   await session.disconnect();
+});
+
+test("the radio's state reads as one line: its queue, what went wrong, its receiver and the air", async () => {
+  const session = new MeshSession();
+  await session.connect(new ScriptedRadio());
+  const line = await session.radioState();
+  assert.match(line, /^16 packet\(s\) waiting to go out; since it booted it waited over 4 s for a quiet air; up 120 min/);
+  assert.match(line, /noise floor -115 dBm, last heard -90 dBm 7 dB/);
+  assert.match(line, /sent for 120 s \(1\.7 %\), heard for 3400 s \(47\.2 %\)/);
+  assert.match(line, /heard 900 packet\(s\), 700 flooded, 5 broken; sent 40, 30 flooded$/);
+  await session.disconnect();
+});
+
+test("a send the radio has no room for puts the radio's state in the log, once a minute at most", async () => {
+  let now = 1_700_000_000_000;
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => now, traceWaitMs: () => 30, busyWaitMs: 10 });
+  await session.connect(radio);
+  radio.busy = 3;
+  await assert.rejects(session.traceRoute(["3f"]));
+  await tick();
+  const noted = () => session.getState().log.filter((e) => e.kind === "radio");
+  assert.equal(noted().length, 1, "three refusals, one note");
+  assert.match(noted()[0]!.text, /^sendTracePath: table full; 16 packet\(s\) waiting/);
+  now += 61_000;
+  radio.busy = 1;
+  await session.traceRoute(["3f"]);
+  await tick();
+  assert.equal(noted().length, 2, "a minute later, another");
+  await session.disconnect();
+});
+
+test("the log kept from before the app started goes ahead of this run's", async () => {
+  const session = new MeshSession();
+  session.note("app", "started");
+  session.restoreLog([{ at: 1, kind: "link", text: "connected" }]);
+  assert.deepEqual(
+    session.getState().log.map((e) => e.text),
+    ["connected", "started"],
+  );
+  session.restoreLog(Array.from({ length: 500 }, (_, i) => ({ at: i, kind: "x", text: String(i) })));
+  assert.equal(session.getState().log.length, 400, "no longer than the log keeps");
+  assert.equal(session.getState().log.at(-1)!.text, "started");
 });
 
 test("history from a file comes in once, beside what is here", async () => {

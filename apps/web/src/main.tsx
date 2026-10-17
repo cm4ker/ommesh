@@ -15,6 +15,7 @@ import { connectors } from "./transports/index.js";
 import { initTheme } from "./theme/store.js";
 import { initTextSize } from "./theme/textSize.js";
 import { initLanguage } from "./i18n/index.js";
+import { keepLog } from "./lib/report.js";
 import "./i18n/languages.js";
 import "./styles.css";
 
@@ -39,6 +40,8 @@ initTheme();
 initTextSize();
 // The words, in the reader's language, are loaded before anything is drawn in them.
 await initLanguage();
+// The log from before this start comes back, so a problem noticed after a restart can still be read and reported.
+void keepLog();
 
 // In the phone app the page is the whole app, laid out to the screen, and a
 // pinch that zooms it only leaves it scrolling sideways. The same cap stops

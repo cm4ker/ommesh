@@ -9,7 +9,7 @@
  * phone do not mix.
  */
 
-import { MeshCoreClient, MeshCoreError, TimeoutError, type TextSendResult } from "./client.js";
+import { MeshCoreClient, MeshCoreError, noRoom, TimeoutError, type TextSendResult } from "./client.js";
 import { ByteReader, bytesEqual, fromHex, pathByteLength, toHex, unixNow } from "./protocol/bytes.js";
 import { neighbourSearchMs, replyBudgetMs, sealedBytes, traceBudgetMs, type ReplySize } from "./protocol/airtime.js";
 import { CHANNEL_TEXT_LEN, groupDataPayload, groupTextPayload, heardGroupTextPayload, relaysAudible } from "./protocol/group.js";
@@ -665,6 +665,10 @@ export interface ReadingSample {
 export interface CoreStats {
   batteryMv: number;
   uptimeSecs: number;
+  /** Packets waiting to go out, of the sixteen a companion has for everything. */
+  queueLen: number;
+  /** What went wrong since it booted: `ERR_EVENT_*` in the firmware's Dispatcher.h. */
+  errFlags: number;
   /** Local clock, ms. */
   at: number;
 }
@@ -1095,6 +1099,9 @@ const DM_MATCH_MS = 15 * 1000;
 const BUSY_TRIES = 2;
 const BUSY_WAIT_MS = 2_500;
 
+/** How often at most the radio's state goes in the log after a refusal, ms. */
+const RADIO_NOTE_MS = 60_000;
+
 /** How far back status answers are kept, and at most how many a node. */
 /** The telemetry channel a node reports itself on: its battery, its board, its GPS (TELEM_CHANNEL_SELF). */
 const TELEMETRY_SELF_CHANNEL = 1;
@@ -1273,6 +1280,8 @@ export class MeshSession {
   private cliStamps = new Map<string, number>();
   /** Traces on the air, by tag, each waiting for its way back. */
   private traceWaiters = new Map<number, (frame: Extract<PushFrame, { kind: "traceData" }>) => void>();
+  /** When the radio's state last went in the log (`noteRadioState`). */
+  private radioNotedAt = -Infinity;
   private controlListeners = new Set<(frame: Extract<PushFrame, { kind: "controlData" }>) => void>();
   private heardListeners = new Set<(packet: HeardPacket) => void>();
   private readonly traceWait: (estimateMs: number) => number;
@@ -1392,6 +1401,16 @@ export class MeshSession {
     this.set({ log: [...log, entry] });
   }
 
+  /** A line of the app's own in the log, such as that it started. */
+  note(kind: string, text: string): void {
+    this.log(kind, text);
+  }
+
+  /** The log kept from before the app last started, put ahead of what this run logged. */
+  restoreLog(earlier: LogEntry[]): void {
+    this.set({ log: [...earlier, ...this.state.log].slice(-LOG_LIMIT) });
+  }
+
   private scheduleSave(): void {
     if (!this.storage || !this.state.self) return;
     if (this.saveTimer) clearTimeout(this.saveTimer);
@@ -1476,6 +1495,9 @@ export class MeshSession {
     });
     client.onPush((frame) => this.onPush(frame));
     client.onStray((frame, late) => this.onStray(client, frame, late));
+    client.onRefused((error) => {
+      if (noRoom(error)) void this.noteRadioState(error.message);
+    });
     client.onClose((reason) => {
       if (this.client !== client) return;
       this.client = null;
@@ -3866,7 +3888,7 @@ export class MeshSession {
       try {
         return await send();
       } catch (error) {
-        if (!(error instanceof MeshCoreError && error.code === ErrCode.TableFull) || tries >= BUSY_TRIES) throw error;
+        if (!noRoom(error) || tries >= BUSY_TRIES) throw error;
         this.log("trace", `${error.message}: the radio has no room, giving it again in ${this.busyWait / 1000} s`);
         await new Promise((resolve) => setTimeout(resolve, this.busyWait));
       }
@@ -3978,7 +4000,60 @@ export class MeshSession {
   async coreStats(): Promise<CoreStats> {
     const frame = await this.need().getStats(StatsType.Core);
     if (frame.kind !== "statsCore") throw new Error(`core stats: the radio answered ${frame.kind}`);
-    return { batteryMv: frame.batteryMv, uptimeSecs: frame.uptimeSecs, at: this.now() };
+    return { batteryMv: frame.batteryMv, uptimeSecs: frame.uptimeSecs, queueLen: frame.queueLen, errFlags: frame.errFlags, at: this.now() };
+  }
+
+  /**
+   * What the radio says of itself in one line, for the log and a problem
+   * report: its queue, what went wrong since it booted, its receiver and how
+   * busy the air has been. Whatever it does not answer is left out.
+   */
+  async radioState(): Promise<string> {
+    const client = this.need();
+    const ask = async <K extends "statsCore" | "statsRadio" | "statsPackets">(type: number, kind: K) => {
+      try {
+        const frame = await client.getStats(type);
+        return frame.kind === kind ? (frame as Extract<typeof frame, { kind: K }>) : null;
+      } catch {
+        return null;
+      }
+    };
+    const core = await ask(StatsType.Core, "statsCore");
+    const radio = await ask(StatsType.Radio, "statsRadio");
+    const packets = await ask(StatsType.Packets, "statsPackets");
+    const parts: string[] = [];
+    if (core) {
+      parts.push(`${core.queueLen} packet(s) waiting to go out`);
+      const flags = [
+        core.errFlags & 1 ? "its queue was full" : null,
+        core.errFlags & 2 ? "it waited over 4 s for a quiet air" : null,
+        core.errFlags & 4 ? "its receiver failed to start" : null,
+      ].filter((f) => f !== null);
+      if (flags.length) parts.push(`since it booted ${flags.join(", ")}`);
+      parts.push(`up ${Math.round(core.uptimeSecs / 60)} min`);
+    }
+    if (radio) {
+      parts.push(`noise floor ${radio.noiseFloor} dBm, last heard ${radio.lastRssi} dBm ${radio.lastSnr} dB`);
+      const up = core?.uptimeSecs ?? 0;
+      const share = (secs: number) => (up > 0 ? ` (${((secs / up) * 100).toFixed(1)} %)` : "");
+      parts.push(`sent for ${radio.txAirSecs} s${share(radio.txAirSecs)}, heard for ${radio.rxAirSecs} s${share(radio.rxAirSecs)}`);
+    }
+    if (packets) {
+      parts.push(`heard ${packets.recv} packet(s), ${packets.recvFlood} flooded, ${packets.recvErrors} broken; sent ${packets.sent}, ${packets.sentFlood} flooded`);
+    }
+    return parts.length ? parts.join("; ") : "it said nothing of itself";
+  }
+
+  /** The radio's state in the log after something went wrong, once a minute at most. */
+  private async noteRadioState(why: string): Promise<void> {
+    const now = this.now();
+    if (now - this.radioNotedAt < RADIO_NOTE_MS) return;
+    this.radioNotedAt = now;
+    try {
+      this.log("radio", `${why}; ${await this.radioState()}`);
+    } catch {
+      // Gone with the link: there is nothing to ask.
+    }
   }
 
   /** The radio's own receiver: its noise floor, and how long it has been on the air. Asked of the radio, not of the air. */

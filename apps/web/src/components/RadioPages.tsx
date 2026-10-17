@@ -57,6 +57,7 @@ import { PeoplePage, PeopleRow, ReportRow } from "./People.js";
 import { PrivacyButton } from "./Privacy.js";
 import { NewBuildRow } from "./NewBuild.js";
 import { NewsPage, NewsRow } from "./News.js";
+import { ReportPage } from "./ReportPage.js";
 import { getLanguagePreference, languageName, languages, setLanguagePreference, subscribeLanguage, systemLanguage, t, type Key } from "../i18n/index.js";
 import { errorText } from "../i18n/errors.js";
 
@@ -71,6 +72,7 @@ export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = {
   soundNodes: "notifications",
   people: "about",
   news: "about",
+  report: "about",
   trusted: "privacy",
   remote: "privacy",
   console: "advanced",
@@ -114,6 +116,7 @@ export const RADIO_TITLES: Record<RadioPage, Key> = {
   about: "radio.titles.about",
   people: "radio.titles.people",
   news: "radio.titles.news",
+  report: "radio.titles.report",
 };
 
 /** A Radio page's title in the reader's language. */
@@ -308,6 +311,8 @@ function PageBody({ page }: { page: RadioPage }) {
       return <PeoplePage />;
     case "news":
       return <NewsPage />;
+    case "report":
+      return <ReportPage />;
     default:
       return null;
   }

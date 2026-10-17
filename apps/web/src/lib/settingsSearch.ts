@@ -67,6 +67,7 @@ const PAGES: Partial<Record<RadioPage, { title: Key; parent?: RadioPage; when?: 
   about: { title: "radio.titles.about" },
   news: { title: "radio.titles.news", parent: "about" },
   people: { title: "radio.titles.people", parent: "about" },
+  report: { title: "radio.titles.report", parent: "about" },
 };
 
 function protocol(ctx: SettingContext): number {
@@ -167,6 +168,7 @@ export const SETTINGS: readonly Setting[] = [
   { page: "about" },
   { page: "news", words: "radio.search.words.news" },
   { page: "people" },
+  { page: "report", words: "radio.search.words.report" },
 ];
 
 /** A setting's name as its row shows it, or its group's, or its page's title. */

@@ -1,10 +1,9 @@
 import { t } from "../i18n/index.js";
 import people from "../lib/people.json";
 import { push } from "../lib/nav.js";
-import { openLink } from "../lib/webLinks.js";
 import { Group, LinkRow } from "../ui/List.js";
 import { Avatar } from "./Avatar.js";
-import { ExternalIcon, UsersIcon } from "./Icons.js";
+import { UsersIcon } from "./Icons.js";
 
 /**
  * Who makes Ommesh: everyone with code on master or an issue on GitHub, as
@@ -18,9 +17,6 @@ interface Person {
 }
 
 const list: Person[] = people;
-
-/** Where a new report or idea goes. */
-const NEW_ISSUE = "https://github.com/cm4ker/ommesh/issues/new";
 
 function Face({ person, size }: { person: Person; size: number }) {
   return <Avatar name={person.login} size={size} icon={<img src={`./${person.picture}`} alt="" loading="lazy" />} />;
@@ -45,9 +41,9 @@ export function PeopleRow() {
   );
 }
 
-/** Opens a new issue on GitHub in the system's browser. */
+/** Opens the page that sends a report or an idea to GitHub, no account needed. */
 export function ReportRow() {
-  return <LinkRow label={t("radio.about.report")} hint={t("radio.about.reportHint")} tone="accent" trailing={<ExternalIcon size={14} className="line-chev" />} onClick={() => openLink(NEW_ISSUE)} />;
+  return <LinkRow label={t("radio.about.report")} hint={t("radio.about.reportHint")} tone="accent" onClick={() => push({ kind: "radio", page: "report" })} />;
 }
 
 export function PeoplePage() {

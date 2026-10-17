@@ -12,6 +12,8 @@
 
 ### Fixes
 - On a phone, the keyboard comes up over the tabs at the bottom, as in the phone's own apps, and the list you search reaches down to the keyboard. On an iPhone the tabs used to ride up on top of the keyboard and take a row of the list.
+- A phone no longer loses messages when another app is on the same radio, such as a PC over Wi-Fi. The radio gives each message out once, and one the other app took, or one that came after the phone had stopped waiting for it, could show there and never in the phone's chats. Now it reaches the phone too.
+- On a phone, a reaction put in MeshCore One no longer comes as a notification that looks like a message, an emoji with a line of letters under it. While the app was in the background, such a notification led to a chat with nothing new in it, as the reaction went on its message.
 
 ## 0.9.0 — 2026-10-16
 

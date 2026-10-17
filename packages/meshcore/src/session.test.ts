@@ -60,6 +60,8 @@ class ScriptedRadio extends BaseTransport {
   shared: "phone" | "computer" | null = null;
   /** The frames for the other app, which the relay takes and answers nothing. */
   told: Uint8Array[] = [];
+  /** How many traces it refuses next, its packets all taken. */
+  busy = 0;
 
   async send(frame: Uint8Array): Promise<void> {
     this.sent.push(frame);
@@ -162,6 +164,11 @@ class ScriptedRadio extends BaseTransport {
       case Cmd.Logout:
         return [new Uint8Array([Resp.Ok])];
       case Cmd.SendTracePath:
+        // A radio whose packets are all taken has no room for one more.
+        if (this.busy > 0) {
+          this.busy--;
+          return [new Uint8Array([Resp.Err, ErrCode.TableFull])];
+        }
         // The radio echoes the trace's own tag, and estimates the way back.
         return [new ByteWriter().u8(Resp.Sent).u8(0).bytes(frame.subarray(1, 5)).u32(40).toBytes()];
       case Cmd.SendControlData:
@@ -3049,6 +3056,20 @@ test("a trace that comes back after it was given up on is still heard, up to the
   radio.push(new ByteWriter().u8(Push.TraceData).u8(0).u8(1).u8(0).bytes(frame.subarray(1, 5)).u32(0).bytes(new Uint8Array([0x3f])).i8(8).i8(12).toBytes());
   await tick();
   assert.deepEqual(late, [[2, 3]]);
+  await session.disconnect();
+});
+
+test("a trace the radio has no room for is given again after a pause, twice at most", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ traceWaitMs: () => 30, busyWaitMs: 10 });
+  await session.connect(radio);
+  const traces = () => radio.sent.filter((f) => f[0] === Cmd.SendTracePath).length;
+  radio.busy = 2;
+  assert.equal(await session.traceRoute(["3f"]), null);
+  assert.equal(traces(), 3, "the third try goes out");
+  radio.busy = 3;
+  await assert.rejects(session.traceRoute(["3f"]), (error: { code?: number }) => error.code === ErrCode.TableFull);
+  assert.equal(traces(), 6, "and no fourth");
   await session.disconnect();
 });
 

@@ -68,6 +68,7 @@
   "error.noReply": "No reply in {seconds} s. The node may be out of range; try again.",
   "error.linkClosed": "The link to the radio closed.",
   "error.refused": "The radio refused: {reason}",
+  "error.radioBusy": "The radio is busy: it has no room to send one more packet now. Wait a little and try again.",
   "theValue": "the value",
   "fewer": "Fewer {name}",
   "moreOf": "More {name}",

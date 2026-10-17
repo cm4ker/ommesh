@@ -522,6 +522,8 @@ export interface SessionOptions {
   traceWaitMs?: (estimateMs: number) => number;
   /** How long a neighbour search waits for the neighbours' answers, from the time worked out for it; for tests. */
   searchWaitMs?: (estimateMs: number) => number;
+  /** How long to wait before giving a trace again to a radio that had no room for it; for tests. */
+  busyWaitMs?: number;
   /** Minutes this device's clock is ahead of UTC; for tests. */
   zoneOffsetMin?: () => number;
 }
@@ -1084,6 +1086,15 @@ const IN_ECHO_WINDOW_MS = 60 * 1000;
 /** How far back a direct message's packet may have been heard before the radio handed the message up. */
 const DM_MATCH_MS = 15 * 1000;
 
+/**
+ * A radio with no packet free for a send refuses it as "table full": a
+ * companion has sixteen for everything, and they run out while a busy air or
+ * packets it passes on keep them queued. Nothing went out, so a trace is given
+ * again after a pause, this many times at most.
+ */
+const BUSY_TRIES = 2;
+const BUSY_WAIT_MS = 2_500;
+
 /** How far back status answers are kept, and at most how many a node. */
 /** The telemetry channel a node reports itself on: its battery, its board, its GPS (TELEM_CHANNEL_SELF). */
 const TELEMETRY_SELF_CHANNEL = 1;
@@ -1266,6 +1277,7 @@ export class MeshSession {
   private heardListeners = new Set<(packet: HeardPacket) => void>();
   private readonly traceWait: (estimateMs: number) => number;
   private readonly searchWait: (estimateMs: number) => number;
+  private readonly busyWait: number;
 
   constructor(options: SessionOptions = {}) {
     this.appName = options.appName ?? "Meshnet";
@@ -1274,6 +1286,7 @@ export class MeshSession {
     this.replyWait = options.replyWaitMs ?? ((budget) => budget);
     this.traceWait = options.traceWaitMs ?? ((budget) => Math.min(30_000, Math.max(2_500, budget)));
     this.searchWait = options.searchWaitMs ?? ((budget) => budget);
+    this.busyWait = options.busyWaitMs ?? BUSY_WAIT_MS;
     this.zoneOffsetMin = options.zoneOffsetMin ?? (() => -new Date().getTimezoneOffset());
     this.trace = options.trace;
   }
@@ -3815,7 +3828,7 @@ export class MeshSession {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let listening = false;
     try {
-      const sent = await client.sendTracePath(tag, 0, Math.log2(size), fromHex(path.join("")));
+      const sent = await this.whenRoom(() => client.sendTracePath(tag, 0, Math.log2(size), fromHex(path.join(""))));
       const started = this.now();
       const self = this.state.self;
       const budget = self && self.bandwidthHz > 0 ? Math.min(sent.estTimeoutMs, traceBudgetMs(path.length, size, self)) : sent.estTimeoutMs * 1.2 + 500;
@@ -3844,6 +3857,19 @@ export class MeshSession {
     } finally {
       if (timer) clearTimeout(timer);
       if (!listening) this.traceWaiters.delete(tag);
+    }
+  }
+
+  /** A send given again while the radio has no room for it (`BUSY_TRIES`). */
+  private async whenRoom<T>(send: () => Promise<T>): Promise<T> {
+    for (let tries = 0; ; tries++) {
+      try {
+        return await send();
+      } catch (error) {
+        if (!(error instanceof MeshCoreError && error.code === ErrCode.TableFull) || tries >= BUSY_TRIES) throw error;
+        this.log("trace", `${error.message}: the radio has no room, giving it again in ${this.busyWait / 1000} s`);
+        await new Promise((resolve) => setTimeout(resolve, this.busyWait));
+      }
     }
   }
 

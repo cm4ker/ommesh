@@ -1,4 +1,4 @@
-import { MeshCoreError, NoReplyError, TimeoutError, TransportClosedError } from "@meshnet/meshcore";
+import { ErrCode, MeshCoreError, NoReplyError, TimeoutError, TransportClosedError } from "@meshnet/meshcore";
 import { t, type Key } from "./index.js";
 
 /**
@@ -18,6 +18,11 @@ export function errorText(error: unknown): string {
   if (error instanceof NoReplyError) return t("common.error.noReply", { seconds: /(\d+) s$/.exec(error.message)?.[1] ?? "?" });
   if (error instanceof TimeoutError) return t("common.error.timedOut");
   if (error instanceof TransportClosedError) return t("common.error.linkClosed");
+  // A send the radio had no free packet for: its few are all queued on a busy air. An anonymous
+  // request also says so when the contacts are full, so it keeps the radio's words.
+  if (error instanceof MeshCoreError && error.code === ErrCode.TableFull && error.command.startsWith("send") && error.command !== "sendAnonReq") {
+    return t("common.error.radioBusy");
+  }
   if (error instanceof MeshCoreError) return t("common.error.refused", { reason: error.message });
   const message = error instanceof Error ? error.message : String(error);
   const known = KNOWN[message];

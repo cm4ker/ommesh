@@ -275,6 +275,11 @@ impl Mux {
         let Some(command) = self.in_flight.clone() else {
             return;
         };
+        // Another app's answer of the same kind, about another slot or contact: the command
+        // in flight still waits for its own.
+        if !is_own_answer(&command.frame, frame) {
+            return;
+        }
         match command.source {
             Source::Queue => {
                 if is_message(code) {
@@ -508,6 +513,17 @@ pub fn patience(frame: &[u8]) -> (i64, bool) {
 
 /// Whether `answer` is a command's last frame: an error always is, and so is any
 /// single answer; only the contact list comes as a stream.
+/// Whether an answer that names what it is about names what the command asked. A radio open
+/// in two apps writes every answer to both, and another app's read of slot 3 must not pass for
+/// a client's read of slot 1, as `accepts` in `client.ts` has it.
+pub fn is_own_answer(command: &[u8], answer: &[u8]) -> bool {
+    match (command[0], answer[0]) {
+        (CMD_GET_CHANNEL, RESP_CHANNEL_INFO) => command.get(1) == answer.get(1),
+        (CMD_GET_CONTACT_BY_KEY, RESP_CONTACT) => command.get(1..33) == answer.get(1..33),
+        _ => true,
+    }
+}
+
 pub fn is_complete(command: &[u8], answer: u8) -> bool {
     if answer == RESP_ERR {
         return true;
@@ -652,6 +668,29 @@ mod tests {
             rig.computer,
             v(&[&[9, 1, 2, 3, 4]]),
             "its answer goes to the computer"
+        );
+    }
+
+    #[test]
+    fn another_apps_read_of_another_channel_slot_is_not_the_answer() {
+        let mut rig = Rig::new();
+        rig.attach(Page)
+            .attach(Computer)
+            .up()
+            .radio_says(NO_MORE)
+            .clear();
+        rig.client_says(Page, &[CMD_GET_CHANNEL, 1])
+            .client_says(Computer, &[5]);
+        // The app on the radio's other link read slot 0 just then.
+        rig.radio_says(&[RESP_CHANNEL_INFO, 0, b'P']);
+        assert!(rig.page.is_empty(), "slot 0 is not the page's answer");
+        assert_eq!(rig.radio.len(), 1, "the page's read still waits");
+        rig.radio_says(&[RESP_CHANNEL_INFO, 1, b'#']);
+        assert_eq!(rig.page, v(&[&[RESP_CHANNEL_INFO, 1, b'#']]));
+        assert_eq!(
+            rig.radio,
+            v(&[&[CMD_GET_CHANNEL, 1], &[5]]),
+            "then the computer's command goes out"
         );
     }
 

@@ -14,6 +14,7 @@
  * they go to the stray listeners with the answers nobody here asked for.
  */
 
+import { bytesEqual } from "./protocol/bytes.js";
 import { ErrCode, errorName } from "./protocol/codes.js";
 import * as cmd from "./protocol/commands.js";
 import {
@@ -71,6 +72,12 @@ interface Pending {
   complete: Completion;
   /** The kinds of answer this command takes besides an error; null takes any. */
   expect: ReadonlySet<ResponseFrame["kind"]> | null;
+  /**
+   * Of those, the one that is its own, where the answer names what was asked:
+   * a radio open in two apps writes every answer to both, and another app's
+   * read of slot 3 must not pass for this one's read of slot 1.
+   */
+  accepts: ((frame: ResponseFrame) => boolean) | null;
   timeoutMs: number;
   /** Set when the firmware answers nothing at all, as on reboot. */
   fireAndForget: boolean;
@@ -217,7 +224,11 @@ export class MeshCoreClient {
     // finishing an answer to a command that timed out, a frame from before
     // this client attached, or another app's answer. A frame nothing answers
     // waits for none.
-    if (!pending || pending.answerless || (pending.expect && frame.kind !== "err" && !pending.expect.has(frame.kind))) {
+    if (
+      !pending ||
+      pending.answerless ||
+      (frame.kind !== "err" && ((pending.expect && !pending.expect.has(frame.kind)) || (pending.accepts && !pending.accepts(frame))))
+    ) {
       this.stray(frame);
       return;
     }
@@ -323,7 +334,14 @@ export class MeshCoreClient {
   request(
     name: string,
     bytes: Uint8Array,
-    options: { complete?: Completion; expect?: ResponseFrame["kind"][]; timeoutMs?: number; fireAndForget?: boolean; answerless?: boolean } = {},
+    options: {
+      complete?: Completion;
+      expect?: ResponseFrame["kind"][];
+      accepts?: (frame: ResponseFrame) => boolean;
+      timeoutMs?: number;
+      fireAndForget?: boolean;
+      answerless?: boolean;
+    } = {},
   ): Promise<ResponseFrame[]> {
     if (this.closedWith !== undefined) {
       return Promise.reject(new TransportClosedError(this.closedWith));
@@ -334,6 +352,7 @@ export class MeshCoreClient {
         bytes,
         complete: options.complete ?? single,
         expect: options.expect ? new Set(options.expect) : null,
+        accepts: options.accepts ?? null,
         timeoutMs: options.timeoutMs ?? this.timeoutMs,
         fireAndForget: options.fireAndForget ?? false,
         answerless: options.answerless ?? false,
@@ -475,8 +494,13 @@ export class MeshCoreClient {
     return this.ok("shareContact", cmd.shareContact(publicKey));
   }
 
-  getContactByKey(publicKey: Uint8Array): Promise<Contact> {
-    return this.one("getContactByKey", cmd.getContactByKey(publicKey), "contact").then((f) => f.contact);
+  async getContactByKey(publicKey: Uint8Array): Promise<Contact> {
+    const [frame] = await this.request("getContactByKey", cmd.getContactByKey(publicKey), {
+      expect: ["contact"],
+      accepts: (f) => f.kind === "contact" && bytesEqual(f.contact.publicKey, publicKey),
+    });
+    if (frame?.kind !== "contact") throw new Error(`getContactByKey: expected contact, got ${frame?.kind ?? "nothing"}`);
+    return frame.contact;
   }
 
   exportContact(publicKey?: Uint8Array): Promise<Uint8Array> {
@@ -526,8 +550,13 @@ export class MeshCoreClient {
     return this.ok("setPathHashMode", cmd.setPathHashMode(mode));
   }
 
-  getChannel(index: number): Promise<{ index: number; name: string; secret: Uint8Array }> {
-    return this.one("getChannel", cmd.getChannel(index), "channelInfo");
+  async getChannel(index: number): Promise<{ index: number; name: string; secret: Uint8Array }> {
+    const [frame] = await this.request("getChannel", cmd.getChannel(index), {
+      expect: ["channelInfo"],
+      accepts: (f) => f.kind === "channelInfo" && f.index === index,
+    });
+    if (frame?.kind !== "channelInfo") throw new Error(`getChannel: expected channelInfo, got ${frame?.kind ?? "nothing"}`);
+    return frame;
   }
 
   setChannel(index: number, name: string, secret: Uint8Array): Promise<void> {
@@ -602,7 +631,8 @@ export class MeshCoreClient {
   }
 
   async getStats(type: number): Promise<Extract<ResponseFrame, { kind: "statsCore" | "statsRadio" | "statsPackets" }>> {
-    const frames = await this.request("getStats", cmd.getStats(type), { expect: ["statsCore", "statsRadio", "statsPackets"] });
+    const kind = (["statsCore", "statsRadio", "statsPackets"] as const)[type];
+    const frames = await this.request("getStats", cmd.getStats(type), { expect: kind ? [kind] : ["statsCore", "statsRadio", "statsPackets"] });
     const frame = frames[0];
     if (frame && (frame.kind === "statsCore" || frame.kind === "statsRadio" || frame.kind === "statsPackets")) {
       return frame;

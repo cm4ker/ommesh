@@ -14,6 +14,8 @@ pub const CMD_SYNC_NEXT_MESSAGE: u8 = 10;
 pub const CMD_RESET_PATH: u8 = 13;
 pub const CMD_REMOVE_CONTACT: u8 = 15;
 pub const CMD_REBOOT: u8 = 19;
+pub const CMD_GET_CONTACT_BY_KEY: u8 = 30;
+pub const CMD_GET_CHANNEL: u8 = 31;
 pub const CMD_SEND_TELEMETRY_REQ: u8 = 39;
 pub const CMD_FACTORY_RESET: u8 = 51;
 pub const CMD_SEND_CONTROL_DATA: u8 = 55;
@@ -22,6 +24,7 @@ pub const CMD_SEND_CHANNEL_DATA: u8 = 62;
 // Radio → app, in answer to a command. Always below 0x80.
 pub const RESP_OK: u8 = 0;
 pub const RESP_ERR: u8 = 1;
+pub const RESP_CONTACT: u8 = 3;
 pub const RESP_END_OF_CONTACTS: u8 = 4;
 pub const RESP_SELF_INFO: u8 = 5;
 pub const RESP_SENT: u8 = 6;
@@ -30,6 +33,7 @@ pub const RESP_CHANNEL_MSG_RECV: u8 = 8;
 pub const RESP_NO_MORE_MESSAGES: u8 = 10;
 pub const RESP_CONTACT_MSG_RECV_V3: u8 = 16;
 pub const RESP_CHANNEL_MSG_RECV_V3: u8 = 17;
+pub const RESP_CHANNEL_INFO: u8 = 18;
 pub const RESP_CHANNEL_DATA_RECV: u8 = 27;
 
 // Radio → app, unprompted. Always 0x80 and above, which is how they are told apart.

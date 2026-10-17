@@ -213,6 +213,22 @@ test("a key the radio takes is true, a firmware built without import false, an u
   await assert.rejects(client.importPrivateKey(key), (error: unknown) => error instanceof MeshCoreError && error.code === 6);
 });
 
+test("another app's read of a different channel slot is not this one's answer", async () => {
+  const radio = new FakeRadio();
+  const slot = (index: number, name: string) =>
+    new ByteWriter().u8(Resp.ChannelInfo).u8(index).fixedString(name, 32).zeros(16).toBytes();
+  // A radio open in two apps writes each answer to both: the other app read
+  // slot 0 a moment before this one asked for slot 1.
+  radio.script.set(Cmd.GetChannel, (frame) => [slot(0, "Public"), slot(frame[1]!, "#test")]);
+  const client = new MeshCoreClient(radio);
+  const strays: string[] = [];
+  client.onStray((frame) => strays.push(frame.kind));
+  const channel = await client.getChannel(1);
+  assert.equal(channel.index, 1);
+  assert.equal(channel.name, "#test");
+  assert.deepEqual(strays, ["channelInfo"]);
+});
+
 test("a frame nothing answers is done once written, and an answer that comes meanwhile is not its", async () => {
   const radio = new FakeRadio();
   // A late answer to some earlier command, arriving while the frame goes out.

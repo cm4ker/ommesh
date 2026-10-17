@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { MeshCoreClient, MeshCoreError, TimeoutError, TransportClosedError } from "./client.js";
 import { ByteWriter, fromHex } from "./protocol/bytes.js";
 import { Cmd, Push, Resp } from "./protocol/codes.js";
@@ -227,6 +228,91 @@ test("another app's read of a different channel slot is not this one's answer", 
   assert.equal(channel.index, 1);
   assert.equal(channel.name, "#test");
   assert.deepEqual(strays, ["channelInfo"]);
+});
+
+const START = (count: number) => new ByteWriter().u8(Resp.ContactsStart).u32(count).toBytes();
+const END = (lastMod: number) => new ByteWriter().u8(Resp.EndOfContacts).u32(lastMod).toBytes();
+
+function selfInfoFrame(key: Uint8Array): Uint8Array {
+  return new ByteWriter().u8(Resp.SelfInfo).u8(1).i8(22).i8(22).bytes(key).i32(0).i32(0).u8(0).u8(0).u8(0).u8(0).u32(869_161).u32(62_500).u8(7).u8(7).toBytes();
+}
+
+/** Answers each command code from a list, one entry per time it is asked. */
+function inTurn(...answers: Uint8Array[][]): (frame: Uint8Array) => Uint8Array[] {
+  let n = 0;
+  return () => answers[Math.min(n++, answers.length - 1)]!;
+}
+
+test("a contact list another app's read got in the way of is asked for again", async () => {
+  const radio = new FakeRadio();
+  // The other app's read went first, and the radio refused this one's in the middle of it:
+  // the list that came may be filtered by the other app's time.
+  radio.script.set(Cmd.GetContacts, inTurn([START(2), contactFrame("A"), new Uint8Array([Resp.Err, 4]), END(5)], [START(2), contactFrame("A"), contactFrame("B"), END(9)]));
+  const client = new MeshCoreClient(radio, { retryPauseMs: 1 });
+  const result = await client.getContacts();
+  assert.deepEqual(
+    result.contacts.map((c) => c.name),
+    ["A", "B"],
+  );
+  assert.equal(result.mostRecentLastMod, 9);
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.GetContacts).length, 2);
+});
+
+test("a contact list refused while another app's comes out waits for its end, then asks again", async () => {
+  const radio = new FakeRadio();
+  radio.script.set(Cmd.GetContacts, inTurn([new Uint8Array([Resp.Err, 4]), contactFrame("X"), END(5)], [START(1), contactFrame("A"), END(9)]));
+  const client = new MeshCoreClient(radio, { retryPauseMs: 1 });
+  const result = await client.getContacts();
+  assert.deepEqual(
+    result.contacts.map((c) => c.name),
+    ["A"],
+  );
+});
+
+test("another app starting on the radio cuts the contact list short, so it is asked for again", async () => {
+  const radio = new FakeRadio();
+  radio.script.set(Cmd.GetContacts, inTurn([START(2), contactFrame("A"), selfInfoFrame(KEY)], [START(2), contactFrame("A"), contactFrame("B"), END(9)]));
+  const client = new MeshCoreClient(radio, { retryPauseMs: 1 });
+  const result = await client.getContacts();
+  assert.equal(result.contacts.length, 2);
+});
+
+test("the end of another app's contact list, before this one's starts, is not this one's", async () => {
+  const radio = new FakeRadio();
+  radio.script.set(Cmd.GetContacts, () => [END(5), START(1), contactFrame("A"), END(9)]);
+  const client = new MeshCoreClient(radio);
+  const result = await client.getContacts();
+  assert.equal(result.contacts.length, 1);
+  assert.equal(result.mostRecentLastMod, 9);
+});
+
+test("while another app is heard, a direct text takes only the sent answer with its own tag", async () => {
+  const radio = new FakeRadio();
+  const self = new Uint8Array(32).fill(5);
+  radio.script.set(Cmd.AppStart, () => [selfInfoFrame(self)]);
+  const sent = (tag: number) => new ByteWriter().u8(Resp.Sent).u8(0).u32(tag).u32(2000).toBytes();
+  radio.script.set(Cmd.SendTxtMsg, (frame) => {
+    // The radio's tag (composeMsgPacket): SHA-256 of the timestamp, the attempt's low bits and the text, then its own key.
+    const own = createHash("sha256").update(frame.subarray(3, 7)).update(Uint8Array.of(frame[2]! & 3)).update(frame.subarray(13)).update(self).digest().readUInt32LE(0);
+    return [sent(0x0badf00d), sent(own)];
+  });
+  const client = new MeshCoreClient(radio);
+  await client.appStart("test");
+  // An answer to the other app's command.
+  radio.push(new ByteWriter().u8(Resp.CurrTime).u32(1).toBytes());
+  const result = await client.sendTextMessage(KEY.subarray(0, 6), "hi", { timestamp: 1_700_000_000 });
+  assert.notEqual(result.ackTag, 0x0badf00d);
+});
+
+test("through a phone's relay, a direct text takes the sent answer the relay hands it", async () => {
+  const radio = new FakeRadio();
+  radio.script.set(Cmd.AppStart, () => [selfInfoFrame(new Uint8Array(32).fill(5)), new Uint8Array([Push.Peer, 0, 1, 1])]);
+  radio.script.set(Cmd.SendTxtMsg, () => [new ByteWriter().u8(Resp.Sent).u8(0).u32(0x0badf00d).u32(2000).toBytes()]);
+  const client = new MeshCoreClient(radio, { timeoutMs: 50 });
+  await client.appStart("test");
+  radio.push(new ByteWriter().u8(Resp.CurrTime).u32(1).toBytes());
+  const result = await client.sendTextMessage(KEY.subarray(0, 6), "hi");
+  assert.equal(result.ackTag, 0x0badf00d);
 });
 
 test("a frame nothing answers is done once written, and an answer that comes meanwhile is not its", async () => {

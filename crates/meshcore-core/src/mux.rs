@@ -71,6 +71,8 @@ pub(crate) struct Mux {
     attached: [bool; Client::COUNT],
     queue: VecDeque<Command>,
     in_flight: Option<Command>,
+    /// Set once the contact list in flight has begun to come.
+    streaming: bool,
     /// Bumped per command sent, so a timer for an answered command does nothing.
     flight: i32,
     radio_ready: bool,
@@ -93,6 +95,7 @@ impl Mux {
             attached: [false; Client::COUNT],
             queue: VecDeque::new(),
             in_flight: None,
+            streaming: false,
             flight: 0,
             radio_ready: false,
             draining: false,
@@ -237,6 +240,7 @@ impl Mux {
         }
         self.queue.retain(|c| c.source != Source::Core);
         self.in_flight = None;
+        self.streaming = false;
         self.flight = self.flight.wrapping_add(1);
     }
 
@@ -271,14 +275,29 @@ impl Mux {
             }
             return;
         }
-        // Late, for a command given up on.
-        let Some(command) = self.in_flight.clone() else {
+        // Another app's answer: with nothing in flight, of a kind the command in flight is not
+        // answered with, about another slot or contact, or an error once a stream is under way;
+        // or a late one, for a command given up on. Every client sees it, as an app on a link of
+        // its own would: a client waiting for another app's contact list to end hears it end.
+        // The command in flight still waits for its own.
+        let own = self
+            .in_flight
+            .as_ref()
+            .is_some_and(|c| self.is_own_answer(&c.frame, frame));
+        let Some(command) = self.in_flight.clone().filter(|_| own) else {
+            for client in Client::ALL {
+                if self.radio_ready && self.is_attached(client) {
+                    self.tell(client, frame.to_vec());
+                }
+            }
+            // Another app starting on the radio stops the contact list it was reading out.
+            if self.streaming && code == RESP_SELF_INFO {
+                self.finish();
+            }
             return;
         };
-        // Another app's answer of the same kind, about another slot or contact: the command
-        // in flight still waits for its own.
-        if !is_own_answer(&command.frame, frame) {
-            return;
+        if code == RESP_CONTACTS_START {
+            self.streaming = true;
         }
         match command.source {
             Source::Queue => {
@@ -478,7 +497,25 @@ impl Mux {
         self.in_flight = Some(command);
     }
 
+    /// Whether an answer is the command's own. A radio open in two apps writes every answer to
+    /// both, so another app's may come while a client's command waits.
+    fn is_own_answer(&self, command: &[u8], answer: &[u8]) -> bool {
+        let code = answer[0];
+        // The radio answers a command once, or opens a stream with its first frame: an error
+        // after that is another app's command refused.
+        if code == RESP_ERR {
+            return !self.streaming;
+        }
+        // The end of another app's contact list, before this one's starts.
+        if command[0] == CMD_GET_CONTACTS && !self.streaming && code != RESP_CONTACTS_START {
+            return false;
+        }
+        // An answer this core does not know is still an answer, as the page takes it.
+        code > RESP_LAST || takes(command, answer)
+    }
+
     fn finish(&mut self) {
+        self.streaming = false;
         self.in_flight = None;
         self.flight = self.flight.wrapping_add(1);
         self.pump();
@@ -511,19 +548,82 @@ pub fn patience(frame: &[u8]) -> (i64, bool) {
     }
 }
 
-/// Whether `answer` is a command's last frame: an error always is, and so is any
-/// single answer; only the contact list comes as a stream.
-/// Whether an answer that names what it is about names what the command asked. A radio open
-/// in two apps writes every answer to both, and another app's read of slot 3 must not pass for
-/// a client's read of slot 1, as `accepts` in `client.ts` has it.
-pub fn is_own_answer(command: &[u8], answer: &[u8]) -> bool {
-    match (command[0], answer[0]) {
-        (CMD_GET_CHANNEL, RESP_CHANNEL_INFO) => command.get(1) == answer.get(1),
-        (CMD_GET_CONTACT_BY_KEY, RESP_CONTACT) => command.get(1..33) == answer.get(1..33),
-        _ => true,
-    }
+/// Whether a command takes an answer other than an error, as `expect` and `accepts` in
+/// `client.ts` have it: one of the kinds it is answered with, and where the answer names what
+/// it is about, what the command asked, so that another app's read of slot 3 does not pass for
+/// a client's read of slot 1. A command not listed takes any.
+pub fn takes(command: &[u8], answer: &[u8]) -> bool {
+    let code = answer[0];
+    let kinds: &[u8] = match command[0] {
+        CMD_GET_CHANNEL => return code == RESP_CHANNEL_INFO && command.get(1) == answer.get(1),
+        CMD_GET_CONTACT_BY_KEY => {
+            return code == RESP_CONTACT && command.get(1..33) == answer.get(1..33)
+        }
+        CMD_GET_STATS => return code == RESP_STATS && command.get(1) == answer.get(1),
+        CMD_APP_START => &[RESP_SELF_INFO],
+        CMD_DEVICE_QUERY => &[RESP_DEVICE_INFO],
+        CMD_GET_CONTACTS => &[RESP_CONTACTS_START, RESP_CONTACT, RESP_END_OF_CONTACTS],
+        CMD_SYNC_NEXT_MESSAGE => &[
+            RESP_CONTACT_MSG_RECV,
+            RESP_CHANNEL_MSG_RECV,
+            RESP_CONTACT_MSG_RECV_V3,
+            RESP_CHANNEL_MSG_RECV_V3,
+            RESP_CHANNEL_DATA_RECV,
+            RESP_NO_MORE_MESSAGES,
+        ],
+        CMD_GET_DEVICE_TIME => &[RESP_CURR_TIME],
+        CMD_EXPORT_CONTACT => &[RESP_EXPORT_CONTACT],
+        CMD_GET_BATT_AND_STORAGE => &[RESP_BATT_AND_STORAGE],
+        CMD_GET_TUNING_PARAMS => &[RESP_TUNING_PARAMS],
+        CMD_GET_CUSTOM_VARS => &[RESP_CUSTOM_VARS],
+        CMD_GET_ADVERT_PATH => &[RESP_ADVERT_PATH],
+        CMD_GET_AUTO_ADD_CONFIG => &[RESP_AUTO_ADD_CONFIG],
+        CMD_GET_ALLOWED_REPEAT_FREQ => &[RESP_ALLOWED_REPEAT_FREQ],
+        CMD_GET_DEFAULT_FLOOD_SCOPE => &[RESP_DEFAULT_FLOOD_SCOPE],
+        CMD_RUN_CLI_COMMAND => &[RESP_CLI_REPLY],
+        CMD_EXPORT_PRIVATE_KEY => &[RESP_PRIVATE_KEY, RESP_DISABLED],
+        CMD_IMPORT_PRIVATE_KEY => &[RESP_OK, RESP_DISABLED],
+        CMD_SEND_TXT_MSG
+        | CMD_SEND_LOGIN
+        | CMD_SEND_STATUS_REQ
+        | CMD_SEND_TELEMETRY_REQ
+        | CMD_SEND_BINARY_REQ
+        | CMD_SEND_ANON_REQ
+        | CMD_SEND_TRACE_PATH
+        | CMD_SEND_PATH_DISCOVERY_REQ => &[RESP_SENT],
+        CMD_SEND_CHANNEL_TXT_MSG
+        | CMD_SET_DEVICE_TIME
+        | CMD_SEND_SELF_ADVERT
+        | CMD_SET_ADVERT_NAME
+        | CMD_ADD_UPDATE_CONTACT
+        | CMD_SET_RADIO_PARAMS
+        | CMD_SET_RADIO_TX_POWER
+        | CMD_RESET_PATH
+        | CMD_SET_ADVERT_LAT_LON
+        | CMD_REMOVE_CONTACT
+        | CMD_SHARE_CONTACT
+        | CMD_IMPORT_CONTACT
+        | CMD_SET_TUNING_PARAMS
+        | CMD_SEND_RAW_DATA
+        | CMD_HAS_CONNECTION
+        | CMD_LOGOUT
+        | CMD_SET_CHANNEL
+        | CMD_SET_DEVICE_PIN
+        | CMD_SET_OTHER_PARAMS
+        | CMD_SET_CUSTOM_VAR
+        | CMD_SET_FLOOD_SCOPE_KEY
+        | CMD_SEND_CONTROL_DATA
+        | CMD_SET_AUTO_ADD_CONFIG
+        | CMD_SET_PATH_HASH_MODE
+        | CMD_SEND_CHANNEL_DATA
+        | CMD_SET_DEFAULT_FLOOD_SCOPE => &[RESP_OK],
+        _ => return true,
+    };
+    kinds.contains(&code)
 }
 
+/// Whether `answer` is a command's last frame: an error always is, and so is any
+/// single answer; only the contact list comes as a stream.
 pub fn is_complete(command: &[u8], answer: u8) -> bool {
     if answer == RESP_ERR {
         return true;
@@ -681,17 +781,97 @@ mod tests {
             .clear();
         rig.client_says(Page, &[CMD_GET_CHANNEL, 1])
             .client_says(Computer, &[5]);
-        // The app on the radio's other link read slot 0 just then.
-        rig.radio_says(&[RESP_CHANNEL_INFO, 0, b'P']);
-        assert!(rig.page.is_empty(), "slot 0 is not the page's answer");
+        // The app on the radio's other link read slot 0 just then, and the time.
+        rig.radio_says(&[RESP_CHANNEL_INFO, 0, b'P'])
+            .radio_says(&[RESP_CURR_TIME, 1, 2, 3, 4]);
         assert_eq!(rig.radio.len(), 1, "the page's read still waits");
         rig.radio_says(&[RESP_CHANNEL_INFO, 1, b'#']);
-        assert_eq!(rig.page, v(&[&[RESP_CHANNEL_INFO, 1, b'#']]));
+        assert_eq!(
+            rig.page,
+            v(&[
+                &[RESP_CHANNEL_INFO, 0, b'P'],
+                &[RESP_CURR_TIME, 1, 2, 3, 4],
+                &[RESP_CHANNEL_INFO, 1, b'#']
+            ]),
+            "the page sees the other app's answers, as it would on a link of its own"
+        );
+        assert_eq!(
+            rig.computer,
+            v(&[&[RESP_CHANNEL_INFO, 0, b'P'], &[RESP_CURR_TIME, 1, 2, 3, 4]]),
+            "and so does the computer, but not the page's own answer"
+        );
         assert_eq!(
             rig.radio,
             v(&[&[CMD_GET_CHANNEL, 1], &[5]]),
             "then the computer's command goes out"
         );
+    }
+
+    #[test]
+    fn another_apps_contact_list_does_not_end_a_clients() {
+        let mut rig = Rig::new();
+        rig.attach(Page)
+            .attach(Computer)
+            .up()
+            .radio_says(NO_MORE)
+            .clear();
+        rig.client_says(Page, &[CMD_GET_CONTACTS])
+            .client_says(Computer, &[5]);
+        // The end of the other app's list, read just before.
+        rig.radio_says(&[RESP_END_OF_CONTACTS, 1, 0, 0, 0]);
+        assert_eq!(rig.radio.len(), 1, "the page's list has not begun");
+        rig.radio_says(&[RESP_CONTACTS_START, 1, 0, 0, 0])
+            .radio_says(&[RESP_CONTACT, 7]);
+        // The other app asks for the list too, and the radio refuses it.
+        rig.radio_says(&[RESP_ERR, 4]);
+        assert_eq!(rig.radio.len(), 1, "the page's list goes on");
+        rig.radio_says(&[RESP_END_OF_CONTACTS, 9, 0, 0, 0]);
+        assert_eq!(rig.page.len(), 5, "every frame reaches the page");
+        assert_eq!(
+            rig.radio,
+            v(&[&[CMD_GET_CONTACTS], &[5]]),
+            "the list is done at its end"
+        );
+    }
+
+    #[test]
+    fn a_client_refused_the_contact_list_hears_the_other_apps_end() {
+        let mut rig = Rig::new();
+        rig.attach(Page).up().radio_says(NO_MORE).clear();
+        // The other app's list is coming out, so the radio refuses the page's.
+        rig.client_says(Page, &[CMD_GET_CONTACTS])
+            .radio_says(&[RESP_ERR, 4])
+            .radio_says(&[RESP_CONTACT, 7])
+            .radio_says(&[RESP_END_OF_CONTACTS, 9, 0, 0, 0]);
+        assert_eq!(
+            rig.page,
+            v(&[
+                &[RESP_ERR, 4],
+                &[RESP_CONTACT, 7],
+                &[RESP_END_OF_CONTACTS, 9, 0, 0, 0]
+            ]),
+            "with nothing in flight, the rest of the other app's list still reaches the page"
+        );
+    }
+
+    #[test]
+    fn another_app_starting_cuts_a_clients_contact_list_short() {
+        let mut rig = Rig::new();
+        rig.attach(Page)
+            .attach(Computer)
+            .up()
+            .radio_says(NO_MORE)
+            .clear();
+        rig.client_says(Page, &[CMD_GET_CONTACTS])
+            .client_says(Computer, &[5]);
+        rig.radio_says(&[RESP_CONTACTS_START, 1, 0, 0, 0])
+            .radio_says(&[RESP_SELF_INFO, 1]);
+        assert_eq!(
+            rig.radio,
+            v(&[&[CMD_GET_CONTACTS], &[5]]),
+            "nothing more of the list comes, so the next command goes out"
+        );
+        assert_eq!(rig.page.len(), 2);
     }
 
     #[test]

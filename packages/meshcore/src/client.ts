@@ -14,8 +14,8 @@
  * they go to the stray listeners with the answers nobody here asked for.
  */
 
-import { bytesEqual } from "./protocol/bytes.js";
-import { ErrCode, errorName } from "./protocol/codes.js";
+import { bytesEqual, concat } from "./protocol/bytes.js";
+import { ErrCode, errorName, TxtType } from "./protocol/codes.js";
 import * as cmd from "./protocol/commands.js";
 import {
   decodeFrame,
@@ -63,6 +63,17 @@ export class TimeoutError extends Error {
   }
 }
 
+/**
+ * Another app on the same radio asked at the same moment: the answer that came
+ * may have been that app's, or that app cut it short.
+ */
+export class OverlapError extends Error {
+  constructor(command: string) {
+    super(`${command}: another app on the radio asked at the same time`);
+    this.name = "OverlapError";
+  }
+}
+
 /** Answers `"more"` while a response is still arriving, `"done"` on its last frame. */
 type Completion = (frame: ResponseFrame, collected: ResponseFrame[]) => "more" | "done";
 
@@ -77,7 +88,15 @@ interface Pending {
    * a radio open in two apps writes every answer to both, and another app's
    * read of slot 3 must not pass for this one's read of slot 1.
    */
-  accepts: ((frame: ResponseFrame) => boolean) | null;
+  accepts: ((frame: ResponseFrame, collected: ResponseFrame[]) => boolean) | null;
+  /** Stray answers after which nothing more of a stream comes. */
+  cutBy: ReadonlySet<ResponseFrame["kind"]> | null;
+  /**
+   * Set when an error comes after the first frame. The firmware answers a
+   * command once, or opens a stream with its first frame, so the error is
+   * another app's command refused, and the stream may be that app's.
+   */
+  contested: boolean;
   timeoutMs: number;
   /** Set when the firmware answers nothing at all, as on reboot. */
   fireAndForget: boolean;
@@ -98,6 +117,8 @@ export interface ClientOptions {
   trace?: (direction: "in" | "out", bytes: Uint8Array, frame?: Frame) => void;
   /** The clock a stray answer is dated by, milliseconds. */
   now?: () => number;
+  /** The longest pause before a contact list read another app got in the way of is asked again. */
+  retryPauseMs?: number;
 }
 
 const single: Completion = () => "done";
@@ -122,6 +143,12 @@ const SYNC_ANSWERS: ResponseFrame["kind"][] = ["contactMessage", "channelMessage
  */
 const SAVING_TIMEOUT_MS = 30_000;
 
+/** How many times the contact list is asked for while another app keeps reading it too. */
+const CONTACT_READS = 4;
+
+/** How long after another app's last answer this one is taken to share the radio still. */
+const SHARED_MS = 5 * 60_000;
+
 export interface TextSendResult {
   /** Whether the packet went out as a flood (no known route) or direct. */
   flood: boolean;
@@ -145,8 +172,20 @@ export class MeshCoreClient {
   private readonly savingTimeoutMs: number;
   private readonly trace: ClientOptions["trace"];
   private readonly now: () => number;
+  private readonly retryPauseMs: number;
   private readonly openedAt: number;
   private timedOutAt = -Infinity;
+  /** When an answer nothing here asked for last came, which is mostly another app's. */
+  private strayAt = -Infinity;
+  /** The radio's own key, from its answer to `appStart`: a direct text's tag is worked out with it. */
+  private selfKey: Uint8Array | null = null;
+  /**
+   * Set once a phone's relay says this app reaches the radio through it. The
+   * relay hands each answer to one app by its kind and cannot work out a
+   * text's tag, so a `sent` it hands here is taken as it is: waiting for
+   * another would only wait out the timeout.
+   */
+  private relayed = false;
   private readonly unsubscribe: (() => void)[] = [];
 
   constructor(readonly transport: Transport, options: ClientOptions = {}) {
@@ -154,6 +193,7 @@ export class MeshCoreClient {
     this.savingTimeoutMs = options.savingTimeoutMs ?? Math.max(SAVING_TIMEOUT_MS, this.timeoutMs);
     this.trace = options.trace;
     this.now = options.now ?? Date.now;
+    this.retryPauseMs = options.retryPauseMs ?? 1000;
     this.openedAt = this.now();
     this.unsubscribe.push(transport.onFrame((bytes) => this.onBytes(bytes)));
     this.unsubscribe.push(transport.onClose((reason) => this.onClosed(reason)));
@@ -210,6 +250,7 @@ export class MeshCoreClient {
       return;
     }
     if (isPushFrame(frame)) {
+      if (frame.kind === "peerHello") this.relayed = true;
       for (const listener of this.pushListeners) {
         try {
           listener(frame);
@@ -220,6 +261,11 @@ export class MeshCoreClient {
       return;
     }
     const pending = this.inFlight;
+    if (pending && frame.kind === "err" && pending.collected.length > 0) {
+      pending.contested = true;
+      this.stray(frame);
+      return;
+    }
     // Nothing waits for it, or what waits takes another kind: the firmware
     // finishing an answer to a command that timed out, a frame from before
     // this client attached, or another app's answer. A frame nothing answers
@@ -227,9 +273,11 @@ export class MeshCoreClient {
     if (
       !pending ||
       pending.answerless ||
-      (frame.kind !== "err" && ((pending.expect && !pending.expect.has(frame.kind)) || (pending.accepts && !pending.accepts(frame))))
+      (frame.kind !== "err" &&
+        ((pending.expect && !pending.expect.has(frame.kind)) || (pending.accepts && !pending.accepts(frame, pending.collected))))
     ) {
       this.stray(frame);
+      if (pending && pending.collected.length > 0 && pending.cutBy?.has(frame.kind)) this.finish(new OverlapError(pending.name));
       return;
     }
     if (frame.kind === "err") {
@@ -252,8 +300,24 @@ export class MeshCoreClient {
     }
   }
 
+  /** Resolves when a stray answer of this kind comes, or after `ms`. */
+  private strayOf(kind: ResponseFrame["kind"], ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        off();
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      const off = this.onStray((frame) => {
+        if (frame.kind === kind) done();
+      });
+    });
+  }
+
   private stray(frame: ResponseFrame): void {
     const now = this.now();
+    this.strayAt = now;
     const late = now - this.timedOutAt < LATE_ANSWER_MS || now - this.openedAt < OPENING_MS;
     for (const listener of this.strayListeners) {
       try {
@@ -305,6 +369,7 @@ export class MeshCoreClient {
     if (!pending) return;
     this.inFlight = null;
     if (pending.timer) clearTimeout(pending.timer);
+    if (!error && pending.contested) error = new OverlapError(pending.name);
     if (error) pending.reject(error);
     else pending.resolve(pending.collected);
     this.pump();
@@ -337,7 +402,8 @@ export class MeshCoreClient {
     options: {
       complete?: Completion;
       expect?: ResponseFrame["kind"][];
-      accepts?: (frame: ResponseFrame) => boolean;
+      accepts?: (frame: ResponseFrame, collected: ResponseFrame[]) => boolean;
+      cutBy?: ResponseFrame["kind"][];
       timeoutMs?: number;
       fireAndForget?: boolean;
       answerless?: boolean;
@@ -353,6 +419,8 @@ export class MeshCoreClient {
         complete: options.complete ?? single,
         expect: options.expect ? new Set(options.expect) : null,
         accepts: options.accepts ?? null,
+        cutBy: options.cutBy ? new Set(options.cutBy) : null,
+        contested: false,
         timeoutMs: options.timeoutMs ?? this.timeoutMs,
         fireAndForget: options.fireAndForget ?? false,
         answerless: options.answerless ?? false,
@@ -398,18 +466,44 @@ export class MeshCoreClient {
     return this.one("deviceQuery", cmd.deviceQuery(), "deviceInfo").then((f) => f.info);
   }
 
-  appStart(appName: string): Promise<SelfInfo> {
-    return this.one("appStart", cmd.appStart(appName), "selfInfo").then((f) => f.info);
+  async appStart(appName: string): Promise<SelfInfo> {
+    const { info } = await this.one("appStart", cmd.appStart(appName), "selfInfo");
+    this.selfKey = info.publicKey;
+    return info;
   }
 
   /**
    * Streams the radio's contacts. With `since`, only those modified after it;
    * `mostRecentLastMod` is the cursor for the next call.
+   *
+   * Another app on the radio's other link may read them at the same moment.
+   * The radio reads out one list at a time and refuses the second, both apps
+   * hear both answers, and neither can tell whose list came, which matters when
+   * the two asked for changes since different times. So each asks again a
+   * random moment later, which takes two apps asking in step out of step.
    */
   async getContacts(since?: number): Promise<{ total: number; contacts: Contact[]; mostRecentLastMod: number }> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.readContacts(since);
+      } catch (error) {
+        const busy = error instanceof MeshCoreError && error.code === ErrCode.BadState;
+        if (!(busy || error instanceof OverlapError) || attempt >= CONTACT_READS) throw error;
+        // The other app's list is still coming out.
+        if (busy) await this.strayOf("endOfContacts", 20000);
+        await new Promise((resolve) => setTimeout(resolve, Math.random() * this.retryPauseMs));
+      }
+    }
+  }
+
+  private async readContacts(since?: number): Promise<{ total: number; contacts: Contact[]; mostRecentLastMod: number }> {
     const frames = await this.request("getContacts", cmd.getContacts(since), {
       complete: (frame) => (frame.kind === "endOfContacts" ? "done" : "more"),
       expect: ["contactsStart", "contact", "endOfContacts"],
+      // The end of another app's list, read just before, is not this one's.
+      accepts: (frame, collected) => collected.length > 0 || frame.kind === "contactsStart",
+      // Another app starting on the radio stops the list it is reading out.
+      cutBy: ["selfInfo"],
       // A hundred contacts over BLE, paced by the firmware's write-busy check.
       timeoutMs: 20000,
     });
@@ -429,14 +523,49 @@ export class MeshCoreClient {
     text: string,
     options: Parameters<typeof cmd.sendTextMessage>[2] = {},
   ): Promise<TextSendResult> {
-    const f = await this.one("sendTextMessage", cmd.sendTextMessage(recipientPrefix, text, options), "sent");
-    return { flood: f.flood, ackTag: f.ackTag, estTimeoutMs: f.estTimeoutMs };
+    const bytes = cmd.sendTextMessage(recipientPrefix, text, options);
+    return this.sent("sendTextMessage", bytes, await this.textTag(bytes));
   }
 
   /** Its `ackTag` is always zero: the answer is a `CliData` message, not an ack. */
   async sendCliCommand(recipientPrefix: Uint8Array, text: string, timestamp?: number): Promise<TextSendResult> {
-    const f = await this.one("sendCliCommand", cmd.sendCliCommand(recipientPrefix, text, timestamp), "sent");
+    return this.sent("sendCliCommand", cmd.sendCliCommand(recipientPrefix, text, timestamp), 0);
+  }
+
+  /**
+   * A send whose `sent` answer carries the tag given, when this side can work
+   * it out, so that another app's send at the same moment is not taken for it.
+   * The tag is checked only while another app's answers are heard: an app
+   * alone on the radio has no other `sent` to mix it up with.
+   */
+  private async sent(name: string, bytes: Uint8Array, tag: number | null): Promise<TextSendResult> {
+    const check = tag !== null && !this.relayed && this.now() - this.strayAt < SHARED_MS;
+    const [f] = await this.request(name, bytes, {
+      expect: ["sent"],
+      ...(check ? { accepts: (frame) => frame.kind === "sent" && frame.ackTag === tag } : {}),
+    });
+    if (f?.kind !== "sent") throw new Error(`${name}: expected sent, got ${f?.kind ?? "nothing"}`);
     return { flood: f.flood, ackTag: f.ackTag, estTimeoutMs: f.estTimeoutMs };
+  }
+
+  /**
+   * The tag the radio gives a direct text and its ack brings back
+   * (`composeMsgPacket` in BaseChatMesh.cpp): the first four bytes of SHA-256
+   * over the timestamp, the attempt's low two bits and the text up to any zero
+   * byte, then the radio's own key. A console line has none.
+   */
+  private async textTag(bytes: Uint8Array): Promise<number | null> {
+    const txtType = bytes[1];
+    if (txtType === TxtType.CliData || txtType === TxtType.CliCommand) return 0;
+    const subtle = globalThis.crypto?.subtle;
+    if (txtType !== TxtType.Plain || !this.selfKey || !subtle) return null;
+    const text = bytes.subarray(13);
+    const end = text.indexOf(0);
+    const digest = await subtle.digest(
+      "SHA-256",
+      new Uint8Array(concat(bytes.subarray(3, 7), Uint8Array.of(bytes[2]! & 3), end < 0 ? text : text.subarray(0, end), this.selfKey)),
+    );
+    return new DataView(digest).getUint32(0, true);
   }
 
   sendChannelTextMessage(
@@ -563,8 +692,10 @@ export class MeshCoreClient {
     return this.ok("setChannel", cmd.setChannel(index, name, secret));
   }
 
+  /** The radio tags a sign-in with the first four bytes of the key it goes to. */
   sendLogin(publicKey: Uint8Array, password: string): Promise<TextSendResult> {
-    return this.one("sendLogin", cmd.sendLogin(publicKey, password), "sent");
+    const tag = new DataView(publicKey.buffer, publicKey.byteOffset, 4).getUint32(0, true);
+    return this.sent("sendLogin", cmd.sendLogin(publicKey, password), tag);
   }
 
   logout(publicKey: Uint8Array): Promise<void> {
@@ -623,7 +754,7 @@ export class MeshCoreClient {
   }
 
   sendTracePath(tag: number, auth: number, flags: number, path: Uint8Array): Promise<TextSendResult> {
-    return this.one("sendTracePath", cmd.sendTracePath(tag, auth, flags, path), "sent");
+    return this.sent("sendTracePath", cmd.sendTracePath(tag, auth, flags, path), tag >>> 0);
   }
 
   sendPathDiscoveryReq(publicKey: Uint8Array): Promise<TextSendResult> {

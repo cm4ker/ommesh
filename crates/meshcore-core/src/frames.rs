@@ -174,6 +174,80 @@ pub fn split_channel_text(text: &str) -> (Option<&str>, &str) {
     }
 }
 
+/// Whether a channel message's text (past its sender) is MeshCore One's reaction, as
+/// `parseTextReaction` in `packages/meshcore/src/protocol/reaction.ts` reads one: `@[Name]👍`,
+/// or until MeshCore One 1.4.1 `👍@[Name]`, then the message's hash in eight letters of
+/// Crockford's base 32 on the next line. Lengths are counted as JavaScript counts them.
+pub fn is_text_reaction(text: &str) -> bool {
+    let Some((head, hash)) = text.split_once('\n') else {
+        return false;
+    };
+    // Any letter but U, which Crockford's alphabet leaves out; I, L and O stand for digits.
+    let hash_ok = hash.len() == 8
+        && hash
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() && !b.eq_ignore_ascii_case(&b'u'));
+    // The page tries the older form only when the newer does not fit.
+    let emoji = reaction_emoji(head).or_else(|| older_reaction_emoji(head));
+    hash_ok && emoji.is_some_and(looks_like_emoji)
+}
+
+fn js_length(text: &str) -> usize {
+    text.encode_utf16().count()
+}
+
+/// The emoji of `@[Name]👍`.
+fn reaction_emoji(head: &str) -> Option<&str> {
+    let (name, emoji) = head.strip_prefix("@[")?.split_once(']')?;
+    ((1..=32).contains(&js_length(name)) && (1..=32).contains(&js_length(emoji))).then_some(emoji)
+}
+
+/// The emoji of `👍@[Name]`: the shortest start that leaves a name with no `]` in it.
+fn older_reaction_emoji(head: &str) -> Option<&str> {
+    let inside = head.strip_suffix(']')?;
+    for (at, _) in head.match_indices("@[") {
+        let emoji = &head[..at];
+        let length = js_length(emoji);
+        if length > 32 {
+            return None;
+        }
+        if length == 0 {
+            continue;
+        }
+        let name = inside.get(at + 2..).unwrap_or("");
+        if (1..=32).contains(&js_length(name)) && !name.contains(']') {
+            return Some(emoji);
+        }
+    }
+    None
+}
+
+/// One emoji and nothing else, as `looksLikeEmoji` tests it: one grapheme that starts at
+/// U+2000 or above, or carries the emoji variation selector or a keycap. The page counts
+/// graphemes with `Intl.Segmenter`; here only what joins an emoji keeps it one, so a text in
+/// doubt counts as a message and is announced.
+fn looks_like_emoji(text: &str) -> bool {
+    let points: Vec<u32> = text.chars().map(u32::from).collect();
+    let Some((&first, rest)) = points.split_first() else {
+        return false;
+    };
+    let regional = |p: u32| (0x1f1e6..=0x1f1ff).contains(&p);
+    let one = if regional(first) {
+        // A flag is two regional letters.
+        rest.len() <= 1 && rest.iter().all(|&p| regional(p))
+    } else {
+        let mut joined = false;
+        rest.iter().all(|&p| {
+            // Variation selectors, the joiner and what it joins, a keycap, skin tones, tags.
+            let part = joined
+                || matches!(p, 0xfe0e | 0xfe0f | 0x200d | 0x20e3 | 0x1f3fb..=0x1f3ff | 0xe0020..=0xe007f);
+            joined = p == 0x200d;
+            part
+        })
+    };
+    one && (first >= 0x2000 || points.iter().any(|&p| p == 0xfe0f || p == 0x20e3))
+}
+
 /// An entry's head, up to the end of its key, which names what it is about; none for any other frame.
 pub fn entry_key(frame: &[u8]) -> Option<&[u8]> {
     match frame {
@@ -394,5 +468,30 @@ mod tests {
         );
         assert_eq!(split_channel_text(": hi"), (None, ": hi"));
         assert_eq!(split_channel_text("no sender"), (None, "no sender"));
+    }
+
+    #[test]
+    fn tells_a_text_reaction_as_the_page_does() {
+        assert!(is_text_reaction("@[Node-21]👍\n3fk8m2qa"));
+        assert!(is_text_reaction("👍@[Node-21]\n3FK8M2QA"), "the older form");
+        assert!(is_text_reaction("@[Wan8]❤️\n0o1il000"), "lookalike letters");
+        assert!(is_text_reaction("@[Wan8]👍🏽\n3fk8m2qa"), "a skin tone");
+        assert!(is_text_reaction("@[Wan8]👨‍👩‍👧\n3fk8m2qa"), "joined");
+        assert!(is_text_reaction("@[Wan8]🇷🇺\n3fk8m2qa"), "a flag");
+        assert!(is_text_reaction("@[Wan8]1️⃣\n3fk8m2qa"), "a keycap");
+        assert!(
+            is_text_reaction("👍@[A@[B]\n3fk8m2qa"),
+            "the shortest start"
+        );
+        assert!(!is_text_reaction("@[Wan8] ok\n3fk8m2qa"), "text");
+        assert!(!is_text_reaction("@[Wan8]👍👍\n3fk8m2qa"), "two emoji");
+        assert!(!is_text_reaction("@[Wan8]👍\n3fk8m2q"), "a short hash");
+        assert!(!is_text_reaction("@[Wan8]👍\n3fk8m2qu"), "U is no digit");
+        assert!(!is_text_reaction("@[Wan8]👍\n3fk8m2qa\n"), "more after it");
+        assert!(!is_text_reaction("@[Wan8]👍"), "no hash");
+        assert!(!is_text_reaction("@[Wan8] ты тут?"), "a mention");
+        assert!(!is_text_reaction("@[]👍\n3fk8m2qa"), "no name");
+        let long = format!("@[{}]👍\n3fk8m2qa", "x".repeat(33));
+        assert!(!is_text_reaction(&long), "a name too long");
     }
 }

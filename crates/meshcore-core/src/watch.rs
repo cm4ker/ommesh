@@ -26,7 +26,8 @@ use serde::Deserialize;
 
 use crate::codes::*;
 use crate::frames::{
-    hex, read_message, read_new_advert, split_channel_text, text_hash, ReadMark, Received,
+    hex, is_text_reaction, read_message, read_new_advert, split_channel_text, text_hash, ReadMark,
+    Received,
 };
 use crate::{Effect, Timer};
 
@@ -825,6 +826,10 @@ impl Watch {
                 ..
             } => {
                 let (sender, text) = split_channel_text(&text);
+                // MeshCore One sends a reaction as text; the page puts it on its message, not in the chat.
+                if sender.is_some() && is_text_reaction(text) {
+                    return None;
+                }
                 let channel = self.config.channels.iter().find(|c| c.index == index);
                 // A slot the page does not list is empty: the message came without a key, and the
                 // page puts it in its one chat for those (`KEYLESS_CONVERSATION` in session.ts).
@@ -1447,6 +1452,14 @@ mod tests {
         rig.arrives(channel(1, "Wan8: @[Node-21] ты тут?"))
             .grace_ends();
         assert_eq!(rig.titles(), vec!["Wan8 mentioned you in #test"]);
+    }
+
+    #[test]
+    fn a_reaction_sent_as_text_is_no_notice() {
+        let mut rig = Rig::new(config());
+        rig.arrives(channel(1, "Wan8: @[Node-21]👍\n3fk8m2qa"))
+            .grace_ends();
+        assert!(rig.posted.is_empty(), "{:?}", rig.titles());
     }
 
     #[test]

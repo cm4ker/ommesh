@@ -10,6 +10,10 @@
 ### Chats
 - Tap the start of a reply to go to the message it answers: the chat scrolls to it and it flashes. This works for replies from Ommesh and from MCO Advanced, MeshCore One and MeshTrax, which quote the start of the message. A reply that only names whom it answers, as the official app sends, goes to that person's latest message before it, and the arrows below step through their other messages. Quotes in Ommesh's replies now end in three dots instead of "…", as MCO Advanced writes them, so that app finds the message too. When the person wrote other messages starting the same way, the quote runs a little longer to tell them apart.
 
+### Settings
+- A problem can be reported from the app with no GitHub account: Settings › About › Report a problem, or Report on the Log page. Say what happened, and the app adds its version, the radio's firmware and settings, what the radio says of its queue and receiver, and the latest events; What goes shows all of it first. It becomes an open issue on GitHub, and the page links to it. The radio's name, key, position and PIN never go, and neither do messages. Copy on the Log page puts the same report on the clipboard.
+- The Log keeps its latest 400 lines over a restart, so a problem noticed after the app started again can still be read. When the radio refuses to send for want of room, the Log notes what the radio says of itself at that moment: how many packets wait in its queue, whether it waited long for a quiet air, its noise floor and how busy the air has been.
+
 ### Fixes
 - On a phone, the keyboard comes up over the tabs at the bottom, as in the phone's own apps, and the list you search reaches down to the keyboard. On an iPhone the tabs used to ride up on top of the keyboard and take a row of the list.
 - A phone no longer loses messages when another app is on the same radio, such as a PC over Wi-Fi. The radio gives each message out once, and one the other app took, or one that came after the phone had stopped waiting for it, could show there and never in the phone's chats. Now it reaches the phone too.

@@ -254,6 +254,23 @@ impl Mux {
             }
             return;
         }
+        // Only the mux's own read of the queue is answered with a message or its end: a
+        // client's "next message" never reaches the radio. Any other is another app's read
+        // (a radio on Bluetooth and Wi-Fi at once answers both links), or a late answer to
+        // a read given up on. The radio gives each message out once, so it is kept here or
+        // lost, and the queue is read on in case it holds more; the command in flight
+        // still waits for its own answer.
+        let reading = self
+            .in_flight
+            .as_ref()
+            .is_some_and(|c| c.source == Source::Queue);
+        if !reading && (is_message(code) || code == RESP_NO_MORE_MESSAGES) {
+            if is_message(code) {
+                self.keep(frame);
+                self.drain();
+            }
+            return;
+        }
         // Late, for a command given up on.
         let Some(command) = self.in_flight.clone() else {
             return;
@@ -753,6 +770,56 @@ mod tests {
         );
         rig.radio_says(NO_MORE);
         assert_eq!(rig.radio.len(), 2, "and then stops");
+    }
+
+    #[test]
+    fn a_message_another_apps_read_brings_is_kept() {
+        let mut rig = Rig::new();
+        rig.attach(Page).up().radio_says(NO_MORE).clear();
+        rig.radio_says(MESSAGE);
+        assert_eq!(
+            rig.mux.inbox(Page).to_vec(),
+            v(&[MESSAGE]),
+            "kept, though nothing here asked"
+        );
+        assert_eq!(rig.page, v(&[&[0x83]]), "the page is told a message waits");
+        assert_eq!(rig.radio, v(&[SYNC]), "and the queue is read on");
+    }
+
+    #[test]
+    fn a_message_while_a_clients_command_waits_is_not_its_answer() {
+        let mut rig = Rig::new();
+        rig.attach(Page).up().radio_says(NO_MORE).clear();
+        rig.client_says(Page, &[22, 3])
+            .radio_says(MESSAGE)
+            .radio_says(NO_MORE);
+        assert_eq!(
+            rig.page,
+            v(&[&[0x83]]),
+            "neither the message nor the end of a read goes to the page as its answer"
+        );
+        assert_eq!(
+            rig.radio,
+            v(&[&[22, 3]]),
+            "the command still waits for its own"
+        );
+        rig.radio_says(&[13, 9]);
+        assert_eq!(rig.page, v(&[&[0x83], &[13, 9]]), "which goes to the page");
+        assert_eq!(rig.radio, v(&[&[22, 3], SYNC]), "then the queue is read on");
+        assert_eq!(rig.mux.inbox(Page).to_vec(), v(&[MESSAGE]));
+    }
+
+    #[test]
+    fn a_late_answer_to_a_read_given_up_on_is_kept() {
+        let mut rig = Rig::new();
+        rig.attach(Page).up().timeout().clear();
+        rig.radio_says(MESSAGE);
+        assert_eq!(
+            rig.mux.inbox(Page).to_vec(),
+            v(&[MESSAGE]),
+            "the message is not lost with the wait"
+        );
+        assert_eq!(rig.radio, v(&[SYNC]), "and the queue is read on");
     }
 
     #[test]

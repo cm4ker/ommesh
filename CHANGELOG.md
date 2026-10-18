@@ -10,6 +10,9 @@
 ### Chats
 - Tap the start of a reply to go to the message it answers: the chat scrolls to it and it flashes. This works for replies from Ommesh and from MCO Advanced, MeshCore One and MeshTrax, which quote the start of the message. A reply that only names whom it answers, as the official app sends, goes to that person's latest message before it, and the arrows below step through their other messages. Quotes in Ommesh's replies now end in three dots instead of "…", as MCO Advanced writes them, so that app finds the message too. When the person wrote other messages starting the same way, the quote runs a little longer to tell them apart.
 
+### Mesh and the map
+- While a route check is on its way, a spark runs along it on the map, out to the far end and back, so you can see the trace travel. A signal mark by the "Route to …" title shows the radio is on the air, and the attempt dots stand on their own line under it. The wait for a whole-network question is now a ring that empties with the seconds left in its middle, in place of a bar.
+
 ### Settings
 - A problem can be reported from the app with no GitHub account: Settings › About › Report a problem, or Report on the Log page. Say what happened, and the app adds its version, the radio's firmware and settings, what the radio says of its queue and receiver, and the latest events; What goes shows all of it first. It becomes an open issue on GitHub, and the page links to it. The radio's name, key, position and PIN never go, and neither do messages. Copy on the Log page puts the same report on the clipboard.
 - The Log keeps its latest 400 lines over a restart, so a problem noticed after the app started again can still be read. When the radio refuses to send for want of room, the Log notes what the radio says of itself at that moment: how many packets wait in its queue, whether it waited long for a quiet air, its noise floor and how busy the air has been.

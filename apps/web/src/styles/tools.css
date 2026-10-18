@@ -289,6 +289,11 @@
   padding: 0 5px;
   color: var(--text-faint);
 }
+/* The leg a check found broken. */
+.tool-line.chain .sep.bad {
+  color: var(--danger);
+  font-weight: 700;
+}
 /* A name in the chain wraps as a whole, with the › before it. */
 .tool-line.chain > span {
   white-space: nowrap;

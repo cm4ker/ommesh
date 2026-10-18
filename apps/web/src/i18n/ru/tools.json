@@ -154,6 +154,7 @@
   "route.hintNoPosition": "{name} не делится местоположением. Чтобы задать маршрут, нажмите «+» или репитеры на карте.",
   "route.offMap": "Нет на карте",
   "route.addRelay": "Добавить ретранслятор",
+  "route.breaksHere": "Здесь обрыв",
   "route.hop.replace": "Заменить",
   "route.hop.before": "Добавить перед ним",
   "route.hop.remove": "Убрать из маршрута",

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { ContactRecord, SessionState } from "@meshnet/meshcore";
-import { directOverlay, neighboursOverlay, routeOverlay } from "./mapOverlay.js";
+import { brokenLeg, directOverlay, neighboursOverlay, routeOverlay } from "./mapOverlay.js";
 import type { Ping } from "./ping.js";
 import type { NeighboursTool } from "./meshTool.js";
 import { NO_FILTER, type NeighbourFilter } from "./neighbours.js";
@@ -67,4 +67,21 @@ test("a check with no relays draws one line, coloured by how it sounded", () => 
   assert.deepEqual(line(direct([{ ok: true, rttMs: 300, legs: [[-3, -4]] }])), [["self", TOWER, "fair", null]]);
   // Nothing came back: the line is marked where it breaks.
   assert.deepEqual(line(direct([{ ok: false, rttMs: null, legs: [] }])), [["self", TOWER, "fail", "breaks"]]);
+});
+
+// A route to a repeater held through Tower and KZN-7 that went silent after Tower: the leg ends at KZN-7.
+const brokeAt = (at: number, chain: string[], found = false): Ping => ({ ...direct([{ ok: false, rttMs: null, legs: [] }]), key: ROOM, chain, broken: { chain, at }, search: found ? { total: 4, tries: [true], tried: [], trying: null, back: null, found: true, done: true } : null });
+
+test("the chain marks the leg it broke on, only while the chain shown is the one that broke", () => {
+  const held = [TOWER, KZN];
+  assert.equal(brokenLeg(null, held), null);
+  assert.equal(brokenLeg(direct([]), held), null);
+  assert.equal(brokenLeg(brokeAt(1, ["a3", "e4", "94"]), held), 1);
+  // The last leg, into the repeater itself.
+  assert.equal(brokenLeg(brokeAt(2, ["a3", "e4", "94"]), held), 2);
+  // A chat contact passes no trace on: the chain ends at its last relay.
+  assert.equal(brokenLeg({ ...brokeAt(1, ["a3", "e4"]), targetInChain: false }, held), 1);
+  // A way round was found and shows instead, or the chain shown is another one.
+  assert.equal(brokenLeg(brokeAt(1, ["a3", "e4", "94"], true), held), null);
+  assert.equal(brokenLeg(brokeAt(1, ["a3", "e4", "94"]), [TOWER]), null);
 });

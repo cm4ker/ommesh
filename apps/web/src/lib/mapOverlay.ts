@@ -134,6 +134,18 @@ export function sameRelays(hashes: string[], relays: string[]): boolean {
   return hashes.length === relays.length && hashes.every((h, i) => relays[i]!.startsWith(h) || h.startsWith(relays[i]!));
 }
 
+/**
+ * The leg of a shown chain where a check found the way broken: leg i ends at
+ * relay i, and leg `relays.length` at the node itself. Null when nothing broke,
+ * or when the chain shown is not the one that broke, as when a way round was
+ * found and is shown in its place.
+ */
+export function brokenLeg(ping: Ping | null, relays: string[]): number | null {
+  if (!ping?.broken || ping.search?.found) return null;
+  const { chain, at } = ping.broken;
+  return sameRelays(ping.targetInChain ? chain.slice(0, -1) : chain, relays) ? at : null;
+}
+
 /** A relay of a route by name: the contact it is, the one repeater its hash names other than the route's end, or the hash. */
 function hopName(hop: string, contacts: Record<string, ContactRecord>, end: string): string {
   const c = contacts[hop];

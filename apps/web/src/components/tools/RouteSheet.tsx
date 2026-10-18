@@ -23,7 +23,7 @@ import { legId, useLegVerdicts } from "../../lib/legVerdicts.js";
 import { buildGraph, SELF } from "../../lib/linkGraph.js";
 import { linkBook } from "../../lib/links.js";
 import { formatSnr, quality, qualityWord, type LinkRadio } from "../../lib/los.js";
-import { contactEnd, defaultHeight, relayOf, sameRelays, selfEnd } from "../../lib/mapOverlay.js";
+import { brokenLeg, contactEnd, defaultHeight, relayOf, sameRelays, selfEnd } from "../../lib/mapOverlay.js";
 import { setMeshTool, type LosEnd, type RouteTool } from "../../lib/meshTool.js";
 import { heardAt } from "../../lib/nodes.js";
 import { keepLooking, measuredLegs, ping, ROUNDS, settlePing, stopPing, undoFound, usePing, weakestLeg, type Ping } from "../../lib/ping.js";
@@ -200,6 +200,16 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
     const c = nodeOf(k);
     return c ? c.name || c.prefix : k;
   };
+  // Where the chain broke, a cross stands in for the › before the hop the dead leg leads to.
+  const brokeAt = brokenLeg(shownPing, hops);
+  const sep = (leg: number) =>
+    leg === brokeAt ? (
+      <span className="sep bad" role="img" aria-label={t("tools.route.breaksHere")} title={t("tools.route.breaksHere")}>
+        ✕
+      </span>
+    ) : (
+      <span className="sep">›</span>
+    );
   const change = (next: string[]) => editRoute(key, next);
   const hopMenu = (i: number) =>
     showMenu(
@@ -298,7 +308,7 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
             const c = nodeOf(k);
             return (
               <span key={`${i}:${k}`}>
-                <span className="sep">›</span>
+                {sep(i)}
                 <button type="button" className="chain-hop" disabled={running} onClick={() => hopMenu(i)}>
                   {hopName(k)}
                   {c && contactEnd(c) ? null : <i className="chain-off" title={t("tools.route.offMap")} aria-label={t("tools.route.offMap")} />}
@@ -310,7 +320,7 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
           <button type="button" className="chain-add" disabled={running} aria-label={t("tools.route.addRelay")} title={t("tools.route.addRelay")} onClick={() => setPicking({ mode: "before", index: hops.length })}>
             <PlusIcon size={14} />
           </button>
-          <span className="sep">›</span>
+          {sep(hops.length)}
           <span className="muted">{name}</span>
         </p>
       )}

@@ -154,6 +154,7 @@
   "route.hintNoPosition": "{name} shares no position. To set a route, tap + or repeaters on the map.",
   "route.offMap": "Not on the map",
   "route.addRelay": "Add a repeater",
+  "route.breaksHere": "Breaks here",
   "route.hop.replace": "Replace",
   "route.hop.before": "Add one before it",
   "route.hop.remove": "Take out of the route",

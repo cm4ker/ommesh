@@ -12,6 +12,7 @@
 
 ### Mesh and the map
 - While a route check is on its way, a spark runs along it on the map, out to the far end and back, so you can see the trace travel. A signal mark by the "Route to …" title shows the radio is on the air, and the attempt dots stand on their own line under it. The wait for a whole-network question is now a ring that empties with the seconds left in its middle, in place of a bar.
+- When a route check finds where the way breaks, a red cross takes the place of the arrow on that leg of the chain, so the break shows in the sheet and not only on the map.
 
 ### Settings
 - A problem can be reported from the app with no GitHub account: Settings › About › Report a problem, or Report on the Log page. Say what happened, and the app adds its version, the radio's firmware and settings, what the radio says of its queue and receiver, and the latest events; What goes shows all of it first. It becomes an open issue on GitHub, and the page links to it. The radio's name, key, position and PIN never go, and neither do messages. Copy on the Log page puts the same report on the clipboard.

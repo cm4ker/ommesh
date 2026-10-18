@@ -929,6 +929,10 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
   const tool = useMeshTool();
   const focus = nav.meshFocus && state.contacts[nav.meshFocus] ? nav.meshFocus : null;
   const listed = !group && !tool;
+  // A node's profile in its own sheet over the map (Workspace): the list's sheet goes down out of sight meanwhile,
+  // so there is one sheet at a time, and comes back at half, with the node still ringed on the map.
+  const over = nav.stacks.mesh.length === 1 ? nav.stacks.mesh[0]! : null;
+  const profileOver = over?.kind === "profile";
   const setDetent = (d: Detent) => {
     lastDetent = d;
     setDetentState(d);
@@ -937,7 +941,7 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
   // Back puts away what covers the map: the list of nodes at one spot, or the list pulled all the way up.
   const mapped = Object.values(state.contacts).some((c) => hasPosition(c.lat, c.lon));
   useBackLayer(!hidden && group !== null, () => setGroup(null));
-  useBackLayer(!hidden && listed && mapped && detent === "full", () => setDetent("half"));
+  useBackLayer(!hidden && !profileOver && listed && mapped && detent === "full", () => setDetent("half"));
   useBackLayer(!hidden && tool !== null, closeTool);
   // Nodes picked to be removed: Back lets them go, and so does leaving the list for a profile, a tool or another tab.
   const picking = useNodePick() !== null && listed;
@@ -1019,9 +1023,7 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
   const peek = Math.max(0, Math.min(middle - 48, space.peek || 104));
   const half = !listed && space.card ? Math.max(peek + 48, Math.min(middle, space.card)) : middle;
   const heights: Record<Detent, number> = { peek, half, full };
-  // A node's profile in its sheet over the map covers more of it than the list does.
-  const over = nav.stacks.mesh.length === 1 ? nav.stacks.mesh[0]! : null;
-  const profileOver = over?.kind === "profile";
+  if (profileOver && detent === "full") setDetent("half");
   const profileShow = useProfileShow(state, over?.kind === "profile" ? over.key : null);
 
   // What the handlers read, so the listeners on the list are set once.
@@ -1173,12 +1175,12 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
             if (detent !== "half") setDetent("half");
           }}
           coverTop={space.top}
-          coverBottom={profileOver ? Math.max(heights[detent], pullSheetCover(box.current?.getBoundingClientRect().bottom ?? window.innerHeight)) : heights[detent]}
+          coverBottom={profileOver ? pullSheetCover(box.current?.getBoundingClientRect().bottom ?? window.innerHeight) : heights[detent]}
           show={profileShow}
           active={!hidden}
         />
       ) : null}
-      <div ref={sheet} className="mesh-sheet" style={{ height: full, transform: `translate3d(0, ${full - heights[detent]}px, 0)` }}>
+      <div ref={sheet} className="mesh-sheet" style={{ height: full, transform: `translate3d(0, ${profileOver ? full + 48 : full - heights[detent]}px, 0)` }} {...(profileOver ? { inert: true, "aria-hidden": true } : {})}>
         <div
           ref={head}
           className="mesh-sheet-head"

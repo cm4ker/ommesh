@@ -9,6 +9,9 @@ const FLICK = 0.4;
 const CLOSE_PULL = 110;
 /** Pulled up past its top, it gives this much of the pull and no more. */
 const OVERPULL = 0.2;
+/** A touch this close to the left edge swipes the sheet away sideways, back to where it was opened from, as on iOS. */
+const EDGE = 24;
+const SWIPE_MS = 180;
 
 export type Detent = "half" | "full";
 
@@ -39,6 +42,7 @@ export function PullSheet({ open, onClose, children, label, seeThrough = false, 
   const box = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const scrim = useRef<HTMLDivElement>(null);
+  const edge = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
 
@@ -281,11 +285,86 @@ export function PullSheet({ open, onClose, children, label, seeThrough = false, 
     if (open) box.current?.focus({ preventScroll: true });
   }, [open]);
 
+  // A swipe from the left edge takes the sheet, and the map above it, off to the right, uncovering what it was
+  // opened from; let go past a third of the way, or flung, it closes. It is heard before what the sheet holds,
+  // which then never sees a touch that began at the edge, so the two never pull at once.
+  useEffect(() => {
+    const outer = layer.current;
+    const targets = [box.current, edge.current].filter((el) => el !== null);
+    if (!outer || !open) return;
+    // Opened again while still sliding away, it comes back into place.
+    outer.style.transition = outer.style.transform = "";
+    let start: { x: number; y: number } | null = null;
+    let active = false;
+    let trail: { x: number; t: number }[] = [];
+    const down = (e: TouchEvent) => {
+      const t = e.touches[0];
+      start = t && e.touches.length === 1 && t.clientX < EDGE ? { x: t.clientX, y: t.clientY } : null;
+      active = false;
+      if (start) e.stopPropagation();
+    };
+    const move = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!start || !t) return;
+      e.stopPropagation();
+      const dx = t.clientX - start.x;
+      const dy = t.clientY - start.y;
+      if (!active) {
+        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+        if (dx < 0 || Math.abs(dy) > Math.abs(dx)) {
+          start = null;
+          return;
+        }
+        active = true;
+        trail = [];
+        outer.style.transition = "none";
+      }
+      e.preventDefault();
+      const now = performance.now();
+      trail.push({ x: t.clientX, t: now });
+      while (trail.length > 2 && now - trail[0]!.t > 100) trail.shift();
+      outer.style.transform = `translate3d(${Math.max(0, dx)}px, 0, 0)`;
+    };
+    const up = (e: TouchEvent) => {
+      const was = start;
+      start = null;
+      if (!was || !active) return;
+      e.stopPropagation();
+      active = false;
+      const t = e.changedTouches[0];
+      const dx = t ? t.clientX - was.x : 0;
+      const first = trail[0];
+      const last = trail.at(-1);
+      const v = first && last && performance.now() - last.t < 80 && last.t > first.t ? (last.x - first.x) / (last.t - first.t) : 0;
+      const width = outer.clientWidth || 1;
+      const go = dx > width / 3 || (dx > 24 && v > 0.5);
+      outer.style.transition = reducedMotion() ? "none" : `transform ${SWIPE_MS}ms ease-out`;
+      outer.style.transform = go ? `translate3d(${width}px, 0, 0)` : "";
+      if (go) setTimeout(() => close.current(), reducedMotion() ? 0 : SWIPE_MS);
+    };
+    for (const el of targets) {
+      el.addEventListener("touchstart", down, { passive: true, capture: true });
+      el.addEventListener("touchmove", move, { passive: false, capture: true });
+      el.addEventListener("touchend", up, { capture: true });
+      el.addEventListener("touchcancel", up, { capture: true });
+    }
+    return () => {
+      for (const el of targets) {
+        el.removeEventListener("touchstart", down, { capture: true });
+        el.removeEventListener("touchmove", move, { capture: true });
+        el.removeEventListener("touchend", up, { capture: true });
+        el.removeEventListener("touchcancel", up, { capture: true });
+      }
+    };
+  }, [open, present]);
+
   if (!present) return null;
 
   return createPortal(
     <div ref={layer} className={["pull-layer", shown.seeThrough ? "see-through" : "", leaving ? "leaving" : ""].join(" ")}>
       {shown.backdrop ? <div className="pull-backdrop">{shown.backdrop}</div> : shown.seeThrough ? null : <div ref={scrim} className="pull-scrim" onClick={() => open && close.current()} />}
+      {/* Where a swipe back starts above the sheet, rather than in the map, which would pan. */}
+      <div ref={edge} className="pull-edge" aria-hidden="true" />
       <div
         ref={box}
         tabIndex={-1}
@@ -300,7 +379,8 @@ export function PullSheet({ open, onClose, children, label, seeThrough = false, 
         <div
           className="pull-grab"
           onPointerDown={(e) => {
-            if (!open || e.button !== 0) return;
+            // A finger at the left edge swipes the sheet away instead.
+            if (!open || e.button !== 0 || (e.pointerType === "touch" && e.clientX < EDGE)) return;
             e.currentTarget.setPointerCapture(e.pointerId);
             motion.begin(e.clientY);
           }}

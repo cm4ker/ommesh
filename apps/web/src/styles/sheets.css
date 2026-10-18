@@ -543,6 +543,15 @@
 .pull-layer.leaving .pull-backdrop {
   opacity: 0;
 }
+/* The strip a swipe back starts on, over the map or the dimming and under the sheet, which hears its own edge. */
+.pull-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 24px;
+  pointer-events: auto;
+}
 .pull-scrim {
   position: absolute;
   inset: 0;

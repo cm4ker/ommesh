@@ -5,7 +5,7 @@ import { Cmd, ContactFlag, ErrCode, Push, Resp, TxtType } from "./protocol/codes
 import { groupDataPayload, groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
 import { crockford, decodeReaction, encodeReaction, messageHash, REACTION_DATA_TYPE } from "./protocol/reaction.js";
 import { PEER_ENTRY, PEER_HELLO, peerEntry, readMarkOf, readMarkValue, textHash } from "./protocol/peer.js";
-import { canControl, channelConversation, PushRefusedError, CLOCK_RESET_TIME, ClockAheadError, contactConversation, isTrusted, KEYLESS_CONVERSATION, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
+import { canControl, channelConversation, PushRefusedError, CLOCK_RESET_TIME, ClockAheadError, contactConversation, isTrusted, KEYLESS_CONVERSATION, MeshSession, mergeHistory, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type ChannelRecord, type ContactRecord, type MessageRecord, type PersistedState, type StatusSample } from "./session.js";
 import { BaseTransport } from "./transport.js";
 import { TimeoutError, TransportClosedError } from "./client.js";
 
@@ -1009,10 +1009,91 @@ test("a stored history that cannot be read is not written over", async () => {
   await second.disconnect();
   assert.deepEqual(storage.saved.get(key)!.messages.map((m) => m.text), ["keep me"]);
 
-  // Readable again, it is read again rather than taken from what the session held meanwhile.
+  // Readable again, it is read again, and what came meanwhile is put into it: the radio gave it out once.
   storage.unreadable = false;
   await second.connect(new ScriptedRadio());
-  assert.deepEqual(second.getState().messages.map((m) => m.text), ["keep me"]);
+  assert.deepEqual(second.getState().messages.map((m) => m.text), ["keep me", "new"]);
+  await second.disconnect();
+  assert.deepEqual(storage.saved.get(key)!.messages.map((m) => m.text), ["keep me", "new"]);
+});
+
+test("a history that could not be read is read again a moment later, with what came meanwhile", async () => {
+  class UnreadableStorage extends MemoryStorage {
+    unreadable = false;
+    override async load(key: string): Promise<PersistedState | null> {
+      if (this.unreadable) throw new Error("Connection to Indexed Database server lost");
+      return super.load(key);
+    }
+  }
+  const storage = new UnreadableStorage();
+  const first = new MeshSession({ storage, now: () => 1_700_000_000_000 });
+  const radio = new ScriptedRadio();
+  radio.queue.push(dmFrame(BOB, "keep me"));
+  await first.connect(radio);
+  await first.disconnect();
+  const key = first.getState().self!.key;
+  const bob = contactConversation(bobKey());
+  storage.saved.get(key)!.unread = { [bob]: 1 };
+
+  storage.unreadable = true;
+  const second = new MeshSession({ storage, now: () => 1_700_000_000_000 });
+  const found: string[] = [];
+  second.onDiscovered((c) => found.push(c.name));
+  const again = new ScriptedRadio();
+  again.queue.push(dmFrame(BOB, "new"));
+  await second.connect(again);
+  assert.deepEqual(second.getState().messages.map((m) => m.text), ["new"]);
+  // Asked again too soon, it still cannot be read, and nothing is lost.
+  await second.readHistoryAgain();
+  assert.deepEqual(second.getState().messages.map((m) => m.text), ["new"]);
+
+  // The first try again comes by itself.
+  storage.unreadable = false;
+  await tick(2_100);
+  assert.deepEqual(second.getState().messages.map((m) => m.text), ["keep me", "new"]);
+  assert.equal(second.getState().unread[bob], 2);
+  assert.equal(second.getState().status, "ready");
+  assert.ok(second.getState().log.some((e) => e.text.startsWith("history read on try")));
+  // Saving goes on, with both.
+  await second.disconnect();
+  assert.deepEqual(storage.saved.get(key)!.messages.map((m) => m.text), ["keep me", "new"]);
+  assert.deepEqual(found, []);
+});
+
+test("a stored history and what came in while it could not be read are put together", () => {
+  const contact = (name: string, heard: number | null, pathSince: number | null): ContactRecord => ({
+    key: bobKey(), prefix: bobKey().slice(0, 12), type: 1, flags: 0, outPathLen: 1, outPath: "ce", name, lastAdvert: 10, lat: 0, lon: 0, lastMod: 10, lastHeardAt: heard, pathSince,
+  });
+  const message = (id: string, text: string, receivedAt: number): MessageRecord =>
+    ({ id, conversation: "ch:0", direction: "in", text, timestamp: receivedAt / 1000, receivedAt, senderPrefix: null, sender: "Ann" }) as MessageRecord;
+  const stored: PersistedState = {
+    contacts: { [bobKey()]: contact("Bob", 5_000, 1_000) },
+    contactsCursor: 10,
+    removed: { ["e0".repeat(32)]: { contact: { ...contact("Eve", null, null), key: "e0".repeat(32) }, at: 1, by: "radio" } },
+    channels: [{ index: 0, name: "Public", secret: "00" } as ChannelRecord],
+    messages: [message("a", "old", 1_000), message("b", "both", 3_000)],
+    unread: { "ch:0": 2 },
+    statusHistory: { [bobKey()]: [{ at: 1 } as unknown as StatusSample] },
+  };
+  const later: PersistedState = {
+    contacts: { [bobKey()]: contact("Bob 2", null, 9_000), ["e0".repeat(32)]: { ...contact("Eve", null, null), key: "e0".repeat(32) } },
+    contactsCursor: 12,
+    removed: {},
+    channels: [],
+    messages: [message("c", "both", 3_000), message("d", "new", 2_000)],
+    unread: { "ch:0": 1 },
+    statusHistory: { [bobKey()]: [{ at: 2 } as unknown as StatusSample] },
+  };
+  const merged = mergeHistory(stored, later);
+  assert.deepEqual(merged.messages.map((m) => m.text), ["old", "new", "both"]);
+  assert.equal(merged.contacts[bobKey()]!.name, "Bob 2");
+  assert.equal(merged.contacts[bobKey()]!.lastHeardAt, 5_000);
+  assert.equal(merged.contacts[bobKey()]!.pathSince, 1_000);
+  assert.deepEqual(Object.keys(merged.removed!), []);
+  assert.equal(merged.contactsCursor, 12);
+  assert.deepEqual(merged.channels.map((c) => c.name), ["Public"]);
+  assert.deepEqual(merged.unread, { "ch:0": 3 });
+  assert.deepEqual(merged.statusHistory![bobKey()]!.map((s) => (s as unknown as { at: number }).at), [1, 2]);
 });
 
 test("history saved with the raw path_len byte is read back as a hop count", async () => {

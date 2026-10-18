@@ -10,6 +10,7 @@
 
 import type { PersistedState, SessionStorage } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
+import { isCapacitor } from "./platform.js";
 
 const DB_NAME = "meshnet";
 const STORE = "radios";
@@ -47,6 +48,19 @@ function run<T>(db: IDBDatabase, mode: IDBTransactionMode, op: (store: IDBObject
   });
 }
 
+let keepAsked = false;
+
+/**
+ * Asks the web view to keep the history through a shortage of space, when WebKit
+ * clears the storage of the sites least used. Only in the phone shell: a browser
+ * may put the question to its user.
+ */
+function askToKeep(): void {
+  if (keepAsked || typeof window === "undefined" || !isCapacitor()) return;
+  keepAsked = true;
+  void navigator.storage?.persist?.().catch(() => false);
+}
+
 /**
  * One connection, opened when first needed and opened again when it is lost.
  * iOS closes a web view's database connections while the app is in the
@@ -58,6 +72,7 @@ export class IndexedDbStorage implements SessionStorage {
 
   private open(): Promise<IDBDatabase> {
     if (this.db) return this.db;
+    askToKeep();
     const opening = openDb().then((db) => {
       const lost = () => {
         if (this.db === opening) this.db = null;

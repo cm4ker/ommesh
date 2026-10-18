@@ -938,6 +938,67 @@ function historyOf(state: SessionState): PersistedState {
   return { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles, channelRegions, pushes };
 }
 
+/** Each key's list, the stored one first, then what came after it. */
+function joinLists<T>(stored: Record<string, T[]> | undefined, later: Record<string, T[]> | undefined): Record<string, T[]> {
+  const joined: Record<string, T[]> = { ...stored };
+  for (const [key, list] of Object.entries(later ?? {})) joined[key] = [...(joined[key] ?? []), ...list];
+  return joined;
+}
+
+/**
+ * A stored history with what came in while it could not be read (`later`, gathered from an empty
+ * start): the messages it lacks, the radio's contacts and channels as read since, the unread counts
+ * of both, the readings and console lines after the stored ones.
+ */
+export function mergeHistory(stored: PersistedState, later: PersistedState): PersistedState {
+  const same = (m: MessageRecord) => [m.conversation, m.direction, m.timestamp, m.senderPrefix, m.text].join("\n");
+  const ids = new Set(stored.messages.map((m) => m.id));
+  const seen = new Set(stored.messages.map(same));
+  const added = later.messages.filter((m) => !ids.has(m.id) && !seen.has(same(m)));
+  const messages = added.length ? [...stored.messages, ...added].sort((a, b) => a.receivedAt - b.receivedAt) : stored.messages;
+
+  const contacts = { ...stored.contacts };
+  for (const [key, fresh] of Object.entries(later.contacts)) {
+    const old = contacts[key];
+    if (!old) {
+      contacts[key] = fresh;
+      continue;
+    }
+    // Read from an empty start, the radio's record knows nothing of when the node was heard or how old its route is.
+    const sameRoute = old.outPathLen === fresh.outPathLen && old.outPath === fresh.outPath;
+    contacts[key] = {
+      ...fresh,
+      lastHeardAt: Math.max(old.lastHeardAt ?? 0, fresh.lastHeardAt ?? 0) || null,
+      pathSince: sameRoute && old.pathSince !== null ? old.pathSince : fresh.pathSince,
+    };
+  }
+  const removed = { ...stored.removed, ...later.removed };
+  for (const [key, contact] of Object.entries(contacts)) if (!contact.unsaved) delete removed[key];
+
+  const unread = { ...stored.unread };
+  for (const [conversation, count] of Object.entries(later.unread)) unread[conversation] = (unread[conversation] ?? 0) + count;
+
+  const readingHistory: Record<string, Record<string, ReadingSample[]>> = { ...stored.readingHistory };
+  for (const [key, readings] of Object.entries(later.readingHistory ?? {})) readingHistory[key] = joinLists(readingHistory[key], readings);
+
+  return {
+    contacts,
+    contactsCursor: Math.max(stored.contactsCursor, later.contactsCursor),
+    removed,
+    channels: later.channels.length ? later.channels : stored.channels,
+    messages,
+    unread,
+    logins: { ...stored.logins, ...later.logins },
+    statusHistory: joinLists(stored.statusHistory, later.statusHistory),
+    batteryHistory: joinLists(stored.batteryHistory, later.batteryHistory),
+    readingHistory,
+    ...(stored.routing ? { routing: stored.routing } : later.routing ? { routing: later.routing } : {}),
+    consoles: joinLists(stored.consoles, later.consoles),
+    channelRegions: { ...stored.channelRegions, ...later.channelRegions },
+    pushes: { ...stored.pushes, ...later.pushes },
+  };
+}
+
 /**
  * The consoles as they were kept. A command that was still in the queue or on the air when the
  * app closed will hear nothing now: it shows as gone unanswered, and can be sent again.
@@ -993,6 +1054,15 @@ function toRecord(contact: Contact, lastHeardAt: number | null, previous: Contac
 }
 
 const LOG_LIMIT = 400;
+
+/**
+ * Pauses before a history that could not be read is read again, ms; the last one over and over.
+ * A phone's web view can lose its database for a while, and an app restarted then found it whole.
+ */
+const HISTORY_RETRY_MS = [2_000, 5_000, 15_000, 60_000, 300_000];
+
+/** How long a history may take to read before it counts as unreadable: a database can hang rather than fail. */
+const HISTORY_READ_MS = 20_000;
 
 let idCounter = 0;
 function newId(now: number): string {
@@ -1218,8 +1288,15 @@ export class MeshSession {
   private saveChain: Promise<void> = Promise.resolve();
   /** The radio whose stored history could not be read at connect: nothing is written over it until it can be. */
   private unreadHistory: string | null = null;
-  /** The history of the radio last connected, kept through failed attempts to connect again. */
-  private held: { key: string; history: PersistedState } | null = null;
+  /** The next read of a history that could not be read, and how many reads failed in a row. */
+  private historyRetry: ReturnType<typeof setTimeout> | null = null;
+  private historyTries = 0;
+  private historyReading = false;
+  /**
+   * The history of the radio last connected, kept through failed attempts to connect again.
+   * `unread`: its stored history could not be read, so this is only what came in since.
+   */
+  private held: { key: string; history: PersistedState; unread: boolean } | null = null;
   private syncQueued = false;
   private readonly zoneOffsetMin: () => number;
   /** Messages read out of another app's answers, one after another. */
@@ -1484,8 +1561,12 @@ export class MeshSession {
     // while the app is in the background, and a reconnect then read nothing and
     // showed the chats empty. It is kept aside, since an attempt that fails
     // leaves the state empty and a weak link can take a few. A history that
-    // could not be read at connect is read again instead.
-    if (this.state.self) this.held = this.unreadHistory === this.state.self.key ? null : { key: this.state.self.key, history: historyOf(this.state) };
+    // could not be read at connect is read again, and what came in since is
+    // put into it: the radio gives each message out once.
+    if (this.state.self) {
+      const key = this.state.self.key;
+      this.held = { key, history: historyOf(this.state), unread: this.unreadHistory === key };
+    }
     const client = new MeshCoreClient(transport, { ...(this.trace ? { trace: this.trace } : {}), now: () => this.now() });
     this.client = client;
     // While it connects again, the radio and its history stay in sight, so the
@@ -1536,8 +1617,17 @@ export class MeshSession {
       const self = { ...rest, key, prefix: key.slice(0, PUB_KEY_PREFIX_SIZE * 2) };
 
       this.set({ connectStep: "history" });
-      const persisted = this.held?.key === key ? this.held.history : await this.readHistory(key);
+      const held = this.held?.key === key ? this.held : null;
+      let persisted: PersistedState | null;
+      if (held && !held.unread) {
+        persisted = held.history;
+      } else {
+        const stored = await this.readHistory(key);
+        persisted = stored && held ? mergeHistory(stored, held.history) : (stored ?? held?.history ?? null);
+      }
       this.held = null;
+      if (this.unreadHistory === key) this.readHistoryLater(key);
+      else this.stopHistoryRetry();
       this.contactsKnown = persisted && (persisted.contactsCursor > 0 || Object.keys(persisted.contacts).length > 0) ? key : null;
       this.set({ device, self, ...this.restored(persisted), autoAdd: null, repeatFreqs: null, region: null, contactsFull: false, removing: null });
       this.log("link", `connected to ${self.name} (${device.firmwareVersion})`);
@@ -1647,15 +1737,73 @@ export class MeshSession {
   /** The stored history of a radio, or null; one that cannot be read is logged, and kept from being written over. */
   private async readHistory(key: string): Promise<PersistedState | null> {
     if (!this.storage) return null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     try {
-      const history = await this.storage.load(key);
+      const late = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`no answer in ${HISTORY_READ_MS / 1000} s`)), HISTORY_READ_MS);
+      });
+      const history = await Promise.race([this.storage.load(key), late]);
       if (this.unreadHistory === key) this.unreadHistory = null;
       return history;
     } catch (error) {
       this.unreadHistory = key;
       this.log("error", `history could not be read, and is not saved over: ${(error as Error).message}`);
       return null;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
+  }
+
+  /** Reads the history that could not be read again after a pause, while its radio is the one here. */
+  private readHistoryLater(key: string): void {
+    if (this.historyRetry) clearTimeout(this.historyRetry);
+    const pause = HISTORY_RETRY_MS[Math.min(this.historyTries, HISTORY_RETRY_MS.length - 1)]!;
+    this.historyTries += 1;
+    this.historyRetry = setTimeout(() => {
+      this.historyRetry = null;
+      void this.readHistoryAgain(key);
+    }, pause);
+    (this.historyRetry as { unref?: () => void }).unref?.();
+  }
+
+  private stopHistoryRetry(): void {
+    if (this.historyRetry) clearTimeout(this.historyRetry);
+    this.historyRetry = null;
+    this.historyTries = 0;
+  }
+
+  /**
+   * Reads again the stored history of the radio shown, if it could not be read, at once: the
+   * page calls this when it comes back on screen, as a phone's web view gets its database back
+   * then. What came in meanwhile goes into it, and saving resumes.
+   */
+  async readHistoryAgain(key = this.state.self?.key): Promise<void> {
+    if (!key || this.unreadHistory !== key || this.state.self?.key !== key || this.historyReading) return;
+    this.historyReading = true;
+    // A connect begun meanwhile reads it itself, and puts in what came.
+    const client = this.client;
+    let stored: PersistedState | null;
+    try {
+      stored = await this.readHistory(key);
+    } finally {
+      this.historyReading = false;
+    }
+    if (this.state.self?.key !== key || this.client !== client) return;
+    if (this.unreadHistory === key) {
+      // A try asked for between two timed ones leaves the next one as it was.
+      if (!this.historyRetry) this.readHistoryLater(key);
+      return;
+    }
+    const tries = this.historyTries + 1;
+    this.stopHistoryRetry();
+    const later = historyOf(this.state);
+    const merged = stored ? mergeHistory(stored, later) : later;
+    this.set(this.restored(merged));
+    if (stored && (stored.contactsCursor > 0 || Object.keys(stored.contacts).length > 0)) this.contactsKnown = key;
+    this.rebindOrphans();
+    const added = merged.messages.length - (stored?.messages.length ?? 0);
+    this.log("link", `history read on try ${tries}; ${added} messages that came meanwhile put into it`);
+    this.scheduleSave();
   }
 
   async disconnect(): Promise<void> {

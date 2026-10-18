@@ -69,6 +69,8 @@ export interface MapOverlay {
   heard?: string[];
   /** Where a route goes off the map: the last node of it with a place, and the names of those after it. */
   tail?: MapTail | undefined;
+  /** While a trace is on its way: the places it runs through and back, for a spark to travel. */
+  spark?: { lat: number; lon: number }[] | undefined;
 }
 
 export interface MapTail {
@@ -220,6 +222,13 @@ function checkTrail(ping: Ping | null, nodesOf: (chain: string[]) => { nodes: (L
   return lines;
 }
 
+/** The places along a chain, out and back, for a spark to travel; nothing when fewer than two can be placed. */
+function sparkOf(nodes: (LosEnd | null)[]): { lat: number; lon: number }[] | undefined {
+  const pts = nodes.filter((n): n is LosEnd => n !== null).map((n) => ({ lat: n.lat, lon: n.lon }));
+  if (pts.length < 2) return undefined;
+  return [...pts, ...pts.slice(0, -1).reverse()];
+}
+
 /**
  * The legs of the route to a contact, this radio first: each leg's ends, and
  * how it sounded when last pinged. A relay whose hash names nobody for sure,
@@ -239,8 +248,13 @@ export function routeOverlay(key: string, state: SessionState, ping: Ping | null
     const relays = measured?.targetInChain ? chain.slice(0, -1) : chain;
     return { nodes: along(me, relays, target, state.contacts, key), relays };
   });
-  // A search still looking, or one that found nothing: what it left is all there is to show.
-  if (measured?.search && !measured.search.found) return { ...EMPTY_OVERLAY, lines: trail };
+  // A search still looking, or one that found nothing: what it left is all there is to show, with a spark on the way being tried.
+  if (measured?.search && !measured.search.found) {
+    const trying = measured.search.trying;
+    const relays = trying ? (measured.targetInChain ? trying.slice(0, -1) : trying) : null;
+    const spark = trying && measured.running && relays ? sparkOf(along(me, relays, target, state.contacts, key)) : undefined;
+    return { ...EMPTY_OVERLAY, lines: trail, spark };
+  }
   const relays = shownRelays(contact, ping);
   if (relays === null) return { ...EMPTY_OVERLAY, lines: trail };
   const nodes = along(me, relays, target, state.contacts, key);
@@ -250,7 +264,9 @@ export function routeOverlay(key: string, state: SessionState, ping: Ping | null
   const home = measured?.search?.found && measured.search.back ? measured.search.back : null;
   const turn = toPerson ? endOfHash(relays[relays.length - 1] ?? "", state.contacts, key) : target;
   const back = home && turn ? chainOverlay(along(turn, home, me, state.contacts, key), home, () => "back", () => undefined, false).lines.map((l) => ({ ...l, tappable: false })) : [];
-  return { ...route, lines: [...trail, ...back, ...route.lines] };
+  // While a trace runs the held route (the rounds, or finding the break), a spark travels it there and back.
+  const spark = ping?.running && !measured?.search ? sparkOf(nodes) : undefined;
+  return { ...route, lines: [...trail, ...back, ...route.lines], spark };
 }
 
 /**

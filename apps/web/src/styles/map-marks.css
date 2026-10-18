@@ -309,6 +309,37 @@
     stroke-dashoffset: -16;
   }
 }
+/* A trace on its way: a bright comet with a short tail runs the chain there and back, over a wider faint glow. */
+.map-spark,
+.map-spark-glow {
+  fill: none;
+  stroke: var(--accent);
+  stroke-linecap: round;
+  pointer-events: none;
+}
+.map-spark {
+  stroke-width: 4;
+  stroke-dasharray: 0.5 99.5;
+}
+.map-spark-glow {
+  stroke-width: 12;
+  stroke-opacity: 0.25;
+  stroke-dasharray: 4 96;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .map-spark,
+  .map-spark-glow {
+    animation: map-spark 2.4s linear infinite;
+  }
+}
+@keyframes map-spark {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -100;
+  }
+}
 .map-leg.look {
   stroke-dasharray: 6 5;
 }

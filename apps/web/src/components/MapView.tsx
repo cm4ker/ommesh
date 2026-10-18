@@ -789,6 +789,13 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
       el.innerHTML = "<i></i><i></i><i></i>";
       lines.float(el, { lat: overlay.pulse.lat, lon: overlay.pulse.lon }, 260);
     }
+    if (overlay.spark && overlay.spark.length >= 2) {
+      // A trace on its way: a comet runs the chain there and back. Normalised to the path's length, so it keeps its pace at any zoom.
+      for (const cls of ["map-spark-glow", "map-spark"]) {
+        const spark = lines.path(overlay.spark, cls);
+        spark.el.setAttribute("pathLength", "100");
+      }
+    }
     m.triggerRepaint();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overlay]);

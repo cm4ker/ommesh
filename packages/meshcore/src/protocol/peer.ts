@@ -9,6 +9,11 @@
  *                            it is: this app shares the radio, as the phone's
  *                            own (side 0) or as a computer (side 1)
  *   0xf1, 1, n, key, value   an entry: n bytes of key in UTF-8, then its value
+ *   0xf1, 2                  to the relay, from hello version 2: this app tells
+ *                            when it has saved the messages it takes, and the
+ *                            relay keeps each until then and hands it again
+ *                            should the app go first; said at each connect
+ *   0xf1, 3, n (u32 LE)      to the relay: the first n messages taken since are saved
  *
  * An entry stands for every one before it with its key, and an app away from
  * the phone gets only the latest of each. A read mark's key is `r:` and the
@@ -21,6 +26,22 @@ import { concat, utf8 } from "./bytes.js";
 
 export const PEER_HELLO = 0;
 export const PEER_ENTRY = 1;
+export const PEER_KEEP = 2;
+export const PEER_SAVED = 3;
+/** The first hello version whose relay takes `PEER_KEEP` and `PEER_SAVED`. */
+export const KEEP_VERSION = 2;
+
+/** To the relay: this app tells when it has saved what it takes. */
+export function peerKeep(): Uint8Array {
+  return new Uint8Array([Push.Peer, PEER_KEEP]);
+}
+
+/** To the relay: the first `n` messages taken since `peerKeep` are saved. */
+export function peerSaved(n: number): Uint8Array {
+  const out = new Uint8Array([Push.Peer, PEER_SAVED, 0, 0, 0, 0]);
+  new DataView(out.buffer).setUint32(2, n >>> 0, true);
+  return out;
+}
 
 /** Which app this is on a radio shared through a phone. */
 export type PeerSide = "phone" | "computer";

@@ -110,8 +110,15 @@ pub const PEER_HELLO: u8 = 0;
 /// `0xf1, 1, key length, key, value`: one thing the app keeps alike with the other, the latest
 /// by its key standing for every one before it (`r:<conversation>` a read mark, `s:<name>` a setting).
 pub const PEER_ENTRY: u8 = 1;
-/// What the mux's hello says it can do.
-pub const PEER_VERSION: u8 = 1;
+/// `0xf1, 2`: an app says it will tell when it has saved the messages it takes from its inbox
+/// ([`PEER_SAVED`]); until it does, the mux keeps each one it hands over, and hands it again
+/// should the app go first. Said again at each connect, it starts the count afresh.
+pub const PEER_KEEP: u8 = 2;
+/// `0xf1, 3, n` (u32, little-endian): the app has saved the first `n` messages it took since
+/// it said [`PEER_KEEP`].
+pub const PEER_SAVED: u8 = 3;
+/// What the mux's hello says it can do: 2 takes [`PEER_KEEP`] and [`PEER_SAVED`].
+pub const PEER_VERSION: u8 = 2;
 
 // Control packets, by the first byte of their payload (`onControlDataRecv` in
 // `examples/simple_repeater/MyMesh.cpp`).

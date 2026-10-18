@@ -44,7 +44,7 @@ import {
   type SeriesSummary,
 } from "./protocol/frames.js";
 import type { LppReading } from "./protocol/lpp.js";
-import { peerEntry, READ_MARK_PREFIX, readMarkOf, readMarkValue, textHash, type PeerSide, type ReadMark } from "./protocol/peer.js";
+import { KEEP_VERSION, peerEntry, peerKeep, peerSaved, READ_MARK_PREFIX, readMarkOf, readMarkValue, textHash, type PeerSide, type ReadMark } from "./protocol/peer.js";
 import type { Transport } from "./transport.js";
 
 export interface ContactRecord {
@@ -1322,6 +1322,12 @@ export class MeshSession {
   private peerReadyListeners = new Set<() => void>();
   /** What the other app sharing the radio sent before this one was ready to take it. */
   private peerBacklog: { key: string; value: Uint8Array }[] = [];
+  /**
+   * Behind a phone's relay that keeps what it hands over until told it is saved (`peerKeep`):
+   * the link it was said on, how many messages were taken from the queue since, and how many
+   * of those the relay was told are saved.
+   */
+  private keeping: { client: MeshCoreClient; taken: number; told: number } | null = null;
   /** Chats read here whose mark goes to the other app in a moment, so reading on goes as one. */
   private markTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** The mark each chat last had with the other app, either way, so the same one is not sent again. */
@@ -1441,6 +1447,18 @@ export class MeshSession {
   }
 
   /**
+   * Behind a relay that keeps what it hands over until told it is saved, says this app will
+   * tell, once a connect; the relay then hands again whatever this app took and did not save.
+   * Without storage nothing is saved, so nothing is said.
+   */
+  private startKeeping(version: number): void {
+    const client = this.client;
+    if (!client || !this.storage || version < KEEP_VERSION || this.keeping?.client === client) return;
+    this.keeping = { client, taken: 0, told: 0 };
+    client.tell(peerKeep()).catch((e: Error) => this.log("error", `telling the relay this app keeps: ${e.message}`));
+  }
+
+  /**
    * Hands the other app sharing the radio an entry, through the phone's relay;
    * false when the radio is not shared so, or the entry is too long for a frame.
    */
@@ -1509,10 +1527,17 @@ export class MeshSession {
     const key = this.state.self.key;
     if (this.unreadHistory === key) return;
     const history = historyOf(this.state);
+    // What was taken from the relay by now is in this save: once it is written, the relay may let it go.
+    const keeping = this.keeping;
+    const taken = keeping?.taken ?? 0;
     const saving = this.saveChain.catch(() => undefined).then(() => storage.save(key, history));
     this.saveChain = saving;
     try {
       await saving;
+      if (keeping && this.keeping === keeping && taken > keeping.told) {
+        keeping.told = taken;
+        keeping.client.tell(peerSaved(taken)).catch((e: Error) => this.log("error", `telling the relay what is saved: ${e.message}`));
+      }
     } catch (error) {
       this.log("error", `could not save: ${(error as Error).message}`);
       if (strict) throw error;
@@ -1605,6 +1630,7 @@ export class MeshSession {
       this.markTimers.clear();
       this.marksTold.clear();
       this.peerBacklog = [];
+      this.keeping = null;
       this.set({ status: "closed", syncing: false, connectStep: null, peer: null, error: reason ? reason.message : this.state.error });
       this.log("link", reason ? `link dropped: ${reason.message}` : "disconnected");
     });
@@ -2677,6 +2703,7 @@ export class MeshSession {
           retries = 0;
           if (!frame) break;
           await this.receive(frame);
+          if (this.keeping?.client === client) this.keeping.taken++;
         }
       } while (this.syncQueued);
     } finally {
@@ -2806,6 +2833,13 @@ export class MeshSession {
       const reaction = sender ? parseTextReaction(text) : null;
       if (reaction && sender) {
         await this.takeReaction({ conversation, target: toHex(reaction.target), emoji: reaction.emoji, by: sender, to: reaction.to, replaces: false });
+        return;
+      }
+      // A phone's relay hands a message again when it was not told it was saved; the radio
+      // itself never hands one up twice, as it drops a packet it has heard before.
+      const twin = this.state.messages.some((m) => m.direction === "in" && m.conversation === conversation && m.timestamp === frame.timestamp && m.sender === sender && m.text === text);
+      if (twin) {
+        this.log("message", `another copy of a message from ${sender ?? "someone"} in ${conversation}, set aside`);
         return;
       }
       message = {
@@ -5184,6 +5218,7 @@ export class MeshSession {
         this.mirrored(frame.command, frame.answer);
         return;
       case "peerHello":
+        this.startKeeping(frame.version);
         if (this.state.peer !== frame.side) {
           this.set({ peer: frame.side });
           this.log("link", `the radio is shared through the phone, with this app as the ${frame.side}`);

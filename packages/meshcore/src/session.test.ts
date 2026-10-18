@@ -4,7 +4,7 @@ import { ByteWriter, fromHex, fromUtf8, toHex } from "./protocol/bytes.js";
 import { Cmd, ContactFlag, ErrCode, Push, Resp, TxtType } from "./protocol/codes.js";
 import { groupDataPayload, groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
 import { crockford, decodeReaction, encodeReaction, messageHash, REACTION_DATA_TYPE } from "./protocol/reaction.js";
-import { PEER_ENTRY, PEER_HELLO, peerEntry, readMarkOf, readMarkValue, textHash } from "./protocol/peer.js";
+import { PEER_ENTRY, PEER_HELLO, peerEntry, peerKeep, peerSaved, readMarkOf, readMarkValue, textHash } from "./protocol/peer.js";
 import { canControl, channelConversation, PushRefusedError, CLOCK_RESET_TIME, ClockAheadError, contactConversation, isTrusted, KEYLESS_CONVERSATION, MeshSession, mergeHistory, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type ChannelRecord, type ContactRecord, type MessageRecord, type PersistedState, type StatusSample } from "./session.js";
 import { BaseTransport } from "./transport.js";
 import { TimeoutError, TransportClosedError } from "./client.js";
@@ -60,6 +60,8 @@ class ScriptedRadio extends BaseTransport {
   shared: "phone" | "computer" | null = null;
   /** The frames for the other app, which the relay takes and answers nothing. */
   told: Uint8Array[] = [];
+  /** The version the relay's hello says. */
+  relayVersion = 1;
   /** How many traces it refuses next, its packets all taken. */
   busy = 0;
 
@@ -110,7 +112,7 @@ class ScriptedRadio extends BaseTransport {
             .u8(7)
             .string("Me")
             .toBytes(),
-          ...(this.shared ? [new Uint8Array([Push.Peer, PEER_HELLO, 1, this.shared === "computer" ? 1 : 0])] : []),
+          ...(this.shared ? [new Uint8Array([Push.Peer, PEER_HELLO, this.relayVersion, this.shared === "computer" ? 1 : 0])] : []),
         ];
       case Cmd.GetDeviceTime:
         return [new ByteWriter().u8(Resp.CurrTime).u32(this.time).toBytes()];
@@ -981,6 +983,33 @@ test("the last radio's stored chats show before it is reached, and stay while it
   stop();
   assert.ok(seen.length > 0 && seen.every((texts) => texts.includes("from last time")));
   assert.equal(next.getState().status, "ready");
+});
+
+test("behind a relay that keeps what it hands over, the app says what it has saved, and sets aside a copy handed again", async () => {
+  const storage = new MemoryStorage();
+  const radio = new ScriptedRadio();
+  radio.shared = "phone";
+  radio.relayVersion = 2;
+  radio.queue.push(dmFrame(BOB, "one"), channelFrame(0, "Ann: two"));
+  const session = new MeshSession({ storage, now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  await tick(500);
+  assert.deepEqual(radio.told.map((f) => [...f]), [[...peerKeep()], [...peerSaved(2)]]);
+  // The relay hands both again, as after a page that went before it said so: neither is twice in the chats.
+  radio.queue.push(dmFrame(BOB, "one"), channelFrame(0, "Ann: two"), channelFrame(0, "Ann: three"));
+  await session.syncMessages();
+  await tick(500);
+  assert.deepEqual(session.getState().messages.map((m) => m.text), ["one", "two", "three"]);
+  assert.deepEqual([...radio.told.at(-1)!], [...peerSaved(5)]);
+  await session.disconnect();
+
+  // An older relay is told nothing.
+  const old = new ScriptedRadio();
+  old.shared = "phone";
+  const second = new MeshSession({ storage: new MemoryStorage(), now: () => 1_700_000_000_000 });
+  await second.connect(old);
+  await tick(500);
+  assert.deepEqual(old.told, []);
 });
 
 test("a stored history that cannot be read is not written over", async () => {

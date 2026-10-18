@@ -146,7 +146,7 @@ impl Core {
             .iter()
             .map(|&client| Inbox {
                 client,
-                frames: self.mux.inbox(client).to_vec(),
+                frames: self.mux.kept(client),
             })
             .collect()
     }

@@ -3250,6 +3250,64 @@ test("who hears me asks the repeaters in range, and keeps the answers to this as
   await session.disconnect();
 });
 
+test("a repeater that answered who hears me goes on the radio by its key, and says its name once signed in", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  const asked = session.discoverRepeaters(60);
+  await tick();
+  const tag = radio.sent.find((f) => f[0] === Cmd.SendControlData)!.subarray(3, 7);
+  radio.push(new ByteWriter().u8(Push.ControlData).i8(-16).i8(-100).u8(0).u8(0x92).i8(-10).bytes(tag).bytes(HILL).toBytes());
+  const [reply] = await asked;
+  assert.equal(reply!.known, false);
+
+  await session.addHeard(reply!);
+  // A repeater reached direct, with no name and no advert stamp, so its advert still takes.
+  const added = radio.sent.find((f) => f[0] === Cmd.AddUpdateContact)!;
+  const stamp = (f: Uint8Array) => new DataView(f.buffer, f.byteOffset).getUint32(132, true);
+  const name = (f: Uint8Array) => fromUtf8(f.subarray(100, 132)).replace(/\0+$/, "");
+  assert.equal(toHex(added.subarray(1, 33)), HILL_KEY);
+  assert.equal(added[33], 2);
+  assert.equal(added[35], 0);
+  assert.equal(name(added), "");
+  assert.equal(stamp(added), 0);
+  assert.equal(session.getState().contacts[HILL_KEY]?.outPathLen, 0);
+
+  // A guest on firmware that answers owner info: that names it.
+  const login = session.login(HILL_KEY, "");
+  await tick();
+  radio.push(new ByteWriter().u8(Push.LoginSuccess).u8(0).bytes(HILL.subarray(0, 6)).u32(1_700_000_000).u8(0).u8(2).toBytes());
+  assert.equal((await login).ok, true);
+  await until(() => radio.sent.some((f) => f[0] === Cmd.SendBinaryReq));
+  assert.equal(radio.sent.find((f) => f[0] === Cmd.SendBinaryReq)![33], 0x07);
+  radio.push(new ByteWriter().u8(Push.BinaryResponse).u8(0).u32(radio.binaryTag).string("v1.17.1\nGarage\nNikita").toBytes());
+  await until(() => session.getState().contacts[HILL_KEY]?.name === "Garage");
+  const named = radio.sent.filter((f) => f[0] === Cmd.AddUpdateContact).at(-1)!;
+  assert.equal(name(named), "Garage");
+  assert.equal(stamp(named), 0);
+
+  // Named now: signing in again asks nothing more.
+  const again = session.login(HILL_KEY, "");
+  await tick();
+  radio.push(new ByteWriter().u8(Push.LoginSuccess).u8(0).bytes(HILL.subarray(0, 6)).u32(1_700_000_000).u8(0).u8(2).toBytes());
+  await again;
+  await settle();
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.SendBinaryReq).length, 1);
+  await session.disconnect();
+});
+
+test("a repeater heard while the radio's memory is full is not added, and says why", async () => {
+  const radio = new ScriptedRadio();
+  radio.capacity = 1;
+  const session = new MeshSession();
+  await session.connect(radio);
+  await assert.rejects(session.addHeard({ key: HILL_KEY, known: false, type: 2, heardUs: 4, heardThem: 3, rssi: -90, at: 0 }), /memory is full/);
+  assert.equal(session.getState().contacts[HILL_KEY], undefined);
+  // Only part of a key cannot be signed in to.
+  await assert.rejects(session.addHeard({ key: HILL_KEY.slice(0, 16), known: false, type: 2, heardUs: 4, heardThem: 3, rssi: -90, at: 0 }), /part of its key/);
+  await session.disconnect();
+});
+
 test("a route written by hand goes to the radio and outlives the time limit on learned routes", async () => {
   let now = 1_700_000_000_000;
   const radio = new ScriptedRadio();

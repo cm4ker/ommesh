@@ -2285,6 +2285,47 @@ export class MeshSession {
     this.set({ removed: this.withoutRemoved([key]) });
   }
 
+  /**
+   * Adds a node that answered "who hears me" to the radio by the whole key it
+   * answered with, before any advert of its was kept, so it can be signed in
+   * to at once: the radio signs in to its contacts only. It answered from
+   * direct range, so it is reached direct. It is written as the kind it said
+   * it is, with no name, place or advert stamp: the radio takes a kindless
+   * contact for a stand-in it clears when the advert comes, and one stamped
+   * would refuse that advert as old. The advert fills them in when it comes;
+   * signing in asks the node its name sooner (`learnName`). One taken off the
+   * radio, or heard but not kept, goes back as it was known.
+   */
+  async addHeard(reply: DiscoverReply): Promise<void> {
+    if (reply.key.length !== 64) throw new Error("The node sent only part of its key.");
+    if (reply.type === AdvType.None) throw new Error("The node did not say what kind it is.");
+    const known = this.state.contacts[reply.key];
+    if (this.state.removed[reply.key] || known?.unsaved) return this.restoreContact(reply.key);
+    if (known) return;
+    const record: ContactRecord = {
+      key: reply.key,
+      prefix: reply.key.slice(0, 12),
+      type: reply.type,
+      flags: 0,
+      outPathLen: 0,
+      outPath: "",
+      name: "",
+      lastAdvert: 0,
+      lat: 0,
+      lon: 0,
+      lastMod: 0,
+      lastHeardAt: reply.at,
+      pathSince: this.now(),
+    };
+    try {
+      await this.writeContact(record);
+    } catch (error) {
+      if (error instanceof MeshCoreError && error.code === ErrCode.TableFull) throw new Error("The radio's memory is full. Remove a few contacts first.");
+      throw error;
+    }
+    this.log("contact", `${reply.key.slice(0, 12)} added by its key, as it answered who hears this radio`);
+  }
+
   /** Drops these from the removed contacts for good, before their 90 days are up: they can no longer be put back. */
   forgetRemoved(keys: readonly string[]): void {
     if (!keys.some((k) => this.state.removed[k])) return;
@@ -4524,7 +4565,37 @@ export class MeshSession {
       (event) => event.kind === "login" && event.prefix === contact.prefix,
       { size: REPLY_SIZE.login },
     );
-    return this.state.logins[key]!;
+    const login = this.state.logins[key]!;
+    if (login.ok) void this.learnName(key);
+    return login;
+  }
+
+  /**
+   * Asks a node just signed in to for its name, when the radio holds none: one
+   * added by its key (`addHeard`) before its advert came. Its owner info, which
+   * any role may ask, names it; a node too old for that tells an admin by
+   * `get name`. The name is written with no advert stamp, so the advert still
+   * takes when it comes. It runs after the sign-in has resolved, and a node
+   * that does not answer leaves the name to its advert.
+   */
+  private async learnName(key: string): Promise<void> {
+    const contact = this.state.contacts[key];
+    const login = this.state.logins[key];
+    if (!contact || contact.name || contact.unsaved || contact.type !== AdvType.Repeater || !login?.ok) return;
+    try {
+      const name =
+        (login.firmwareLevel ?? 0) >= 2
+          ? (await this.requestOwnerInfo(key)).name.trim()
+          : login.role === AclRole.Admin
+            ? await this.readNodeSetting(key, "name")
+            : "";
+      const now = this.state.contacts[key];
+      if (!name || !now || now.name) return;
+      await this.writeContact({ ...now, name });
+      this.log("contact", `${key.slice(0, 12)} is called ${name}, as it said once signed in`);
+    } catch (error) {
+      this.log("contact", `${key.slice(0, 12)} did not say its name: ${(error as Error).message}`);
+    }
   }
 
   /**
@@ -4558,6 +4629,7 @@ export class MeshSession {
     );
     const login = this.state.logins[key]!;
     this.log("path", `${contact.name || key.slice(0, 12)}: ${login.ok ? "signed in by flood; it now learns the way back" : "sign-in by flood refused"}`);
+    if (login.ok) void this.learnName(key);
     return login;
   }
 

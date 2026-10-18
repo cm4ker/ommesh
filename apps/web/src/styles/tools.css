@@ -354,6 +354,11 @@
 .tool .list-rows.hears .row {
   min-height: 52px;
 }
+/* Under the words of a repeater not among the contacts, so a narrow panel keeps room for its name. */
+.tool .list-rows.hears .hears-add {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+}
 .tool .list-rows.hears .row.selected {
   background: var(--accent-subtle);
 }

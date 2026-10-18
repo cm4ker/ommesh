@@ -67,6 +67,8 @@ interface Person {
   ago?: number;
   /** The route the radio holds to it, relay by relay, when it is not along `RELAYS`. */
   route?: number[];
+  /** Never kept from an advert: off the radio until added by its key, and nameless there until it says its name. */
+  stranger?: true;
 }
 
 const PEOPLE: Person[] = [
@@ -131,6 +133,9 @@ const AFIELD: [number, string, number, number][] = [
 AFIELD.forEach(([first, name, lat, lon], i) => {
   PEOPLE.push({ key: startingWith(first, 40 + i), name, type: 2, hops: 0xff, lat, lon, ago: 900 + i * 613 });
 });
+
+// A repeater next door whose advert the radio never kept: who hears me finds it, and it can be added by its key and signed in to.
+PEOPLE.push({ key: seeded(9), name: "Garage Repeater", type: 2, hops: 0, lat: 55.035, lon: 73.355, stranger: true });
 
 /**
  * Who hears whom in the town: `a>b` is how well b hears a, dB; "me" is this
@@ -255,7 +260,7 @@ const RELAYS = [0x03, 0x94, 0x6f, 0x2c];
 
 const CHANNELS = ["8b3387e9c5cdea6ac9e5edbaa115cd72", "0123456789abcdef0123456789abcdef"];
 
-function contactFrame(code: number, p: Person, lastMod: number, hops = p.hops, relays: number[] = RELAYS, flags = p.name === "Alice" ? 1 : 0): Uint8Array {
+function contactFrame(code: number, p: Person, lastMod: number, hops = p.hops, relays: number[] = RELAYS, flags = p.name === "Alice" ? 1 : 0, advertAt = Math.floor(Date.now() / 1000) - (p.ago ?? 600)): Uint8Array {
   const path = new Uint8Array(64);
   if (hops !== 0xff) path.set(relays.slice(0, hops));
   return new ByteWriter()
@@ -266,7 +271,7 @@ function contactFrame(code: number, p: Person, lastMod: number, hops = p.hops, r
     .u8(hops)
     .bytes(path)
     .fixedString(p.name, 32)
-    .u32(Math.floor(Date.now() / 1000) - (p.ago ?? 600))
+    .u32(advertAt)
     .i32(Math.round(p.lat * 1e6))
     .i32(Math.round(p.lon * 1e6))
     .u32(lastMod)
@@ -437,7 +442,9 @@ class DemoRadio extends BaseTransport {
   /** The route this radio holds to each contact, as a hop count; 0xff for none. */
   private routes = new Map<Person, number>(PEOPLE.map((p) => [p, p.hops]));
   /** Contacts taken off this radio, and the flags written to the others. */
-  private gone = new Set<Person>();
+  private gone = new Set<Person>(PEOPLE.filter((p) => p.stranger));
+  /** What was written for a stranger added by its key: all the radio knows of it. */
+  private written = new Map<Person, { name: string; lat: number; lon: number }>();
   private flags = new Map<Person, number>();
   private autoAdd = { config: 0, maxHops: 0 };
   /** Routes written by hand, relay by relay; the rest go along `RELAYS`. */
@@ -538,7 +545,8 @@ class DemoRadio extends BaseTransport {
   private overhear(): void {
     if (Math.random() < 0.45) return this.overhearTown();
     // The town's repeaters are heard only along the town's own links.
-    const others = PEOPLE.filter((p) => !(p.type === 2 && TOWN_HASHES.has(p.key[0]!)));
+    // A stranger's adverts never reach this radio.
+    const others = PEOPLE.filter((p) => !p.stranger && !(p.type === 2 && TOWN_HASHES.has(p.key[0]!)));
     const someone = others[Math.floor(Math.random() * others.length)]!;
     const pick = Math.random();
     const noise = (n: number) => {
@@ -654,6 +662,12 @@ class DemoRadio extends BaseTransport {
       .u8(data.length)
       .bytes(data)
       .toBytes();
+  }
+
+  /** The contact the radio holds for `p`; a stranger's has only what was written for it, and no advert. */
+  private held(p: Person, lastMod: number): Uint8Array {
+    const written = p.stranger ? (this.written.get(p) ?? { name: "", lat: 0, lon: 0 }) : null;
+    return contactFrame(Resp.Contact, written ? { ...p, ...written } : p, lastMod, this.routes.get(p), this.paths.get(p), this.flags.get(p), written ? 0 : undefined);
   }
 
   private person(key: Uint8Array): Person | undefined {
@@ -985,7 +999,7 @@ class DemoRadio extends BaseTransport {
         const stamp = (p: Person) => Math.floor(Date.now() / 1000) - (p.ago ?? 600);
         return [
           new ByteWriter().u8(Resp.ContactsStart).u32(kept.length).toBytes(),
-          ...kept.map((p) => contactFrame(Resp.Contact, p, stamp(p), this.routes.get(p), this.paths.get(p), this.flags.get(p))),
+          ...kept.map((p) => this.held(p, stamp(p))),
           new ByteWriter().u8(Resp.EndOfContacts).u32(Math.floor(Date.now() / 1000)).toBytes(),
         ];
       }
@@ -1002,7 +1016,7 @@ class DemoRadio extends BaseTransport {
         return [new Uint8Array([Resp.Ok])];
       case Cmd.GetContactByKey: {
         const p = this.person(frame.subarray(1, 33));
-        return p ? [contactFrame(Resp.Contact, p, Math.floor(Date.now() / 1000), this.routes.get(p), this.paths.get(p), this.flags.get(p))] : [new Uint8Array([Resp.Err, 2])];
+        return p ? [this.held(p, Math.floor(Date.now() / 1000))] : [new Uint8Array([Resp.Err, 2])];
       }
       case Cmd.ResetPath: {
         const p = this.person(frame.subarray(1, 33));
@@ -1276,7 +1290,7 @@ class DemoRadio extends BaseTransport {
         if (((frame[1] ?? 0) & 0xf0) === 0x80) {
           const tag = frame.subarray(3, 7);
           for (const p of PEOPLE.filter((x) => x.type === 2 && x.hops <= 1)) {
-            if (Math.random() < 0.15) continue;
+            if (!p.stranger && Math.random() < 0.15) continue;
             const us = heardAt(p.key[0]!);
             const them = heardAt(p.key[0]!) + 1;
             this.later(
@@ -1325,6 +1339,11 @@ class DemoRadio extends BaseTransport {
         if (p) {
           this.gone.delete(p);
           this.flags.set(p, frame[34] ?? 0);
+          if (p.stranger) {
+            const at = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
+            const name = fromUtf8(frame.subarray(100, 132)).replace(/\0.*$/s, "");
+            this.written.set(p, { name, lat: frame.length >= 144 ? at.getInt32(136, true) / 1e6 : 0, lon: frame.length >= 144 ? at.getInt32(140, true) / 1e6 : 0 });
+          }
           this.routes.set(p, length);
           if (length !== 0xff) this.paths.set(p, Array.from(frame.subarray(36, 36 + (length & 63))));
         }

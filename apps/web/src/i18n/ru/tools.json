@@ -256,6 +256,7 @@
   "hears.repeater": "Репитер {id}",
   "hears.youHear": "вы слышите его на {snr} дБ",
   "hears.notContact": "нет в ваших контактах",
+  "hears.add": "Добавить",
   "hears.none": "Ни один репитер не ответил. Попробуйте выше или на улице.",
   "hears.listening": "Приём…",
   "hears.againIn": "Снова через {seconds} с",

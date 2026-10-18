@@ -256,6 +256,7 @@
   "hears.repeater": "Repeater {id}",
   "hears.youHear": "you hear it at {snr} dB",
   "hears.notContact": "not among your contacts",
+  "hears.add": "Add",
   "hears.none": "No repeater answered. Try higher up, or outside.",
   "hears.listening": "Listening…",
   "hears.againIn": "Again in {seconds} s",

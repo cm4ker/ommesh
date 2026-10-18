@@ -7,18 +7,20 @@
  */
 
 import { useEffect, useState } from "react";
+import type { DiscoverReply } from "@meshnet/meshcore";
 import { t } from "../../i18n/index.js";
 import { agoPhrase } from "../../lib/format.js";
 import { asksLeft, askWhoHears, LISTEN_MS, useHears } from "../../lib/hears.js";
 import { formatSnr } from "../../lib/los.js";
-import { showOnMap } from "../../lib/nav.js";
+import { openProfile, showOnMap } from "../../lib/nav.js";
 import { setMeshTool } from "../../lib/meshTool.js";
-import { useSession } from "../../lib/session.js";
+import { session, useSession } from "../../lib/session.js";
 import { surveyHoldUsed, useSurveys } from "../../lib/survey.js";
 import { surveyStats } from "../../lib/surveyData.js";
+import { act } from "../../lib/toast.js";
 import { beginSurvey, openSurvey } from "../../lib/toolActions.js";
 import { Button, IconButton } from "../../ui/Button.js";
-import { ChevronRightIcon, CloseIcon, RadioIcon, SurveyIcon, WavesIcon } from "../Icons.js";
+import { ChevronRightIcon, CloseIcon, PlusIcon, RadioIcon, SurveyIcon, WavesIcon } from "../Icons.js";
 import { QualityChip } from "./RouteSheet.js";
 import { clock } from "./Survey.js";
 
@@ -38,6 +40,16 @@ export function WhoHears({ onClose }: { onClose: () => void }) {
   const kept = surveys.list?.filter((s) => s.id !== surveys.run?.id).length ?? 0;
   const running = surveys.run ? (surveys.list?.find((s) => s.id === surveys.run!.id) ?? null) : null;
   const [starting, setStarting] = useState(false);
+  const [adding, setAdding] = useState<string | null>(null);
+  // Added, it opens where it can be signed in to.
+  const add = async (reply: DiscoverReply) => {
+    setAdding(reply.key);
+    const ok = await act(() => session.addHeard(reply));
+    setAdding(null);
+    if (!ok) return;
+    setMeshTool(null);
+    openProfile(reply.key, true);
+  };
   const sub = hears.listening
     ? t("tools.hears.listeningCount", { count: replies.length })
     : hears.at !== null
@@ -81,22 +93,39 @@ export function WhoHears({ onClose }: { onClose: () => void }) {
             const c = state.contacts[r.key];
             return (
               <li key={r.key}>
-                <button
-                  type="button"
-                  className="row"
-                  disabled={!c}
-                  onClick={() => {
-                    setMeshTool(null);
-                    showOnMap(r.key);
-                  }}
-                >
-                  <RadioIcon size={18} />
-                  <span className="row-main">
-                    <span className="row-title">{c ? c.name || c.prefix : t("tools.hears.repeater", { id: r.key.slice(0, 8) })}</span>
-                    <span className="row-sub muted">{c ? t("tools.hears.youHear", { snr: formatSnr(r.heardThem) }) : t("tools.hears.notContact")}</span>
-                  </span>
-                  <QualityChip snr={r.heardUs} />
-                </button>
+                {c ? (
+                  <button
+                    type="button"
+                    className="row"
+                    onClick={() => {
+                      setMeshTool(null);
+                      showOnMap(r.key);
+                    }}
+                  >
+                    <RadioIcon size={18} />
+                    <span className="row-main">
+                      <span className="row-title">{c.name || c.prefix}</span>
+                      <span className="row-sub muted">{t("tools.hears.youHear", { snr: formatSnr(r.heardThem) })}</span>
+                    </span>
+                    <QualityChip snr={r.heardUs} />
+                  </button>
+                ) : (
+                  <div className="row">
+                    <RadioIcon size={18} />
+                    <span className="row-main">
+                      <span className="row-title">{t("tools.hears.repeater", { id: r.key.slice(0, 8) })}</span>
+                      <span className="row-sub muted">{t("tools.hears.notContact")}</span>
+                      {/* Signing in needs a contact; a whole key is enough to make one before its advert comes. */}
+                      {r.key.length === 64 ? (
+                        <Button size="sm" className="hears-add" busy={adding === r.key} disabled={!online || (adding !== null && adding !== r.key)} onClick={() => void add(r)}>
+                          <PlusIcon size={14} />
+                          {t("tools.hears.add")}
+                        </Button>
+                      ) : null}
+                    </span>
+                    <QualityChip snr={r.heardUs} />
+                  </div>
+                )}
               </li>
             );
           })}

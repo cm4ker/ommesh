@@ -105,28 +105,57 @@
 .disc-line.bad b {
   color: var(--danger);
 }
-.disc-bar {
-  display: block;
-  height: 3px;
-  overflow: hidden;
-  border-radius: 2px;
-  background: color-mix(in oklch, var(--accent) 22%, transparent);
+/* The wait while the whole mesh is asked: a ring emptying over the airtime, the seconds left inside it. */
+.disc-wait {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
-.disc-bar i {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: 2px;
-  background: var(--accent);
-  transform-origin: left;
-  animation: disc-wait linear forwards;
+.cd-dial {
+  position: relative;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
 }
-@keyframes disc-wait {
-  from {
-    transform: scaleX(0);
+.cd-dial svg {
+  position: absolute;
+  inset: 0;
+  fill: none;
+  stroke-width: 3;
+}
+.cd-track {
+  stroke: color-mix(in oklch, var(--accent) 22%, transparent);
+}
+.cd-ring {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s linear;
+}
+.cd-dial b {
+  position: relative;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+/* While a check or a flood runs, the air mark by the sheet's title breathes. */
+.head-busy {
+  margin-left: 6px;
+  vertical-align: -3px;
+  color: var(--accent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .head-busy {
+    animation: head-busy 1.6s ease-in-out infinite;
   }
-  to {
-    transform: scaleX(1);
+}
+@keyframes head-busy {
+  50% {
+    opacity: 0.35;
   }
 }
 .disc-key {

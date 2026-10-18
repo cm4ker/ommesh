@@ -37,7 +37,7 @@ import { SearchField } from "../../ui/Field.js";
 import { ActionRow, glue, LinkRow } from "../../ui/List.js";
 import { showMenu, type MenuItem } from "../../ui/Menu.js";
 import { Sheet } from "../../ui/Sheet.js";
-import { AlertIcon, BackIcon, CheckIcon, ChevronRightIcon, MoreIcon, PlusIcon } from "../Icons.js";
+import { AirIcon, AlertIcon, BackIcon, CheckIcon, ChevronRightIcon, MoreIcon, PlusIcon } from "../Icons.js";
 import { SignIn } from "../node/SignIn.js";
 
 export function QualityChip({ snr, numbers = true }: { snr: number; numbers?: boolean }) {
@@ -290,7 +290,7 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
 
   return (
     <div className="tool route-sheet">
-      <SheetHead title={t("tools.route.to", { name })} sub={sub} onBack={onClose} onMore={settings} />
+      <SheetHead title={t("tools.route.to", { name })} sub={sub} onBack={onClose} onMore={settings} busy={running || flooded} />
       {flooding ? null : (
         <p className="tool-line chain">
           <span className="muted">{t("tools.you")}</span>
@@ -438,14 +438,17 @@ function RelayPicker({ picking, hops, hopName, target, size, onPick, onClose }: 
   );
 }
 
-export function SheetHead({ title, sub, onBack, onMore, action }: { title: string; sub: ReactNode; onBack: () => void; onMore?: () => void; action?: ReactNode }) {
+export function SheetHead({ title, sub, onBack, onMore, action, busy }: { title: string; sub: ReactNode; onBack: () => void; onMore?: () => void; action?: ReactNode; busy?: boolean }) {
   return (
     <div className="tool-head">
       <IconButton label={t("common.back")} onClick={onBack}>
         <BackIcon size={18} />
       </IconButton>
       <span className="row-main">
-        <span className="row-title">{title}</span>
+        <span className="row-title">
+          {title}
+          {busy ? <AirIcon size={16} className="head-busy" aria-label={t("tools.search.checking")} role="img" /> : null}
+        </span>
         <span className="row-sub muted">{sub}</span>
       </span>
       {action}
@@ -471,6 +474,33 @@ function forgetAfter(key: string, own: number | null | undefined, fallback: numb
 }
 
 /**
+ * While the whole mesh is being asked: a ring that empties over the wait the
+ * radio's airtime allows, the seconds left in its middle. It ticks itself once
+ * a second, so the sheet around it is not redrawn each second.
+ */
+function CountdownRing({ startedAt, until, label }: { startedAt: number; until: number; label: string }) {
+  const total = Math.max(1, Math.round((until - startedAt) / 1000));
+  const [left, setLeft] = useState(() => Math.max(0, Math.round((until - Date.now()) / 1000)));
+  useEffect(() => {
+    const id = setInterval(() => setLeft(Math.max(0, Math.round((until - Date.now()) / 1000))), 1000);
+    return () => clearInterval(id);
+  }, [until]);
+  const off = Math.min(100, Math.max(0, (1 - left / total) * 100));
+  return (
+    <div className="disc-wait" role="status" aria-label={t("tools.search.floodLeft", { seconds: left })}>
+      <span className="cd-dial">
+        <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
+          <circle cx="20" cy="20" r="16" className="cd-track" />
+          <circle cx="20" cy="20" r="16" className="cd-ring" pathLength={100} strokeDasharray="100 100" strokeDashoffset={off} transform="rotate(-90 20 20)" />
+        </svg>
+        <b aria-hidden="true">{left}</b>
+      </span>
+      <span className="disc-line">{label}</span>
+    </div>
+  );
+}
+
+/**
  * What asking the whole mesh came to: the flood on its way, the way it found
  * (drawn on the map with the way back and the route it replaced), or the
  * silence.
@@ -478,17 +508,10 @@ function forgetAfter(key: string, own: number | null | undefined, fallback: numb
 function SearchResult({ d, contact, state }: { d: Discovery; contact: ContactRecord; state: SessionState }) {
   if (d.running) {
     const job = state.remote.active?.key === d.key && state.remote.active.label === "path discovery" ? state.remote.active : null;
-    const total = job?.until && job.startedAt ? Math.round((job.until - job.startedAt) / 1000) : null;
-    return (
-      <div className="disc">
-        <p className="disc-line">{total ? t("tools.search.flooding", { seconds: total }) : t("tools.search.waiting")}</p>
-        {job?.until ? (
-          <span className="disc-bar" aria-hidden="true">
-            <i key={job.id} style={{ animationDuration: `${job.until - (job.startedAt ?? job.until)}ms` }} />
-          </span>
-        ) : null}
-      </div>
-    );
+    if (job?.until && job.startedAt) {
+      return <CountdownRing key={job.id} startedAt={job.startedAt} until={job.until} label={t("tools.search.flooded")} />;
+    }
+    return <p className="disc-line">{t("tools.search.waiting")}</p>;
   }
   if (d.found) {
     const f = d.found;

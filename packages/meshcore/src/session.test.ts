@@ -4,8 +4,8 @@ import { ByteWriter, fromHex, fromUtf8, toHex } from "./protocol/bytes.js";
 import { Cmd, ContactFlag, ErrCode, Push, Resp, TxtType } from "./protocol/codes.js";
 import { groupDataPayload, groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
 import { crockford, decodeReaction, encodeReaction, messageHash, REACTION_DATA_TYPE } from "./protocol/reaction.js";
-import { PEER_ENTRY, PEER_HELLO, peerEntry, readMarkOf, readMarkValue, textHash } from "./protocol/peer.js";
-import { canControl, channelConversation, PushRefusedError, CLOCK_RESET_TIME, ClockAheadError, contactConversation, isTrusted, KEYLESS_CONVERSATION, MeshSession, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type PersistedState } from "./session.js";
+import { PEER_ENTRY, PEER_HELLO, peerEntry, peerKeep, peerSaved, readMarkOf, readMarkValue, textHash } from "./protocol/peer.js";
+import { canControl, channelConversation, PushRefusedError, CLOCK_RESET_TIME, ClockAheadError, contactConversation, isTrusted, KEYLESS_CONVERSATION, MeshSession, mergeHistory, NodeCommandError, pathHashes, routeKey, splitChannelText, traceLegs, type ChannelRecord, type ContactRecord, type MessageRecord, type PersistedState, type StatusSample } from "./session.js";
 import { BaseTransport } from "./transport.js";
 import { TimeoutError, TransportClosedError } from "./client.js";
 
@@ -60,6 +60,8 @@ class ScriptedRadio extends BaseTransport {
   shared: "phone" | "computer" | null = null;
   /** The frames for the other app, which the relay takes and answers nothing. */
   told: Uint8Array[] = [];
+  /** The version the relay's hello says. */
+  relayVersion = 1;
   /** How many traces it refuses next, its packets all taken. */
   busy = 0;
 
@@ -110,7 +112,7 @@ class ScriptedRadio extends BaseTransport {
             .u8(7)
             .string("Me")
             .toBytes(),
-          ...(this.shared ? [new Uint8Array([Push.Peer, PEER_HELLO, 1, this.shared === "computer" ? 1 : 0])] : []),
+          ...(this.shared ? [new Uint8Array([Push.Peer, PEER_HELLO, this.relayVersion, this.shared === "computer" ? 1 : 0])] : []),
         ];
       case Cmd.GetDeviceTime:
         return [new ByteWriter().u8(Resp.CurrTime).u32(this.time).toBytes()];
@@ -983,6 +985,33 @@ test("the last radio's stored chats show before it is reached, and stay while it
   assert.equal(next.getState().status, "ready");
 });
 
+test("behind a relay that keeps what it hands over, the app says what it has saved, and sets aside a copy handed again", async () => {
+  const storage = new MemoryStorage();
+  const radio = new ScriptedRadio();
+  radio.shared = "phone";
+  radio.relayVersion = 2;
+  radio.queue.push(dmFrame(BOB, "one"), channelFrame(0, "Ann: two"));
+  const session = new MeshSession({ storage, now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  await tick(500);
+  assert.deepEqual(radio.told.map((f) => [...f]), [[...peerKeep()], [...peerSaved(2)]]);
+  // The relay hands both again, as after a page that went before it said so: neither is twice in the chats.
+  radio.queue.push(dmFrame(BOB, "one"), channelFrame(0, "Ann: two"), channelFrame(0, "Ann: three"));
+  await session.syncMessages();
+  await tick(500);
+  assert.deepEqual(session.getState().messages.map((m) => m.text), ["one", "two", "three"]);
+  assert.deepEqual([...radio.told.at(-1)!], [...peerSaved(5)]);
+  await session.disconnect();
+
+  // An older relay is told nothing.
+  const old = new ScriptedRadio();
+  old.shared = "phone";
+  const second = new MeshSession({ storage: new MemoryStorage(), now: () => 1_700_000_000_000 });
+  await second.connect(old);
+  await tick(500);
+  assert.deepEqual(old.told, []);
+});
+
 test("a stored history that cannot be read is not written over", async () => {
   class UnreadableStorage extends MemoryStorage {
     unreadable = false;
@@ -1009,10 +1038,91 @@ test("a stored history that cannot be read is not written over", async () => {
   await second.disconnect();
   assert.deepEqual(storage.saved.get(key)!.messages.map((m) => m.text), ["keep me"]);
 
-  // Readable again, it is read again rather than taken from what the session held meanwhile.
+  // Readable again, it is read again, and what came meanwhile is put into it: the radio gave it out once.
   storage.unreadable = false;
   await second.connect(new ScriptedRadio());
-  assert.deepEqual(second.getState().messages.map((m) => m.text), ["keep me"]);
+  assert.deepEqual(second.getState().messages.map((m) => m.text), ["keep me", "new"]);
+  await second.disconnect();
+  assert.deepEqual(storage.saved.get(key)!.messages.map((m) => m.text), ["keep me", "new"]);
+});
+
+test("a history that could not be read is read again a moment later, with what came meanwhile", async () => {
+  class UnreadableStorage extends MemoryStorage {
+    unreadable = false;
+    override async load(key: string): Promise<PersistedState | null> {
+      if (this.unreadable) throw new Error("Connection to Indexed Database server lost");
+      return super.load(key);
+    }
+  }
+  const storage = new UnreadableStorage();
+  const first = new MeshSession({ storage, now: () => 1_700_000_000_000 });
+  const radio = new ScriptedRadio();
+  radio.queue.push(dmFrame(BOB, "keep me"));
+  await first.connect(radio);
+  await first.disconnect();
+  const key = first.getState().self!.key;
+  const bob = contactConversation(bobKey());
+  storage.saved.get(key)!.unread = { [bob]: 1 };
+
+  storage.unreadable = true;
+  const second = new MeshSession({ storage, now: () => 1_700_000_000_000 });
+  const found: string[] = [];
+  second.onDiscovered((c) => found.push(c.name));
+  const again = new ScriptedRadio();
+  again.queue.push(dmFrame(BOB, "new"));
+  await second.connect(again);
+  assert.deepEqual(second.getState().messages.map((m) => m.text), ["new"]);
+  // Asked again too soon, it still cannot be read, and nothing is lost.
+  await second.readHistoryAgain();
+  assert.deepEqual(second.getState().messages.map((m) => m.text), ["new"]);
+
+  // The first try again comes by itself.
+  storage.unreadable = false;
+  await tick(2_100);
+  assert.deepEqual(second.getState().messages.map((m) => m.text), ["keep me", "new"]);
+  assert.equal(second.getState().unread[bob], 2);
+  assert.equal(second.getState().status, "ready");
+  assert.ok(second.getState().log.some((e) => e.text.startsWith("history read on try")));
+  // Saving goes on, with both.
+  await second.disconnect();
+  assert.deepEqual(storage.saved.get(key)!.messages.map((m) => m.text), ["keep me", "new"]);
+  assert.deepEqual(found, []);
+});
+
+test("a stored history and what came in while it could not be read are put together", () => {
+  const contact = (name: string, heard: number | null, pathSince: number | null): ContactRecord => ({
+    key: bobKey(), prefix: bobKey().slice(0, 12), type: 1, flags: 0, outPathLen: 1, outPath: "ce", name, lastAdvert: 10, lat: 0, lon: 0, lastMod: 10, lastHeardAt: heard, pathSince,
+  });
+  const message = (id: string, text: string, receivedAt: number): MessageRecord =>
+    ({ id, conversation: "ch:0", direction: "in", text, timestamp: receivedAt / 1000, receivedAt, senderPrefix: null, sender: "Ann" }) as MessageRecord;
+  const stored: PersistedState = {
+    contacts: { [bobKey()]: contact("Bob", 5_000, 1_000) },
+    contactsCursor: 10,
+    removed: { ["e0".repeat(32)]: { contact: { ...contact("Eve", null, null), key: "e0".repeat(32) }, at: 1, by: "radio" } },
+    channels: [{ index: 0, name: "Public", secret: "00" } as ChannelRecord],
+    messages: [message("a", "old", 1_000), message("b", "both", 3_000)],
+    unread: { "ch:0": 2 },
+    statusHistory: { [bobKey()]: [{ at: 1 } as unknown as StatusSample] },
+  };
+  const later: PersistedState = {
+    contacts: { [bobKey()]: contact("Bob 2", null, 9_000), ["e0".repeat(32)]: { ...contact("Eve", null, null), key: "e0".repeat(32) } },
+    contactsCursor: 12,
+    removed: {},
+    channels: [],
+    messages: [message("c", "both", 3_000), message("d", "new", 2_000)],
+    unread: { "ch:0": 1 },
+    statusHistory: { [bobKey()]: [{ at: 2 } as unknown as StatusSample] },
+  };
+  const merged = mergeHistory(stored, later);
+  assert.deepEqual(merged.messages.map((m) => m.text), ["old", "new", "both"]);
+  assert.equal(merged.contacts[bobKey()]!.name, "Bob 2");
+  assert.equal(merged.contacts[bobKey()]!.lastHeardAt, 5_000);
+  assert.equal(merged.contacts[bobKey()]!.pathSince, 1_000);
+  assert.deepEqual(Object.keys(merged.removed!), []);
+  assert.equal(merged.contactsCursor, 12);
+  assert.deepEqual(merged.channels.map((c) => c.name), ["Public"]);
+  assert.deepEqual(merged.unread, { "ch:0": 3 });
+  assert.deepEqual(merged.statusHistory![bobKey()]!.map((s) => (s as unknown as { at: number }).at), [1, 2]);
 });
 
 test("history saved with the raw path_len byte is read back as a hop count", async () => {
@@ -1490,6 +1600,40 @@ test("a node the radio adds as it hears it is announced once its contact is read
   await tick(600);
   assert.deepEqual(found, ["Carol"]);
   assert.equal(session.getState().contacts["c0".repeat(32)]?.unsaved, undefined);
+});
+
+test("with no contacts stored, the radio's list is no news, even when an advert asks for it before the connect does", async () => {
+  // The queue's first read answers late, as a long queue does over Bluetooth: the read an advert
+  // asks for half a second in goes ahead of the connect's own.
+  const radio = new (class extends ScriptedRadio {
+    slow = true;
+    override async send(frame: Uint8Array): Promise<void> {
+      if (frame[0] === Cmd.SyncNextMessage && this.slow) {
+        this.slow = false;
+        await tick(700);
+      }
+      return super.send(frame);
+    }
+  })();
+  const carol = fromHex("c0".repeat(32));
+  radio.contacts.push(contactFrame(carol, "Carol", 12));
+  const session = new MeshSession({ storage: new MemoryStorage(), now: () => 1_700_000_000_000 });
+  const found: string[] = [];
+  session.onDiscovered((c) => found.push(c.name));
+  const connecting = session.connect(radio);
+  await tick(50);
+  radio.push(new ByteWriter().u8(Push.Advert).bytes(carol).toBytes());
+  await connecting;
+  await tick(600);
+  assert.deepEqual(found, []);
+  assert.deepEqual(Object.values(session.getState().contacts).map((c) => c.name).sort(), ["Bob", "Carol"]);
+  // Once the list is known, a node the radio adds is news again.
+  const dan = fromHex("d0".repeat(32));
+  radio.contacts.push(contactFrame(dan, "Dan", 13));
+  radio.push(new ByteWriter().u8(Push.Advert).bytes(dan).toBytes());
+  await tick(600);
+  assert.deepEqual(found, ["Dan"]);
+  await session.disconnect();
 });
 
 test("removed contacts are kept to be put back, and a node the radio did not keep only leaves the list", async () => {

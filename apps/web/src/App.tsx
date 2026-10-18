@@ -160,10 +160,13 @@ export function App() {
   }, []);
 
   // A phone may end the app in the background without a word, and history is
-  // saved a moment after it changes: on the way out it is saved at once.
+  // saved a moment after it changes: on the way out it is saved at once. A
+  // page a phone started again out of sight may find its database shut, and
+  // the chats empty: back on screen it reads them again.
   useEffect(() => {
     const away = () => {
       if (document.visibilityState === "hidden") void session.flush().catch(() => undefined);
+      else void session.readHistoryAgain();
     };
     document.addEventListener("visibilitychange", away);
     return () => document.removeEventListener("visibilitychange", away);

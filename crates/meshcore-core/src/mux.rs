@@ -20,6 +20,12 @@
 //! the radio right after the radio said who it is, which is the first thing an
 //! app asks; a radio reached directly never says so, and the app sends none.
 //! For an app that is away, only the latest frame of each key waits.
+//!
+//! An app that says so ([`PEER_KEEP`]) also tells when it has saved what it took
+//! ([`PEER_SAVED`]). Until then the mux keeps each message it handed over, and
+//! puts it back in front of the inbox when the app goes or connects again: a
+//! page that died before it saved, as a phone's may, gets it once more rather
+//! than never. The app sets aside a message it has already.
 
 use std::collections::VecDeque;
 
@@ -79,6 +85,12 @@ pub(crate) struct Mux {
     draining: bool,
     drain_again: bool,
     inboxes: [Vec<Vec<u8>>; Client::COUNT],
+    /// Whether each client tells when it has saved what it took ([`PEER_KEEP`]).
+    keeping: [bool; Client::COUNT],
+    /// The messages each client took and has not yet said it saved, oldest first.
+    handed: [VecDeque<Vec<u8>>; Client::COUNT],
+    /// How many messages each client has said it saved, or that went unsaved, since it said it keeps.
+    saved: [u32; Client::COUNT],
     out: Vec<Effect>,
     events: Vec<Event>,
 }
@@ -101,6 +113,9 @@ impl Mux {
             draining: false,
             drain_again: false,
             inboxes,
+            keeping: [false; Client::COUNT],
+            handed: Default::default(),
+            saved: [0; Client::COUNT],
             out: Vec::new(),
             events: Vec::new(),
         }
@@ -108,6 +123,17 @@ impl Mux {
 
     pub fn inbox(&self, client: Client) -> &[Vec<u8>] {
         &self.inboxes[client.index()]
+    }
+
+    /// The inbox as it is saved: the messages taken and not yet saved by the client first, as
+    /// they would go again once it came back.
+    pub fn kept(&self, client: Client) -> Vec<Vec<u8>> {
+        let i = client.index();
+        self.handed[i]
+            .iter()
+            .chain(self.inboxes[i].iter())
+            .cloned()
+            .collect()
     }
 
     /// What the mux asks of its owner, and what happened, since the last call.
@@ -130,6 +156,7 @@ impl Mux {
 
     pub fn attach(&mut self, client: Client) {
         self.attached[client.index()] = true;
+        self.hand_back(client, false);
         // Messages kept while it was away.
         if !self.inbox(client).is_empty() {
             self.tell(client, vec![PUSH_MSG_WAITING]);
@@ -139,6 +166,7 @@ impl Mux {
     /// Its waiting commands are dropped; one in flight is still answered, to nobody.
     pub fn detach(&mut self, client: Client) {
         self.attached[client.index()] = false;
+        self.hand_back(client, false);
         let (dropped, kept): (VecDeque<Command>, VecDeque<Command>) =
             std::mem::take(&mut self.queue)
                 .into_iter()
@@ -158,7 +186,14 @@ impl Mux {
             if let Some(write) = write {
                 self.out.push(Effect::Written { write });
             }
-            self.pass(client, frame);
+            match frame.get(1) {
+                Some(&PEER_KEEP) => self.hand_back(client, true),
+                Some(&PEER_SAVED) if frame.len() >= 6 => {
+                    let n = u32::from_le_bytes([frame[2], frame[3], frame[4], frame[5]]);
+                    self.mark_saved(client, n);
+                }
+                _ => self.pass(client, frame),
+            }
             return;
         }
         if frame.is_empty() || frame[0] == CMD_SYNC_NEXT_MESSAGE {
@@ -205,6 +240,9 @@ impl Mux {
                 pushes.push(frame);
             } else {
                 self.events.push(Event::Taken(client, frame.clone()));
+                if self.keeping[client.index()] {
+                    self.keep_handed(client, frame.clone());
+                }
                 answer = frame;
                 break;
             }
@@ -216,6 +254,62 @@ impl Mux {
             self.tell(client, push);
         }
         self.tell(client, answer);
+    }
+
+    /// A message handed to a client that tells when it saved it: kept until it does, up to the
+    /// inbox's limit, past which the oldest counts as gone.
+    fn keep_handed(&mut self, client: Client, frame: Vec<u8>) {
+        let i = client.index();
+        self.handed[i].push_back(frame);
+        if self.handed[i].len() > INBOX_LIMIT {
+            self.handed[i].pop_front();
+            self.saved[i] = self.saved[i].wrapping_add(1);
+        }
+    }
+
+    /// The client saved the first `n` messages it took since it said it keeps.
+    fn mark_saved(&mut self, client: Client, n: u32) {
+        let i = client.index();
+        let mut changed = false;
+        while self.saved[i] < n && self.handed[i].pop_front().is_some() {
+            self.saved[i] += 1;
+            changed = true;
+        }
+        if changed {
+            self.out.push(Effect::InboxesChanged);
+        }
+    }
+
+    /// What a client took and did not say it saved goes back in front of its inbox, to be
+    /// taken again; the count starts afresh, with `keeping` for whether it is to tell again.
+    fn hand_back(&mut self, client: Client, keeping: bool) {
+        let i = client.index();
+        self.keeping[i] = keeping;
+        self.saved[i] = 0;
+        if self.handed[i].is_empty() {
+            return;
+        }
+        let handed: Vec<Vec<u8>> = self.handed[i].drain(..).collect();
+        let inbox = std::mem::take(&mut self.inboxes[i]);
+        self.inboxes[i] = handed.into_iter().chain(inbox).collect();
+        // Over the limit, the oldest messages go, as `add` lets them.
+        let mut excess = self.inboxes[i]
+            .iter()
+            .filter(|f| !is_push(f[0]))
+            .count()
+            .saturating_sub(INBOX_LIMIT);
+        self.inboxes[i].retain(|f| {
+            if excess > 0 && !is_push(f[0]) {
+                excess -= 1;
+                return false;
+            }
+            true
+        });
+        self.out.push(Effect::InboxesChanged);
+        // On attach, the inbox's own news says so.
+        if keeping && self.is_attached(client) {
+            self.tell(client, vec![PUSH_MSG_WAITING]);
+        }
     }
 
     // The radio
@@ -950,6 +1044,98 @@ mod tests {
             "the computer still has its copy"
         );
         assert!(rig.radio.is_empty(), "none of that asks the radio");
+    }
+
+    const KEEP: &[u8] = &[PEER, PEER_KEEP];
+    const OTHER: &[u8] = &[16, 4, 5, 6];
+
+    fn saved(n: u32) -> Vec<u8> {
+        [&[PEER, PEER_SAVED][..], &n.to_le_bytes()].concat()
+    }
+
+    #[test]
+    fn a_message_a_page_took_and_did_not_save_comes_again_when_it_comes_back() {
+        let mut rig = Rig::new();
+        rig.attach(Page).client_says(Page, KEEP).up();
+        rig.radio_says(MESSAGE)
+            .radio_says(OTHER)
+            .radio_says(NO_MORE)
+            .clear();
+        rig.client_says(Page, SYNC).client_says(Page, SYNC);
+        assert_eq!(rig.page, v(&[MESSAGE, OTHER]));
+        assert!(rig.mux.inbox(Page).is_empty(), "both were taken");
+        assert_eq!(
+            rig.mux.kept(Page),
+            v(&[MESSAGE, OTHER]),
+            "and are kept, as saved, until the page says"
+        );
+
+        // It saved the first; then it went, and a new page came.
+        rig.client_says(Page, &saved(1));
+        assert_eq!(rig.mux.kept(Page), v(&[OTHER]));
+        rig.mux.detach(Page);
+        rig.attach(Page).clear();
+        rig.client_says(Page, KEEP)
+            .client_says(Page, SYNC)
+            .client_says(Page, SYNC);
+        assert_eq!(
+            rig.page,
+            v(&[OTHER, NO_MORE]),
+            "the one not saved comes again"
+        );
+        rig.client_says(Page, &saved(1));
+        assert!(rig.mux.kept(Page).is_empty());
+        assert!(
+            rig.computer.is_empty() && rig.radio.is_empty(),
+            "none of that goes elsewhere"
+        );
+    }
+
+    #[test]
+    fn a_page_that_connects_again_without_going_gets_again_what_it_did_not_save() {
+        let mut rig = Rig::new();
+        rig.attach(Page).client_says(Page, KEEP).up();
+        rig.radio_says(MESSAGE).radio_says(NO_MORE).clear();
+        rig.client_says(Page, SYNC);
+        // A new connect says it keeps again: the count starts afresh, and what was not saved waits first.
+        rig.clear().client_says(Page, KEEP);
+        assert_eq!(rig.page, v(&[&[PUSH_MSG_WAITING]]));
+        rig.radio_says(OTHER).radio_says(NO_MORE).clear();
+        rig.client_says(Page, SYNC)
+            .client_says(Page, SYNC)
+            .client_says(Page, SYNC);
+        assert_eq!(rig.page, v(&[MESSAGE, OTHER, NO_MORE]));
+        rig.client_says(Page, &saved(2));
+        assert!(rig.mux.kept(Page).is_empty());
+    }
+
+    #[test]
+    fn a_page_that_does_not_say_it_keeps_takes_as_before() {
+        let mut rig = Rig::new();
+        rig.attach(Page)
+            .up()
+            .radio_says(MESSAGE)
+            .radio_says(NO_MORE)
+            .clear();
+        rig.client_says(Page, SYNC);
+        assert_eq!(rig.page, v(&[MESSAGE]));
+        assert!(rig.mux.kept(Page).is_empty(), "nothing is kept for it");
+        rig.mux.detach(Page);
+        rig.attach(Page).clear().client_says(Page, SYNC);
+        assert_eq!(rig.page, v(&[NO_MORE]));
+    }
+
+    #[test]
+    fn messages_not_yet_saved_are_kept_over_a_restart() {
+        let mut rig = Rig::new();
+        rig.attach(Page).client_says(Page, KEEP).up();
+        rig.radio_says(MESSAGE)
+            .radio_says(NO_MORE)
+            .client_says(Page, SYNC);
+        // The app stops before the page saved: what the owner saves holds the message.
+        let mut again = Rig::with(vec![(Page, rig.mux.kept(Page))]);
+        again.attach(Page).client_says(Page, SYNC);
+        assert_eq!(again.page, v(&[&[PUSH_MSG_WAITING], MESSAGE]));
     }
 
     #[test]

@@ -509,3 +509,100 @@
 .popover .danger .popover-icon {
   color: var(--danger);
 }
+
+/* A sheet that opens at half the screen and is pulled up to all of it (PullSheet.tsx): a node's profile
+   on a phone. Under the other sheets and menus, which open from it. */
+.pull-layer {
+  position: fixed;
+  inset: 0 0 calc(max(var(--keyboard-rise, 0px), var(--home-bar)) - var(--safe-bottom));
+  z-index: 990;
+  overflow: hidden;
+}
+/* Over the map, the map stays live above it, panned and another node tapped, and the tabs below it. */
+.pull-layer.see-through {
+  bottom: calc(var(--tabbar-height) + var(--home-bar));
+  pointer-events: none;
+}
+.pull-layer.see-through .pull-sheet {
+  padding-bottom: 0;
+}
+/* A map of its own above the sheet, for a node opened away from the Mesh map: it fades in and out with the sheet. */
+.pull-backdrop {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  transition: opacity 0.22s ease;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pull-backdrop {
+    animation: fade-in 0.22s;
+  }
+}
+.pull-layer.leaving .pull-backdrop {
+  opacity: 0;
+}
+.pull-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgb(var(--shadow-rgb) / 0.3);
+  transition: opacity 0.3s ease;
+}
+.pull-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(100% - var(--safe-top) - 8px);
+  display: flex;
+  flex-direction: column;
+  padding-bottom: var(--safe-bottom);
+  border-radius: 16px 16px 0 0;
+  background: var(--bg);
+  box-shadow: 0 -6px 24px rgb(var(--shadow-rgb) / 0.22);
+  outline: none;
+  pointer-events: auto;
+  transform: translate3d(0, 100%, 0);
+  transition: transform 0.34s cubic-bezier(0.22, 0.9, 0.3, 1);
+  will-change: transform;
+}
+.pull-layer.leaving .pull-sheet {
+  pointer-events: none;
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
+  transition-duration: 0.22s;
+}
+.pull-layer.leaving {
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pull-sheet,
+  .pull-scrim {
+    transition-duration: 0.01s;
+  }
+}
+.pull-grab {
+  flex: none;
+  display: grid;
+  place-items: center;
+  height: 22px;
+  cursor: grab;
+  touch-action: none;
+}
+.pull-grab::before {
+  content: "";
+  width: 40px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border-strong);
+}
+.pull-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* At half it is pulled, not scrolled; the rest of it lies below the screen's edge. */
+.pull-sheet[data-detent="half"] .pull-body {
+  overflow-y: hidden;
+}

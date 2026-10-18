@@ -165,6 +165,12 @@ export function openProfile(key: string, inMesh = false): void {
   else push({ kind: "profile", key });
 }
 
+/** Another node's profile in place of the one on top: a node tapped on the map over a phone's profile sheet. */
+export function swapProfile(key: string): void {
+  const stack = nav.stacks[nav.section];
+  if (stack.at(-1)?.kind === "profile") setStack(nav.section, [...stack.slice(0, -1), { kind: "profile", key }]);
+}
+
 /**
  * A node's profile opened from another node's page, a neighbour's from its
  * list (#83): over the page on a phone, beside it on a desktop, where the

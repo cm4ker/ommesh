@@ -5,7 +5,8 @@ import { getPins } from "../lib/chatPins.js";
 import { summarize, totalUnread } from "../lib/conversations.js";
 import { pairLink, reconnectNow, useLink } from "../lib/link.js";
 import { useWide } from "../lib/layout.js";
-import { back, focusOnMap, getNav, goSection, openConversation, setStack, shownConversation, topOf, useNav, type Nav, type Screen, type Section } from "../lib/nav.js";
+import { back, focusOnMap, getNav, goSection, openConversation, setStack, shownConversation, swapProfile, topOf, useNav, type Nav, type Screen, type Section } from "../lib/nav.js";
+import { hasPosition } from "../lib/geo.js";
 import { setSettingsFind } from "../lib/settingsSearch.js";
 import { useMeshTool, type MeshTool } from "../lib/meshTool.js";
 import { useNodePick } from "../lib/nodePick.js";
@@ -17,6 +18,7 @@ import { toast } from "../lib/toast.js";
 import { MenuHost, ToastHost } from "../ui/Menu.js";
 import { ScreenBoundary } from "../ui/ErrorBoundary.js";
 import { Sheet } from "../ui/Sheet.js";
+import { PullSheet } from "../ui/PullSheet.js";
 import { Button } from "../ui/Button.js";
 import { Prompt } from "../ui/Dialog.js";
 import { ChannelView } from "./ChannelView.js";
@@ -25,7 +27,7 @@ import { ChatSwitcher } from "./ChatSwitcher.js";
 import { ChatList, NEW_CHAT_EVENT } from "./ChatList.js";
 import { ChatView, FIND_IN_CHAT_EVENT } from "./ChatView.js";
 import { ChatIcon, NodesIcon, SearchIcon, SettingsIcon } from "./Icons.js";
-import { MeshList, MeshMap, MeshPhone, MeshPickBar, useMeshAttention } from "./Mesh.js";
+import { MeshList, MeshMap, MeshPhone, MeshPickBar, ProfileMap, useMeshAttention } from "./Mesh.js";
 import { MessageView } from "./MessageView.js";
 import { NodePageView } from "./node/NodePage.js";
 import { Palette } from "./Palette.js";
@@ -174,9 +176,17 @@ function Phone() {
   const tool = useMeshTool();
   const stack = nav.stacks[nav.section];
   const top = stack.at(-1) ?? null;
-  // How a message travelled is a sheet over its conversation, not a screen of its own.
-  const sheet = top?.kind === "message" ? top : null;
-  const screens = sheet ? stack.slice(0, -1) : stack;
+  // How a message travelled, and a node's profile, are sheets over what they were opened from, not screens of
+  // their own. A page opened from a profile covers the screen under the sheet, and Back brings the sheet up again.
+  const sheet = top?.kind === "message" || top?.kind === "profile" ? top : null;
+  const screens = stack.filter((s) => s.kind !== "message" && s.kind !== "profile");
+  const profileKey = sheet?.kind === "profile" ? sheet.key : null;
+  const profilePlaced = useSelector((state) => {
+    const contact = profileKey === null ? undefined : state.contacts[profileKey];
+    return !!contact && hasPosition(contact.lat, contact.lon);
+  });
+  // Opened over the Mesh map, the profile has that map above it already.
+  const mapUnder = nav.section === "mesh" && screens.length === 0;
   const shown = screens.at(-1) ?? null;
   const content = useRef<HTMLElement>(null);
   const goBack = useEdgeSwipe(content, screens.length > 0 && !sheet);
@@ -249,9 +259,25 @@ function Phone() {
         <div className="layer-dim" aria-hidden="true" />
       </main>
       {tabs ? picking ? <MeshPickBar /> : tabbar("tabbar") : null}
-      <Sheet open={sheet !== null} onClose={back} title={t("connect.sheet.travelled")}>
-        {sheet ? <MessageView conversation={sheet.conversation} id={sheet.id} chrome={{}} bare /> : null}
+      <Sheet open={sheet?.kind === "message"} onClose={back} title={t("connect.sheet.travelled")}>
+        {sheet?.kind === "message" ? <MessageView conversation={sheet.conversation} id={sheet.id} chrome={{}} bare /> : null}
       </Sheet>
+      {/* A node's profile comes with the map of where it is above it: the Mesh map itself when opened on it, where
+          an empty spot closes it, or a map of its own, which comes and goes with the sheet. On either, another node
+          tapped takes this one's place. A node with no position has no map of its own to show: it opens all the way
+          up, over what it was opened from. */}
+      <PullSheet
+        open={profileKey !== null}
+        onClose={back}
+        seeThrough={mapUnder}
+        backdrop={profileKey !== null && profilePlaced && !mapUnder ? <ProfileMap contactKey={profileKey} onPick={swapProfile} /> : null}
+        initial={profilePlaced ? "half" : "full"}
+        id={profileKey ?? undefined}
+        covered={!sheet && stack.at(-2)?.kind === "profile"}
+        label={t("mesh.profile.contact")}
+      >
+        {profileKey !== null ? <Profile key={profileKey} contactKey={profileKey} chrome={{ onBack: back }} sheet /> : null}
+      </PullSheet>
     </div>
   );
 }

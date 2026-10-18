@@ -16,7 +16,7 @@ import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
 import { ChatNotices } from "./ChatNotices.js";
 import { HeroName } from "./HeroName.js";
-import { AirIcon, ChartIcon, ChatIcon, CheckIcon, CopyIcon, EditIcon, LockIcon, MapIcon, MoreIcon, PowerIcon, ShieldIcon, SlidersIcon, StarFilledIcon, StarIcon, TerminalIcon, TrashIcon, UsersIcon, CloseIcon } from "./Icons.js";
+import { AirIcon, BackIcon, ChartIcon, ChatIcon, CheckIcon, CopyIcon, EditIcon, LockIcon, MapIcon, MoreIcon, PowerIcon, ShieldIcon, SlidersIcon, StarFilledIcon, StarIcon, TerminalIcon, TrashIcon, UsersIcon, CloseIcon } from "./Icons.js";
 import { NodeReadings } from "./NodeReadings.js";
 import { ClockRow } from "./node/Clock.js";
 import { QueuePill } from "./node/QueuePill.js";
@@ -61,38 +61,32 @@ export function nodePages(type: number): NodePage[] {
  * A repeater, room or sensor you have signed in to also shows how it is
  * doing, and opens its own screens.
  */
-export function Profile({ contactKey, chrome }: { contactKey: string; chrome: Chrome }) {
+export function Profile({ contactKey, chrome, sheet = false }: { contactKey: string; chrome: Chrome; sheet?: boolean | undefined }) {
   const state = useSession();
   const saved = useSavedPasswords();
-  // Beside the map, the node is on it already; beside a node's page, which a neighbour's profile opens from, it is not.
+  // Beside the map, or in a phone's sheet under it, the node is on it already; beside a node's page, which a
+  // neighbour's profile opens from, it is not.
   const wide = useWide();
   const nav = useNav();
-  const mapBeside = wide && nav.section === "mesh" && nav.stacks.mesh.at(-2)?.kind !== "node";
+  const mapBeside = sheet || (wide && nav.section === "mesh" && nav.stacks.mesh.at(-2)?.kind !== "node");
   const contact = state.contacts[contactKey];
   const [ask, setAsk] = useState<"rename" | "remove" | "forget" | "reboot" | "signin" | null>(null);
   const online = state.status === "ready";
 
   if (!contact) {
     const removed = state.removed[contactKey]?.contact;
-    if (!removed) return <Gone chrome={chrome} title={t("mesh.profile.contact")} text={t("mesh.profile.gone")} />;
+    if (!removed) return sheet ? <div className="empty muted">{t("mesh.profile.gone")}</div> : <Gone chrome={chrome} title={t("mesh.profile.contact")} text={t("mesh.profile.gone")} />;
     const name = removed.name || removed.prefix;
     return (
-      <div className="screen">
-        <ScreenHead chrome={chrome} />
-        <div className="screen-scroll">
-          <div className="hero">
-            <Avatar name={name} type={removed.type} size={68} />
-            <HeroName name={name} label={t("common.copyName")} />
-            <span className="muted">{t("mesh.profile.kindHeard", { kind: kindLabel(removed.type), time: agoPhrase(heardAt(removed) || null) })}</span>
-          </div>
-          <NotOnRadio contactKey={contactKey} />
-          {isConversationType(removed.type) && state.messages.some((m) => m.conversation === contactConversation(contactKey)) ? (
-            <Group>
-              <LinkRow icon={<ChatIcon size={17} />} label={t("mesh.profile.openChat")} onClick={() => openConversation(contactConversation(contactKey))} />
-            </Group>
-          ) : null}
-        </div>
-      </div>
+      <Frame sheet={sheet} head={<ScreenHead chrome={chrome} />}>
+        <Hero sheet={sheet} name={name} type={removed.type} lines={[t("mesh.profile.kindHeard", { kind: kindLabel(removed.type), time: agoPhrase(heardAt(removed) || null) })]} onBack={chrome.onBack} />
+        <NotOnRadio contactKey={contactKey} />
+        {isConversationType(removed.type) && state.messages.some((m) => m.conversation === contactConversation(contactKey)) ? (
+          <Group>
+            <LinkRow icon={<ChatIcon size={17} />} label={t("mesh.profile.openChat")} onClick={() => openConversation(contactConversation(contactKey))} />
+          </Group>
+        ) : null}
+      </Frame>
     );
   }
 
@@ -156,107 +150,110 @@ export function Profile({ contactKey, chrome }: { contactKey: string; chrome: Ch
       { title: login?.role === null || login?.role === undefined ? t("mesh.profile.signedInTitle", { name }) : t("mesh.profile.signedInAsTitle", { name, role: roleName(login.role) }) },
     );
 
+  const star = (
+    <IconButton label={isFavourite(contact) ? t("mesh.profile.unfavourite") : t("mesh.profile.favourite")} disabled={!online} onClick={() => void act(() => session.setFavourite(key, !isFavourite(contact)))}>
+      {isFavourite(contact) ? <StarFilledIcon size={19} className="star" /> : <StarIcon size={19} />}
+    </IconButton>
+  );
+  // In a sheet the line of what is on air takes room from the name, so it shows only while there is something.
+  const queue = node && (!sheet || state.remote.active) ? <QueuePill nodeKey={key} /> : null;
+
   return (
-    <div className="screen">
-      <ScreenHead
-        chrome={chrome}
-        actions={
-          <>
-            {node ? <QueuePill nodeKey={key} /> : null}
-            <IconButton label={isFavourite(contact) ? t("mesh.profile.unfavourite") : t("mesh.profile.favourite")} disabled={!online} onClick={() => void act(() => session.setFavourite(key, !isFavourite(contact)))}>
-              {isFavourite(contact) ? <StarFilledIcon size={19} className="star" /> : <StarIcon size={19} />}
-            </IconButton>
-          </>
-        }
-      />
-      <div className="screen-scroll">
-        <div className="hero">
-          <Avatar name={name} type={contact.type} size={68} />
-          <HeroName name={name} label={t("common.copyName")} />
-          <span className="muted">{t("mesh.profile.kindHeard", { kind: kindLabel(contact.type), time: agoPhrase(heard) })}</span>
-          {where ? <span className="muted">{where}</span> : null}
-        </div>
-
-        {contact.unsaved ? <NotOnRadio contactKey={key} /> : null}
-
-        <div className="hero-actions">
-          {routed ? (
-            <button type="button" className="hero-act primary" onClick={() => openConversation(contactConversation(key))}>
-              <ChatIcon size={20} />
-              {t("mesh.message")}
-            </button>
-          ) : null}
-          {node ? (
-            signedIn ? (
-              <button type="button" className="hero-act" onClick={signedMenu}>
-                <CheckIcon size={20} />
-                {admin ? t("mesh.profile.admin") : t("mesh.profile.signedIn")}
-              </button>
-            ) : (
-              <button type="button" className={["hero-act", routed ? "" : "primary"].join(" ")} disabled={!online} onClick={() => setAsk("signin")}>
-                <LockIcon size={20} />
-                {t("mesh.profile.signIn")}
-              </button>
-            )
-          ) : null}
-          {mapBeside ? null : (
-            <button type="button" className="hero-act" disabled={!placed} onClick={() => showOnMap(key, true)}>
-              <MapIcon size={20} />
-              {t("mesh.profile.onMap")}
-            </button>
-          )}
-          <button type="button" className="hero-act" onClick={more}>
-            <MoreIcon size={20} />
-            {t("common.more")}
-          </button>
-        </div>
-
-        <Group>
-          <RouteLink contactKey={key} />
-          <ForgetRouteRow contactKey={key} />
-        </Group>
-
-        {isConversationType(contact.type) ? <ChatNotices conversation={contactConversation(key)} direct={contact.type !== AdvType.Room} /> : null}
-
-        {!node || managed || signedIn ? <NodeReadings contact={contact} /> : null}
-
-        {node ? (
-          <Group title={t("mesh.profile.manage")} note={signedIn ? (admin ? undefined : t("mesh.profile.needAdmin")) : t("mesh.profile.signInToSee")}>
-            <ClockRow contact={contact} />
-            {nodePages(contact.type).map((page) => {
-              const locked = !signedIn || (PAGES[page].admin && !admin);
-              return (
-                <LinkRow
-                  key={page}
-                  icon={PAGES[page].icon}
-                  label={t(PAGES[page].label)}
-                  disabled={locked}
-                  trailing={locked ? <LockIcon size={14} className="line-chev" /> : undefined}
-                  onClick={() => openNodePage(key, page)}
-                />
-              );
-            })}
-          </Group>
-        ) : null}
-
-        <Group title={t("mesh.profile.details")}>
-          <LinkRow label={t("mesh.profile.publicKey")} value={<span className="mono">{key.slice(0, 16)}…</span>} trailing={<CopyIcon size={14} className="line-chev" />} onClick={() => void navigator.clipboard?.writeText(key).then(() => toast(t("common.copied")))} />
-          {placed ? (
-            <InfoRow label={t("mesh.profile.position")} mono>
-              {contact.lat.toFixed(5)}, {contact.lon.toFixed(5)}
-            </InfoRow>
-          ) : null}
-          {owner ? (
+    <Frame
+      sheet={sheet}
+      head={
+        <ScreenHead
+          chrome={chrome}
+          actions={
             <>
-              <InfoRow label={t("mesh.profile.firmware")} mono>
-                {owner.firmware}
-              </InfoRow>
-              <InfoRow label={t("mesh.profile.owner")}>{owner.owner ? <span className="multiline">{owner.owner}</span> : t("mesh.profile.notSet")}</InfoRow>
+              {queue}
+              {star}
             </>
-          ) : null}
-          {login?.firmwareLevel != null ? <InfoRow label={t("mesh.profile.firmwareLevel")}>{login.firmwareLevel}</InfoRow> : null}
-        </Group>
+          }
+        />
+      }
+    >
+      <Hero sheet={sheet} name={name} type={contact.type} lines={[t("mesh.profile.kindHeard", { kind: kindLabel(contact.type), time: agoPhrase(heard) }), where]} tools={sheet ? <>{queue}{star}</> : null} onBack={chrome.onBack} />
+
+      {contact.unsaved ? <NotOnRadio contactKey={key} /> : null}
+
+      <div className="hero-actions">
+        {routed ? (
+          <button type="button" className="hero-act primary" onClick={() => openConversation(contactConversation(key))}>
+            <ChatIcon size={20} />
+            {t("mesh.message")}
+          </button>
+        ) : null}
+        {node ? (
+          signedIn ? (
+            <button type="button" className="hero-act" onClick={signedMenu}>
+              <CheckIcon size={20} />
+              {admin ? t("mesh.profile.admin") : t("mesh.profile.signedIn")}
+            </button>
+          ) : (
+            <button type="button" className={["hero-act", routed ? "" : "primary"].join(" ")} disabled={!online} onClick={() => setAsk("signin")}>
+              <LockIcon size={20} />
+              {t("mesh.profile.signIn")}
+            </button>
+          )
+        ) : null}
+        {mapBeside ? null : (
+          <button type="button" className="hero-act" disabled={!placed} onClick={() => showOnMap(key, true)}>
+            <MapIcon size={20} />
+            {t("mesh.profile.onMap")}
+          </button>
+        )}
+        <button type="button" className="hero-act" onClick={more}>
+          <MoreIcon size={20} />
+          {t("common.more")}
+        </button>
       </div>
+
+      <Group>
+        <RouteLink contactKey={key} />
+        <ForgetRouteRow contactKey={key} />
+      </Group>
+
+      {isConversationType(contact.type) ? <ChatNotices conversation={contactConversation(key)} direct={contact.type !== AdvType.Room} /> : null}
+
+      {!node || managed || signedIn ? <NodeReadings contact={contact} /> : null}
+
+      {node ? (
+        <Group title={t("mesh.profile.manage")} note={signedIn ? (admin ? undefined : t("mesh.profile.needAdmin")) : t("mesh.profile.signInToSee")}>
+          <ClockRow contact={contact} />
+          {nodePages(contact.type).map((page) => {
+            const locked = !signedIn || (PAGES[page].admin && !admin);
+            return (
+              <LinkRow
+                key={page}
+                icon={PAGES[page].icon}
+                label={t(PAGES[page].label)}
+                disabled={locked}
+                trailing={locked ? <LockIcon size={14} className="line-chev" /> : undefined}
+                onClick={() => openNodePage(key, page)}
+              />
+            );
+          })}
+        </Group>
+      ) : null}
+
+      <Group title={t("mesh.profile.details")}>
+        <LinkRow label={t("mesh.profile.publicKey")} value={<span className="mono">{key.slice(0, 16)}…</span>} trailing={<CopyIcon size={14} className="line-chev" />} onClick={() => void navigator.clipboard?.writeText(key).then(() => toast(t("common.copied")))} />
+        {placed ? (
+          <InfoRow label={t("mesh.profile.position")} mono>
+            {contact.lat.toFixed(5)}, {contact.lon.toFixed(5)}
+          </InfoRow>
+        ) : null}
+        {owner ? (
+          <>
+            <InfoRow label={t("mesh.profile.firmware")} mono>
+              {owner.firmware}
+            </InfoRow>
+            <InfoRow label={t("mesh.profile.owner")}>{owner.owner ? <span className="multiline">{owner.owner}</span> : t("mesh.profile.notSet")}</InfoRow>
+          </>
+        ) : null}
+        {login?.firmwareLevel != null ? <InfoRow label={t("mesh.profile.firmwareLevel")}>{login.firmwareLevel}</InfoRow> : null}
+      </Group>
 
       <SignIn open={ask === "signin"} nodeKey={key} onClose={() => setAsk(null)} onSignedIn={() => { setAsk(null); toast(t("mesh.profile.signedInTo", { name })); }} />
       <Prompt
@@ -310,6 +307,53 @@ export function Profile({ contactKey, chrome }: { contactKey: string; chrome: Ch
           cli("reboot", t("mesh.profile.rebootSent", { name }))();
         }}
       />
+    </Frame>
+  );
+}
+
+/** A profile's screen, with its header and a scroll of its own; in a phone's sheet, which scrolls it, the content alone. */
+function Frame({ sheet, head, children }: { sheet: boolean; head: React.ReactNode; children: React.ReactNode }) {
+  if (sheet) return <div className="profile-sheet">{children}</div>;
+  return (
+    <div className="screen">
+      {head}
+      <div className="screen-scroll">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * The picture, the name and a line or two under it: in the middle on a
+ * screen; beside the picture in a sheet, where half the screen has to hold
+ * the buttons and the route too, with Back before them.
+ */
+function Hero({ sheet, name, type, lines, tools, onBack }: { sheet: boolean; name: string; type: number; lines: string[]; tools?: React.ReactNode; onBack?: (() => void) | undefined }) {
+  const text = lines.filter(Boolean).map((line) => (
+    <span key={line} className="muted">
+      {line}
+    </span>
+  ));
+  if (!sheet)
+    return (
+      <div className="hero">
+        <Avatar name={name} type={type} size={68} />
+        <HeroName name={name} label={t("common.copyName")} />
+        {text}
+      </div>
+    );
+  return (
+    <div className="hero side">
+      {onBack ? (
+        <IconButton label={t("common.back")} onClick={onBack}>
+          <BackIcon size={20} />
+        </IconButton>
+      ) : null}
+      <Avatar name={name} type={type} size={48} />
+      <div className="hero-text">
+        <HeroName name={name} label={t("common.copyName")} />
+        {text}
+      </div>
+      {tools ? <div className="hero-tools">{tools}</div> : null}
     </div>
   );
 }

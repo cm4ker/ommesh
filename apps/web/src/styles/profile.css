@@ -58,6 +58,42 @@
 .hero.compact {
   padding-top: var(--space-4);
 }
+/* In a phone's sheet: Back, then the name beside the picture, so half the screen holds the buttons and the route too. */
+.hero.side {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2) 0;
+  text-align: left;
+}
+.hero-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.hero.side h1 {
+  margin: 0 0 0 -6px;
+  font-size: calc(20px * var(--text-scale));
+}
+.hero.side .hero-name {
+  text-align: left;
+}
+.hero.side .hero-name::before {
+  content: none;
+}
+.hero-tools {
+  flex: none;
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.profile-sheet {
+  padding-bottom: var(--space-5);
+}
 .hero-actions {
   display: flex;
   justify-content: center;

@@ -41,6 +41,7 @@ import { Button, IconButton } from "../ui/Button.js";
 import { SearchField } from "../ui/Field.js";
 import { ActionRow, Block, Group, SwitchRow } from "../ui/List.js";
 import { showMenu } from "../ui/Menu.js";
+import { pullSheetCover } from "../ui/PullSheet.js";
 import { Sheet } from "../ui/Sheet.js";
 import { Avatar } from "./Avatar.js";
 import { AlertIcon, ChartIcon, CheckIcon, CloseIcon, CopyIcon, DoubleCheckIcon, LocationIcon, SlidersIcon, StarFilledIcon, TrashIcon } from "./Icons.js";
@@ -727,7 +728,7 @@ function usePhoneOnMap(state: SessionState, active: boolean, surveying: boolean)
 }
 
 /** The map with the filter applied, the focus and the tool drawn, and taps handed up or to the tool. */
-export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zoomButtons, active = true }: { selected: string | null; onSelect: (key: string | null) => void; onGroup: (keys: string[]) => void; coverTop?: number | undefined; coverBottom?: number | undefined; zoomButtons?: boolean | undefined; active?: boolean | undefined }) {
+export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zoomButtons, active = true, show = null }: { selected: string | null; onSelect: (key: string | null) => void; onGroup: (keys: string[]) => void; coverTop?: number | undefined; coverBottom?: number | undefined; zoomButtons?: boolean | undefined; active?: boolean | undefined; show?: { id: string; points: [number, number][] } | null | undefined }) {
   const state = useSession();
   const surveys = useSurveys();
   const surveying = surveys.run !== null;
@@ -839,7 +840,7 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
     }
     hearsFit = { id: `hears:${hears.at}:${hears.listening ? "asked" : "answered"}`, points };
   }
-  const fit = hub ? { id: `${hub}:${whole ? "all" : "part"}:${refit}`, points: fitPoints } : (surveyFit ?? routeFit ?? directFit ?? hearsFit ?? placeFit);
+  const fit = hub ? { id: `${hub}:${whole ? "all" : "part"}:${refit}`, points: fitPoints } : (surveyFit ?? routeFit ?? directFit ?? hearsFit ?? placeFit ?? show);
   // A point of it opened, the map goes on following: the answers there are read with the phone still in sight.
   const running = tool?.kind === "survey" && tool.view === "run" && surveying;
   // A new list only when a repeater answers for the first time or one of them moves, so the map is not fitted on every render.
@@ -1018,6 +1019,10 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
   const peek = Math.max(0, Math.min(middle - 48, space.peek || 104));
   const half = !listed && space.card ? Math.max(peek + 48, Math.min(middle, space.card)) : middle;
   const heights: Record<Detent, number> = { peek, half, full };
+  // A node's profile in its sheet over the map covers more of it than the list does.
+  const over = nav.stacks.mesh.length === 1 ? nav.stacks.mesh[0]! : null;
+  const profileOver = over?.kind === "profile";
+  const profileShow = useProfileShow(state, over?.kind === "profile" ? over.key : null);
 
   // What the handlers read, so the listeners on the list are set once.
   const live = useRef({ detent, heights, setDetent });
@@ -1168,7 +1173,8 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
             if (detent !== "half") setDetent("half");
           }}
           coverTop={space.top}
-          coverBottom={heights[detent]}
+          coverBottom={profileOver ? Math.max(heights[detent], pullSheetCover(box.current?.getBoundingClientRect().bottom ?? window.innerHeight)) : heights[detent]}
+          show={profileShow}
           active={!hidden}
         />
       ) : null}
@@ -1242,6 +1248,64 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
       <FilterSheetHost />
     </div>
   );
+}
+
+/**
+ * The map above a node's profile in its phone sheet, when the profile opens
+ * away from the Mesh map: the node brought into view above the sheet, ringed
+ * with its route. A tap on another node opens its profile in place of this one.
+ */
+export function ProfileMap({ contactKey, onPick }: { contactKey: string; onPick: (key: string) => void }) {
+  const state = useSession();
+  const box = useRef<HTMLDivElement>(null);
+  const inset = useRef<HTMLDivElement>(null);
+  const [space, setSpace] = useState({ top: 0, bottom: 0 });
+  useLayoutEffect(() => {
+    const el = box.current;
+    const probe = inset.current;
+    if (!el || !probe) return;
+    const measure = () => {
+      const top = probe.offsetHeight;
+      const bottom = Math.round(el.getBoundingClientRect().bottom);
+      setSpace((s) => (s.top === top && s.bottom === bottom ? s : { top, bottom }));
+    };
+    const resize = new ResizeObserver(measure);
+    resize.observe(el);
+    resize.observe(probe);
+    measure();
+    return () => resize.disconnect();
+  }, []);
+  const show = useProfileShow(state, contactKey);
+  return (
+    <div className="mesh-phone" ref={box}>
+      <div className="mesh-inset" ref={inset} aria-hidden="true" />
+      {space.bottom ? (
+        <MeshMap
+          selected={contactKey}
+          onSelect={(key) => {
+            if (key && key !== contactKey) onPick(key);
+          }}
+          onGroup={() => undefined}
+          coverTop={space.top}
+          coverBottom={pullSheetCover(space.bottom)}
+          show={show}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * What a map under or over a node's profile sheet brings into view as the
+ * profile opens: the node, in the middle of what the sheet leaves, near
+ * enough to be told from its neighbours.
+ */
+function useProfileShow(state: SessionState, key: string | null): { id: string; points: [number, number][] } | null {
+  const contact = key === null ? undefined : state.contacts[key];
+  return useMemo(() => {
+    if (!contact || !hasPosition(contact.lat, contact.lon)) return null;
+    return { id: `profile:${contact.key}`, points: [[contact.lat, contact.lon]] };
+  }, [contact?.key, contact?.lat, contact?.lon]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 function MeshSearchInline({ onFocus }: { onFocus: () => void }) {

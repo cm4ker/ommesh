@@ -22,6 +22,7 @@
 - Two apps on the same radio can now connect at the same time. When both read the radio's contacts at once, the radio turned one away midway, both took that for their own, and the connection failed; now the app waits a moment and reads them again. A direct message sent from both apps at the same moment no longer gets the other's delivery mark, and a phone sharing its radio no longer waits out a command because the other app's answer came first.
 - A route check no longer stops at "table full" when the radio is busy. When the radio has no room for one more packet, nothing goes on the air, so the check waits a moment and tries again, up to twice. If the radio stays busy, the app now says so in plain words.
 - No more "New contact" notification for every node your radio holds, as could come when the app connected with no chats stored for the radio, such as when its history could not be read. Nodes the app had not seen before are told as new again once it has the radio's list.
+- On a phone, chats that came up empty come back by themselves. The phone sometimes would not let the app read its stored chats when the app started, and they stayed empty until the next connect or a restart, and messages that came in meanwhile were lost then. Now the app reads them again a few seconds later and whenever it comes back on screen, and keeps what came in meanwhile.
 
 ## 0.9.0 — 2026-10-16
 

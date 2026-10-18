@@ -21,6 +21,7 @@
 - Channels keep their own names when another app is on the same radio. When both apps read the radio's channels at the same moment, each could take the other's answer, so the chat list showed two chats called Public, a channel's messages sat under another channel's name, and a message written there went to that other channel. The list is put right the next time the app connects or you pull down on Settings. The phone needs this version too.
 - Two apps on the same radio can now connect at the same time. When both read the radio's contacts at once, the radio turned one away midway, both took that for their own, and the connection failed; now the app waits a moment and reads them again. A direct message sent from both apps at the same moment no longer gets the other's delivery mark, and a phone sharing its radio no longer waits out a command because the other app's answer came first.
 - A route check no longer stops at "table full" when the radio is busy. When the radio has no room for one more packet, nothing goes on the air, so the check waits a moment and tries again, up to twice. If the radio stays busy, the app now says so in plain words.
+- No more "New contact" notification for every node your radio holds, as could come when the app connected with no chats stored for the radio, such as when its history could not be read. Nodes the app had not seen before are told as new again once it has the radio's list.
 
 ## 0.9.0 — 2026-10-16
 

@@ -1,10 +1,11 @@
 /**
  * Sends a survey to a community coverage map (maps.ts), each time after the
  * reader has been told, in the survey's sheet, that its points go to that
- * site for everyone to see. The maps answer only their own site's origin,
- * so the app's page cannot post to them itself: the phone app posts through
- * Capacitor's native HTTP, the desktop through its shell (coverage.rs). A
- * browser tab has neither and cannot send.
+ * site for everyone to see. A map that answers any site (Ommesh's own) takes
+ * the page's own post, from a browser tab too. The others answer only their
+ * own site's origin, so the page cannot post to them itself: the phone app
+ * posts through Capacitor's native HTTP, the desktop through its shell
+ * (coverage.rs), and a browser tab cannot send to them.
  */
 
 import { isCapacitor, isTauri } from "../platform.js";
@@ -12,9 +13,9 @@ import type { Survey } from "../surveyData.js";
 import type { CoverageMap } from "./maps.js";
 import { addReplies, batches, readUploadReply, wardriveSamples, type UploadReply } from "./wardrive.js";
 
-/** Whether this app can send to a map at all. */
-export function canSendCoverage(): boolean {
-  return isCapacitor() || isTauri();
+/** Whether this app can send to the map at all. */
+export function canSendCoverage(map: CoverageMap): boolean {
+  return map.anySite === true || isCapacitor() || isTauri();
 }
 
 export class CoverageError extends Error {
@@ -25,6 +26,17 @@ export class CoverageError extends Error {
 }
 
 async function post(map: CoverageMap, body: string): Promise<{ status: number; data: unknown }> {
+  if (map.anySite) {
+    // A timer, not AbortSignal.timeout, which older iPhones lack.
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), 60_000);
+    try {
+      const answer = await fetch(map.uploadUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal: abort.signal });
+      return { status: answer.status, data: await answer.text() };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   if (isCapacitor()) {
     const { CapacitorHttp } = await import("@capacitor/core");
     const answer = await CapacitorHttp.post({ url: map.uploadUrl, headers: { "Content-Type": "application/json" }, data: JSON.parse(body), connectTimeout: 30_000, readTimeout: 60_000 });

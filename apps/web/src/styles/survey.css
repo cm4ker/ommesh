@@ -283,11 +283,6 @@
 .tool-actions .button.survey-delete {
   flex: none;
 }
-/* A survey's way to a coverage map, above its files: the button, and under it where the points go. */
-.survey-send {
-  display: grid;
-  gap: var(--space-2);
-}
 /* In the button's place once the survey is there: when it went, and a small button to send it again. */
 .survey-sent-row {
   display: flex;

@@ -1,12 +1,13 @@
 //! A coverage survey sent to a community coverage map, after the reader has
-//! agreed to it in the app. The maps answer only their own site's origin, so
-//! the webview's `fetch` is refused (CORS) and the shell posts instead. Only
-//! the maps the app lists (lib/coverage/maps.ts) are posted to, over HTTPS:
-//! the page cannot turn this into a way to send anything anywhere.
+//! agreed to it in the app. These maps answer only their own site's origin, so
+//! the webview's `fetch` is refused (CORS) and the shell posts instead; a map
+//! that answers any site (Ommesh's own) takes the page's post and is not here.
+//! Only the maps the app lists (lib/coverage/maps.ts) are posted to, over
+//! HTTPS: the page cannot turn this into a way to send anything anywhere.
 use serde::Serialize;
 use std::time::Duration;
 
-/// The hosts of the maps in lib/coverage/maps.ts.
+/// The hosts of the maps in lib/coverage/maps.ts that answer only their own site.
 const MAPS: &[&str] = &["meshcoretel.ru"];
 
 #[derive(Serialize)]

@@ -16,6 +16,7 @@ import { formatSnr } from "../../lib/los.js";
 import { setMeshTool, type SurveyTool } from "../../lib/meshTool.js";
 import { usePhone } from "../../lib/phonePosition.js";
 import { isCapacitor } from "../../lib/platform.js";
+import { openLink } from "../../lib/webLinks.js";
 import { saveFile } from "../../lib/saveFile.js";
 import { useSession } from "../../lib/session.js";
 import { COVERAGE_MAPS, type CoverageMap } from "../../lib/coverage/maps.js";
@@ -435,8 +436,8 @@ function ExportView({ survey }: { survey: Survey }) {
       </div>
       {/* The map first: under four rows of files, a phone's sheet kept it out of sight. */}
       <div className="survey-label">{t("tools.survey.maps", { count: COVERAGE_MAPS.length })}</div>
-      {COVERAGE_MAPS.map((map) => (
-        <SendToMap key={map.id} survey={survey} map={map} />
+      {COVERAGE_MAPS.map((map, i) => (
+        <SendToMap key={map.id} survey={survey} map={map} first={i === 0} />
       ))}
       <div className="survey-label">{t("tools.survey.files")}</div>
       <ul className="list-rows hears" role="list">
@@ -459,25 +460,27 @@ function ExportView({ survey }: { survey: Survey }) {
 }
 
 /**
- * A community coverage map the survey can go to: one button, and once the
- * survey is there, when it went and with how many points. Every send asks
- * first, in words that say the points leave for someone else's site and are
- * public there.
+ * A community coverage map the survey can go to: one button, the first map's
+ * filled and the rest outlined, and once the survey is there, when it went and
+ * with how many points. Every send asks first, in words that say the points
+ * are public there and, for a third party's map, that they leave for someone
+ * else's site.
  */
-function SendToMap({ survey, map }: { survey: Survey; map: CoverageMap }) {
+function SendToMap({ survey, map, first }: { survey: Survey; map: CoverageMap; first: boolean }) {
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
-  const native = canSendCoverage();
+  const can = canSendCoverage(map);
   const sent = survey.sent?.[map.id];
+  const label = map.ours ? t("tools.survey.ourMap") : map.name;
   const send = async () => {
     setAsking(false);
     setBusy(true);
     try {
       const reply = await sendSurvey(map, survey, (key) => surveyNodeName(survey, key));
       markSurveySent(survey.id, map.id, survey.points.length);
-      toast(t("tools.survey.sentTo", { map: map.name }), "", undefined, t("tools.survey.sentDetail", { taken: reply.processed, known: reply.deduped, cells: reply.cellsCreated }));
+      toast(t("tools.survey.sentTo", { map: label }), "", { label: t("common.open"), run: () => openLink(map.siteUrl) }, t("tools.survey.sentDetail", { taken: reply.processed, known: reply.deduped, cells: reply.cellsCreated }));
     } catch (error) {
-      toast(t("tools.survey.sendFailed", { map: map.name }), "error", undefined, errorText(error));
+      toast(t("tools.survey.sendFailed", { map: label }), "error", undefined, errorText(error));
     } finally {
       setBusy(false);
     }
@@ -485,7 +488,7 @@ function SendToMap({ survey, map }: { survey: Survey; map: CoverageMap }) {
   if (asking) {
     return (
       <div className="survey-agree">
-        <p>{t("tools.survey.agree", { points: t("tools.survey.points", { count: survey.points.length }), host: map.host })}</p>
+        <p>{t(map.ours ? "tools.survey.agreeOurs" : "tools.survey.agree", { points: t("tools.survey.points", { count: survey.points.length }), host: map.host })}</p>
         <div className="tool-actions">
           <Button variant="primary" onClick={() => void send()}>
             {t("tools.survey.agreeSend", { host: map.host })}
@@ -502,13 +505,13 @@ function SendToMap({ survey, map }: { survey: Survey; map: CoverageMap }) {
       <div className="survey-sent-row">
         <CloudCheckIcon size={18} />
         <span className="row-main">
-          <span className="row-title">{t("tools.survey.sentTo", { map: map.name })}</span>
+          <span className="row-title">{t("tools.survey.sentTo", { map: label })}</span>
           <span className="row-sub muted">
             {t("tools.survey.sentWhen", { when: `${dayLabel(sent.at / 1000)}, ${timeOfDay(sent.at / 1000)}`, points: t("tools.survey.points", { count: sent.points }) })}
           </span>
         </span>
         {/* The map drops what it has already, so a second send costs nothing but the traffic. */}
-        {native ? (
+        {can ? (
           <Button size="sm" onClick={() => setAsking(true)}>
             {t("tools.survey.sendAgain")}
           </Button>
@@ -516,13 +519,11 @@ function SendToMap({ survey, map }: { survey: Survey; map: CoverageMap }) {
       </div>
     );
   }
+  // A tab cannot reach a third party's map: its button stays, greyed out.
   return (
-    <div className="survey-send">
-      <Button variant="primary" size="lg" busy={busy} disabled={!native} onClick={() => setAsking(true)}>
-        <CloudUpIcon size={18} />
-        {t("tools.survey.sendTo", { map: map.name })}
-      </Button>
-      <div className="check-cost">{native ? t("tools.survey.sendPublic", { host: map.host }) : t("tools.survey.sendAppOnly")}</div>
-    </div>
+    <Button variant={first ? "primary" : "default"} size="lg" busy={busy} disabled={!can} onClick={() => setAsking(true)}>
+      <CloudUpIcon size={18} />
+      {t("tools.survey.sendTo", { map: label })}
+    </Button>
   );
 }

@@ -1492,6 +1492,40 @@ test("a node the radio adds as it hears it is announced once its contact is read
   assert.equal(session.getState().contacts["c0".repeat(32)]?.unsaved, undefined);
 });
 
+test("with no contacts stored, the radio's list is no news, even when an advert asks for it before the connect does", async () => {
+  // The queue's first read answers late, as a long queue does over Bluetooth: the read an advert
+  // asks for half a second in goes ahead of the connect's own.
+  const radio = new (class extends ScriptedRadio {
+    slow = true;
+    override async send(frame: Uint8Array): Promise<void> {
+      if (frame[0] === Cmd.SyncNextMessage && this.slow) {
+        this.slow = false;
+        await tick(700);
+      }
+      return super.send(frame);
+    }
+  })();
+  const carol = fromHex("c0".repeat(32));
+  radio.contacts.push(contactFrame(carol, "Carol", 12));
+  const session = new MeshSession({ storage: new MemoryStorage(), now: () => 1_700_000_000_000 });
+  const found: string[] = [];
+  session.onDiscovered((c) => found.push(c.name));
+  const connecting = session.connect(radio);
+  await tick(50);
+  radio.push(new ByteWriter().u8(Push.Advert).bytes(carol).toBytes());
+  await connecting;
+  await tick(600);
+  assert.deepEqual(found, []);
+  assert.deepEqual(Object.values(session.getState().contacts).map((c) => c.name).sort(), ["Bob", "Carol"]);
+  // Once the list is known, a node the radio adds is news again.
+  const dan = fromHex("d0".repeat(32));
+  radio.contacts.push(contactFrame(dan, "Dan", 13));
+  radio.push(new ByteWriter().u8(Push.Advert).bytes(dan).toBytes());
+  await tick(600);
+  assert.deepEqual(found, ["Dan"]);
+  await session.disconnect();
+});
+
 test("removed contacts are kept to be put back, and a node the radio did not keep only leaves the list", async () => {
   const storage = new MemoryStorage();
   const radio = new ScriptedRadio();

@@ -1225,6 +1225,12 @@ export class MeshSession {
   /** Messages read out of another app's answers, one after another. */
   private strayReceived: Promise<void> = Promise.resolve();
   private contactsRefreshQueued = false;
+  /**
+   * The radio whose contacts this app knows already, stored or read whole once. Only against them
+   * is a contact new: with none (a first connect, a history that could not be read), the radio's
+   * whole list would be told as news, a notice for every node it holds.
+   */
+  private contactsKnown: string | null = null;
   private focused: string | null = null;
   private ackTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Reactions to messages not here yet: a mesh does not keep order, and the message may come next. */
@@ -1532,6 +1538,7 @@ export class MeshSession {
       this.set({ connectStep: "history" });
       const persisted = this.held?.key === key ? this.held.history : await this.readHistory(key);
       this.held = null;
+      this.contactsKnown = persisted && (persisted.contactsCursor > 0 || Object.keys(persisted.contacts).length > 0) ? key : null;
       this.set({ device, self, ...this.restored(persisted), autoAdd: null, repeatFreqs: null, region: null, contactsFull: false, removing: null });
       this.log("link", `connected to ${self.name} (${device.firmwareVersion})`);
 
@@ -1732,19 +1739,22 @@ export class MeshSession {
   async refreshContacts(full = false, announce = false): Promise<void> {
     const client = this.need();
     const since = full || this.state.contactsCursor === 0 ? undefined : this.state.contactsCursor;
+    const radio = this.state.self?.key ?? null;
     const { total, contacts: fresh, mostRecentLastMod } = await client.getContacts(since);
+    const known = radio !== null && this.contactsKnown === radio;
     const contacts = { ...this.state.contacts };
     const now = this.now();
     const found: ContactRecord[] = [];
     for (const c of fresh) {
       const previous = contacts[toHex(c.publicKey)];
-      const isNew = announce && !previous && !this.state.removed[toHex(c.publicKey)];
+      const isNew = announce && known && !previous && !this.state.removed[toHex(c.publicKey)];
       const record = toRecord(c, isNew ? now : (previous?.lastHeardAt ?? null), previous, now);
       contacts[record.key] = record;
       if (isNew) found.push(record);
     }
     const cursor = Math.max(this.state.contactsCursor, mostRecentLastMod);
     this.set({ contacts, contactsCursor: cursor, removed: this.withoutRemoved(fresh.map((c) => toHex(c.publicKey))), ...this.fullAfter(total) });
+    if (radio !== null && this.state.self?.key === radio) this.contactsKnown = radio;
     this.rebindOrphans();
     for (const record of found) this.announceDiscovered(record);
     // Fewer on the radio than we remember: it was reset, or contacts were
@@ -5080,7 +5090,7 @@ export class MeshSession {
         // one it keeps comes as a plain advert (firmware `onDiscoveredContact`).
         const known = this.state.contacts[toHex(frame.contact.publicKey)];
         const record = this.upsertContact(frame.contact, true, undefined, true);
-        if (!known) this.announceDiscovered(record);
+        if (!known && this.contactsKnown === this.state.self?.key) this.announceDiscovered(record);
         return;
       }
       case "pathUpdated": {

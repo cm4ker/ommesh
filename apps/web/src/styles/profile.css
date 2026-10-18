@@ -84,6 +84,11 @@
 .hero.side .hero-name::before {
   content: none;
 }
+/* Under the name the pill has the column's width, not the header's share. */
+.hero-text .queue {
+  max-width: 100%;
+  margin-top: 2px;
+}
 .hero-tools {
   flex: none;
   align-self: flex-start;

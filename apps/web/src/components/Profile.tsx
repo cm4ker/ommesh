@@ -155,7 +155,7 @@ export function Profile({ contactKey, chrome, sheet = false }: { contactKey: str
       {isFavourite(contact) ? <StarFilledIcon size={19} className="star" /> : <StarIcon size={19} />}
     </IconButton>
   );
-  // In a sheet the line of what is on air takes room from the name, so it shows only while there is something.
+  // In a sheet the line of what is on air goes under the name, where it would push the page down, so it shows only while there is something.
   const queue = node && (!sheet || state.remote.active) ? <QueuePill nodeKey={key} /> : null;
 
   return (
@@ -173,7 +173,7 @@ export function Profile({ contactKey, chrome, sheet = false }: { contactKey: str
         />
       }
     >
-      <Hero sheet={sheet} name={name} type={contact.type} lines={[t("mesh.profile.kindHeard", { kind: kindLabel(contact.type), time: agoPhrase(heard) }), where]} tools={sheet ? <>{queue}{star}</> : null} onBack={chrome.onBack} />
+      <Hero sheet={sheet} name={name} type={contact.type} lines={[t("mesh.profile.kindHeard", { kind: kindLabel(contact.type), time: agoPhrase(heard) }), where]} tools={sheet ? star : null} status={sheet ? queue : null} onBack={chrome.onBack} />
 
       {contact.unsaved ? <NotOnRadio contactKey={key} /> : null}
 
@@ -325,9 +325,11 @@ function Frame({ sheet, head, children }: { sheet: boolean; head: React.ReactNod
 /**
  * The picture, the name and a line or two under it: in the middle on a
  * screen; beside the picture in a sheet, where half the screen has to hold
- * the buttons and the route too, with Back before them.
+ * the buttons and the route too, with Back before them. What is on air
+ * goes under the lines there, not beside the name: a phone has room for
+ * the name or for the pill, not for both in one row.
  */
-function Hero({ sheet, name, type, lines, tools, onBack }: { sheet: boolean; name: string; type: number; lines: string[]; tools?: React.ReactNode; onBack?: (() => void) | undefined }) {
+function Hero({ sheet, name, type, lines, tools, status, onBack }: { sheet: boolean; name: string; type: number; lines: string[]; tools?: React.ReactNode; status?: React.ReactNode; onBack?: (() => void) | undefined }) {
   const text = lines.filter(Boolean).map((line) => (
     <span key={line} className="muted">
       {line}
@@ -352,6 +354,7 @@ function Hero({ sheet, name, type, lines, tools, onBack }: { sheet: boolean; nam
       <div className="hero-text">
         <HeroName name={name} label={t("common.copyName")} />
         {text}
+        {status}
       </div>
       {tools ? <div className="hero-tools">{tools}</div> : null}
     </div>

@@ -16,7 +16,7 @@ import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
 import { ChatNotices } from "./ChatNotices.js";
 import { HeroName } from "./HeroName.js";
-import { AirIcon, BackIcon, ChartIcon, ChatIcon, CheckIcon, CopyIcon, EditIcon, LockIcon, MapIcon, MoreIcon, PowerIcon, ShieldIcon, SlidersIcon, StarFilledIcon, StarIcon, TerminalIcon, TrashIcon, UsersIcon, CloseIcon } from "./Icons.js";
+import { AirIcon, ChartIcon, ChatIcon, CheckIcon, CopyIcon, EditIcon, LockIcon, MapIcon, MoreIcon, PowerIcon, ShieldIcon, SlidersIcon, StarFilledIcon, StarIcon, TerminalIcon, TrashIcon, UsersIcon, CloseIcon } from "./Icons.js";
 import { NodeReadings } from "./NodeReadings.js";
 import { ClockRow } from "./node/Clock.js";
 import { QueuePill } from "./node/QueuePill.js";
@@ -79,7 +79,7 @@ export function Profile({ contactKey, chrome, sheet = false }: { contactKey: str
     const name = removed.name || removed.prefix;
     return (
       <Frame sheet={sheet} head={<ScreenHead chrome={chrome} />}>
-        <Hero sheet={sheet} name={name} type={removed.type} lines={[t("mesh.profile.kindHeard", { kind: kindLabel(removed.type), time: agoPhrase(heardAt(removed) || null) })]} onBack={chrome.onBack} />
+        <Hero sheet={sheet} name={name} type={removed.type} lines={[t("mesh.profile.kindHeard", { kind: kindLabel(removed.type), time: agoPhrase(heardAt(removed) || null) })]} />
         <NotOnRadio contactKey={contactKey} />
         {isConversationType(removed.type) && state.messages.some((m) => m.conversation === contactConversation(contactKey)) ? (
           <Group>
@@ -173,7 +173,7 @@ export function Profile({ contactKey, chrome, sheet = false }: { contactKey: str
         />
       }
     >
-      <Hero sheet={sheet} name={name} type={contact.type} lines={[t("mesh.profile.kindHeard", { kind: kindLabel(contact.type), time: agoPhrase(heard) }), where]} tools={sheet ? star : null} status={sheet ? queue : null} onBack={chrome.onBack} />
+      <Hero sheet={sheet} name={name} type={contact.type} lines={[t("mesh.profile.kindHeard", { kind: kindLabel(contact.type), time: agoPhrase(heard) }), where]} tools={sheet ? star : null} status={sheet ? queue : null} />
 
       {contact.unsaved ? <NotOnRadio contactKey={key} /> : null}
 
@@ -325,11 +325,13 @@ function Frame({ sheet, head, children }: { sheet: boolean; head: React.ReactNod
 /**
  * The picture, the name and a line or two under it: in the middle on a
  * screen; beside the picture in a sheet, where half the screen has to hold
- * the buttons and the route too, with Back before them. What is on air
+ * the buttons and the route too. The sheet has no Back of its own: it goes
+ * with a pull down, a tap on the map, a swipe from the edge or the phone's
+ * Back, and the name has the room instead. What is on air
  * goes under the lines there, not beside the name: a phone has room for
  * the name or for the pill, not for both in one row.
  */
-function Hero({ sheet, name, type, lines, tools, status, onBack }: { sheet: boolean; name: string; type: number; lines: string[]; tools?: React.ReactNode; status?: React.ReactNode; onBack?: (() => void) | undefined }) {
+function Hero({ sheet, name, type, lines, tools, status }: { sheet: boolean; name: string; type: number; lines: string[]; tools?: React.ReactNode; status?: React.ReactNode }) {
   const text = lines.filter(Boolean).map((line) => (
     <span key={line} className="muted">
       {line}
@@ -345,12 +347,7 @@ function Hero({ sheet, name, type, lines, tools, status, onBack }: { sheet: bool
     );
   return (
     <div className="hero side">
-      {onBack ? (
-        <IconButton label={t("common.back")} onClick={onBack}>
-          <BackIcon size={20} />
-        </IconButton>
-      ) : null}
-      <Avatar name={name} type={type} size={48} />
+      <Avatar name={name} type={type} size={44} />
       <div className="hero-text">
         <HeroName name={name} label={t("common.copyName")} />
         {text}

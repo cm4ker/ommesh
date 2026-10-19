@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { LppReading, SeriesSummary } from "@meshnet/meshcore";
-import { batteryPercent, emojiOnly, errorShare, lowCharge, powerSummary, powerWatts, span, steadyMv, trailingEmoji } from "./format.js";
+import { batteryPercent, emojiOnly, errorShare, lowCharge, powerSummary, powerWatts, span, splitLast, steadyMv, trailingEmoji } from "./format.js";
 
 test("the emoji a name ends with goes on its circle", () => {
   assert.equal(trailingEmoji("Fox 🦊"), "🦊");
@@ -9,6 +9,14 @@ test("the emoji a name ends with goes on its circle", () => {
   assert.equal(trailingEmoji("Base 🇩🇪"), "🇩🇪");
   assert.equal(trailingEmoji("Dad 👨‍👩‍👧"), "👨‍👩‍👧");
   assert.equal(trailingEmoji("Love ❤️"), "❤️");
+});
+
+test("a name splits before its last letter as the reader sees it", () => {
+  assert.deepEqual(splitLast("Wan7-KORDNIY-🏢☀"), ["Wan7-KORDNIY-🏢", "☀"]);
+  assert.deepEqual(splitLast("Dad 👨‍👩‍👧"), ["Dad ", "👨‍👩‍👧"]);
+  assert.deepEqual(splitLast("Base 🇩🇪"), ["Base ", "🇩🇪"]);
+  assert.deepEqual(splitLast("A"), ["", "A"]);
+  assert.deepEqual(splitLast(""), ["", ""]);
 });
 
 test("a name ending in a letter, a digit or a text symbol has no emoji", () => {

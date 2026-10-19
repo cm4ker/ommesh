@@ -96,9 +96,19 @@ const graphemes = typeof Intl !== "undefined" && "Segmenter" in Intl ? new Intl.
 export function trailingEmoji(name: string): string | null {
   const text = name.trimEnd();
   if (!text || !graphemes) return null;
-  let last = "";
-  for (const { segment } of graphemes.segment(text)) last = segment;
+  const [, last] = splitLast(text);
   return isEmoji(last) ? last : null;
+}
+
+/**
+ * The text up to its last letter, and that letter, "Fox 🦊" gives "Fox " and
+ * "🦊". A letter is what the reader sees as one, so a flag or a family emoji
+ * stays whole. Without Intl.Segmenter it falls back to the last code point.
+ */
+export function splitLast(text: string): [string, string] {
+  let last = Array.from(text).at(-1) ?? "";
+  if (graphemes) for (const { segment } of graphemes.segment(text)) last = segment;
+  return [text.slice(0, text.length - last.length), last];
 }
 
 /** One grapheme drawn as an emoji: a flag, a keycap, or a picture that is not text by default. */

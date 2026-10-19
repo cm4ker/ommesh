@@ -94,7 +94,7 @@ const PEOPLE: Person[] = [
 const TOWN: [number, string, number, number, number[] | null][] = [
   [0x1a, "K10 Юг Круг", 54.992, 73.418, []],
   [0x21, "MIR", 54.982, 73.467, [0x1a]],
-  [0x37, "Wan7-KORDNIY", 54.969, 73.568, null],
+  [0x37, "Wan7-KORDNIY-🏢☀", 54.969, 73.568, null],
   [0x45, "SKK_Blinova", 54.94, 73.531, null],
   [0x58, "Marksa", 54.936, 73.423, null],
   [0x62, "AMUR-21", 54.883, 73.489, null],

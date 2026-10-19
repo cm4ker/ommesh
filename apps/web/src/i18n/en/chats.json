@@ -219,6 +219,8 @@
   "composer.tooLong": "{over} too long · the radio takes {max}",
   "composer.sendIn": "Send in {count}",
   "composer.translit": "Translit",
+  "composer.cursive": "As in handwriting",
+  "composer.cursiveOn": "In this message also т → m, п → n, и → u, у → y",
   "composer.fits": "fits",
   "composer.field": "Message {name}",
   "channel.title": "Channel",

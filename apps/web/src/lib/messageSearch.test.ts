@@ -45,6 +45,13 @@ test("Russian sent with Latin twins is found by its Cyrillic words, and back", (
   assert.deepEqual(matchRanges("У Pетpанcлятоpа", "ретранслятор"), [[2, 14]]);
 });
 
+test("Russian sent with every set MCO Advanced has is found too, т, п and и in Latin", () => {
+  const packed = [message("a", "3uмa блuзкo, чepeз mpu дня nepeвaл 3aкpoюm", 1)];
+  for (const query of ["зима", "три дня", "перевал", "закроют"]) assert.deepEqual(findMessages(packed, query).map((m) => m.id), ["a"], query);
+  assert.deepEqual(findMessages([message("b", "тост", 1)], "мост"), []);
+  assert.deepEqual(matchRanges("чepeз mpu дня", "три"), [[6, 9]]);
+});
+
 test("a query of one letter is not searched; one emoji is", () => {
   assert.equal(searchTerm(" м "), null);
   assert.equal(searchTerm("мо"), fold("мо"));

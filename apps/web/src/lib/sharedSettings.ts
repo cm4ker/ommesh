@@ -170,8 +170,10 @@ sync.share<LookalikePrefs>({
   key: "lookalikes",
   read: getLookalikePrefs,
   write: setLookalikePrefs,
-  valid: (value): value is LookalikePrefs => isObject(value) && isBool(value["on"]) && isBool(value["near"]),
-  fallback: { on: true, near: false },
+  // An older app shares the first two alone.
+  valid: (value): value is LookalikePrefs =>
+    isObject(value) && isBool(value["on"]) && isBool(value["near"]) && (value["cursive"] === undefined || isBool(value["cursive"])) && (value["read"] === undefined || isBool(value["read"])),
+  fallback: { on: true, near: false, cursive: false, read: true },
 });
 sync.share<readonly string[]>({
   key: "recentReactions",

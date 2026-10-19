@@ -1010,7 +1010,15 @@ function MessagesPage() {
           checked={lookalikes.on}
           onChange={(v) => setLookalikePrefs({ on: v })}
         />
-        {lookalikes.on ? <SwitchRow label={t("radio.messages.near")} hint={t("radio.messages.nearHint")} checked={lookalikes.near} onChange={(v) => setLookalikePrefs({ near: v })} /> : null}
+        {lookalikes.on ? (
+          <>
+            <SwitchRow label={t("radio.messages.near")} hint={t("radio.messages.nearHint")} checked={lookalikes.near} onChange={(v) => setLookalikePrefs({ near: v })} />
+            <SwitchRow label={t("radio.messages.cursive")} hint={t("radio.messages.cursiveHint")} checked={lookalikes.cursive} onChange={(v) => setLookalikePrefs({ cursive: v })} />
+          </>
+        ) : null}
+      </Group>
+      <Group>
+        <SwitchRow label={t("radio.messages.readCyrillic")} hint={t("radio.messages.readCyrillicHint")} checked={lookalikes.read} onChange={(v) => setLookalikePrefs({ read: v })} />
       </Group>
       <PreviewGroup />
       <Group note={t("radio.messages.triesNote")}>

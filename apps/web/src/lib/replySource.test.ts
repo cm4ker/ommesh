@@ -81,6 +81,15 @@ test("a quote matches Russian sent in lookalike letters, and in Latin transliter
   for (const reply of [packed, latin]) assert.deepEqual(sourceOf([source, reply], reply, "Me"), { kind: "found", id: source.id });
 });
 
+test("a quote in MCO Advanced's extended set finds a message written in Cyrillic, and back", () => {
+  const source = said("Andrey", "Зима близко, на перевале минус десять");
+  const reply = said("Olga", "@[Andrey] >3uмa блu...\nОдеваюсь теплее");
+  assert.deepEqual(sourceOf([source, reply], reply, "Me"), { kind: "found", id: source.id });
+  const packed = said("Andrey", "3uмa блuзкo, нa nepeвaлe мuнyc дecяmь");
+  const plain = said("Olga", "@[Andrey] >Зима бли...\nОдеваюсь теплее");
+  assert.deepEqual(sourceOf([packed, plain], plain, "Me"), { kind: "found", id: packed.id });
+});
+
 test("a mention alone is a guess at the sender's latest message before the reply", () => {
   const first = said("Bob", "Поднял антенну");
   const second = said("Bob", "Ещё на метр");

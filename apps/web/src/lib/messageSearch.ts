@@ -6,7 +6,7 @@
 
 import type { MessageRecord } from "@meshnet/meshcore";
 import { placedAt } from "./conversations.js";
-import { TWINS } from "./lookalikes.js";
+import { asCyrillic, TWINS } from "./lookalikes.js";
 
 /** A shorter query finds too much to be of use; two code units still let one emoji through. */
 export const MIN_QUERY = 2;
@@ -19,11 +19,12 @@ for (const [cyrillic, latin] of Object.entries(TWINS)) SAME[cyrillic.toLowerCase
 
 /**
  * Lower case, ё as е, a lookalike as its Latin twin; letter for letter, so a
- * place in the result is the same place in the text.
+ * place in the result is the same place in the text. Latin twins among Cyrillic
+ * letters are read back first, so "три" finds "mpu" in "чepeз mpu дня".
  */
 export function fold(text: string): string {
   let out = "";
-  for (const ch of text) {
+  for (const ch of asCyrillic(text)) {
     const low = ch.toLowerCase();
     out += low.length === ch.length ? (SAME[low] ?? low) : ch;
   }

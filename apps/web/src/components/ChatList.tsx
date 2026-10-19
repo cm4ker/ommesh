@@ -7,6 +7,7 @@ import { ago } from "../lib/format.js";
 import { summarize, type ConversationSummary } from "../lib/conversations.js";
 import { useDraft } from "../lib/drafts.js";
 import { jumpTo } from "../lib/jump.js";
+import { shownText } from "../lib/lookalikes.js";
 import { findMessages, fold, snippet } from "../lib/messageSearch.js";
 import { openConversation, setStack } from "../lib/nav.js";
 import { useNoticePrefs } from "../lib/noticePrefs.js";
@@ -315,7 +316,7 @@ function FoundRow({ message, row, query }: { message: MessageRecord; row: Conver
           <span className="row-bottom">
             <span className="row-sub muted">
               {who ? `${who} ` : ""}
-              {marked(snippet(message.text, query), query)}
+              {marked(snippet(shownText(message.text), query), query)}
             </span>
           </span>
         </span>

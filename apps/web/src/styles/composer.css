@@ -100,6 +100,11 @@
   border-radius: 2px;
   background: color-mix(in oklab, var(--danger) 30%, transparent);
 }
+/* The text over it is the field's, so the line is drawn in a colour of its own. */
+.compose-mirror .swp {
+  text-decoration: underline var(--accent);
+  text-underline-offset: 3px;
+}
 .compose-field textarea,
 .compose-field input {
   position: relative;
@@ -287,9 +292,19 @@
 .compose-over-text b {
   font-weight: 600;
 }
+.compose-sets-text {
+  flex: 1 1 100%;
+  color: var(--text-muted);
+}
 .compose-over .chip {
   background: var(--bg);
   color: var(--text);
+}
+.compose-over .chip.on {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--selected);
 }
 .compose-pop {
   position: absolute;

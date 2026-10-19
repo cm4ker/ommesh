@@ -18,6 +18,7 @@ import { linkAllowed } from "../lib/linkPreviewParse.js";
 import { moveForKeyboard } from "../lib/keyboard.js";
 import { onJump, takeJump, type Jump } from "../lib/jump.js";
 import { useWide } from "../lib/layout.js";
+import { shownText, useShownText } from "../lib/lookalikes.js";
 import { copiedText, toggled } from "../lib/messagePick.js";
 import { replyHead, sourceOf, type ReplyHead } from "../lib/replySource.js";
 import { findMessages, messagesFrom, searchTerm, type Sender } from "../lib/messageSearch.js";
@@ -499,7 +500,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   const pick = useCallback((id: string) => setChosen((now) => toggled(order.current, now, id)), []);
   const copyPicked = (done: boolean) => {
     const list = pickedNow.current.map((id) => byId.get(id)).filter((m): m is MessageRecord => m !== undefined);
-    const text = copiedText(list, (m) => {
+    const text = copiedText(list.map((m) => ({ ...m, text: shownText(m.text) })), (m) => {
       const at = shown.get(m.id)?.at ?? m.timestamp;
       const name = m.direction === "out" ? (state.self?.name ?? t("chats.pick.you")) : m.sender || title;
       return t("chats.pick.copyHead", { name, day: fullDate(at), time: timeOfDay(at) });
@@ -984,11 +985,13 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
   const flood = retryable && session.retryFloods(message);
   // One to three emoji and nothing else: large, with no bubble (#41), unless turned off in Appearance.
   // A red one keeps its bubble for the strip.
-  const jumbo = bad || !large ? 0 : emojiOnly(message.text);
+  // Latin twins among Cyrillic letters read as Cyrillic, letter for letter, unless turned off.
+  const text = useShownText(message.text);
+  const jumbo = bad || !large ? 0 : emojiOnly(text);
   // One place and nothing else to it but words: a map with them under it.
   // A place in the line a reply quotes is the answered message's, and does not make this one a place.
-  const placed = useMemo(() => (jumbo ? null : placeMessage(message.text, quoteHeadLength(message.text))), [jumbo, message.text]);
-  const head = useMemo(() => (jumbo || placed ? null : replyHead(message.text)), [jumbo, placed, message.text]);
+  const placed = useMemo(() => (jumbo ? null : placeMessage(text, quoteHeadLength(text))), [jumbo, text]);
+  const head = useMemo(() => (jumbo || placed ? null : replyHead(text)), [jumbo, placed, text]);
   const from = out ? null : message.sender || peer;
   const showPlace = (text: string) => openPlace(text, from, at);
   const reactable = session.canReact(message);
@@ -1015,7 +1018,7 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
   const press = usePress((at) => {
     const items: (MenuItem | null)[] = [
       onReply ? { label: t("chats.message.reply"), icon: <ReplyIcon size={17} />, onSelect: onReply } : null,
-      { label: t("chats.message.copyText"), icon: <CopyIcon size={17} />, onSelect: () => void navigator.clipboard?.writeText(message.text).then(() => toast(t("common.copied"))) },
+      { label: t("chats.message.copyText"), icon: <CopyIcon size={17} />, onSelect: () => void navigator.clipboard?.writeText(text).then(() => toast(t("common.copied"))) },
       { label: t("chats.message.select"), icon: <SelectIcon size={17} />, onSelect: () => onPick(message.id) },
       retryable && !looping ? { label: flood ? t("chats.message.sendAgainFlood") : t("chats.message.sendAgain"), icon: <AlertIcon size={17} />, air: true, onSelect: () => void retry() } : null,
       // A direct message has its tries from the settings; this is for one sent once.
@@ -1087,7 +1090,7 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
           ) : (
             <span className="msg-text">
               {head ? <ReplyHeadText head={head} me={me} mark={mark} onTap={selecting ? undefined : () => onSource(message)} /> : null}
-              {richText(head ? message.text.slice(head.length) : message.text, me, mark, showPlace, previews ? linkMark : undefined)}
+              {richText(head ? text.slice(head.length) : text, me, mark, showPlace, previews ? linkMark : undefined)}
             </span>
           )}
           {previews && !placed && !jumbo ? <LinkCards text={message.text} message={message.id} /> : null}

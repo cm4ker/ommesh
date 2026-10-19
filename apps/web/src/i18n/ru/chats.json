@@ -253,6 +253,8 @@
   "composer.tooLong": "{over} сверх лимита · радио берёт {max}",
   "composer.sendIn": "Разбить на {count}",
   "composer.translit": "Транслит",
+  "composer.cursive": "Как в рукописном",
+  "composer.cursiveOn": "В этом сообщении ещё т → m, п → n, и → u, у → y",
   "composer.fits": "влезает",
   "composer.field": "Сообщение для {name}",
   "channel.title": "Канал",

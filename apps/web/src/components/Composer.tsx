@@ -5,7 +5,7 @@
  * sight: the frame's lower edge fills as the bytes run out, ticked where
  * the cipher adds another 16-byte block, and a tag above it gives the bytes
  * and the time on air. What does not fit is marked in the text itself, with
- * two ways out.
+ * ways out: in parts, with more letters swapped for Latin ones, or in Latin.
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
@@ -18,14 +18,14 @@ import { rememberRough, setPlace, updatePlace, usePlace } from "../lib/placeDraf
 import { attachPlace, placeLine, placeReady, PlaceBar, PlacePanel, usePlaceFollow } from "./ComposerPlace.js";
 import { raiseKeyboard } from "../lib/keyboard.js";
 import { utf8Length } from "../lib/format.js";
-import { packLookalikes, useLookalikePrefs } from "../lib/lookalikes.js";
+import { ALL_SETS, looksDifferent, packLookalikes, useLookalikePrefs } from "../lib/lookalikes.js";
 import { touchFirst } from "../lib/platform.js";
 import { usePress } from "../lib/press.js";
 import { session, useSession } from "../lib/session.js";
 import { toast } from "../lib/toast.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
-import { ClockIcon, CloseIcon, LocationIcon, ReplyIcon, SendIcon, TextIcon, WavesIcon } from "./Icons.js";
+import { CheckIcon, ClockIcon, CloseIcon, LocationIcon, ReplyIcon, SendIcon, TextIcon, WavesIcon } from "./Icons.js";
 import { t } from "../i18n/index.js";
 import { tx } from "../i18n/rich.js";
 
@@ -46,6 +46,9 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   const [focused, setFocused] = useState(false);
   const [pick, setPick] = useState<{ start: number; end: number; query: string; index: number } | null>(null);
   const [shake, setShake] = useState(false);
+  // A message too long for the radio may go with every set of lookalikes, those alike as written
+  // by hand too, without turning them on for every message.
+  const [cursive, setCursive] = useState(false);
   const [touch] = useState(touchFirst);
   // A finger holding the pin of an empty field, and what last pressed the button.
   const [holding, setHolding] = useState(false);
@@ -60,7 +63,8 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   const contact = target.kind === "contact" ? state.contacts[target.key] : undefined;
   const online = state.status === "ready";
   const self = state.self;
-  const pack = useCallback((t: string) => packLookalikes(t, lookalikes), [lookalikes]);
+  const sets = cursive ? ALL_SETS : lookalikes;
+  const pack = useCallback((t: string) => packLookalikes(t, sets), [sets]);
   const mention = reply ? mentionOf(reply.name) : "";
   // A place put in the field goes first in the message, before the text, as one more part of what heads it.
   const place = usePlace(radio, conversation);
@@ -101,6 +105,11 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   const matches = pick ? people.filter((n) => n.toLowerCase().includes(pick.query.toLowerCase())).slice(0, 6) : [];
 
   useEffect(() => setDraft(radio, conversation, text.slice(head.length)), [radio, conversation, text, head]);
+  // The more letters are swapped for one message; another chat, or an empty field, starts afresh.
+  useEffect(() => setCursive(false), [conversation]);
+  useEffect(() => {
+    if (!text.trim()) setCursive(false);
+  }, [text]);
 
   useLayoutEffect(() => {
     const el = field.current;
@@ -237,6 +246,7 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   const cleared = () => {
     setText("");
     setPick(null);
+    setCursive(false);
     quoted.current = "";
     onReplyDone();
     onSent();
@@ -362,6 +372,9 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
         ? { cls: "ready", label: t("common.send"), icon: <SendIcon size={18} />, disabled: false, act: () => void send() }
         : { cls: "queue", label: t("chats.composer.sendWhenBack"), icon: <ClockIcon size={18} />, disabled: false, act: () => void send() };
   const translitCost = over && hasCyrillic(text) ? utf8Length(pack(translit(text))) : null;
+  // Offered only where it saves something: the sets already on may leave nothing to swap.
+  const allCost = over && !cursive && hasCyrillic(text) ? utf8Length(packLookalikes(text, ALL_SETS)) : null;
+  const cursiveCost = allCost !== null && allCost < cost.used ? allCost : null;
   const parts = over ? splitParts(pack(body), cost.budget).length : 0;
 
   return (
@@ -428,12 +441,27 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
             }}
           />
         ) : null}
-        {over ? (
+        {over || cursive ? (
           <div className="compose-bar compose-over">
-            <span className="compose-over-text">{tx("chats.composer.tooLong", { over: <b>{t("chats.composer.bytes", { bytes: cost.over })}</b>, max: cost.budget })}</span>
-            <button type="button" className="chip" onMouseDown={(e) => e.preventDefault()} onClick={() => void sendSplit()}>
-              {t("chats.composer.sendIn", { count: parts })}
-            </button>
+            {over ? (
+              <span className="compose-over-text">{tx("chats.composer.tooLong", { over: <b>{t("chats.composer.bytes", { bytes: cost.over })}</b>, max: cost.budget })}</span>
+            ) : (
+              <span className="compose-sets-text">{t("chats.composer.cursiveOn")}</span>
+            )}
+            {over ? (
+              <button type="button" className="chip" onMouseDown={(e) => e.preventDefault()} onClick={() => void sendSplit()}>
+                {t("chats.composer.sendIn", { count: parts })}
+              </button>
+            ) : null}
+            {cursive ? (
+              <button type="button" className="chip on" aria-pressed="true" onMouseDown={(e) => e.preventDefault()} onClick={() => setCursive(false)}>
+                <CheckIcon size={13} /> {t("chats.composer.cursive")}
+              </button>
+            ) : cursiveCost !== null ? (
+              <button type="button" className="chip" aria-pressed="false" onMouseDown={(e) => e.preventDefault()} onClick={() => setCursive(true)}>
+                {t("chats.composer.cursive")} <span className="compose-cost">{cursiveCost <= cost.budget ? t("chats.composer.fits") : t("chats.composer.minusBytes", { bytes: cost.used - cursiveCost })}</span>
+              </button>
+            ) : null}
             {translitCost !== null ? (
               <button type="button" className="chip" onMouseDown={(e) => e.preventDefault()} onClick={() => replace(0, text.length, translit(text))}>
                 {t("chats.composer.translit")} <span className="compose-cost">{translitCost <= cost.budget ? t("chats.composer.fits") : t("chats.composer.minusBytes", { bytes: cost.used - translitCost })}</span>
@@ -444,8 +472,8 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
         <div className="compose-row">
           <div className="compose-field">
             <div className="compose-mirror" ref={mirror} aria-hidden="true">
-              {segments(text, pack, cost.budget).map((s, i) => (
-                <span key={i} className={[s.mention ? "men" : "", s.over ? "ovr" : ""].join(" ").trim() || undefined}>
+              {segments(text, pack, cost.budget, cursive ? looksDifferent : undefined).map((s, i) => (
+                <span key={i} className={[s.mention ? "men" : "", s.over ? "ovr" : "", s.swapped ? "swp" : ""].join(" ").trim() || undefined}>
                   {s.text}
                 </span>
               ))}

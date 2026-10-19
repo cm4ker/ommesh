@@ -16,6 +16,7 @@ import {
   type SessionState,
 } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
+import { shownText } from "./lookalikes.js";
 import { textWithPlaces } from "./place.js";
 
 export interface ConversationSummary {
@@ -35,7 +36,7 @@ function preview(message: MessageRecord, kind: ConversationSummary["kind"]): str
   // A console command this radio did not run is said as such, not as a message.
   if (message.txtType === TxtType.CliCommand) return t("chats.refused.preview", { command: message.text });
   // A place is a word here: the row has no room for its map.
-  const text = textWithPlaces(message.text);
+  const text = textWithPlaces(shownText(message.text));
   if (message.direction === "out") return t("chats.conversation.you", { text });
   // A room's posts carry their author the way a channel's messages do.
   if ((kind === "channel" || message.txtType === TxtType.SignedPlain) && message.sender) return `${message.sender}: ${text}`;

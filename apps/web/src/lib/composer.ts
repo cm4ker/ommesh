@@ -119,24 +119,30 @@ export interface Segment {
   text: string;
   mention: boolean;
   over: boolean;
+  /** Letters that go out looking different, when asked to mark them. */
+  swapped: boolean;
 }
 
 export const MENTION = /@\[([^\]\n]{1,32})\]/g;
 
-/** The typed text cut into runs: mentions, and what lies past the budget once packed. */
-export function segments(text: string, pack: (text: string) => string, budget: number): Segment[] {
+/**
+ * The typed text cut into runs: mentions, what lies past the budget once packed, and, with
+ * `swapped`, the letters it picks out. A mention goes as typed.
+ */
+export function segments(text: string, pack: (text: string) => string, budget: number, swapped?: (c: string) => boolean): Segment[] {
   const mentions: [number, number][] = [];
   for (const m of text.matchAll(MENTION)) mentions.push([m.index ?? 0, (m.index ?? 0) + m[0].length]);
   const out: Segment[] = [];
   let used = 0;
   let at = 0;
   for (const c of text) {
-    used += bytes(pack(c));
     const mention = mentions.some(([a, b]) => at >= a && at < b);
+    used += bytes(mention ? c : pack(c));
     const over = used > budget;
+    const marked = !mention && !over && (swapped?.(c) ?? false);
     const last = out[out.length - 1];
-    if (last && last.mention === mention && last.over === over) last.text += c;
-    else out.push({ text: c, mention, over });
+    if (last && last.mention === mention && last.over === over && last.swapped === marked) last.text += c;
+    else out.push({ text: c, mention, over, swapped: marked });
     at += c.length;
   }
   return out;

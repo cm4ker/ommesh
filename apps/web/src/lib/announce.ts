@@ -32,6 +32,7 @@
 import { AdvType, type MessageRecord, type SessionState } from "@meshnet/meshcore";
 import { conversationAccess, type ChannelAccess } from "./channels.js";
 import { titleOf } from "./conversations.js";
+import { shownText } from "./lookalikes.js";
 import { t } from "../i18n/index.js";
 import { isDirect, mentionsMe, type NoticeKind } from "./noticePrefs.js";
 import { textWithPlaces } from "./place.js";
@@ -103,7 +104,7 @@ function heading(state: SessionState, message: MessageRecord, title: string): st
 
 /** One message among several: a channel's and a room's are named after their author. */
 function line(message: MessageRecord, title: string): string {
-  const text = textWithPlaces(message.text);
+  const text = textWithPlaces(shownText(message.text));
   return message.sender && message.sender !== title ? `${message.sender}: ${text}` : text;
 }
 
@@ -123,7 +124,7 @@ export function conversationNotice(state: SessionState, conversation: string, ke
   const kind = direct ? "direct" : "chats";
   const face = chatFace(state, conversation, title);
   // In a channel or a room one message shows its writer's circle; in a person's chat it is theirs.
-  if (count === 1) return { title: heading(state, last, title), body: textWithPlaces(last.text), tag, kind, face: direct ? face : { name: last.sender || title } };
+  if (count === 1) return { title: heading(state, last, title), body: textWithPlaces(shownText(last.text)), tag, kind, face: direct ? face : { name: last.sender || title } };
   const mentioned = unread.some((m) => mentionsMe(state, m));
   return {
     title: t(mentioned ? "notices.chatNewMentioned" : "notices.chatNew", { chat: title, count }),

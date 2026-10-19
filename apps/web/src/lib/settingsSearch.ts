@@ -130,6 +130,7 @@ export const SETTINGS: readonly Setting[] = [
   { page: "messages" },
   { page: "messages", label: "radio.messages.openAtUnread", words: "radio.search.words.unread" },
   { page: "messages", label: "radio.messages.lookalikes", words: "radio.search.words.lookalikes" },
+  { page: "messages", label: "radio.messages.readCyrillic", words: "radio.search.words.readCyrillic" },
   { page: "messages", label: "radio.messages.sendTries", words: "radio.search.words.sendTries" },
   { page: "messages", label: "radio.messages.forgetRoutes", words: "radio.search.words.routes" },
   { page: "messages", group: "radio.messages.previews", words: "radio.search.words.previews" },

@@ -2,10 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { airtimeMs, blockEdges, ceilingOf, costOf, headerBytes, mentionQuery, quoteHeadLength, quoteOf, segments, splitParts, translit } from "./composer.js";
 import { relaysAudible } from "@meshnet/meshcore";
-import { packLookalikes } from "./lookalikes.js";
+import { ALL_SETS, looksDifferent, packLookalikes } from "./lookalikes.js";
 import { utf8Length } from "./format.js";
 
-const pack = (text: string) => packLookalikes(text, { on: true, near: false });
+const pack = (text: string) => packLookalikes(text, { on: true, near: false, cursive: false });
 const PKIO = { spreadingFactor: 7, bandwidthHz: 62_500, codingRate: 7 };
 
 test("time on air follows Semtech's formula with MeshCore's 32-symbol preamble at SF7", () => {
@@ -66,6 +66,23 @@ test("the runs under the field mark mentions and what lies past the budget", () 
   );
   // A packed letter costs its packed byte.
   assert.equal(segments("аааа", pack, 3).find((r) => r.over)?.text, "а");
+});
+
+test("letters asked for are marked, but not in a mention, which costs what was typed", () => {
+  const twins = (text: string) => packLookalikes(text, ALL_SETS);
+  const runs = segments("@[Петя] три", twins, 30, looksDifferent);
+  assert.deepEqual(
+    runs.map((r) => [r.text, r.swapped]),
+    [
+      ["@[Петя]", false],
+      [" ", false],
+      ["т", true],
+      ["р", false],
+      ["и", true],
+    ],
+  );
+  // The mention's 11 bytes as typed, then " три" a byte a letter.
+  assert.equal(segments("@[Петя] три", twins, 14).find((r) => r.over)?.text, "и");
 });
 
 test("a mention is being typed after @ at the start or after a space, not inside a word", () => {

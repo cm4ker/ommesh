@@ -180,31 +180,31 @@ export function Profile({ contactKey, chrome, sheet = false }: { contactKey: str
       <div className="hero-actions">
         {routed ? (
           <button type="button" className="hero-act primary" onClick={() => openConversation(contactConversation(key))}>
-            <ChatIcon size={20} />
+            <ChatIcon size={18} />
             {t("mesh.message")}
           </button>
         ) : null}
         {node ? (
           signedIn ? (
             <button type="button" className="hero-act" onClick={signedMenu}>
-              <CheckIcon size={20} />
+              <CheckIcon size={18} />
               {admin ? t("mesh.profile.admin") : t("mesh.profile.signedIn")}
             </button>
           ) : (
             <button type="button" className={["hero-act", routed ? "" : "primary"].join(" ")} disabled={!online} onClick={() => setAsk("signin")}>
-              <LockIcon size={20} />
+              <LockIcon size={18} />
               {t("mesh.profile.signIn")}
             </button>
           )
         ) : null}
         {mapBeside ? null : (
           <button type="button" className="hero-act" disabled={!placed} onClick={() => showOnMap(key, true)}>
-            <MapIcon size={20} />
+            <MapIcon size={18} />
             {t("mesh.profile.onMap")}
           </button>
         )}
         <button type="button" className="hero-act" onClick={more}>
-          <MoreIcon size={20} />
+          <MoreIcon size={18} />
           {t("common.more")}
         </button>
       </div>

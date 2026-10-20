@@ -108,32 +108,34 @@
 .profile-sheet {
   padding-bottom: var(--space-5);
 }
+/*
+ * The buttons share the width of the groups under them, the picture and the
+ * word side by side. A button whose word needs more takes more; one that
+ * cannot fit at all, with the largest text, goes to a row of its own.
+ */
 .hero-actions {
   display: flex;
-  justify-content: center;
+  flex-wrap: wrap;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-3) 0;
 }
 .hero-act {
-  flex: 1;
-  min-width: 0;
-  max-width: 96px;
+  flex: 1 1 0;
+  min-width: max-content;
+  min-height: 44px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 10px 4px 8px;
-  /* A long word breaks at a hyphen rather than running into the next button. */
+  justify-content: center;
+  gap: 6px;
+  /* Narrow enough that Message, On the map and More fit across the desktop's side panel. */
+  padding: 0 var(--space-2);
   line-height: 1.2;
-  text-align: center;
-  overflow-wrap: anywhere;
-  hyphens: auto;
   border: 0;
   border-radius: 10px;
   background: var(--panel);
   color: var(--accent);
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: calc(14px * var(--text-scale));
   font-weight: 500;
   cursor: pointer;
 }
@@ -154,28 +156,4 @@
 .hero-act:disabled {
   opacity: 0.45;
   cursor: default;
-}
-/*
- * In a phone's sheet the buttons share the width of the groups under them,
- * the picture and the word side by side. A button whose word needs more takes
- * more; one that cannot fit at all, with the largest text, goes to a row of
- * its own.
- */
-.profile-sheet .hero-actions {
-  flex-wrap: wrap;
-}
-.profile-sheet .hero-act {
-  flex: 1 1 0;
-  min-width: max-content;
-  max-width: none;
-  min-height: 44px;
-  flex-direction: row;
-  justify-content: center;
-  gap: 6px;
-  padding: 0 var(--space-3);
-  font-size: calc(14px * var(--text-scale));
-}
-.profile-sheet .hero-act svg {
-  width: 18px;
-  height: 18px;
 }

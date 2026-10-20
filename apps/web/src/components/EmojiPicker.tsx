@@ -140,7 +140,6 @@ export function EmojiPicker({ mine, onPick, onFold }: { mine: string | null; onP
             setQuery(e.target.value);
             setMood(null);
           }}
-          onFocus={() => setBig(true)}
           onKeyDown={onKey}
         />
         {!searching ? (

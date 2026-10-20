@@ -10,6 +10,7 @@
     "sounds": "node scripts/sounds.mjs",
     "backgrounds": "node scripts/backgrounds.mjs",
     "people": "node scripts/people.mjs",
+    "emoji": "node scripts/emoji.mjs",
     "news": "node scripts/news.mjs",
     "//": "@meshnet/meshcore is consumed through its dist, so every entry point that loads it rebuilds it first. Without this an edit to the protocol is invisible to the web app until someone remembers to build by hand.",
     "meshcore": "pnpm --filter @meshnet/meshcore build",
@@ -29,6 +30,8 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "emojibase": "17.0.0",
+    "emojibase-data": "17.0.0",
     "pngjs": "^7.0.0",
     "sharp": "0.35.5",
     "typescript": "^5.9.2"

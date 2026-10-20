@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { EMOJI_GROUPS, groupReactions, noteReaction, ownReaction, reactors, stripReactions } from "./reactions.js";
+import { readFileSync } from "node:fs";
+import { parseEmojiData, type RawEmoji } from "./emojiData.js";
+import { groupReactions, MOODS, noteReaction, ownReaction, RADIO_REACTIONS, reactors, stripReactions, TOP_REACTIONS } from "./reactions.js";
 
 test("who put what on a message lists ours first, then the others as they came", () => {
   const reactions = [
@@ -25,10 +27,11 @@ test("the strip leads with the emoji chosen lately and fills up with the first f
   assert.deepEqual(stripReactions(), ["🔥", "📡", "👍", "❤️", "😂", "😮"]);
 });
 
-test("every emoji to choose from is one emoji, and none is offered twice in a group", () => {
-  for (const group of EMOJI_GROUPS) {
-    assert.equal(new Set(group.items).size, group.items.length, group.id);
-    for (const emoji of group.items) assert.equal([...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(emoji)].length, 1, emoji);
+test("the emoji picked by hand are spelled as Unicode spells them, so other apps match them", () => {
+  const data = parseEmojiData(JSON.parse(readFileSync(new URL("../emoji/en.json", import.meta.url), "utf8")) as RawEmoji);
+  for (const [id, items] of [["top", TOP_REACTIONS], ["radio", RADIO_REACTIONS], ...MOODS.map((m) => [m.id, m.items] as const)] as const) {
+    assert.equal(new Set(items).size, items.length, id);
+    for (const emoji of items) assert.ok(data.byEmoji.has(emoji), `${id}: ${emoji}`);
   }
 });
 

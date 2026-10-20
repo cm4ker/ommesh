@@ -9,6 +9,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, useSyncExternal
 import { createPortal } from "react-dom";
 import { CheckIcon } from "../components/Icons.js";
 import { useBackLayer } from "../lib/back.js";
+import { moveForKeyboard } from "../lib/keyboard.js";
 import type { MenuAt } from "../lib/press.js";
 import { useWide } from "../lib/layout.js";
 import { dismissToast, toastSpot, useToast, type ToastSpot } from "../lib/toast.js";
@@ -160,15 +161,21 @@ function Popover({ menu }: { menu: MenuState }) {
   const box = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: menu.at!.x, top: menu.at!.y });
 
-  // Kept inside the window: flipped left or up when it would run off.
+  // Kept inside the window: flipped left or up when it would run off, and again as it grows, as every emoji does.
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
-    const { width, height } = el.getBoundingClientRect();
-    setPos({
-      left: menu.at!.x + width > window.innerWidth - 8 ? Math.max(8, menu.at!.x - width) : menu.at!.x,
-      top: menu.at!.y + height > window.innerHeight - 8 ? Math.max(8, menu.at!.y - height) : menu.at!.y,
-    });
+    const place = () => {
+      const { width, height } = el.getBoundingClientRect();
+      setPos({
+        left: menu.at!.x + width > window.innerWidth - 8 ? Math.max(8, menu.at!.x - width) : menu.at!.x,
+        top: menu.at!.y + height > window.innerHeight - 8 ? Math.max(8, menu.at!.y - height) : menu.at!.y,
+      });
+    };
+    place();
+    const sizes = new ResizeObserver(place);
+    sizes.observe(el);
+    return () => sizes.disconnect();
   }, [menu]);
 
   useEffect(() => {
@@ -248,6 +255,8 @@ function HoldMenu({ menu, lift }: { menu: MenuState; lift: HTMLElement }) {
   const card = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<HoldPlace | null>(null);
   const radius = useRef(16);
+  // The keyboard's height on an iPhone, while the menu's own field has it up (keyboard.ts).
+  const keyboard = useRef(0);
   // The press that opened the menu ends over it, on the scrim or, with the message risen, on an item under the
   // finger. Only a press that began over the menu counts: a tap past it, or on an item (a key's click has no detail).
   const pressed = useRef(false);
@@ -266,7 +275,9 @@ function HoldMenu({ menu, lift }: { menu: MenuState; lift: HTMLElement }) {
     const foot = probe.offsetHeight;
     probe.remove();
     let last = "";
+    let lastSpace = 0;
     let frame = 0;
+    const stopKeyboard = card.current ? moveForKeyboard(card.current, (height) => (keyboard.current = height)) : () => undefined;
     const follow = () => {
       const el = card.current;
       if (lift.isConnected && el) {
@@ -275,7 +286,14 @@ function HoldMenu({ menu, lift }: { menu: MenuState; lift: HTMLElement }) {
         const shift = new DOMMatrixReadOnly(getComputedStyle(lift).transform === "none" ? undefined : getComputedStyle(lift).transform);
         const height = box.height / (shift.d || 1);
         const top = box.top + box.height / 2 - shift.f - height / 2;
-        const room = window.innerHeight - foot - HOLD_EDGE - (top + height + HOLD_GAP + el.offsetHeight);
+        const bottom = window.innerHeight - keyboard.current - foot - HOLD_EDGE;
+        // The most a menu that grows, as every emoji does, can take: under the message risen as high as it goes.
+        const space = Math.max(160, Math.floor(bottom - HOLD_EDGE - height - HOLD_GAP));
+        if (space !== lastSpace) {
+          lastSpace = space;
+          el.style.setProperty("--hold-room", `${space}px`);
+        }
+        const room = bottom - (top + height + HOLD_GAP + el.offsetHeight);
         // Up as far as the menu needs, but not so far that the top of a tall message leaves the screen.
         const rise = room >= 0 ? 0 : Math.min(-room, Math.max(0, top - HOLD_EDGE));
         lift.style.setProperty("--lift-y", `${-rise}px`);
@@ -285,7 +303,7 @@ function HoldMenu({ menu, lift }: { menu: MenuState; lift: HTMLElement }) {
         const next: HoldPlace = {
           hole: { left: Math.floor(box.left) - 1, top: Math.floor(box.top) - 1, width: Math.ceil(box.width) + 2, height: Math.ceil(box.height) + 2 },
           left: Math.round(left),
-          top: Math.round(Math.min(top - rise + height + HOLD_GAP, window.innerHeight - foot - HOLD_EDGE - el.offsetHeight)),
+          top: Math.round(Math.min(top - rise + height + HOLD_GAP, bottom - el.offsetHeight)),
           right,
         };
         const key = JSON.stringify(next);
@@ -299,6 +317,7 @@ function HoldMenu({ menu, lift }: { menu: MenuState; lift: HTMLElement }) {
     follow();
     return () => {
       cancelAnimationFrame(frame);
+      stopKeyboard();
       lift.style.removeProperty("--lift-y");
     };
   }, [lift]);

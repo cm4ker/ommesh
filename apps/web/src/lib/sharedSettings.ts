@@ -27,7 +27,7 @@ import { getLookalikePrefs, setLookalikePrefs, type LookalikePrefs } from "./loo
 import { getNeighbourSort, NEIGHBOUR_SORTS, setNeighbourSort } from "./neighbourSort.js";
 import { DEFAULT_NODE_ORDER, getNodeOrder, NODE_ORDERS, setNodeOrder, type NodeOrderPrefs } from "./nodeOrder.js";
 import { getNoticePrefs, setChatLevel, setChatSound, setNoticePrefs, SIGNALS, type ChatLevel, type NodeLevel, type NoticeKind, type Signal } from "./noticePrefs.js";
-import { recentReactions, setRecentReactions } from "./reactions.js";
+import { RECENT_SIZE, recentReactions, setRecentReactions } from "./reactions.js";
 import { getSendTries, SEND_TRIES_MAX, setSendTries } from "./sendTries.js";
 import { session } from "./session.js";
 import { SettingsSync } from "./settingsSync.js";
@@ -179,7 +179,7 @@ sync.share<readonly string[]>({
   key: "recentReactions",
   read: recentReactions,
   write: setRecentReactions,
-  valid: (value): value is string[] => Array.isArray(value) && value.length <= 6 && value.every((e) => typeof e === "string" && e.length <= 16),
+  valid: (value): value is string[] => Array.isArray(value) && value.length <= RECENT_SIZE && value.every((e) => typeof e === "string" && e.length <= 16),
   fallback: [],
 });
 

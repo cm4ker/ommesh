@@ -250,73 +250,229 @@
 }
 .hold-menu.expanded {
   width: min(380px, calc(100vw - 16px));
+  padding: 0;
+  overflow: hidden;
+  border-radius: 18px;
 }
 .popover.expanded {
-  width: 344px;
+  width: 360px;
+  padding: 0;
+  overflow: hidden;
 }
-.react-tabs {
+/* Every emoji (EmojiPicker.tsx): low at first, so the message and its chat stay in sight, and its full
+   height once asked for; on a phone never more than the room under the message risen (Menu.tsx). */
+.emoji-picker {
+  height: min(268px, var(--hold-room, 100vh));
   display: flex;
-  gap: 6px;
-  margin-top: 6px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-  scrollbar-width: none;
+  flex-direction: column;
+  transition: height 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.menu-head .react-tabs button {
+.emoji-picker.big {
+  height: min(448px, var(--hold-room, 100vh));
+}
+.emoji-picker .emoji-grab {
   flex: none;
-  width: auto;
-  display: inline-block;
-  padding: 5px 11px;
-  border: 0;
-  border-radius: 14px;
-  background: var(--panel);
-  color: var(--text-muted);
-  font: inherit;
-  font-size: var(--text-xs);
-  font-weight: 500;
-  cursor: pointer;
-}
-/* Every emoji, in groups, scrolling inside the card. */
-.react-grid-scroll {
-  position: relative;
-  max-height: min(420px, 50vh);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 0 6px 8px;
-}
-.react-group-name {
-  padding: 10px 6px 4px;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--text-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.react-grid {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 2px;
-}
-.menu-head .react-grid button {
   width: 100%;
-  height: calc(40px * var(--box-scale));
+  height: 16px;
   display: grid;
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 10px;
+  border-radius: 0;
   background: transparent;
-  font-size: calc(24px * var(--text-scale));
+  cursor: pointer;
+}
+.emoji-grab > span {
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border-strong);
+}
+/* The search field, with the moods in it while nothing is typed. */
+.emoji-find {
+  flex: none;
+  height: calc(40px * var(--box-scale));
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 10px 6px;
+  padding: 0 6px 0 12px;
+  border-radius: 20px;
+  background: var(--hover);
+  color: var(--text-muted);
+}
+.emoji-find:focus-within {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.emoji-find input {
+  flex: 1 1 64px;
+  min-width: 64px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-lg);
+}
+.emoji-find input::placeholder {
+  color: var(--text-muted);
+}
+.emoji-moods {
+  flex: 0 1 212px;
+  min-width: 0;
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.emoji-moods::-webkit-scrollbar {
+  display: none;
+}
+.emoji-picker .emoji-moods button,
+.emoji-picker .emoji-tabs button,
+.emoji-picker .emoji-fold {
+  flex: none;
+  width: calc(34px * var(--box-scale));
+  height: calc(34px * var(--box-scale));
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.emoji-picker .emoji-tabs button,
+.emoji-picker .emoji-fold {
+  width: calc(40px * var(--box-scale));
+  height: calc(40px * var(--box-scale));
+}
+.emoji-picker .emoji-moods button.on {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+.emoji-picker .emoji-tabs button.on {
+  background: var(--selected);
+  color: var(--text);
+}
+.emoji-picker .emoji-clear {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--border-strong);
+  color: var(--text);
+  cursor: pointer;
+}
+/* The groups, one icon each, and the fold back to the menu. */
+.emoji-band {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.emoji-tabs {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.emoji-tabs::-webkit-scrollbar {
+  display: none;
+}
+.emoji-scroll {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 8px 8px;
+}
+/* A group out of sight is not drawn until it scrolls near. */
+.emoji-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 300px;
+}
+.emoji-section:first-child {
+  padding-top: 4px;
+}
+.emoji-head {
+  position: relative;
+  padding: 12px 36px 4px;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.emoji-picker .emoji-head-clear {
+  position: absolute;
+  top: 6px;
+  right: 2px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+}
+.emoji-picker .emoji-grid button {
+  width: 100%;
+  height: calc(42px * var(--box-scale));
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  font-size: calc(28px * var(--text-scale));
   line-height: 1;
   cursor: pointer;
 }
-.menu-head .react-grid button.on {
+.emoji-picker .emoji-grid button.on {
   background: var(--accent-subtle);
 }
+.emoji-none {
+  margin: 0;
+  padding: 28px 16px;
+  color: var(--text-muted);
+  font-size: var(--text-base);
+  text-align: center;
+}
 @media (hover: hover) {
-  .menu-head .react-grid button:hover {
+  .emoji-picker .emoji-grid button:hover,
+  .emoji-picker .emoji-head-clear:hover {
     background: var(--hover);
+  }
+  .emoji-picker .emoji-moods button:hover,
+  .emoji-picker .emoji-tabs button:hover,
+  .emoji-picker .emoji-fold:hover {
+    color: var(--text);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .emoji-picker {
+    transition: none;
   }
 }
 @media (hover: hover) {

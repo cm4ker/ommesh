@@ -1,13 +1,17 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
+import { createPortal } from "react-dom";
 import type { MessageRecord } from "@meshnet/meshcore";
-import { EMOJI_GROUPS, groupReactions, noteReaction, ownReaction, reactors, stripReactions, type EmojiGroup, type ReactionGroup, type Reactor } from "../lib/reactions.js";
+import { emojiName, useEmojiData } from "../lib/emojiData.js";
+import { haptic } from "../lib/haptic.js";
+import { groupReactions, noteReaction, ownReaction, reactors, stripReactions, type ReactionGroup, type Reactor } from "../lib/reactions.js";
 import { session } from "../lib/session.js";
 import { toast } from "../lib/toast.js";
 import { closeMenu, setMenuExpanded } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
-import { BackIcon, ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, RefreshIcon, SmileIcon } from "./Icons.js";
+import { EmojiPicker } from "./EmojiPicker.js";
+import { BackIcon, ChevronDownIcon, ChevronRightIcon, RefreshIcon, SmileIcon } from "./Icons.js";
 import { errorText } from "../i18n/errors.js";
-import { locale, t } from "../i18n/index.js";
+import { locale, t, useLanguage } from "../i18n/index.js";
 
 /** Puts an emoji on a channel message, or takes ours back with null; each is one flood. */
 function react(message: MessageRecord, emoji: string | null): void {
@@ -42,68 +46,40 @@ function Faces({ people }: { people: readonly Reactor[] }) {
   );
 }
 
-function groupName(id: EmojiGroup): string {
-  switch (id) {
-    case "radio":
-      return t("chats.react.groupRadio");
-    case "faces":
-      return t("chats.react.groupFaces");
-    case "hands":
-      return t("chats.react.groupHands");
-    case "hearts":
-      return t("chats.react.groupHearts");
-    case "other":
-      return t("chats.react.groupOther");
-  }
-}
-
 /**
  * The emoji over a held message's menu: the ones chosen lately, and a button
- * that opens the same card out into every emoji, the menu's items stepping
- * aside. Ours is lit, and choosing it again takes it back. Under them, on a
- * message that has some, a row says who put them on, and opens the same way
- * into one line for each: a phone has no pointer to rest on a chip.
+ * that opens the same card out into every emoji (EmojiPicker), the menu's
+ * items stepping aside. Ours is lit, and choosing it again takes it back.
+ * Under them, on a message that has some, a row says who put them on, and
+ * opens the same way into one line for each: a phone has no pointer to rest
+ * on a chip.
  */
 export function ReactStrip({ message }: { message: MessageRecord }) {
   const mine = ownReaction(message.reactions);
   const [open, setOpen] = useState<"all" | "who" | null>(null);
-  const grid = useRef<HTMLDivElement>(null);
   const people = reactors(message.reactions);
-  const button = (emoji: string) => (
-    <button
-      key={emoji}
-      type="button"
-      className={emoji === mine ? "on" : ""}
-      aria-pressed={emoji === mine}
-      onClick={() => {
-        closeMenu();
-        if (emoji !== mine) noteReaction(emoji);
-        react(message, emoji === mine ? null : emoji);
-      }}
-    >
-      {emoji}
-    </button>
-  );
+  const choose = (emoji: string) => {
+    closeMenu();
+    if (emoji !== mine) noteReaction(emoji);
+    react(message, emoji === mine ? null : emoji);
+  };
   const show = (next: "all" | "who" | null) => {
     setOpen(next);
     setMenuExpanded(next !== null);
   };
-  const jump = (id: EmojiGroup) => {
-    const section = grid.current?.querySelector<HTMLElement>(`[data-group="${id}"]`);
-    if (section) grid.current!.scrollTo({ top: section.offsetTop, behavior: "smooth" });
-  };
+  if (open === "all") return <EmojiPicker mine={mine} onPick={choose} onFold={() => show(null)} />;
   return (
     <div className="react-picker">
       <div className="react-strip" role="group" aria-label={t("chats.react.pick")}>
-        {stripReactions().map(button)}
-        <button
-          type="button"
-          className="react-more"
-          aria-label={open === "all" ? t("chats.react.less") : t("chats.react.more")}
-          aria-expanded={open === "all"}
-          onClick={() => show(open === "all" ? null : "all")}
-        >
-          <span>{open === "all" ? <ChevronUpIcon size={18} strokeWidth={2.2} /> : <ChevronDownIcon size={18} strokeWidth={2.2} />}</span>
+        {stripReactions().map((emoji) => (
+          <button key={emoji} type="button" className={emoji === mine ? "on" : ""} aria-pressed={emoji === mine} onClick={() => choose(emoji)}>
+            {emoji}
+          </button>
+        ))}
+        <button type="button" className="react-more" aria-label={t("chats.react.more")} aria-expanded={false} onClick={() => show("all")}>
+          <span>
+            <ChevronDownIcon size={18} strokeWidth={2.2} />
+          </span>
         </button>
       </div>
       {open === null && people.length ? (
@@ -138,26 +114,35 @@ export function ReactStrip({ message }: { message: MessageRecord }) {
           </ul>
         </>
       ) : null}
-      {open === "all" ? (
-        <>
-          <div className="react-tabs">
-            {EMOJI_GROUPS.map((g) => (
-              <button key={g.id} type="button" onClick={() => jump(g.id)}>
-                {groupName(g.id)}
-              </button>
-            ))}
-          </div>
-          <div ref={grid} className="react-grid-scroll">
-            {EMOJI_GROUPS.map((g) => (
-              <section key={g.id} data-group={g.id} aria-label={groupName(g.id)}>
-                <div className="react-group-name">{groupName(g.id)}</div>
-                <div className="react-grid">{g.items.map(button)}</div>
-              </section>
-            ))}
-          </div>
-        </>
-      ) : null}
     </div>
+  );
+}
+
+/** How long a chip is held before its emoji shows large, ms: less than the message's own hold, so its menu never comes first. */
+const PEEK_MS = 380;
+
+/**
+ * An emoji put on a message, large, over the chip held: its name, how many
+ * put it on and who. It shows only while the finger, or the mouse button,
+ * stays down; letting go puts it away, and is no tap.
+ */
+function Peek({ group, at }: { group: ReactionGroup; at: DOMRect }) {
+  const data = useEmojiData(useLanguage());
+  const name = emojiName(data, group.emoji);
+  const width = 172;
+  const left = Math.min(window.innerWidth - width - 8, Math.max(8, at.left + at.width / 2 - width / 2));
+  // Over the chip where there is room, as a finger hides what is under it; else under it.
+  const above = at.top > 220;
+  const place = above ? { left, bottom: window.innerHeight - at.top + 10 } : { left, top: at.bottom + 10 };
+  return createPortal(
+    <div className={["react-peek", above ? "" : "below"].join(" ")} role="tooltip" style={place}>
+      <span className="react-peek-emoji" aria-hidden="true">
+        {group.emoji}
+      </span>
+      <span className="react-peek-name">{name ? `${name} · ${group.count}` : t("chats.react.count", { count: group.count })}</span>
+      <span className="react-peek-who">{whoReacted(group)}</span>
+    </div>,
+    document.body,
   );
 }
 
@@ -168,7 +153,53 @@ export function ReactStrip({ message }: { message: MessageRecord }) {
  */
 export function Reactions({ message, live }: { message: MessageRecord; live: boolean }) {
   const groups = groupReactions(message.reactions);
+  const [peek, setPeek] = useState<{ group: ReactionGroup; at: DOMRect } | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The emoji showed large: the click that ends the hold is no tap.
+  const shown = useRef(false);
+  const stop = () => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+    setPeek(null);
+  };
+  useEffect(
+    () => () => {
+      if (timer.current !== null) clearTimeout(timer.current);
+    },
+    [],
+  );
   if (!groups.length) return null;
+  const hold = (g: ReactionGroup) => ({
+    onPointerDown: (e: PointerEvent<HTMLButtonElement>) => {
+      // Held here, the chip shows its emoji large rather than the message's menu.
+      e.stopPropagation();
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      const chip = e.currentTarget;
+      shown.current = false;
+      if (timer.current !== null) clearTimeout(timer.current);
+      timer.current = setTimeout(() => {
+        timer.current = null;
+        shown.current = true;
+        haptic();
+        setPeek({ group: g, at: chip.getBoundingClientRect() });
+      }, PEEK_MS);
+    },
+    onPointerUp: stop,
+    onPointerCancel: stop,
+    onPointerLeave: stop,
+    onContextMenu: (e: MouseEvent) => {
+      // A finger's long press, for which Android asks for a menu too. A right click still opens the message's.
+      if (timer.current === null && !shown.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    onClickCapture: (e: MouseEvent) => {
+      if (!shown.current) return;
+      shown.current = false;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+  });
   return (
     <span className="msg-reacts">
       {groups.map((g) => {
@@ -188,6 +219,7 @@ export function Reactions({ message, live }: { message: MessageRecord; live: boo
             className={className}
             title={title}
             aria-pressed={g.mine}
+            {...hold(g)}
             onClick={(e) => {
               e.stopPropagation();
               // Ours that nobody sent on goes again; ours that went out is taken back.
@@ -204,6 +236,7 @@ export function Reactions({ message, live }: { message: MessageRecord; live: boo
           </span>
         );
       })}
+      {peek ? <Peek group={peek.group} at={peek.at} /> : null}
     </span>
   );
 }

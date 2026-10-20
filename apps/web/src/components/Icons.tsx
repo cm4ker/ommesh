@@ -112,6 +112,16 @@ export const AirIcon = icon('<path d="M12 21v-8.5"/><circle cx="12" cy="10.5" r=
 export const SearchIcon = icon('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>');
 export const ChevronRightIcon = icon('<path d="M9 5l7 7-7 7"/>');
 export const SmileIcon = icon('<circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0"/><path d="M9 9.5h.01M15 9.5h.01"/>');
+export const SadIcon = icon('<circle cx="12" cy="12" r="9"/><path d="M8.5 16.5a4.5 4.5 0 0 1 7 0"/><path d="M9 9.5h.01M15 9.5h.01"/>');
+export const HeartIcon = icon('<path d="M12 20s-7.5-4.6-7.5-10.2A4.2 4.2 0 0 1 12 7.3a4.2 4.2 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20z"/>');
+export const ThumbUpIcon = icon('<path d="M7 11v9H4v-9z"/><path d="M7 11l4-7c1.5 0 2.5 1 2.5 2.5V10h5a2 2 0 0 1 2 2.3l-1.2 6A2 2 0 0 1 17.3 20H7"/>');
+export const ThumbDownIcon = icon('<path d="M7 13V4H4v9z"/><path d="M7 13l4 7c1.5 0 2.5-1 2.5-2.5V14h5a2 2 0 0 0 2-2.3l-1.2-6A2 2 0 0 0 17.3 4H7"/>');
+export const PartyIcon = icon('<path d="M4 20l4-11 7 7z"/><path d="M13 3.5v2M18.5 5.5L17 7M20.5 11h-2M15.5 9.5c1-1 2.5-1 3.5 0"/>');
+export const LeafIcon = icon('<path d="M5 19C5 10 10 5 19 5c0 9-5 14-14 14z"/><path d="M5 19l7-7"/>');
+export const CupIcon = icon('<path d="M5 9h11v5a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5z"/><path d="M16 10.5h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M9 3.5V6M12.5 3.5V6"/>');
+export const CarIcon = icon('<path d="M5 16.5v-4l2.2-5h9.6l2.2 5v4z"/><path d="M5 16.5v2M19 16.5v2M8 13.5h.01M16 13.5h.01"/>');
+export const BallIcon = icon('<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6a9 9 0 0 1 0 12.8M18.4 5.6a9 9 0 0 0 0 12.8"/>');
+export const BulbIcon = icon('<path d="M9.5 18h5M10.5 21h3"/><path d="M12 3a6 6 0 0 0-3.5 10.9V15.5h7v-1.6A6 6 0 0 0 12 3z"/>');
 export const EditIcon = icon('<path d="M4 20h4L19 9l-4-4L4 16z"/>');
 export const HashIcon = icon('<path d="M9 4L7 20M17 4l-2 16M4.5 9h15M3.5 15h15"/>');
 export const AtIcon = icon('<circle cx="12" cy="12" r="3.5"/><path d="M15.5 8.5v5a2.5 2.5 0 0 0 5 0V12a8.5 8.5 0 1 0-3.4 6.8"/>');

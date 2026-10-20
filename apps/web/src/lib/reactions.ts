@@ -7,20 +7,26 @@ export const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"
 /** How many emoji the strip over a held message's menu shows. */
 const STRIP_SIZE = 6;
 
-/**
- * Every emoji a reaction can be chosen from, in groups. Picked by hand rather
- * than the whole of Unicode: a reaction wants a few dozen faces and signs, and
- * radio people want their own first.
- */
-export const EMOJI_GROUPS = [
-  { id: "radio", items: ["📡", "📶", "🔋", "🪫", "⚡", "🛰️", "🗼", "📻", "🧭", "🗺️", "📍", "🏕️", "⛰️", "🌲", "🌧️", "❄️", "☀️", "🆘", "✅", "❌", "⚠️", "🔇", "🔊", "🔌"] },
-  { id: "faces", items: ["😀", "😁", "😂", "🤣", "😅", "😊", "😍", "🥰", "😘", "😎", "🤩", "🤔", "🤨", "😐", "😏", "🙄", "😬", "😮", "😯", "😲", "😳", "🥺", "😢", "😭", "😤", "😡", "🤯", "😱", "🥶", "🥵", "😴", "🤗", "🫡", "😇", "🤓", "🥳"] },
-  { id: "hands", items: ["👍", "👎", "👌", "✌️", "🤞", "🤙", "👋", "👏", "🙌", "🙏", "💪", "🤝", "✊", "👊", "🫶", "👀"] },
-  { id: "hearts", items: ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "💔", "❤️‍🔥", "💯", "✨"] },
-  { id: "other", items: ["🔥", "🎉", "🎊", "🏆", "⭐", "🌟", "💡", "🎯", "🚀", "⏰", "☕", "🍺", "🍕", "🎂", "🐈", "🐕", "🦆", "🌈", "🌙", "☔", "🚗", "🚲", "🏠", "🍄", "💩", "🤡", "👻", "🤖"] },
+/** How many emoji chosen lately are kept: the strip shows the first few, the full list all of them. */
+export const RECENT_SIZE = 16;
+
+/** The full list's first rows, with no heading: the emoji reached for most, radio people's own among them. */
+export const TOP_REACTIONS = ["👍", "❤️", "🔥", "😂", "📡", "🙏", "😮", "🎉", "✅", "🫡", "🤝", "👀", "😢", "👏", "🤔", "💯"] as const;
+
+/** Radio people's own, picked by hand: a group of its own ahead of Unicode's. */
+export const RADIO_REACTIONS = ["📡", "📶", "🔋", "🪫", "⚡", "🛰️", "🗼", "📻", "🧭", "🗺️", "📍", "🏕️", "⛰️", "🌲", "🌧️", "❄️", "☀️", "🆘", "✅", "❌", "⚠️", "🔇", "🔊", "🔌"] as const;
+
+/** The picks in the search field: a mood, for when no word comes to mind. */
+export const MOODS = [
+  { id: "love", items: ["❤️", "🥰", "😍", "😘", "💕", "💖", "💘", "💞", "🫶", "❤️‍🔥", "💗", "💓", "🧡", "💛", "💚", "💙", "💜", "🤍"] },
+  { id: "yes", items: ["👍", "👌", "✅", "💯", "🙌", "👏", "🤝", "🫡", "✔️", "🆗", "🤙", "💪", "☑️", "🎯"] },
+  { id: "no", items: ["👎", "❌", "🙅", "🛑", "⛔", "🚫", "😒", "🙄", "🤨", "😑", "🤦", "❎"] },
+  { id: "party", items: ["🎉", "🥳", "🎊", "🎈", "🍾", "🥂", "🎁", "🎂", "🏆", "🎆", "🎇", "✨", "🪩", "🍻"] },
+  { id: "joy", items: ["😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "😊", "😇", "🤩", "😎", "🥳", "😺", "😸", "😹"] },
+  { id: "sad", items: ["😢", "😭", "😞", "😔", "😟", "🙁", "🥺", "🥹", "😥", "😓", "😩", "😫", "💔", "😿"] },
 ] as const;
 
-export type EmojiGroup = (typeof EMOJI_GROUPS)[number]["id"];
+export type Mood = (typeof MOODS)[number]["id"];
 
 const RECENT_KEY = "meshnet.recentReactions";
 /** The emoji chosen lately, the latest first. */
@@ -28,12 +34,12 @@ let recent = ((saved) => (Array.isArray(saved) ? saved.filter((e): e is string =
 
 /** The strip's emoji: the ones chosen lately, then the first few until there are six. */
 export function stripReactions(chosen: readonly string[] = recent): string[] {
-  const out = [...chosen];
+  const out = chosen.slice(0, STRIP_SIZE);
   for (const emoji of QUICK_REACTIONS) if (!out.includes(emoji)) out.push(emoji);
   return out.slice(0, STRIP_SIZE);
 }
 
-/** Puts an emoji at the head of the strip. */
+/** Puts an emoji at the head of the ones chosen lately. */
 export function noteReaction(emoji: string): void {
   setRecentReactions([emoji, ...recent.filter((e) => e !== emoji)]);
 }
@@ -43,7 +49,7 @@ export function recentReactions(): readonly string[] {
 }
 
 export function setRecentReactions(emoji: readonly string[]): void {
-  recent = emoji.slice(0, STRIP_SIZE);
+  recent = emoji.slice(0, RECENT_SIZE);
   writeSetting(RECENT_KEY, recent);
 }
 

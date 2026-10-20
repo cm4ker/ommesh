@@ -306,12 +306,16 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
               </span>
             );
           })}
-          <span className="sep">›</span>
-          <button type="button" className="chain-add" disabled={running} aria-label={t("tools.route.addRelay")} title={t("tools.route.addRelay")} onClick={() => setPicking({ mode: "before", index: hops.length })}>
-            <PlusIcon size={14} />
-          </button>
-          <span className="sep">›</span>
-          <span className="muted">{name}</span>
+          <span>
+            <span className="sep">›</span>
+            <button type="button" className="chain-add" disabled={running} aria-label={t("tools.route.addRelay")} title={t("tools.route.addRelay")} onClick={() => setPicking({ mode: "before", index: hops.length })}>
+              <PlusIcon size={14} />
+            </button>
+          </span>
+          <span>
+            <span className="sep">›</span>
+            <span className="muted">{name}</span>
+          </span>
         </p>
       )}
       {editing

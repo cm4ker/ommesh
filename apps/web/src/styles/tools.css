@@ -260,9 +260,15 @@
   padding: 0 5px;
   color: var(--text-faint);
 }
-/* A name in the chain wraps as a whole, with the › before it. */
+/*
+ * A name in the chain wraps as a whole, with the › before it: each is a box of
+ * its own, and the line breaks between boxes. A line never breaks beside ›, so
+ * names kept together with nowrap left it no place to break and it ran out of
+ * the panel. Inside a box the name breaks only when it alone is wider than the line.
+ */
 .tool-line.chain > span {
-  white-space: nowrap;
+  display: inline-block;
+  overflow-wrap: anywhere;
 }
 /* A relay of the chain opens what can be done with it; + puts one in before the end. */
 .chain-hop {

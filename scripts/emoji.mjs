@@ -1,7 +1,11 @@
 // Writes apps/web/src/emoji/<lang>.json, the emoji a reaction can be chosen
-// from, with their names and search words in each of the app's languages, from
-// emojibase-data (Unicode's CLDR names). Run with `pnpm emoji` after updating
-// emojibase-data or adding a language to the app.
+// from, with their names in each of the app's languages, from emojibase-data
+// (Unicode's CLDR names). Run with `pnpm emoji` after updating emojibase-data
+// or adding a language to the app.
+//
+// Each file names the emoji in its own language, and its search words hold
+// the names and words of every language: people type the word that comes to
+// them, which is not always in the language the app is set to.
 //
 // Only emoji up to Emoji 14 (2021) go in: a newer one shows as an empty box on
 // the phones and computers that cannot draw it yet, and a reaction is seen by
@@ -34,14 +38,30 @@ function qualified(entry) {
   return String.fromCodePoint(...points);
 }
 
+/** Every language's entries that go in, by hexcode, in Unicode's order. */
+const data = Object.fromEntries(
+  langs.map((lang) => [
+    lang,
+    new Map(
+      require(`emojibase-data/${lang}/data.json`)
+        .filter((entry) => GROUPS[entry.group] && entry.version <= NEWEST)
+        .sort((a, b) => a.order - b.order)
+        .map((entry) => [entry.hexcode, entry]),
+    ),
+  ]),
+);
+
+/** The words an emoji is found by in one language: its name's and its own. */
+const wordsOf = (entry) => (entry ? [...entry.label.split(/\s+/), ...(entry.tags ?? [])] : []);
+
 mkdirSync(root, { recursive: true });
 for (const lang of langs) {
-  const data = require(`emojibase-data/${lang}/data.json`);
   const out = Object.fromEntries(Object.values(GROUPS).map((id) => [id, []]));
-  for (const entry of [...data].sort((a, b) => a.order - b.order)) {
-    const group = GROUPS[entry.group];
-    if (!group || entry.version > NEWEST) continue;
-    out[group].push([qualified(entry), entry.label, (entry.tags ?? []).join(" ")]);
+  for (const [hexcode, entry] of data[lang]) {
+    const own = new Set(entry.label.toLowerCase().split(/\s+/));
+    const words = new Set([...(entry.tags ?? []), ...langs.filter((other) => other !== lang).flatMap((other) => wordsOf(data[other].get(hexcode)))].map((w) => w.toLowerCase()));
+    for (const word of own) words.delete(word);
+    out[GROUPS[entry.group]].push([qualified(entry), entry.label, [...words].join(" ")]);
   }
   writeFileSync(new URL(`${lang}.json`, root), `${JSON.stringify(out)}\n`);
   const count = Object.values(out).reduce((n, items) => n + items.length, 0);

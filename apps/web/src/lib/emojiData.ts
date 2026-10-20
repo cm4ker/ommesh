@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { fold } from "./messageSearch.js";
 
 /**
- * Every emoji a reaction can be chosen from, with its name and search words in
- * the reader's language. They come from Unicode's own names (scripts/emoji.mjs
- * writes `src/emoji/<lang>.json`), up to Emoji 14 and without flags, and are
- * loaded only when the full list is first opened: about 45 KB a language that
- * a start of the app has no need of.
+ * Every emoji a reaction can be chosen from, named in the reader's language and
+ * found by the words of every language the app has, as the word that comes to
+ * mind is not always in the app's language. They come from Unicode's own names
+ * (scripts/emoji.mjs writes `src/emoji/<lang>.json`), up to Emoji 14 and
+ * without flags, and are loaded only when the full list is first opened: some
+ * 70 KB that a start of the app has no need of.
  */
 
 /** Unicode's groups, in its order, under the names the app gives them. */

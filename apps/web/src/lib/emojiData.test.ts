@@ -49,6 +49,10 @@ test("a search finds emoji by the start of their name or their words, ё as е, 
     ["🐈‍⬛"],
   );
   assert.ok(searchEmoji(en, "fire").some((e) => e.emoji === "🔥"));
+  // A word in another language than the app's finds it too.
+  assert.ok(searchEmoji(en, "плюс").some((e) => e.emoji === "➕"));
+  assert.ok(searchEmoji(en, "кот").some((e) => e.emoji === "🐈"));
+  assert.ok(searchEmoji(ru, "cat").some((e) => e.emoji === "🐈"));
   assert.deepEqual(searchEmoji(ru, "  "), []);
   assert.deepEqual(searchEmoji(ru, "щщщщ"), []);
 });

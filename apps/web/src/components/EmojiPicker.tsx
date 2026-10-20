@@ -65,13 +65,16 @@ const MOOD_LOOKS: Record<Mood, { label: Key; icon: Icon }> = {
 /**
  * Every emoji, opened out of the strip over a held message's menu: a search
  * field with a few moods in it, a band of groups, and the emoji under them.
- * It opens low, so the message and its chat stay in sight, and grows to its
- * full height by its grab bar, by scrolling or by a group; on a phone the
- * keyboard lifts the message out of its way (Menu.tsx).
+ * It stays low on a phone, so the message, its chat and the keyboard all keep
+ * their room, and the emoji scroll inside it; the keyboard lifts the message
+ * out of its way (Menu.tsx). On a computer, where the room is, it grows to
+ * its full height by its grab bar, by scrolling or by a group.
  */
 export function EmojiPicker({ mine, onPick, onFold }: { mine: string | null; onPick: (emoji: string) => void; onFold: () => void }) {
   const data = useEmojiData(useLanguage());
   const wide = useWide();
+  // Only a computer's popover grows; on a phone the list keeps its height.
+  const grows = wide;
   const [query, setQuery] = useState("");
   const [mood, setMood] = useState<Mood | null>(null);
   const [big, setBig] = useState(false);
@@ -94,19 +97,23 @@ export function EmojiPicker({ mine, onPick, onFold }: { mine: string | null; onP
     </button>
   );
   const jump = (id: SectionId) => {
-    setBig(true);
+    if (grows) setBig(true);
     setActive(id);
     const box = scroller.current;
     const section = box?.querySelector<HTMLElement>(`[data-section="${id}"]`);
-    if (box && section) box.scrollTo({ top: id === "top" ? 0 : section.offsetTop, behavior: "smooth" });
+    if (!box || !section) return;
+    const top = id === "top" ? 0 : section.offsetTop;
+    // A near group slides into view; a far one comes at once, as sliding past a thousand emoji takes too long.
+    box.scrollTo({ top, behavior: Math.abs(top - box.scrollTop) < box.clientHeight * 3 ? "smooth" : "auto" });
   };
   // Scrolling the list is asking for more of it; the band follows the group in view.
   const onScroll = () => {
     const box = scroller.current;
     if (!box) return;
-    if (!big && box.scrollTop > 8) setBig(true);
+    if (grows && !big && box.scrollTop > 8) setBig(true);
     let current: SectionId = "top";
-    for (const section of box.querySelectorAll<HTMLElement>("[data-section]")) if (section.offsetTop <= box.scrollTop + 8) current = section.dataset["section"] as SectionId;
+    // A group counts once its heading is near the top: a jump lands a pixel or two short of it.
+    for (const section of box.querySelectorAll<HTMLElement>("[data-section]")) if (section.offsetTop <= box.scrollTop + 40) current = section.dataset["section"] as SectionId;
     if (current === "recent") current = "top";
     if (current !== active) setActive(current);
   };
@@ -119,9 +126,11 @@ export function EmojiPicker({ mine, onPick, onFold }: { mine: string | null; onP
 
   return (
     <div className={["emoji-picker", big ? "big" : ""].join(" ")}>
-      <button type="button" className="emoji-grab" aria-label={big ? t("chats.react.shorter") : t("chats.react.taller")} aria-expanded={big} onClick={() => setBig(!big)}>
-        <span />
-      </button>
+      {grows ? (
+        <button type="button" className="emoji-grab" aria-label={big ? t("chats.react.shorter") : t("chats.react.taller")} aria-expanded={big} onClick={() => setBig(!big)}>
+          <span />
+        </button>
+      ) : null}
       <label className="emoji-find">
         <SearchIcon size={19} />
         <input

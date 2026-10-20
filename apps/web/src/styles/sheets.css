@@ -259,13 +259,17 @@
   padding: 0;
   overflow: hidden;
 }
-/* Every emoji (EmojiPicker.tsx): low at first, so the message and its chat stay in sight, and its full
-   height once asked for; on a phone never more than the room under the message risen (Menu.tsx). */
+/* Every emoji (EmojiPicker.tsx): low, so the message and its chat stay in sight, and never more than the
+   room under the message risen (Menu.tsx); on a computer its full height once asked for. Without the grab
+   bar, which only a computer's has, the search field keeps its distance from the edge. */
 .emoji-picker {
   height: min(268px, var(--hold-room, 100vh));
   display: flex;
   flex-direction: column;
   transition: height 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.emoji-picker > .emoji-find:first-child {
+  margin-top: 10px;
 }
 .emoji-picker.big {
   height: min(448px, var(--hold-room, 100vh));
@@ -398,11 +402,6 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0 8px 8px;
-}
-/* A group out of sight is not drawn until it scrolls near. */
-.emoji-section {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 300px;
 }
 .emoji-section:first-child {
   padding-top: 4px;

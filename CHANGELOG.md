@@ -33,6 +33,7 @@
 - On a phone, chats that came up empty come back by themselves. The phone sometimes would not let the app read its stored chats when the app started, and they stayed empty until the next connect or a restart, and messages that came in meanwhile were lost then. Now the app reads them again a few seconds later and whenever it comes back on screen, and keeps what came in meanwhile.
 - The app writes far less to the device's storage. It used to save all of a radio's chats again after every change, which on an iPhone came to gigabytes a day, and the phone's web view could run out of memory on it and leave the chats empty. Now only what changed is saved, mostly the latest messages.
 - A phone no longer loses a message when the app stops before it saved it, say while you update it or the phone needs the memory. The phone now keeps each message until the app has saved it, and gives it again when the app comes back. The same goes for a computer that shares the phone's radio.
+- A long route now goes on to the next line. When the relays did not fit, the line ran past the edge of the panel, the last names and the + were cut off, and the panel scrolled sideways.
 
 ## 0.9.0 — 2026-10-16
 

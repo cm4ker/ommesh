@@ -50,9 +50,8 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   // by hand too, without turning them on for every message.
   const [cursive, setCursive] = useState(false);
   const [touch] = useState(touchFirst);
-  // A finger holding the pin of an empty field, and what last pressed the button.
+  // A finger or the mouse holding the pin of an empty field.
   const [holding, setHolding] = useState(false);
-  const pointer = useRef("");
   const field = useRef<HTMLTextAreaElement>(null);
   const mirror = useRef<HTMLDivElement>(null);
   // The line a reply put at the head of the field. While it is there as it was put, it is the
@@ -304,13 +303,13 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
       items.push({ label: t("chats.composer.sendAsTyped"), icon: <TextIcon size={17} />, air: true, disabled: !fits, hint: fits ? t("chats.composer.asTypedHint", { bytes: extra }) : t("chats.composer.asTypedTooLong"), onSelect: () => void send({ raw: true }) });
     }
     if (items.length > 0) showMenu(items, { at });
-  }, setHolding);
+  }, setHolding, { mouse: nothing });
 
-  // A finger has to hold the pin: tapped, it only says so. Right after a message goes, the
-  // arrow under the thumb turns into the pin, and a second tap used to put a place by mistake.
-  // A mouse or a key is not pressed twice like that, so a click and Enter still put one.
+  // The pin has to be held, by a finger or the mouse: tapped or clicked, it only says so. Right
+  // after a message goes, the arrow under the pointer turns into the pin, and a second tap or
+  // click used to put a place by mistake. Enter or Space on it still puts one at once.
   const pinPressed = (e: MouseEvent) => {
-    if (e.detail > 0 && pointer.current !== "mouse") toast(t("chats.place.holdHint"));
+    if (e.detail > 0) toast(t("chats.place.holdHint"));
     else attachPlace(radio, conversation, many);
   };
 
@@ -512,10 +511,6 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
             onMouseDown={(e) => e.preventDefault()}
             onClick={button.act}
             {...press}
-            onPointerDown={(e) => {
-              pointer.current = e.pointerType;
-              press.onPointerDown(e);
-            }}
           >
             {nothing ? (
               <svg className="hold-ring" viewBox="0 0 46 46" aria-hidden="true">

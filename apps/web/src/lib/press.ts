@@ -2,7 +2,8 @@
  * A long press on a touch screen and a right click with a mouse both ask for
  * the same thing: the menu of what else can be done with a row or a message.
  * The press is timed here; Android also sends a context menu for it, which
- * is folded into the same one call.
+ * is folded into the same one call. A control that is held on purpose, as the
+ * message field's pin is, times a held mouse button too.
  */
 
 import { useRef, type MouseEvent, type PointerEvent } from "react";
@@ -15,9 +16,10 @@ const SLOP_PX = 8;
 
 /**
  * `onHolding` hears when a finger starts to hold and when it lets go, moves
- * off or holds long enough, for a mark that fills while it holds.
+ * off or holds long enough, for a mark that fills while it holds. With
+ * `mouse`, the left mouse button held is timed as a finger is.
  */
-export function usePress(onMenu: (at: MenuAt) => void, onHolding?: (holding: boolean) => void) {
+export function usePress(onMenu: (at: MenuAt) => void, onHolding?: (holding: boolean) => void, options: { mouse?: boolean } = {}) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
   const fired = useRef(false);
@@ -30,15 +32,17 @@ export function usePress(onMenu: (at: MenuAt) => void, onHolding?: (holding: boo
   return {
     onPointerDown: (e: PointerEvent) => {
       fired.current = false;
-      if (e.pointerType === "mouse") return;
-      start.current = { x: e.clientX, y: e.clientY };
+      const mouse = e.pointerType === "mouse";
+      if (mouse && !(options.mouse && e.button === 0)) return;
+      const at = { x: e.clientX, y: e.clientY };
+      start.current = at;
       clear();
       timer.current = setTimeout(() => {
         timer.current = null;
         fired.current = true;
         onHolding?.(false);
         haptic();
-        onMenu(null);
+        onMenu(mouse ? at : null);
       }, HOLD_MS);
       onHolding?.(true);
     },
@@ -47,6 +51,8 @@ export function usePress(onMenu: (at: MenuAt) => void, onHolding?: (holding: boo
     },
     onPointerUp: clear,
     onPointerCancel: clear,
+    // A mouse let go off the control is not caught as a finger is.
+    onPointerLeave: clear,
     onContextMenu: (e: MouseEvent) => {
       e.preventDefault();
       clear();

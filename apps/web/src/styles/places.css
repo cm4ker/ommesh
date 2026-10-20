@@ -148,7 +148,7 @@
 .compose-send.pin {
   color: var(--accent);
 }
-/* A finger puts a place by holding the pin; the ring fills for as long as the hold takes
+/* A finger or the mouse puts a place by holding the pin; the ring fills for as long as the hold takes
    (HOLD_MS in lib/press.ts), so a tap that meant the arrow puts none. */
 .hold-ring {
   position: absolute;

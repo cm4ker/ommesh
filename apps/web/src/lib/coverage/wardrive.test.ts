@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { toHex } from "@meshnet/meshcore";
 import type { Survey } from "../surveyData.js";
-import { batches, readUploadReply, wardriveSamples } from "./wardrive.js";
+import { authorMessage, batches, readUploadReply, wardriveSamples } from "./wardrive.js";
 
 const survey: Survey = {
   id: "s",
@@ -40,4 +42,11 @@ test("samples go a hundred at a time, and a map's answer is read whatever it lea
   assert.deepEqual(readUploadReply('{"success":true,"samplesReceived":3,"samplesProcessed":2,"samplesDeduped":1,"cellsCreated":1,"cellsUpdated":0}'), { received: 3, processed: 2, deduped: 1, cellsCreated: 1, cellsUpdated: 0 });
   assert.deepEqual(readUploadReply("not json"), { received: 0, processed: 0, deduped: 0, cellsCreated: 0, cellsUpdated: 0 });
   assert.equal(readUploadReply({ samplesReceived: 5 }).received, 5);
+});
+
+test("the radio signs SHA-256 of a batch's ids, a line each, as the map works it out again", () => {
+  const samples = wardriveSamples(survey, () => "Hill", "0.3.0");
+  const expected = createHash("sha256").update(`ommesh-wardrive\n${samples[0]!.id}\n${samples[1]!.id}`).digest("hex");
+  assert.equal(toHex(authorMessage(samples)), expected);
+  assert.notEqual(toHex(authorMessage(samples.slice(0, 1))), expected);
 });

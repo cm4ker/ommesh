@@ -517,3 +517,19 @@ export function importPrivateKey(privateKey: Uint8Array): Uint8Array {
   if (privateKey.length !== 64) throw new Error(`a private key is 64 bytes, got ${privateKey.length}`);
   return new ByteWriter().u8(Cmd.ImportPrivateKey).bytes(privateKey).toBytes();
 }
+
+/** The data a signature is of goes over in pieces of at most this many bytes, each a frame. */
+export const SIGN_CHUNK = 128;
+
+export function signStart(): Uint8Array {
+  return new ByteWriter().u8(Cmd.SignStart).toBytes();
+}
+
+export function signData(piece: Uint8Array): Uint8Array {
+  if (piece.length < 1 || piece.length > SIGN_CHUNK) throw new Error(`a piece to sign is 1 to ${SIGN_CHUNK} bytes, got ${piece.length}`);
+  return new ByteWriter().u8(Cmd.SignData).bytes(piece).toBytes();
+}
+
+export function signFinish(): Uint8Array {
+  return new ByteWriter().u8(Cmd.SignFinish).toBytes();
+}

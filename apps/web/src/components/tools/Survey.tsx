@@ -18,10 +18,11 @@ import { usePhone } from "../../lib/phonePosition.js";
 import { isCapacitor } from "../../lib/platform.js";
 import { openLink } from "../../lib/webLinks.js";
 import { saveFile } from "../../lib/saveFile.js";
-import { useSession } from "../../lib/session.js";
+import { session, useSession } from "../../lib/session.js";
 import { COVERAGE_MAPS, type CoverageMap } from "../../lib/coverage/maps.js";
 import { canSendCoverage, sendSurvey } from "../../lib/coverage/upload.js";
-import { deleteSurvey, markSurveySent, restoreSurvey, setSurveySound, surveyNodeName, useSurveySound, useSurveys, type SurveyRun } from "../../lib/survey.js";
+import { shortId } from "../../lib/coverage/wardrive.js";
+import { deleteSurvey, markSurveySent, restoreSurvey, setSurveySign, setSurveySound, surveyNodeName, useSurveySign, useSurveySound, useSurveys, type SurveyRun } from "../../lib/survey.js";
 import { FIX_M, MOVE_M, PING_EVERY_MS, metresToGo, onMap, pointTone, repeaterRows, replyScore, surveyStats, type Survey, type SurveyPoint } from "../../lib/surveyData.js";
 import { FORMAT_TYPE, surveyFile, surveyFileName, type SurveyFormat } from "../../lib/surveyFiles.js";
 import { toast } from "../../lib/toast.js";
@@ -464,20 +465,27 @@ function ExportView({ survey }: { survey: Survey }) {
  * filled and the rest outlined, and once the survey is there, when it went and
  * with how many points. Every send asks first, in words that say the points
  * are public there and, for a third party's map, that they leave for someone
- * else's site.
+ * else's site. A map that names authors (Ommesh's own) also asks there whether
+ * the radio puts its name to the survey: off until turned on, then as last left.
  */
 function SendToMap({ survey, map, first }: { survey: Survey; map: CoverageMap; first: boolean }) {
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
+  const state = useSession();
+  const signOn = useSurveySign();
   const can = canSendCoverage(map);
   const sent = survey.sent?.[map.id];
   const label = map.ours ? t("tools.survey.ourMap") : map.name;
+  // Only the radio that made the survey can sign it, and only while it is on the link.
+  const radio = state.status === "ready" && state.self?.key === survey.radio ? state.self : null;
+  const signing = map.authors === true && signOn && radio !== null;
   const send = async () => {
     setAsking(false);
     setBusy(true);
     try {
-      const reply = await sendSurvey(map, survey, (key) => surveyNodeName(survey, key));
-      markSurveySent(survey.id, map.id, survey.points.length);
+      const signer = signing && radio ? { key: radio.key, name: radio.name, sign: (data: Uint8Array) => session.sign(data) } : null;
+      const reply = await sendSurvey(map, survey, (key) => surveyNodeName(survey, key), signer);
+      markSurveySent(survey.id, map.id, survey.points.length, signer?.name);
       toast(t("tools.survey.sentTo", { map: label }), "", { label: t("common.open"), run: () => openLink(map.siteUrl) }, t("tools.survey.sentDetail", { taken: reply.processed, known: reply.deduped, cells: reply.cellsCreated }));
     } catch (error) {
       toast(t("tools.survey.sendFailed", { map: label }), "error", undefined, errorText(error));
@@ -488,7 +496,16 @@ function SendToMap({ survey, map, first }: { survey: Survey; map: CoverageMap; f
   if (asking) {
     return (
       <div className="survey-agree">
-        <p>{t(map.ours ? "tools.survey.agreeOurs" : "tools.survey.agree", { points: t("tools.survey.points", { count: survey.points.length }), host: map.host })}</p>
+        <p>{t(signing ? "tools.survey.agreeOursSigned" : map.ours ? "tools.survey.agreeOurs" : "tools.survey.agree", { points: t("tools.survey.points", { count: survey.points.length }), host: map.host })}</p>
+        {map.authors ? (
+          <button type="button" role="switch" aria-checked={signing} className="survey-sign" disabled={radio === null} onClick={() => setSurveySign(!signOn)}>
+            <span className="grow">
+              {t("tools.survey.sign")}
+              <small>{radio === null ? t("tools.survey.signOffline") : signing ? `${radio.name} · ${shortId(radio.key)}` : t("tools.survey.signNoName")}</small>
+            </span>
+            <span className={["switch", signing ? "on" : ""].join(" ")} aria-hidden="true" />
+          </button>
+        ) : null}
         <div className="tool-actions">
           <Button variant="primary" onClick={() => void send()}>
             {t("tools.survey.agreeSend", { host: map.host })}
@@ -507,7 +524,11 @@ function SendToMap({ survey, map, first }: { survey: Survey; map: CoverageMap; f
         <span className="row-main">
           <span className="row-title">{t("tools.survey.sentTo", { map: label })}</span>
           <span className="row-sub muted">
-            {t("tools.survey.sentWhen", { when: `${dayLabel(sent.at / 1000)}, ${timeOfDay(sent.at / 1000)}`, points: t("tools.survey.points", { count: sent.points }) })}
+            {t(map.authors ? (sent.by !== undefined ? "tools.survey.sentBy" : "tools.survey.sentNoName") : "tools.survey.sentWhen", {
+              when: `${dayLabel(sent.at / 1000)}, ${timeOfDay(sent.at / 1000)}`,
+              points: t("tools.survey.points", { count: sent.points }),
+              name: sent.by ?? "",
+            })}
           </span>
         </span>
         {/* The map drops what it has already, so a second send costs nothing but the traffic. */}

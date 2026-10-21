@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, createPublicKey, verify } from "node:crypto";
 import { fromHex, toHex } from "./bytes.js";
-import { privateKeyFault, publicKeyOf } from "./identity.js";
+import { privateKeyFault, publicKeyOf, signWith } from "./identity.js";
 
 // The test client pair the firmware checks every imported key against (`src/Identity.cpp`).
 const FIRMWARE_PRV = fromHex("7065e18fd9fabb70c1ed90dca19907de698c88b709ea146eafd93d9b830c7b60c4681193c79bbc39945ba8064104bb618f8fd7a84a0af6f57033d6e8ddcd6471");
@@ -27,6 +27,17 @@ test("the public keys of RFC 8032's test seeds", () => {
     ["c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7", "fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025"],
   ];
   for (const [seed, pub] of cases) assert.equal(toHex(publicKeyOf(expand(fromHex(seed!)))), pub);
+});
+
+test("a signature is the one RFC 8032 gives, and one Node's own ed25519 takes", async () => {
+  const key = expand(fromHex("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"));
+  assert.equal(
+    toHex(await signWith(key, new Uint8Array(0))),
+    "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
+  );
+  const message = new TextEncoder().encode("ommesh-wardrive");
+  const spki = Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), publicKeyOf(FIRMWARE_PRV)]);
+  assert.ok(verify(null, message, createPublicKey({ key: spki, format: "der", type: "spki" }), await signWith(FIRMWARE_PRV, message)));
 });
 
 test("a key the radio would refuse is told apart", () => {

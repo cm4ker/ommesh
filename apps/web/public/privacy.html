@@ -87,7 +87,10 @@
     and version) to that site. There are two such sites at present. The Ommesh project's own map,
     <a href="https://agent.ommesh.ru/" target="_blank" rel="noopener noreferrer">agent.ommesh.ru</a>, keeps the
     points; it sees your IP address with the request and keeps it only in memory, to limit how many
-    points one address may send in an hour.
+    points one address may send in an hour. Each point's label there carries the first eight characters
+    of your radio's public key, which the map does not show. Only if you turn on "Sign the survey" when
+    sending, which stays off until you do, the radio's name and whole public key go too, signed by the
+    radio, and the map shows them beside your points.
     <a href="https://meshcoretel.ru/" target="_blank" rel="noopener noreferrer">MeshCoreTel</a> (meshcoretel.ru)
     is run by a third party, not by the Ommesh project, and its own policies govern how it keeps them. On
     either, the points become part of a public coverage map, visible to anyone, and they cannot be deleted

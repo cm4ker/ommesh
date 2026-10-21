@@ -17,6 +17,8 @@ export interface CoverageMap {
   ours?: boolean;
   /** Answers a page from any site, so the page posts to it itself, a browser tab too. */
   anySite?: boolean;
+  /** Takes the radio's name with a survey when the radio signs it (`WardriveAuthor`), and shows whose points they are. */
+  authors?: boolean;
 }
 
 export const COVERAGE_MAPS: CoverageMap[] = [
@@ -29,6 +31,7 @@ export const COVERAGE_MAPS: CoverageMap[] = [
     protocol: "wardrive",
     ours: true,
     anySite: true,
+    authors: true,
   },
   {
     id: "meshcoretel",

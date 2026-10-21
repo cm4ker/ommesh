@@ -807,6 +807,20 @@ export class MeshCoreClient {
     return true;
   }
 
+  /**
+   * The radio's signature of `data` with its own key, 64 bytes: what another
+   * holder of its public key checks to know the radio said it. The data goes
+   * over in pieces that fit a frame, and the radio takes at most as much as it
+   * says when asked to start.
+   */
+  async sign(data: Uint8Array): Promise<Uint8Array> {
+    if (data.length === 0) throw new Error("sign: nothing to sign");
+    const start = await this.one("signStart", cmd.signStart(), "signStart");
+    if (data.length > start.maxLength) throw new Error(`sign: ${data.length} bytes, the radio takes ${start.maxLength}`);
+    for (let at = 0; at < data.length; at += cmd.SIGN_CHUNK) await this.ok("signData", cmd.signData(data.subarray(at, at + cmd.SIGN_CHUNK)));
+    return (await this.one("signFinish", cmd.signFinish(), "signature")).signature;
+  }
+
   /** A console line run by this radio itself (protocol 14); an older radio refuses it as unsupported. */
   runCliCommand(text: string): Promise<string> {
     return this.one("runCliCommand", cmd.runCliCommand(text), "cliReply").then((f) => f.text);

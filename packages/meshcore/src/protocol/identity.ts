@@ -83,6 +83,44 @@ export function publicKeyOf(privateKey: Uint8Array): Uint8Array {
   return encode(multiply(BASE, scalar % L));
 }
 
+/** Little-endian bytes as a number. */
+function readLe(bytes: Uint8Array): bigint {
+  let n = 0n;
+  for (let i = bytes.length - 1; i >= 0; i--) n = (n << 8n) | BigInt(bytes[i]!);
+  return n;
+}
+
+/**
+ * The signature the radio makes of `message` with this private key, as
+ * orlp/ed25519's `ed25519_sign` makes it (`CMD_SIGN_FINISH`): 64 bytes, the
+ * nonce drawn from the key's second half and the message, so one message
+ * always gets one signature. Only the demo radio signs here; a real one keeps
+ * its key to itself.
+ */
+export async function signWith(privateKey: Uint8Array, message: Uint8Array): Promise<Uint8Array> {
+  if (privateKey.length !== 64) throw new Error(`a private key is 64 bytes, got ${privateKey.length}`);
+  const hash = async (...parts: Uint8Array[]) => {
+    const all = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+    let at = 0;
+    for (const p of parts) {
+      all.set(p, at);
+      at += p.length;
+    }
+    return readLe(new Uint8Array(await globalThis.crypto.subtle.digest("SHA-512", all))) % L;
+  };
+  const r = await hash(privateKey.subarray(32, 64), message);
+  const point = encode(multiply(BASE, r));
+  const k = await hash(point, publicKeyOf(privateKey), message);
+  let s = (r + k * readLe(privateKey.subarray(0, 32))) % L;
+  const out = new Uint8Array(64);
+  out.set(point);
+  for (let i = 32; i < 64; i++) {
+    out[i] = Number(s & 0xffn);
+    s >>= 8n;
+  }
+  return out;
+}
+
 /**
  * Whether the radio would take this private key (`LocalIdentity::validatePrivateKey`):
  * `shape` for 64 bytes that were never an ed25519 key (its scalar not clamped, so the

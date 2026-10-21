@@ -42,8 +42,8 @@ export interface Survey {
   endedAt: number | null;
   points: SurveyPoint[];
   nodes: Record<string, SurveyNode>;
-  /** The coverage maps it was sent to, by id: when, and how many points it had then. */
-  sent?: Record<string, { at: number; points: number }>;
+  /** The coverage maps it was sent to, by id: when, how many points it had then, and the radio's name when the radio signed it. */
+  sent?: Record<string, { at: number; points: number; by?: string }>;
 }
 
 /** Whether a survey has gone to a coverage map, whichever one. */

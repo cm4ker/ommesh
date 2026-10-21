@@ -677,6 +677,8 @@ pub fn takes(command: &[u8], answer: &[u8]) -> bool {
         CMD_RUN_CLI_COMMAND => &[RESP_CLI_REPLY],
         CMD_EXPORT_PRIVATE_KEY => &[RESP_PRIVATE_KEY, RESP_DISABLED],
         CMD_IMPORT_PRIVATE_KEY => &[RESP_OK, RESP_DISABLED],
+        CMD_SIGN_START => &[RESP_SIGN_START],
+        CMD_SIGN_FINISH => &[RESP_SIGNATURE],
         CMD_SEND_TXT_MSG
         | CMD_SEND_LOGIN
         | CMD_SEND_STATUS_REQ
@@ -710,7 +712,8 @@ pub fn takes(command: &[u8], answer: &[u8]) -> bool {
         | CMD_SET_AUTO_ADD_CONFIG
         | CMD_SET_PATH_HASH_MODE
         | CMD_SEND_CHANNEL_DATA
-        | CMD_SET_DEFAULT_FLOOD_SCOPE => &[RESP_OK],
+        | CMD_SET_DEFAULT_FLOOD_SCOPE
+        | CMD_SIGN_DATA => &[RESP_OK],
         _ => return true,
     };
     kinds.contains(&code)
@@ -863,6 +866,32 @@ mod tests {
             v(&[&[9, 1, 2, 3, 4]]),
             "its answer goes to the computer"
         );
+    }
+
+    #[test]
+    fn a_signature_goes_to_the_page_that_asked_for_it() {
+        let mut rig = Rig::new();
+        rig.attach(Page)
+            .attach(Computer)
+            .up()
+            .radio_says(NO_MORE)
+            .clear();
+        rig.client_says(Page, &[CMD_SIGN_START]);
+        rig.radio_says(&[RESP_SIGN_START, 0, 0, 32, 0, 0]);
+        rig.client_says(Page, &[CMD_SIGN_DATA, 7, 7]);
+        rig.radio_says(OK);
+        rig.client_says(Page, &[CMD_SIGN_FINISH]);
+        assert!(!takes(&[CMD_SIGN_FINISH], OK), "an ok is not the signature");
+        rig.radio_says(&[RESP_SIGNATURE, 1, 2, 3]);
+        assert_eq!(
+            rig.page,
+            v(&[
+                &[RESP_SIGN_START, 0, 0, 32, 0, 0],
+                OK,
+                &[RESP_SIGNATURE, 1, 2, 3]
+            ])
+        );
+        assert!(rig.computer.is_empty());
     }
 
     #[test]

@@ -4009,6 +4009,11 @@ export class MeshSession {
     return this.need().exportPrivateKey();
   }
 
+  /** The radio's signature of `data` with its own key, 64 bytes. */
+  async sign(data: Uint8Array): Promise<Uint8Array> {
+    return this.need().sign(data);
+  }
+
   /**
    * Gives the radio another private key, and with it another place in the
    * mesh: from here on it is the node that key belongs to. The name goes with

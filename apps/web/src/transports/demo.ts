@@ -32,6 +32,7 @@ import {
   readMarkValue,
   ReqType,
   Resp,
+  signWith,
   textHash,
   toHex,
   TxtType,
@@ -415,6 +416,8 @@ class DemoRadio extends BaseTransport {
   readonly label = "MeshCore-demo";
   private queue: Uint8Array[] = [];
   private timers: ReturnType<typeof setTimeout>[] = [];
+  /** What the app has handed in to sign since its start, or null outside one. */
+  private signing: Uint8Array | null = null;
   private chatter: ReturnType<typeof setInterval> | null = null;
   private acks = 0x1000;
   /** The radio's own settings, kept as the firmware keeps them so a re-read brings back what was set. */
@@ -854,6 +857,13 @@ class DemoRadio extends BaseTransport {
   async send(frame: Uint8Array): Promise<void> {
     // For the phone's app, which the relay takes: nothing answers it.
     if (frame[0] === Push.Peer) return;
+    if (frame[0] === Cmd.SignFinish) {
+      const data = this.signing;
+      this.signing = null;
+      const reply = data ? new ByteWriter().u8(Resp.Signature).bytes(await signWith(own.privateKey, data)).toBytes() : new Uint8Array([Resp.Err, 4]);
+      this.timers.push(setTimeout(() => this.emitFrame(reply), 15));
+      return;
+    }
     const replies = this.answer(frame);
     const t = setTimeout(() => {
       for (const r of replies) this.emitFrame(r);
@@ -1369,6 +1379,19 @@ class DemoRadio extends BaseTransport {
         return [new Uint8Array([Resp.Ok])];
       case Cmd.ExportPrivateKey:
         return [new ByteWriter().u8(Resp.PrivateKey).bytes(own.privateKey).toBytes()];
+      // As the firmware: the data comes in pieces after a start, up to 8 KB, and the signature at the finish (in `send`).
+      case Cmd.SignStart:
+        this.signing = new Uint8Array(0);
+        return [new ByteWriter().u8(Resp.SignStart).u8(0).u32(8 * 1024).toBytes()];
+      case Cmd.SignData: {
+        if (!this.signing) return [new Uint8Array([Resp.Err, 4])];
+        if (this.signing.length + frame.length - 1 > 8 * 1024) return [new Uint8Array([Resp.Err, 3])];
+        const more = new Uint8Array(this.signing.length + frame.length - 1);
+        more.set(this.signing);
+        more.set(frame.subarray(1), this.signing.length);
+        this.signing = more;
+        return [new Uint8Array([Resp.Ok])];
+      }
       case Cmd.ImportPrivateKey: {
         // The firmware checks the key the way `privateKeyFault` does, and refuses an unfit one as an illegal argument.
         const key = frame.slice(1, 65);

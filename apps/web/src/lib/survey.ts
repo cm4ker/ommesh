@@ -481,6 +481,28 @@ export function useSurveySound(): boolean {
   return useSyncExternalStore(subscribeSound, surveySound);
 }
 
+const SIGN_KEY = "survey.sign";
+const signListeners = new Set<() => void>();
+
+/** Whether a survey sent to a map that names authors goes with the radio's name, signed by it. Off until turned on, then as last left. */
+export function surveySign(): boolean {
+  return readSetting(SIGN_KEY, false);
+}
+
+export function setSurveySign(on: boolean): void {
+  writeSetting(SIGN_KEY, on);
+  for (const listener of signListeners) listener();
+}
+
+function subscribeSign(listener: () => void): () => void {
+  signListeners.add(listener);
+  return () => signListeners.delete(listener);
+}
+
+export function useSurveySign(): boolean {
+  return useSyncExternalStore(subscribeSign, surveySign);
+}
+
 const HOLD_KEY = "survey.holdUsed";
 
 /** Whether a survey was ever started by holding ≋; until then its sheet says it can be. */
@@ -508,10 +530,10 @@ export function restoreSurvey(survey: Survey): void {
 }
 
 /** Notes that a survey went to a coverage map, so its sheet says so and when. */
-export function markSurveySent(id: string, mapId: string, points: number): void {
+export function markSurveySent(id: string, mapId: string, points: number, by?: string): void {
   const survey = surveyById(id);
   if (!survey) return;
-  replaceSurvey({ ...survey, sent: { ...survey.sent, [mapId]: { at: Date.now(), points } } });
+  replaceSurvey({ ...survey, sent: { ...survey.sent, [mapId]: by === undefined ? { at: Date.now(), points } : { at: Date.now(), points, by } } });
   persist();
 }
 

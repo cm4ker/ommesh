@@ -8,11 +8,11 @@
  * (coverage.rs), and a browser tab cannot send to them.
  */
 
+import { toHex } from "@meshnet/meshcore";
 import { isCapacitor, isTauri } from "../platform.js";
 import type { Survey } from "../surveyData.js";
 import type { CoverageMap } from "./maps.js";
-import { toHex } from "@meshnet/meshcore";
-import { addReplies, authorMessage, batches, readUploadReply, wardriveSamples, type UploadReply, type WardriveAuthor } from "./wardrive.js";
+import { addReplies, AUTHOR_CONSENT, authorMessage, batches, readUploadReply, wardriveSamples, type UploadReply, type WardriveAuthor } from "./wardrive.js";
 
 /** Whether this app can send to the map at all. */
 export function canSendCoverage(map: CoverageMap): boolean {
@@ -61,12 +61,13 @@ export interface SurveySigner {
 /**
  * Sends every point of a survey, a hundred at a time; what the map says it
  * took. With a signer, a map that takes authors gets the radio's name with
- * each batch, signed by the radio; any other map never gets it.
+ * each batch and the reader's leave to publish under it, signed by the
+ * radio; any other map never gets them.
  */
 export async function sendSurvey(map: CoverageMap, survey: Survey, name: (key: string) => string, signer: SurveySigner | null = null): Promise<UploadReply> {
   let total: UploadReply = { received: 0, processed: 0, deduped: 0, cellsCreated: 0, cellsUpdated: 0 };
   for (const batch of batches(wardriveSamples(survey, name, __APP_VERSION__))) {
-    const author: WardriveAuthor | null = signer && map.authors ? { key: signer.key, name: signer.name, sig: toHex(await signer.sign(authorMessage(batch))) } : null;
+    const author: WardriveAuthor | null = signer && map.authors ? { key: signer.key, name: signer.name, consent: AUTHOR_CONSENT, sig: toHex(await signer.sign(authorMessage(batch))) } : null;
     const { status, data } = await post(map, JSON.stringify(author ? { samples: batch, author } : { samples: batch }));
     if (status < 200 || status >= 300) throw new CoverageError(`HTTP ${status}`);
     total = addReplies(total, readUploadReply(data));

@@ -61,26 +61,32 @@ export function wardriveSamples(survey: Survey, name: (key: string) => string, a
   });
 }
 
+/** The reader's leave for the map to publish the points under the radio's name, in the words a map reads. */
+export const AUTHOR_CONSENT = "publish-named";
+
 /**
  * Who made a survey, beside a batch's samples, for a map that names whose
- * points they are (Ommesh's own): the radio's public key and name, and the
- * radio's signature of `authorMessage`, all in hex but the name.
+ * points they are (Ommesh's own): the radio's public key and name, the
+ * reader's leave to publish them under it, and the radio's signature of
+ * `authorMessage`, the key and the signature in hex.
  */
 export interface WardriveAuthor {
   key: string;
   name: string;
+  consent: typeof AUTHOR_CONSENT;
   sig: string;
 }
 
 /**
  * What the radio signs to put its name to a batch: SHA-256 of
- * "ommesh-wardrive" and the batch's sample ids, a line each. The map works
- * the same out from the samples it got and names the radio only when the
- * signature fits its key: every advert carries a radio's key, so a name
- * without the signature anyone could send.
+ * "ommesh-wardrive", the leave to publish under its name, and the batch's
+ * sample ids, a line each. The map works the same out from the samples it
+ * got and names the radio only when the signature fits its key: every
+ * advert carries a radio's key, so a name without the signature anyone
+ * could send, and the leave cannot be cut off it.
  */
 export function authorMessage(samples: WardriveSample[]): Uint8Array {
-  return sha256(new TextEncoder().encode(["ommesh-wardrive", ...samples.map((s) => s.id)].join("\n")));
+  return sha256(new TextEncoder().encode(["ommesh-wardrive", AUTHOR_CONSENT, ...samples.map((s) => s.id)].join("\n")));
 }
 
 export function batches<T>(items: T[], size = WARDRIVE_BATCH): T[][] {

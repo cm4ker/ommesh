@@ -44,9 +44,9 @@ test("samples go a hundred at a time, and a map's answer is read whatever it lea
   assert.equal(readUploadReply({ samplesReceived: 5 }).received, 5);
 });
 
-test("the radio signs SHA-256 of a batch's ids, a line each, as the map works it out again", () => {
+test("the radio signs SHA-256 of the leave to publish and a batch's ids, a line each, as the map works it out again", () => {
   const samples = wardriveSamples(survey, () => "Hill", "0.3.0");
-  const expected = createHash("sha256").update(`ommesh-wardrive\n${samples[0]!.id}\n${samples[1]!.id}`).digest("hex");
+  const expected = createHash("sha256").update(`ommesh-wardrive\npublish-named\n${samples[0]!.id}\n${samples[1]!.id}`).digest("hex");
   assert.equal(toHex(authorMessage(samples)), expected);
   assert.notEqual(toHex(authorMessage(samples.slice(0, 1))), expected);
 });

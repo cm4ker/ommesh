@@ -25,6 +25,12 @@ const config: CapacitorConfig = {
     webContentsDebuggingEnabled: Boolean(process.env["CAP_SERVER_URL"]),
   },
   plugins: {
+    // Android: the page asks for viewport-fit=cover, but SystemBars learns that only once the page
+    // is up, and until then pads the window below the bars; when it stops, the page jumped under
+    // the clock for a moment at every start. Told beforehand, it never pads.
+    SystemBars: {
+      initialViewportFitValueHint: "cover",
+    },
     LocalNotifications: {
       smallIcon: "ic_stat_meshnet",
       iconColor: "#74ade8",

@@ -27,6 +27,7 @@
 - The Log keeps its latest 400 lines over a restart, so a problem noticed after the app started again can still be read. When the radio refuses to send for want of room, the Log notes what the radio says of itself at that moment: how many packets wait in its queue, whether it waited long for a quiet air, its noise floor and how busy the air has been.
 
 ### Fixes
+- On an Android phone whose Android System WebView has not been updated for years, the app no longer opens on a blank white page. It says what to update and has a button that opens it in Google Play. Such a phone needs Android System WebView 108 or newer.
 - On some Android phones the top of the app no longer runs under the clock and the network icons, and the bottom no longer runs under the bar you swipe home with. It happened where the phone's Android System WebView had not been updated for a while. On every Android phone, the top of the app also no longer jumps under the clock for a moment as the app opens.
 - On a phone, the keyboard comes up over the tabs at the bottom, as in the phone's own apps, and the list you search reaches down to the keyboard. On an iPhone the tabs used to ride up on top of the keyboard and take a row of the list.
 - A phone no longer loses messages when another app is on the same radio, such as a PC over Wi-Fi. The radio gives each message out once, and one the other app took, or one that came after the phone had stopped waiting for it, could show there and never in the phone's chats. Now it reaches the phone too.

@@ -1,0 +1,86 @@
+{
+  "version": "0.10.0",
+  "date": "2026-10-23",
+  "items": [
+    {
+      "kind": "new",
+      "show": "radio/backup",
+      "en": {
+        "title": "Move to another radio with one file",
+        "text": "Settings › Copy and move › Save a copy keeps the key, settings, channels, contacts and chats. On the new radio, Restore from a copy makes it the same node. Keep the file like a password."
+      },
+      "ru": {
+        "title": "Переезд на другое радио одним файлом",
+        "text": "«Настройки › Копия и перенос › Сохранить копию» хранит ключ, настройки, каналы, контакты и чаты. На новом радио «Вернуть из копии» делает его тем же узлом. Храните файл как пароль."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "chats",
+      "en": {
+        "title": "Put any emoji on a message",
+        "text": "Hold a message and tap ⌄: every emoji opens, with a search in English or Russian. Hold a reaction to see it large and who put it on."
+      },
+      "ru": {
+        "title": "Любой эмодзи на сообщение",
+        "text": "Удержите сообщение и нажмите ⌄: откроются все эмодзи, с поиском по-русски и по-английски. Удержите реакцию, чтобы увидеть её крупно и кто её поставил."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "chats",
+      "en": {
+        "title": "Tap a reply to go to its message",
+        "text": "The chat scrolls to the message the reply answers, and it flashes. Replies from MCO Advanced, MeshCore One and MeshTrax lead there too."
+      },
+      "ru": {
+        "title": "Ответ ведёт к своему сообщению",
+        "text": "Нажмите на начало ответа: чат прокрутится к сообщению, на которое ответили, и оно мигнёт. Так работают и ответы из MCO Advanced, MeshCore One и MeshTrax."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "mesh",
+      "en": {
+        "title": "Send a coverage survey to the Ommesh map",
+        "text": "A survey goes to agent.ommesh.ru as well as MeshCoreTel, signed with your radio's name if you like. Made from a car, it now leaves far fewer gaps."
+      },
+      "ru": {
+        "title": "Замер покрытия на карту Ommesh",
+        "text": "Замер уходит на agent.ommesh.ru, а не только на MeshCoreTel, и по желанию с подписью вашего радио. Из машины он теперь оставляет куда меньше дыр."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "radio/report",
+      "en": {
+        "title": "Report a problem from the app",
+        "text": "Settings › About › Report a problem or an idea, no GitHub account needed. The app adds its version and the radio's state; messages, keys and positions never go."
+      },
+      "ru": {
+        "title": "Сообщить о проблеме из приложения",
+        "text": "«Настройки › О приложении › Рассказать об ошибке или идее», аккаунт GitHub не нужен. Приложение добавит свою версию и состояние радио; сообщения, ключи и координаты не уходят."
+      }
+    },
+    {
+      "kind": "fix",
+      "en": "An Android phone with an old system web view says what to update, not a white page.",
+      "ru": "Android со старым System WebView говорит, что обновить, а не показывает белый экран."
+    },
+    {
+      "kind": "fix",
+      "en": "On Android, the top of the app stays below the clock.",
+      "ru": "На Android верх приложения больше не залезает под часы."
+    },
+    {
+      "kind": "fix",
+      "en": "Messages and channel names are no longer lost when two apps share a radio.",
+      "ru": "Сообщения и названия каналов больше не теряются, когда радио делят два приложения."
+    },
+    {
+      "kind": "fix",
+      "en": "Chats no longer open empty on a phone, and the app writes far less to its storage.",
+      "ru": "Чаты на телефоне больше не открываются пустыми, а приложение гораздо меньше пишет в память."
+    }
+  ]
+}

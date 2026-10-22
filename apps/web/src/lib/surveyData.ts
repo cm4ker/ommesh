@@ -9,12 +9,12 @@
 import { distanceKm } from "./geo.js";
 import { quality } from "./los.js";
 
-/** One repeater's answer at a point: how it heard us and how we heard it, dB, and the signal's strength, dBm. */
+/** One repeater's answer at a point: how it heard us and how we heard it, dB, and the signal's strength, dBm; a check's answer carries no strength. */
 export interface SurveyReply {
   key: string;
   us: number;
   them: number;
-  rssi: number;
+  rssi: number | null;
 }
 
 /** Where the phone was when it asked, how sure the fix was (metres either way), and who answered; none is a point too. */
@@ -24,6 +24,11 @@ export interface SurveyPoint {
   lon: number;
   accuracy: number;
   replies: SurveyReply[];
+  /**
+   * A check of one repeater straight between asks (`checkDue`), not an ask. Its one answer
+   * is kept, and only when it came back: that one repeater's silence says nothing of the others.
+   */
+  check?: true;
 }
 
 /** A repeater as it was known when it answered, so a file or the list can name it after its contact is gone. */
@@ -53,7 +58,7 @@ export function onMap(survey: Survey): boolean {
 
 /** An ask every half minute at most: a repeater answers four in two minutes, whoever asks. */
 export const PING_EVERY_MS = 30_000;
-// The rule in these four, and `surveyStep` below, is also the phone's radio core's
+// The rule in these constants, and `surveyStep`, `checkDue` and `checkTurn` below, is also the phone's radio core's
 // (`crates/meshcore-core/src/survey.rs`), which runs a survey while the page sleeps: change both together.
 /** Standing still adds nothing to the map, so the next ask waits until the phone has moved this far. */
 export const MOVE_M = 50;
@@ -61,6 +66,21 @@ export const MOVE_M = 50;
 export const FIX_M = 50;
 /** A fix older than this is where the phone was, not where it is. */
 export const FIX_AGE_MS = 20_000;
+/**
+ * Half a minute between asks is a point every 400–600 m from a car, two or
+ * three squares of a coverage map. In between, the repeater that answered
+ * the last ask best is checked straight: a trace through it alone, which it
+ * sends back with how it heard the radio. A repeater rations its answers to
+ * "who hears me", but not traces. A check goes once the phone has gone this
+ * far from the last point, under a map's square of 200 m...
+ */
+export const CHECK_MOVE_M = 150;
+/** ...and this long after it, as a check takes air too. */
+export const CHECK_EVERY_MS = 10_000;
+/** A check that did not come back gives way to the next repeater of the ask after this. */
+export const CHECK_RETRY_MS = 3_000;
+/** None goes this close to the next ask, so the two do not meet. */
+export const CHECK_BEFORE_ASK_MS = 3_000;
 
 export type PointTone = "good" | "fair" | "weak" | "none";
 
@@ -100,6 +120,30 @@ export function surveyStep(now: number, fix: Fixish | null, lastPingAt: number |
   if (lastPingAt !== null && now - lastPingAt < PING_EVERY_MS) return "wait";
   if (last && distanceKm(last.lat, last.lon, fix.lat, fix.lon) * 1000 < MOVE_M) return "still";
   return "ping";
+}
+
+/**
+ * Whether a check is due between asks: a good fix, an ask out less than half
+ * a minute ago with the next not about to go, the time for it come
+ * (`nextAt`: after the last point, or after a check that did not come back),
+ * and the phone gone on from the last point. Whom it checks is the caller's.
+ */
+export function checkDue(now: number, fix: Fixish | null, lastPingAt: number | null, last: SurveyPoint | null, nextAt: number | null): boolean {
+  if (!fix || fix.accuracy > FIX_M || now - fix.at > FIX_AGE_MS) return false;
+  if (lastPingAt === null || now - lastPingAt >= PING_EVERY_MS - CHECK_BEFORE_ASK_MS) return false;
+  if (nextAt === null || now < nextAt || !last) return false;
+  return distanceKm(last.lat, last.lon, fix.lat, fix.lon) * 1000 >= CHECK_MOVE_M;
+}
+
+/** The repeaters a check goes to after an ask, in turn: those that answered it, the one heard best both ways first. */
+export function checkTurn(point: SurveyPoint): string[] {
+  return [...point.replies].sort((a, b) => replyScore(b) - replyScore(a)).map((r) => r.key);
+}
+
+/** The last point that was an ask: what the survey says it hears now. A check only adds a dot to the map. */
+export function lastAsk(points: SurveyPoint[]): SurveyPoint | null {
+  for (let i = points.length - 1; i >= 0; i--) if (!points[i]!.check) return points[i]!;
+  return null;
 }
 
 /** How far the phone still has to go from the last point before the next ask, in metres; null with no point or no fix to measure from. */

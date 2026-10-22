@@ -152,7 +152,7 @@ class Overlay {
       const el = document.createElementNS(SVG, "circle");
       const on = i === picked;
       el.setAttribute("class", `map-dot ${d.tone}${on ? " on" : ""}`);
-      el.setAttribute("r", String(on ? 8 : d.tone === "off" ? 2.5 : 6));
+      el.setAttribute("r", String(on ? 8 : d.tone === "off" ? 2.5 : d.check ? 4 : 6));
       this.dotGroup.append(el);
       return { el, at: { lat: d.lat, lon: d.lon } };
     });

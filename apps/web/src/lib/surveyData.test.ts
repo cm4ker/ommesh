@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FIX_AGE_MS, MOVE_M, PING_EVERY_MS, bestReply, metresToGo, onMap, pointTone, pointsToAdd, repeaterRows, surveyStats, surveyStep, toneFor, type Survey, type SurveyPoint } from "./surveyData.js";
+import { CHECK_BEFORE_ASK_MS, CHECK_EVERY_MS, CHECK_MOVE_M, FIX_AGE_MS, MOVE_M, PING_EVERY_MS, bestReply, checkDue, checkTurn, lastAsk, metresToGo, onMap, pointTone, pointsToAdd, repeaterRows, surveyStats, surveyStep, toneFor, type Survey, type SurveyPoint } from "./surveyData.js";
 
 const reply = (key: string, us: number, them: number) => ({ key, us, them, rssi: -90 });
 const point = (at: number, lat: number, lon: number, replies = [reply("aa", 2, 3)]): SurveyPoint => ({ at, lat, lon, accuracy: 5, replies });
@@ -26,6 +26,34 @@ test("the survey waits for a good fix, the half minute and a move, then asks", (
   assert.equal(surveyStep(now, fix, now - PING_EVERY_MS, last), "still");
   // About 110 m north.
   assert.equal(surveyStep(now, { ...fix, lat: 55.001 }, now - PING_EVERY_MS, last), "ping");
+});
+
+test("between asks a check waits for its time and a move of most of a square, and keeps clear of the next ask", () => {
+  const asked = 1_000_000;
+  const last = point(asked, 55, 73);
+  // About 167 m north: past the move a check needs.
+  const moved = { lat: 55.0015, lon: 73, accuracy: 8, at: 0 };
+  const at = (now: number) => ({ ...moved, at: now });
+  const due = asked + CHECK_EVERY_MS;
+  assert.ok(checkDue(due, at(due), asked, last, due));
+  assert.ok(!checkDue(due - 1, at(due - 1), asked, last, due), "not before its time");
+  assert.ok(!checkDue(due, at(due), asked, last, null), "nobody left to check");
+  assert.ok(!checkDue(due, { ...at(due), lat: 55.001 }, asked, last, due), "110 m is short of the move");
+  assert.ok(CHECK_MOVE_M > 110 && CHECK_MOVE_M < 167);
+  const late = asked + PING_EVERY_MS - CHECK_BEFORE_ASK_MS;
+  assert.ok(checkDue(late - 1, at(late - 1), asked, last, due));
+  assert.ok(!checkDue(late, at(late), asked, last, due), "the next ask is about to go");
+  assert.ok(!checkDue(due, { ...at(due), accuracy: 80 }, asked, last, due), "a vague fix");
+  assert.ok(!checkDue(due, at(due), null, null, due), "no ask yet");
+});
+
+test("a check goes to the repeaters of the last ask in turn, the best both ways first, and the survey speaks of its last ask", () => {
+  const asked = point(0, 55, 73, [reply("aa", 6, -7), reply("bb", 1, 2), reply("cc", -2, 5)]);
+  assert.deepEqual(checkTurn(asked), ["bb", "cc", "aa"]);
+  const checked: SurveyPoint = { ...point(10_000, 55.0015, 73, [reply("bb", 3, 4)]), check: true };
+  assert.equal(lastAsk([asked, checked]), asked);
+  assert.equal(lastAsk([checked]), null);
+  assert.equal(lastAsk([]), null);
 });
 
 test("standing still, the way left to the next ask is what is missing to the move", () => {

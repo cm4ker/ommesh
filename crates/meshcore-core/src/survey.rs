@@ -7,6 +7,8 @@
 //! leaves the screen or the phone is locked, so there the survey runs here, in
 //! front or not: the owner hands in the phone's position as it comes, the
 //! survey asks through the mux in its turn, and the page shows what it kept.
+//! Between asks it checks the repeaters of the last one straight, one at a
+//! time, as a trace through each alone.
 //!
 //! The rule is the page's (`surveyData.ts`, and the count of asks in
 //! `hears.ts`): change both together.
@@ -14,7 +16,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::codes::*;
-use crate::frames::{discover_ask, hex, is_discover_ask, read_discover_answer};
+use crate::frames::{
+    discover_ask, hex, is_discover_ask, read_discover_answer, read_trace, trace_ask,
+};
 use crate::watch::fill;
 use crate::{Effect, Timer, WatchConfig};
 
@@ -31,6 +35,20 @@ pub const LISTEN_MS: i64 = 10_000;
 /// The asks a repeater answers in [`ASK_WINDOW_MS`].
 const ASK_LIMIT: usize = 4;
 const ASK_WINDOW_MS: i64 = 120_000;
+/// Half a minute between asks is a point every 400–600 m from a car, two or three squares of a
+/// coverage map. In between, the repeater that answered the last ask best is checked straight:
+/// a trace through it alone, which it sends back with how it heard the radio. A repeater
+/// rations its answers to "who hears me", but not traces. A check goes once the phone has gone
+/// this far from the last point, under a map's square of 200 m...
+pub const CHECK_MOVE_M: f64 = 150.0;
+/// ...and this long after it, as a check takes air too.
+pub const CHECK_EVERY_MS: i64 = 10_000;
+/// A check that did not come back gives way to the next repeater of the ask after this.
+pub const CHECK_RETRY_MS: i64 = 3_000;
+/// None goes this close to the next ask, so the two do not meet.
+pub const CHECK_BEFORE_ASK_MS: i64 = 3_000;
+/// How long a check is waited for at least and at most, whatever the radio reckons.
+const CHECK_WAIT_MS: (i64, i64) = (1_500, 8_000);
 
 /// What the survey is doing, in the page's names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -57,13 +75,14 @@ pub struct Fix {
     pub at: i64,
 }
 
-/// One repeater's answer at a point: how it heard us and how we heard it, dB, and the signal's strength, dBm.
+/// One repeater's answer at a point: how it heard us and how we heard it, dB, and the signal's
+/// strength, dBm; a check's answer carries no strength.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 struct Reply {
     key: String,
     us: f64,
     them: f64,
-    rssi: i32,
+    rssi: Option<i32>,
 }
 
 /// Where the phone was when it asked and who answered; none is a point too.
@@ -74,10 +93,15 @@ struct Point {
     lon: f64,
     accuracy: f64,
     replies: Vec<Reply>,
+    /// A check of one repeater between asks, not an ask: kept only when it came back, as that
+    /// one repeater's silence says nothing of the others.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    check: bool,
 }
 
 /// What the page starts a survey with, as JSON: its own name for it, the radio and the time it
-/// began, which are only kept for the page, and when "who hears me" was last asked from its button.
+/// began, which are only kept for the page, when "who hears me" was last asked from its button,
+/// and how many bytes of a repeater's key a check names it by, as the radio sizes its routes.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Start {
@@ -88,6 +112,12 @@ struct Start {
     started_at: i64,
     #[serde(default)]
     asks: Vec<i64>,
+    #[serde(default = "one_byte")]
+    hash: u8,
+}
+
+fn one_byte() -> u8 {
+    1
 }
 
 /// The survey as the page reads it.
@@ -116,6 +146,15 @@ struct Ask {
     sent: bool,
 }
 
+/// A check on its way or out: the repeater it checks, and the point it makes when it comes back.
+struct Check {
+    tag: u32,
+    key: String,
+    point: Point,
+    /// The radio sent it, and it is waited for.
+    sent: bool,
+}
+
 struct Run {
     id: String,
     radio: String,
@@ -128,6 +167,12 @@ struct Run {
     last_ping_at: Option<i64>,
     points: Vec<Point>,
     ask: Option<Ask>,
+    /// Bytes of a key a check names its repeater by.
+    hash: u8,
+    /// The repeaters of the last ask still to be checked, in turn, and when the next check may go.
+    turn: Vec<String>,
+    next_check_at: Option<i64>,
+    check: Option<Check>,
 }
 
 pub(crate) struct Survey {
@@ -183,6 +228,10 @@ impl Survey {
             last_ping_at: None,
             points: Vec::new(),
             ask: None,
+            hash: start.hash,
+            turn: Vec::new(),
+            next_check_at: None,
+            check: None,
         });
         self.effects.push(Effect::SurveyChanged);
         Ok(())
@@ -238,7 +287,7 @@ impl Survey {
         let Some(run) = &mut self.run else { return };
         run.now = now;
         run.asks.retain(|at| now - at < ASK_WINDOW_MS);
-        if run.ask.is_some() {
+        if run.ask.is_some() || run.check.is_some() {
             return;
         }
         if !radio_up {
@@ -246,7 +295,18 @@ impl Survey {
         }
         let phase = match step(now, &fix, run.last_ping_at, run.points.last()) {
             Step::Gps => Phase::Gps,
-            Step::Wait => Phase::Wait,
+            Step::Wait => {
+                // Not while the page's own ask is still answered.
+                let listening = run.asks.iter().any(|at| now - at < LISTEN_MS);
+                let last = run.points.last();
+                if !listening
+                    && !run.turn.is_empty()
+                    && check_due(now, &fix, run.last_ping_at, last, run.next_check_at)
+                {
+                    return self.check(fix, now);
+                }
+                Phase::Wait
+            }
             Step::Still => Phase::Still,
             Step::Ping => {
                 // An ask already out, from the page's button, is let finish first; and
@@ -274,13 +334,51 @@ impl Survey {
                 lon: fix.lon,
                 accuracy: fix.accuracy,
                 replies: Vec::new(),
+                check: false,
             },
             sent: false,
         });
         run.last_ping_at = Some(now);
         run.asks.push(now);
+        run.turn.clear();
         self.frames.push(discover_ask(tag));
         self.set_phase(Phase::Listening);
+    }
+
+    /// Checks the repeater whose turn it is: a trace through it alone, named by as many bytes
+    /// of its key as the radio's routes use (traces size them in powers of two).
+    fn check(&mut self, fix: Fix, now: i64) {
+        self.generation = self.generation.wrapping_add(1);
+        let tag = self.next_tag(now);
+        let Some(run) = &mut self.run else { return };
+        let Some(key) = run.turn.first().cloned() else {
+            return;
+        };
+        let (bytes, size) = match run.hash {
+            0 | 1 => (1, 0),
+            2 | 3 => (2, 1),
+            _ => (4, 2),
+        };
+        let Some(hash) = key.get(..bytes * 2).and_then(unhex) else {
+            // A key too short to name it by: the next has its turn.
+            run.turn.remove(0);
+            return;
+        };
+        run.check = Some(Check {
+            tag,
+            key,
+            point: Point {
+                at: now,
+                lat: fix.lat,
+                lon: fix.lon,
+                accuracy: fix.accuracy,
+                replies: Vec::new(),
+                check: true,
+            },
+            sent: false,
+        });
+        self.frames.push(trace_ask(tag, size, &hash));
+        self.set_phase(Phase::Wait);
     }
 
     /// A number to know an ask's answers by; any will do that the asks before did not have.
@@ -303,30 +401,100 @@ impl Survey {
         }
     }
 
-    /// The radio's answer to the ask: taken, its answers are listened for; refused, it made no point.
+    /// The radio's answer to the ask or the check out: taken, an ask's answers are listened
+    /// for, and a check is waited for as long as the radio reckons; refused, it made no point.
     pub fn answered(&mut self, frame: &[u8]) {
         let generation = self.generation;
-        let Some(ask) = self.run.as_mut().and_then(|run| run.ask.as_mut()) else {
+        let Some(run) = self.run.as_mut() else { return };
+        if let Some(ask) = run.ask.as_mut() {
+            if ask.sent {
+                return;
+            }
+            if frame.first() != Some(&RESP_OK) {
+                return self.unanswered();
+            }
+            ask.sent = true;
+            return self.effects.push(Effect::Wait {
+                timer: Timer::Listen { generation },
+                millis: LISTEN_MS,
+            });
+        }
+        let Some(check) = run.check.as_mut() else {
             return;
         };
-        if ask.sent {
+        if check.sent {
             return;
         }
-        if frame.first() != Some(&RESP_OK) {
+        if frame.first() != Some(&RESP_SENT) {
             return self.unanswered();
         }
-        ask.sent = true;
+        check.sent = true;
+        // The radio's reckoning of the way there and back, after the tag.
+        let reckoned = frame
+            .get(6..10)
+            .and_then(|b| b.try_into().ok())
+            .map_or(CHECK_WAIT_MS.1, |b| i64::from(u32::from_le_bytes(b)));
         self.effects.push(Effect::Wait {
-            timer: Timer::Listen { generation },
-            millis: LISTEN_MS,
+            timer: Timer::Check { generation },
+            millis: reckoned.clamp(CHECK_WAIT_MS.0, CHECK_WAIT_MS.1),
         });
     }
 
-    /// The ask never got to the air: the next waits its half minute all the same.
+    /// The ask never got to the air: the next waits its half minute all the same. A check the
+    /// radio did not send asked nothing of its repeater, which keeps its turn.
     pub fn unanswered(&mut self) {
-        if self.run.as_ref().is_some_and(|run| run.ask.is_some()) {
+        let Some(run) = &mut self.run else { return };
+        if run.ask.is_some() {
             self.forget_ask();
             self.set_phase(Phase::Wait);
+        } else if let Some(check) = run.check.take() {
+            run.next_check_at = Some(check.point.at + CHECK_RETRY_MS);
+            self.generation = self.generation.wrapping_add(1);
+        }
+    }
+
+    /// A `TRACE_DATA` push: the check out, come back, is a point of its repeater's.
+    pub fn traced(&mut self, frame: &[u8]) {
+        let Some(traced) = read_trace(frame) else {
+            return;
+        };
+        let Some(run) = &mut self.run else { return };
+        if !run
+            .check
+            .as_ref()
+            .is_some_and(|check| check.tag == traced.tag)
+        {
+            return;
+        }
+        let Some(mut check) = run.check.take() else {
+            return;
+        };
+        self.generation = self.generation.wrapping_add(1);
+        // How the repeater heard the radio, then how the radio heard it. A repeater on firmware
+        // older than sized hashes sends back only the second.
+        if let [us, .., them] = traced.snrs[..] {
+            check.point.replies.push(Reply {
+                key: check.key,
+                us: f64::from(us) / 4.0,
+                them: f64::from(them) / 4.0,
+                rssi: None,
+            });
+            run.next_check_at = Some(check.point.at + CHECK_EVERY_MS);
+            run.points.push(check.point);
+            self.effects.push(Effect::SurveyChanged);
+        } else {
+            give_turn(run, &check);
+        }
+    }
+
+    /// The check was waited for long enough: the next repeater of the ask has its turn shortly.
+    pub fn check_timeout(&mut self, generation: i32) {
+        if generation != self.generation {
+            return;
+        }
+        let Some(run) = &mut self.run else { return };
+        if let Some(check) = run.check.take() {
+            give_turn(run, &check);
         }
     }
 
@@ -345,7 +513,7 @@ impl Survey {
             key: hex(&answer.key),
             us: f64::from(answer.heard_us) / 4.0,
             them: f64::from(answer.snr) / 4.0,
-            rssi: i32::from(answer.rssi),
+            rssi: Some(i32::from(answer.rssi)),
         };
         ask.point.replies.retain(|r| r.key != reply.key);
         ask.point.replies.push(reply);
@@ -358,6 +526,8 @@ impl Survey {
         }
         let Some(run) = &mut self.run else { return };
         let Some(ask) = run.ask.take() else { return };
+        run.turn = turn_of(&ask.point);
+        run.next_check_at = Some(ask.point.at + CHECK_EVERY_MS);
         run.points.push(ask.point);
         run.phase = Phase::Wait;
         self.effects.push(Effect::SurveyChanged);
@@ -367,6 +537,7 @@ impl Survey {
         self.generation = self.generation.wrapping_add(1);
         if let Some(run) = &mut self.run {
             run.ask = None;
+            run.check = None;
         }
     }
 
@@ -379,12 +550,42 @@ impl Survey {
     }
 }
 
-/// The survey's notice: its title, and the line under it.
+/// A check that did not come back: its repeater gives way to the next, shortly. One that
+/// came back without word of how it heard the radio goes the same way.
+fn give_turn(run: &mut Run, check: &Check) {
+    if run.turn.first() == Some(&check.key) {
+        run.turn.remove(0);
+    }
+    run.next_check_at = Some(run.now.max(check.point.at) + CHECK_RETRY_MS);
+}
+
+/// The repeaters a check goes to after an ask, in turn: those that answered it, the one heard
+/// best both ways first.
+fn turn_of(point: &Point) -> Vec<String> {
+    let mut replies: Vec<&Reply> = point.replies.iter().collect();
+    replies.sort_by(|a, b| score(b).total_cmp(&score(a)));
+    replies.into_iter().map(|r| r.key.clone()).collect()
+}
+
+/// Bytes from hex digits; none from anything else.
+fn unhex(text: &str) -> Option<Vec<u8>> {
+    if !text.len().is_multiple_of(2) {
+        return None;
+    }
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok())
+        .collect()
+}
+
+/// The survey's notice: its title, and the line under it, which tells of the last ask; a check
+/// after it only adds a point.
 fn said(run: &Run, config: &WatchConfig) -> (String, String) {
     let words = &config.words;
     let points = words.counted(&words.survey_points, run.points.len());
     let title = fill(&words.survey_title, &[("points", &points)]);
-    let line = match (run.phase, run.points.last()) {
+    let last_ask = run.points.iter().rev().find(|p| !p.check);
+    let line = match (run.phase, last_ask) {
         (Phase::Offline, _) => words.survey_offline.clone(),
         (Phase::Gps, _) => words.survey_gps.clone(),
         (Phase::Still, _) => words.survey_still.clone(),
@@ -464,6 +665,28 @@ fn step(now: i64, fix: &Fix, last_ping_at: Option<i64>, last: Option<&Point>) ->
     Step::Ping
 }
 
+/// Whether a check is due between asks, with a good fix in hand: an ask out less than half a
+/// minute ago with the next not about to go, the time for it come (`next_at`: after the last
+/// point, or after a check that did not come back), and the phone gone on from the last point.
+fn check_due(
+    now: i64,
+    fix: &Fix,
+    last_ping_at: Option<i64>,
+    last: Option<&Point>,
+    next_at: Option<i64>,
+) -> bool {
+    let Some(asked) = last_ping_at else {
+        return false;
+    };
+    if now - asked >= PING_EVERY_MS - CHECK_BEFORE_ASK_MS {
+        return false;
+    }
+    let (Some(next), Some(last)) = (next_at, last) else {
+        return false;
+    };
+    now >= next && distance_m(last.lat, last.lon, fix.lat, fix.lon) >= CHECK_MOVE_M
+}
+
 /// Metres between two places, along the great circle, as the page's `distanceKm` counts them.
 fn distance_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     const EARTH_M: f64 = 6_371_008.8;
@@ -485,6 +708,9 @@ mod tests {
     /// Omsk, and a place about 70 m north of it.
     const HERE: (f64, f64) = (54.9893, 73.3682);
     const THERE: (f64, f64) = (54.98993, 73.3682);
+    /// About 183 m north of `HERE`, and as far again: each past the move a check needs.
+    const AWAY: (f64, f64) = (54.99095, 73.3682);
+    const FARTHER: (f64, f64) = (54.9926, 73.3682);
 
     /// A core with a radio and a page, and what it did split out.
     struct Rig {
@@ -492,6 +718,8 @@ mod tests {
         radio: Vec<Vec<u8>>,
         page: Vec<Vec<u8>>,
         listens: Vec<Timer>,
+        /// Checks waited for, and for how long.
+        checks: Vec<(Timer, i64)>,
         changes: usize,
     }
 
@@ -503,6 +731,7 @@ mod tests {
                 radio: vec![],
                 page: vec![],
                 listens: vec![],
+                checks: vec![],
                 changes: 0,
             };
             let effects = rig.core.attach(Client::Page);
@@ -530,6 +759,10 @@ mod tests {
                         assert_eq!(millis, LISTEN_MS);
                         self.listens.push(timer);
                     }
+                    Effect::Wait {
+                        timer: timer @ Timer::Check { .. },
+                        millis,
+                    } => self.checks.push((timer, millis)),
                     Effect::SurveyChanged => self.changes += 1,
                     _ => {}
                 }
@@ -587,6 +820,40 @@ mod tests {
             assert_eq!(self.radio.len(), before + 1, "an ask went out at {now}");
             self.radio_says(OK);
             self.listened();
+        }
+
+        /// The tag of the check on the radio last, and the hash it goes through.
+        fn check_sent(&self) -> ([u8; 4], Vec<u8>) {
+            let check = self.radio.last().expect("a check went to the radio");
+            assert_eq!(check[0], CMD_SEND_TRACE_PATH, "the last frame is a check");
+            (check[1..5].try_into().unwrap(), check[10..].to_vec())
+        }
+
+        /// The radio sends the check, and reckons it back in `ms`.
+        fn check_taken(&mut self, tag: [u8; 4], ms: u32) {
+            let mut frame = vec![RESP_SENT, 0];
+            frame.extend(tag);
+            frame.extend(ms.to_le_bytes());
+            self.radio_says(&frame);
+        }
+
+        /// The check with `tag` comes back through `hash`, which heard the radio at `us` and was
+        /// heard at `them`, in quarters of a dB.
+        fn check_back(&mut self, tag: [u8; 4], hash: &[u8], us: i8, them: i8) {
+            let mut frame = vec![PUSH_TRACE_DATA, 0, hash.len() as u8, 0];
+            frame.extend(tag);
+            frame.extend([0; 4]);
+            frame.extend(hash);
+            frame.extend([us as u8, them as u8]);
+            self.radio_says(&frame);
+        }
+
+        /// The checks waited for run out.
+        fn check_lost(&mut self) {
+            for (timer, _) in std::mem::take(&mut self.checks) {
+                let effects = self.core.timeout(timer);
+                self.run(effects);
+            }
         }
 
         fn status(&self, full: bool) -> Value {
@@ -897,6 +1164,177 @@ mod tests {
             said(&rig),
             ("Идёт замер · 3 точки".into(), "Радио не на связи".into())
         );
+    }
+
+    #[test]
+    fn an_ask_wants_the_short_answers() {
+        let mut rig = Rig::new();
+        rig.fix(HERE, 1000);
+        assert_eq!(
+            rig.radio[0][1],
+            CTL_TYPE_NODE_DISCOVER_REQ | 1,
+            "each repeater names itself by the start of its key"
+        );
+        let tag = rig.tag();
+        rig.radio_says(OK);
+        let mut frame = vec![PUSH_CONTROL_DATA, 20, (-90i8) as u8, 0, 0x92, 8];
+        frame.extend(tag);
+        frame.extend([0xab; 8]);
+        rig.radio_says(&frame);
+        rig.listened();
+        assert_eq!(
+            rig.status(false)["points"][0]["replies"][0]["key"],
+            "ab".repeat(8)
+        );
+    }
+
+    #[test]
+    fn between_asks_the_best_repeater_is_checked_straight() {
+        let mut rig = Rig::new();
+        rig.fix(HERE, 1000);
+        let tag = rig.tag();
+        rig.radio_says(OK);
+        rig.answer(tag, 0xaa, -14, 21);
+        rig.answer(tag, 0xbb, 40, 20);
+        rig.listened();
+        let line = rig.status(false)["line"].clone();
+        let asked = rig.radio.len();
+
+        rig.fix(AWAY, 10_000);
+        assert_eq!(
+            rig.radio.len(),
+            asked,
+            "not before ten seconds from the point"
+        );
+        rig.fix(THERE, 11_000);
+        assert_eq!(
+            rig.radio.len(),
+            asked,
+            "nor before most of a square's way from it"
+        );
+        rig.fix(AWAY, 11_500);
+        let (tag, hash) = rig.check_sent();
+        assert_eq!(
+            hash,
+            [0xbb],
+            "the one heard best both ways, by a byte of its key"
+        );
+        assert_eq!(rig.phase(), "wait");
+        rig.fix(FARTHER, 12_000);
+        assert_eq!(rig.radio.len(), asked + 1, "one check at a time");
+
+        rig.check_taken(tag, 900);
+        assert_eq!(rig.checks.len(), 1);
+        assert_eq!(
+            rig.checks[0].1, 1500,
+            "waited for a little longer than a quick radio reckons"
+        );
+        rig.check_back([9, 9, 9, 9], &[0xbb], 12, 8);
+        assert_eq!(
+            rig.status(false)["count"],
+            1,
+            "another trace makes no point"
+        );
+        rig.check_back(tag, &[0xbb], 12, 8);
+        let status = rig.status(false);
+        assert_eq!(status["count"], 2);
+        let point = &status["points"][0];
+        assert_eq!(point["check"], true);
+        assert_eq!(point["at"], 11_500);
+        assert_eq!(point["lat"], AWAY.0);
+        assert_eq!(point["replies"].as_array().unwrap().len(), 1);
+        assert_eq!(point["replies"][0]["key"], "bb".repeat(32));
+        assert_eq!(point["replies"][0]["us"], 3.0);
+        assert_eq!(point["replies"][0]["them"], 2.0);
+        assert_eq!(point["replies"][0]["rssi"], Value::Null);
+        assert_eq!(
+            status["line"], line,
+            "the notice still tells of the last ask"
+        );
+        assert!(
+            rig.status(true)["points"][0].get("check").is_none(),
+            "an ask is no check"
+        );
+
+        // Lost the next time, it gives way to the next repeater of the ask shortly after.
+        rig.fix(FARTHER, 21_000);
+        assert_eq!(
+            rig.radio.len(),
+            asked + 1,
+            "ten seconds from the last check"
+        );
+        rig.fix(FARTHER, 21_500);
+        let (tag, hash) = rig.check_sent();
+        assert_eq!(hash, [0xbb], "a repeater that came back keeps its turn");
+        rig.check_taken(tag, 20_000);
+        assert_eq!(
+            rig.checks.last().unwrap().1,
+            8000,
+            "and is not waited for long whatever the radio reckons"
+        );
+        rig.check_lost();
+        assert_eq!(rig.status(false)["count"], 2);
+        rig.fix(FARTHER, 24_000);
+        assert_eq!(
+            rig.radio.len(),
+            asked + 2,
+            "three seconds after the last was lost"
+        );
+        rig.fix(FARTHER, 24_500);
+        let (tag, hash) = rig.check_sent();
+        assert_eq!(hash, [0xaa]);
+        rig.check_taken(tag, 900);
+        rig.check_lost();
+        rig.fix(FARTHER, 28_000);
+        assert_eq!(
+            rig.radio.len(),
+            asked + 3,
+            "none left to check, and the next ask is near"
+        );
+        rig.fix(FARTHER, 31_000);
+        assert!(
+            is_discover_ask(rig.radio.last().unwrap()),
+            "the next ask goes as before"
+        );
+    }
+
+    #[test]
+    fn a_check_the_radio_does_not_send_keeps_its_turn() {
+        let mut rig = Rig::new();
+        rig.fix(HERE, 1000);
+        let tag = rig.tag();
+        rig.radio_says(OK);
+        rig.answer(tag, 0xaa, 8, 8);
+        rig.listened();
+        rig.fix(AWAY, 11_000);
+        let (first, hash) = rig.check_sent();
+        rig.radio_says(&[RESP_ERR, 3]);
+        assert!(rig.checks.is_empty());
+        rig.fix(AWAY, 13_000);
+        let sent = rig.radio.len();
+        rig.fix(AWAY, 14_000);
+        assert_eq!(rig.radio.len(), sent + 1, "tried again three seconds on");
+        let (again, same) = rig.check_sent();
+        assert_eq!(same, hash);
+        assert_ne!(again, first, "under a tag of its own");
+    }
+
+    #[test]
+    fn a_check_is_named_by_as_many_bytes_as_the_radio_routes_by() {
+        let mut rig = Rig::new();
+        rig.start(r#"{"id":"s2","hash":3}"#);
+        rig.fix(HERE, 1000);
+        let tag = rig.tag();
+        rig.radio_says(OK);
+        rig.answer(tag, 0xcd, 8, 8);
+        rig.listened();
+        rig.fix(AWAY, 11_000);
+        let check = rig.radio.last().unwrap();
+        assert_eq!(
+            check[9], 1,
+            "three bytes go as two, the size a trace can say"
+        );
+        assert_eq!(check[10..], [0xcd, 0xcd]);
     }
 
     #[test]

@@ -15,6 +15,7 @@ import { focusOnMap, getNav, goSection, setStack, showOnMap } from "./nav.js";
 import { clearPing, directKey, getPing, ping, spanKey, stopPing } from "./ping.js";
 import { session } from "./session.js";
 import { discardSurvey, getSurveys, noteSurveyHold, startSurvey, stopSurvey, surveyById } from "./survey.js";
+import { lastAsk } from "./surveyData.js";
 import { act, toast } from "./toast.js";
 
 /** The route to a contact, in its sheet over the map; opened from a profile over the map, it closes back to the profile. */
@@ -289,9 +290,11 @@ export function openRunningSurvey(): void {
 export function openLastAnswers(): void {
   const run = getSurveys().run;
   if (!run) return;
-  const points = surveyById(run.id)?.points.length ?? 0;
+  // The last ask's: a check after it names only the one repeater it checked.
+  const points = surveyById(run.id)?.points ?? [];
+  const point = points.indexOf(lastAsk(points)!);
   focusOnMap(null);
-  setMeshTool({ kind: "survey", view: "run", id: run.id, point: points ? points - 1 : null, only: null });
+  setMeshTool({ kind: "survey", view: "run", id: run.id, point: point >= 0 ? point : null, only: null });
 }
 
 /**

@@ -77,6 +77,8 @@ pub enum Timer {
     Quiet { generation: i32 },
     /// The time a survey's ask is listened for (`survey::LISTEN_MS`).
     Listen { generation: i32 },
+    /// The time a survey's check of one repeater is waited for.
+    Check { generation: i32 },
 }
 
 /// What the core asks its owner to do.
@@ -192,6 +194,7 @@ impl Core {
         match frame.first() {
             Some(&codes::PUSH_NEW_ADVERT) => self.watch.heard(&frame),
             Some(&codes::PUSH_CONTROL_DATA) => self.survey.heard(&frame),
+            Some(&codes::PUSH_TRACE_DATA) => self.survey.traced(&frame),
             _ => {}
         }
         self.mux.from_radio(&frame);
@@ -204,6 +207,7 @@ impl Core {
             Timer::Grace { generation } => self.watch.timeout(generation),
             Timer::Quiet { generation } => self.watch.quiet(generation),
             Timer::Listen { generation } => self.survey.timeout(generation),
+            Timer::Check { generation } => self.survey.check_timeout(generation),
         }
         self.settle()
     }

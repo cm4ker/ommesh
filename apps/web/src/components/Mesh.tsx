@@ -739,7 +739,7 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
   // A survey's points, coloured by the repeater picked when one is.
   const survey = shownSurvey(tool, surveys);
   const only = tool?.kind === "survey" ? tool.only : null;
-  const dots = useMemo<MapDot[] | null>(() => (survey ? survey.points.map((p) => ({ lat: p.lat, lon: p.lon, tone: toneFor(p, only) })) : null), [survey, only]);
+  const dots = useMemo<MapDot[] | null>(() => (survey ? survey.points.map((p) => ({ lat: p.lat, lon: p.lon, tone: toneFor(p, only), check: p.check === true })) : null), [survey, only]);
   const onDot = tool?.kind === "survey" ? (index: number) => setMeshTool({ ...tool, point: index }) : undefined;
   const ping = usePing(tool?.kind === "span" ? (tool.to ? spanKey(tool.from, tool.to) : null) : tool?.kind === "direct" ? directKey(tool.key) : selected);
   const overlay = useMeshOverlay(selected, state);

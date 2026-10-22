@@ -4341,8 +4341,10 @@ export class MeshSession {
    * Asks the repeaters in direct range how well they hear this radio, and
    * listens for `listenMs`. Each answers after a random pause, and no more
    * than four times in two minutes; `onReply` hears each answer as it comes.
+   * With `prefixOnly` each names itself by the first eight bytes of its key,
+   * which shortens every answer on the air by a third.
    */
-  async discoverRepeaters(listenMs = 10_000, onReply?: (reply: DiscoverReply) => void): Promise<DiscoverReply[]> {
+  async discoverRepeaters(listenMs = 10_000, onReply?: (reply: DiscoverReply) => void, options: { prefixOnly?: boolean } = {}): Promise<DiscoverReply[]> {
     const client = this.need();
     const tag = randomU32();
     const replies = new Map<string, DiscoverReply>();
@@ -4366,7 +4368,7 @@ export class MeshSession {
     };
     this.controlListeners.add(listener);
     try {
-      await client.sendControlData(nodeDiscoverRequest(tag, 1 << AdvType.Repeater));
+      await client.sendControlData(nodeDiscoverRequest(tag, 1 << AdvType.Repeater, { prefixOnly: options.prefixOnly === true }));
       this.log("discover", "asked who hears this radio");
       await new Promise((resolve) => setTimeout(resolve, listenMs));
     } finally {

@@ -87,7 +87,7 @@ export function surveyJson(survey: Survey, name: (key: string) => string): strin
       timestamp: iso(point.at),
       path: best ? shortId(best.key) : null,
       geohash: geohash(point.lat, point.lon, 8),
-      rssi: best ? Math.round(best.rssi) : null,
+      rssi: best?.rssi == null ? null : Math.round(best.rssi),
       snr: best ? Math.round(best.them) : null,
       pingSuccess: point.replies.length > 0,
       responseTimeMs: null,
@@ -96,6 +96,7 @@ export function surveyJson(survey: Survey, name: (key: string) => string): strin
       deviceId,
       ommesh: {
         accuracy: Math.round(point.accuracy),
+        ...(point.check ? { check: true } : {}),
         replies: point.replies.map((r) => ({ id: shortId(r.key), key: r.key, name: name(r.key), heardUs: r.us, heardThem: r.them, rssi: r.rssi })),
       },
     };
@@ -121,7 +122,7 @@ function answers(point: SurveyPoint, name: (key: string) => string): string {
   if (point.replies.length === 0) return "—";
   return [...point.replies]
     .sort((a, b) => Math.min(b.us, b.them) - Math.min(a.us, a.them))
-    .map((r) => `${name(r.key)}: ↑${db(r.us)} ↓${db(r.them)} dB, ${Math.round(r.rssi)} dBm`)
+    .map((r) => `${name(r.key)}: ↑${db(r.us)} ↓${db(r.them)} dB${r.rssi === null ? "" : `, ${Math.round(r.rssi)} dBm`}`)
     .join("; ");
 }
 
@@ -179,7 +180,7 @@ export function surveyCsv(survey: Survey, name: (key: string) => string): string
   for (const p of survey.points) {
     const place = [iso(p.at), p.lat.toFixed(6), p.lon.toFixed(6), Math.round(p.accuracy)];
     if (p.replies.length === 0) rows.push([...place, "", "", "", "", ""].map(cell).join(","));
-    for (const r of p.replies) rows.push([...place, shortId(r.key), name(r.key), r.us, r.them, Math.round(r.rssi)].map(cell).join(","));
+    for (const r of p.replies) rows.push([...place, shortId(r.key), name(r.key), r.us, r.them, r.rssi === null ? "" : Math.round(r.rssi)].map(cell).join(","));
   }
   return `${rows.join("\n")}\n`;
 }

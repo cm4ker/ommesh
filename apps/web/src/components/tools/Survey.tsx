@@ -23,7 +23,7 @@ import { COVERAGE_MAPS, type CoverageMap } from "../../lib/coverage/maps.js";
 import { canSendCoverage, sendSurvey } from "../../lib/coverage/upload.js";
 import { shortId } from "../../lib/coverage/wardrive.js";
 import { deleteSurvey, markSurveySent, restoreSurvey, setSurveySign, setSurveySound, surveyNodeName, useSurveySign, useSurveySound, useSurveys, type SurveyRun } from "../../lib/survey.js";
-import { FIX_M, MOVE_M, PING_EVERY_MS, metresToGo, onMap, pointTone, repeaterRows, replyScore, surveyStats, type Survey, type SurveyPoint } from "../../lib/surveyData.js";
+import { FIX_M, MOVE_M, PING_EVERY_MS, lastAsk, metresToGo, onMap, pointTone, repeaterRows, replyScore, surveyStats, type Survey, type SurveyPoint } from "../../lib/surveyData.js";
 import { FORMAT_TYPE, surveyFile, surveyFileName, type SurveyFormat } from "../../lib/surveyFiles.js";
 import { toast } from "../../lib/toast.js";
 import { closeAllTools, closeTool, endSurvey, openLastAnswers, openRunningSurvey, openSurvey } from "../../lib/toolActions.js";
@@ -96,7 +96,7 @@ export function SurveyStrip() {
 /** The strip itself, ticking only while there is a survey to tick for. */
 function RunningStrip({ survey }: { survey: Survey }) {
   const now = useNow();
-  const last = survey.points.at(-1) ?? null;
+  const last = lastAsk(survey.points);
   return (
     <button type="button" className="survey-strip" onClick={openRunningSurvey}>
       <span className="survey-rec" aria-hidden="true" />
@@ -110,7 +110,7 @@ function RunningStrip({ survey }: { survey: Survey }) {
 
 /** What the survey is doing now, in a line, and the mark that goes before it. */
 function runStatus(survey: Survey, run: SurveyRun, now: number, fix: { accuracy: number } | null): { mark: ReactNode; line: string } {
-  const last = survey.points.at(-1) ?? null;
+  const last = lastAsk(survey.points);
   if (run.paused && run.paused.until > now) return { mark: <PauseIcon size={16} />, line: t("tools.survey.paused", { time: duration(run.paused.ms) }) };
   if (run.phase === "offline") return { mark: <LinkOffIcon size={16} className="bad" />, line: t("tools.survey.offline") };
   if (run.phase === "gps") return { mark: <LocateIcon size={16} />, line: fix && fix.accuracy > FIX_M ? t("tools.survey.gpsVague", { m: Math.round(fix.accuracy), need: FIX_M }) : t("tools.survey.gps") };
@@ -125,7 +125,7 @@ function runStatus(survey: Survey, run: SurveyRun, now: number, fix: { accuracy:
 
 /**
  * The survey's number, on top of the map while it runs: how many repeaters
- * answered at the last point, large enough for a glance from behind the
+ * answered the last ask, large enough for a glance from behind the
  * wheel, on a disc of the point's colour. The ring round it fills until the
  * next ask: by the half minute, then, for a phone that stands still, by the
  * metres it has yet to go. A tap opens who answered.
@@ -139,12 +139,12 @@ export function SurveyBadge() {
 function RunningBadge({ survey, run }: { survey: Survey; run: SurveyRun }) {
   const now = useNow();
   const phone = usePhone(false);
-  const last = survey.points.at(-1) ?? null;
+  const last = lastAsk(survey.points);
   const { line } = runStatus(survey, run, now, phone.fix);
   // No point can be made now, so there is no number to stand by.
   const idle = run.phase === "gps" || run.phase === "offline";
   const listening = run.phase === "listening";
-  const toGo = run.phase === "still" ? metresToGo(phone.fix, last) : null;
+  const toGo = run.phase === "still" ? metresToGo(phone.fix, survey.points.at(-1) ?? null) : null;
   const waited = run.phase === "wait" && run.lastPingAt !== null ? Math.min(1, (now - run.lastPingAt) / PING_EVERY_MS) : 0;
   const filled = run.phase === "still" ? (toGo === null ? 1 : 1 - toGo / MOVE_M) : waited;
   const title = run.phase === "wait" && run.lastPingAt !== null ? t("tools.survey.next", { seconds: Math.ceil((PING_EVERY_MS * (1 - waited)) / 1000) }) : line;
@@ -367,7 +367,7 @@ function PointView({ survey, point }: { survey: Survey; point: SurveyPoint }) {
           <BackIcon size={18} />
         </IconButton>
         <span className="row-main">
-          <span className="row-title">{t("tools.survey.point", { time: new Date(point.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) })}</span>
+          <span className="row-title">{t(point.check ? "tools.survey.checkPoint" : "tools.survey.point", { time: new Date(point.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) })}</span>
           <span className="row-sub muted">
             {today ? "" : `${dayLabel(at)} · `}
             {t("tools.survey.pointSub", { m: Math.round(point.accuracy) })}

@@ -1,10 +1,11 @@
 /**
  * The upload protocol of MeshCore Wardrive, which community coverage maps
- * take: a POST of `{"samples": [...]}` in batches of a hundred, one sample
- * a ping, naming the repeater the radio heard best (Wardrive keeps one per
- * ping, and a map counts a ping once). A map answers with how many it took
- * and how many were already there; a sample's id makes a second upload of
- * the same survey a no-op.
+ * take: a POST of `{"samples": [...]}` in batches of a hundred, a sample for
+ * each repeater that answered a ping, or one naming none where nobody did.
+ * Wardrive itself sent only the repeater heard best, which left the others
+ * off the map; its fork that sends them all is what MeshCoreTel takes now.
+ * A map answers with how many it took and how many were already there; a
+ * sample's id makes a second upload of the same survey a no-op.
  */
 
 import { sha256 } from "../sha256.js";
@@ -42,22 +43,31 @@ export function sampleId(survey: Survey, index: number): string {
   return `${survey.points[index]!.at}_${shortId(survey.radio)}_${index}`;
 }
 
+/**
+ * A survey's samples: at each point the repeater heard best first, under the
+ * point's own id as before, so a survey sent when only that one went adds
+ * just the others when sent again; each other answer under the point's id
+ * and the repeater's. A map that counts pings tells them apart by that tail.
+ */
 export function wardriveSamples(survey: Survey, name: (key: string) => string, appVersion: string): WardriveSample[] {
-  return survey.points.map((point, i) => {
-    const best = heardBest(point);
-    return {
-      id: sampleId(survey, i),
-      nodeId: best ? shortId(best.key) : "Unknown",
-      repeaterName: best ? name(best.key) : "Unknown",
+  return survey.points.flatMap((point, i) => {
+    const id = sampleId(survey, i);
+    const sample = (reply: SurveyReply | null, tail: string): WardriveSample => ({
+      id: id + tail,
+      nodeId: reply ? shortId(reply.key) : "Unknown",
+      repeaterName: reply ? name(reply.key) : "Unknown",
       latitude: point.lat,
       longitude: point.lon,
-      rssi: best ? Math.round(best.rssi) : null,
-      snr: best ? Math.round(best.them) : null,
-      pingSuccess: point.replies.length > 0,
+      rssi: reply?.rssi == null ? null : Math.round(reply.rssi),
+      snr: reply ? Math.round(reply.them) : null,
+      pingSuccess: reply !== null,
       timestamp: new Date(point.at).toISOString(),
       appVersion: `Ommesh ${appVersion}`,
       source: "Ommesh",
-    };
+    });
+    const best = heardBest(point);
+    if (!best) return [sample(null, "")];
+    return [sample(best, ""), ...point.replies.filter((r) => r !== best).map((r) => sample(r, `_${shortId(r.key)}`))];
   });
 }
 

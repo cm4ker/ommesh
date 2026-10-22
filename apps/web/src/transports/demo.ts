@@ -1353,7 +1353,8 @@ class DemoRadio extends BaseTransport {
                 .u8(0x92)
                 .i8(Math.round(us * 4))
                 .bytes(tag)
-                .bytes(p.key)
+                // An ask that wants prefixes gets the first eight bytes of the key.
+                .bytes((frame[1] ?? 0) & 1 ? p.key.subarray(0, 8) : p.key)
                 .toBytes(),
             );
           }

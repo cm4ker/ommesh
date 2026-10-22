@@ -17,8 +17,8 @@ const survey: Survey = {
   ],
 };
 
-test("a ping is one sample naming the repeater the radio heard best, as Wardrive uploads it", () => {
-  const [first, second] = wardriveSamples(survey, (key) => (key.startsWith("0f") ? "Hill" : "Tower"), "0.3.0");
+test("a ping is a sample for each repeater that answered, the one heard best under the point's own id", () => {
+  const [first, other, second] = wardriveSamples(survey, (key) => (key.startsWith("0f") ? "Hill" : "Tower"), "0.3.0");
   assert.deepEqual(first, {
     id: `${survey.points[0]!.at}_A1B2C3D4_0`,
     nodeId: "0F1E2D3C",
@@ -32,9 +32,24 @@ test("a ping is one sample naming the repeater the radio heard best, as Wardrive
     appVersion: "Ommesh 0.3.0",
     source: "Ommesh",
   });
+  assert.equal(other!.id, `${survey.points[0]!.at}_A1B2C3D4_0_99887766`);
+  assert.equal(other!.nodeId, "99887766");
+  assert.equal(other!.repeaterName, "Tower");
+  assert.equal(other!.snr, 2);
+  assert.equal(second!.id, `${survey.points[1]!.at}_A1B2C3D4_1`);
   assert.equal(second!.nodeId, "Unknown");
   assert.equal(second!.pingSuccess, false);
   assert.equal(second!.snr, null);
+});
+
+test("a check's answer goes as a sample of its own, with no strength", () => {
+  const checked: Survey = { ...survey, points: [{ at: survey.startedAt, lat: 55.03, lon: 73.37, accuracy: 6, replies: [{ key: "99887766", us: 1.25, them: 3.5, rssi: null }], check: true }] };
+  const [only, ...rest] = wardriveSamples(checked, () => "Tower", "0.3.0");
+  assert.equal(rest.length, 0);
+  assert.equal(only!.id, `${survey.startedAt}_A1B2C3D4_0`);
+  assert.equal(only!.rssi, null);
+  assert.equal(only!.snr, 4);
+  assert.equal(only!.pingSuccess, true);
 });
 
 test("samples go a hundred at a time, and a map's answer is read whatever it leaves out", () => {
@@ -46,7 +61,7 @@ test("samples go a hundred at a time, and a map's answer is read whatever it lea
 
 test("the radio signs SHA-256 of the leave to publish and a batch's ids, a line each, as the map works it out again", () => {
   const samples = wardriveSamples(survey, () => "Hill", "0.3.0");
-  const expected = createHash("sha256").update(`ommesh-wardrive\npublish-named\n${samples[0]!.id}\n${samples[1]!.id}`).digest("hex");
+  const expected = createHash("sha256").update(["ommesh-wardrive", "publish-named", ...samples.map((s) => s.id)].join("\n")).digest("hex");
   assert.equal(toHex(authorMessage(samples)), expected);
   assert.notEqual(toHex(authorMessage(samples.slice(0, 1))), expected);
 });

@@ -1,7 +1,7 @@
 //! The few frames the core reads for itself: messages from the radio's queue,
-//! a node heard for the first time, and the answers to "who hears me". Laid
-//! out as `packages/meshcore/src/protocol/frames.ts` reads them, and the one
-//! it writes as `commands.ts` does.
+//! a node heard for the first time, the answers to "who hears me", and a
+//! trace come back. Laid out as `packages/meshcore/src/protocol/frames.ts`
+//! reads them, and the two it writes as `commands.ts` does.
 
 use crate::codes::*;
 
@@ -112,10 +112,12 @@ pub struct Answer {
 
 /// The command that asks the repeaters in direct range "who hears me": a zero-hop
 /// control packet of type, filter (a bit per advert type), tag, and a "changed since" of none.
+/// The type's low bit asks each to name itself by the first eight bytes of its key, which
+/// makes its answer a third shorter on the air.
 pub fn discover_ask(tag: u32) -> Vec<u8> {
     let mut frame = vec![
         CMD_SEND_CONTROL_DATA,
-        CTL_TYPE_NODE_DISCOVER_REQ,
+        CTL_TYPE_NODE_DISCOVER_REQ | 1,
         1 << ADV_TYPE_REPEATER,
     ];
     frame.extend(tag.to_le_bytes());
@@ -158,6 +160,45 @@ pub fn read_discover_answer(frame: &[u8]) -> Option<Answer> {
         snr,
         rssi,
     })
+}
+
+/// The command that sends a trace along `path`, hashes of `1 << size` bytes each: the tag
+/// to know it by, no auth code, the size in the flags' low two bits.
+pub fn trace_ask(tag: u32, size: u8, path: &[u8]) -> Vec<u8> {
+    let mut frame = vec![CMD_SEND_TRACE_PATH];
+    frame.extend(tag.to_le_bytes());
+    frame.extend(0u32.to_le_bytes());
+    frame.push(size & 0x03);
+    frame.extend_from_slice(path);
+    frame
+}
+
+/// A trace come back (`TRACE_DATA`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Traced {
+    pub tag: u32,
+    /// How each node along the path heard the one before it, then how this radio heard the
+    /// last, in quarters of a dB.
+    pub snrs: Vec<i8>,
+}
+
+/// Reads a `TRACE_DATA` push: a byte kept back, the path's length in bytes, the flags, the
+/// tag and the auth code, the path's hashes, an SNR a hash, and this radio's own.
+pub fn read_trace(frame: &[u8]) -> Option<Traced> {
+    let (&code, rest) = frame.split_first()?;
+    if code != PUSH_TRACE_DATA {
+        return None;
+    }
+    let mut r = Reader(rest);
+    r.take(1)?;
+    let path_len = r.u8()?;
+    let flags = r.u8()?;
+    let tag = r.u32()?;
+    r.u32()?;
+    r.take(usize::from(path_len))?;
+    let hops = usize::from(path_len >> (flags & 0x03));
+    let snrs: Vec<i8> = r.0.iter().take(hops + 1).map(|&b| b as i8).collect();
+    Some(Traced { tag, snrs })
 }
 
 /// Text up to the first zero byte, as the firmware pads its fields.
@@ -327,6 +368,35 @@ mod tests {
     }
 
     #[test]
+    fn reads_a_trace_come_back() {
+        let trace = frame(&[
+            &[PUSH_TRACE_DATA, 0, 2, 1],
+            &7u32.to_le_bytes(),
+            &[0; 4],
+            &[0xab, 0xcd],
+            &[12, (-6i8) as u8],
+        ]);
+        assert_eq!(
+            read_trace(&trace),
+            Some(Traced {
+                tag: 7,
+                snrs: vec![12, -6]
+            }),
+            "one hop of two bytes: its SNR, then this radio's"
+        );
+        assert_eq!(read_trace(&trace[..12]), None);
+        assert_eq!(
+            trace_ask(7, 1, &[0xab, 0xcd]),
+            frame(&[
+                &[CMD_SEND_TRACE_PATH],
+                &7u32.to_le_bytes(),
+                &[0; 4],
+                &[1, 0xab, 0xcd]
+            ])
+        );
+    }
+
+    #[test]
     fn reads_a_read_mark() {
         let f = frame(&[
             &[PEER, PEER_ENTRY, 6],
@@ -441,7 +511,11 @@ mod tests {
     #[test]
     fn asks_who_hears_and_reads_an_answer() {
         let ask = discover_ask(0x0403_0201);
-        assert_eq!(ask, vec![55, 0x80, 4, 1, 2, 3, 4, 0, 0, 0, 0]);
+        assert_eq!(
+            ask,
+            vec![55, 0x81, 4, 1, 2, 3, 4, 0, 0, 0, 0],
+            "short answers wanted"
+        );
         assert!(is_discover_ask(&ask));
         assert!(!is_discover_ask(&[55, 0x90, 4]), "an answer is not an ask");
         assert!(!is_discover_ask(&[55]));

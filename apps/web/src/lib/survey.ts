@@ -3,7 +3,9 @@
  * a survey runs, the phone's position keeps coming, the screen stays on, and
  * the survey decides whether to ask "who hears me" (the rule is in
  * surveyData.ts). The asks go through the same count as the button's, so
- * the two never spend answers the repeaters will not give.
+ * the two never spend answers the repeaters will not give. Between asks it
+ * checks the repeaters of the last one straight, one at a time, which they
+ * answer however often they are asked.
  *
  * Who runs it depends on where the page is. A phone puts a hidden page to
  * sleep, so on a phone linked to its radio over Bluetooth the radio core
@@ -26,7 +28,7 @@ import { getPhoneState, holdPhone, locateOnce, locateText, LocateError } from ".
 import { coreSurvey, coreSurveyStart, coreSurveyStop, onCoreSurvey, relayCarries, type CoreSurveyAnswer } from "./relay.js";
 import { session, storage } from "./session.js";
 import { readSetting, writeSetting } from "./storage.js";
-import { pointsToAdd, surveyStep, type Survey, type SurveyPoint } from "./surveyData.js";
+import { CHECK_EVERY_MS, CHECK_RETRY_MS, checkDue, checkTurn, pointsToAdd, surveyStep, type Survey, type SurveyPoint } from "./surveyData.js";
 import { toast } from "./toast.js";
 
 export type SurveyPhase = "gps" | "listening" | "wait" | "still" | "offline";
@@ -174,6 +176,10 @@ function withPoints(survey: Survey, points: SurveyPoint[]): Survey {
 // ---- running one ----
 
 let timer: number | null = null;
+/** The repeaters of the last ask still to be checked, in turn; when the next check may go; and whether one is out. */
+let turn: string[] = [];
+let nextCheckAt: number | null = null;
+let checking = false;
 let releasePhone: (() => void) | null = null;
 let hiddenAt: number | null = null;
 let lock: WakeLockSentinel | null = null;
@@ -211,6 +217,8 @@ function onVisibility(): void {
 
 /** What every survey running has, whoever runs it: the screen kept on, and a look once a second. */
 function watchRun(): void {
+  turn = [];
+  nextCheckAt = null;
   document.addEventListener("visibilitychange", onVisibility);
   void keepAwake();
   timer = window.setInterval(tick, 1000);
@@ -274,15 +282,22 @@ function tick(): void {
   }
   // The radio core decides when to ask, and says what it is doing.
   if (run.unattended) return;
+  // A check out is let come back first.
+  if (checking) return;
   const paused = run.paused && run.paused.until < now ? null : run.paused;
   let phase: SurveyPhase;
   if (s.status !== "ready") phase = "offline";
   else {
     const fix = getPhoneState().fix;
-    const step = surveyStep(now, fix, run.lastPingAt, survey.points.at(-1) ?? null);
+    const last = survey.points.at(-1) ?? null;
+    const step = surveyStep(now, fix, run.lastPingAt, last);
     // An ask already out, from the button, is let finish first.
     if (step === "ping" && fix && asksLeft(now).left > 0 && !hearsListening()) {
       void ping(run.id, { lat: fix.lat, lon: fix.lon, accuracy: fix.accuracy });
+      return;
+    }
+    if (step === "wait" && fix && turn.length > 0 && !hearsListening() && checkDue(now, fix, run.lastPingAt, last, nextCheckAt)) {
+      void check(run.id, turn[0]!, { lat: fix.lat, lon: fix.lon, accuracy: fix.accuracy });
       return;
     }
     phase = step === "ping" ? "wait" : step;
@@ -293,7 +308,8 @@ function tick(): void {
 async function ping(id: string, at: { lat: number; lon: number; accuracy: number }): Promise<void> {
   const sentAt = Date.now();
   setRun({ phase: "listening", lastPingAt: sentAt });
-  const replies = await askWhoHears();
+  turn = [];
+  const replies = await askWhoHears({ prefixOnly: true });
   const survey = runningSurvey();
   if (state.run?.id !== id || !survey) return;
   // With no ask, or the radio gone while listening, silence says nothing about the spot.
@@ -311,8 +327,45 @@ async function ping(id: string, at: { lat: number; lon: number; accuracy: number
   replaceSurvey(withPoints(survey, [point]));
   setRun({ phase: "wait" });
   persist();
+  turn = checkTurn(point);
+  nextCheckAt = sentAt + CHECK_EVERY_MS;
   // Said aloud for a reader whose eyes are on the road.
   if (surveySound()) void cue(point.replies.length ? "heard" : "unheard");
+}
+
+/**
+ * Checks one repeater of the last ask straight: a trace through it alone,
+ * sized as the radio sizes its routes. Back, it is a point of that one
+ * repeater's; lost, the next repeater of the ask has its turn shortly.
+ */
+async function check(id: string, key: string, at: { lat: number; lon: number; accuracy: number }): Promise<void> {
+  checking = true;
+  const sentAt = Date.now();
+  const bytes = (session.getState().device?.pathHashMode ?? 0) + 1;
+  let back: Awaited<ReturnType<typeof session.traceRoute>> = null;
+  let refused = false;
+  try {
+    back = await session.traceRoute([key.slice(0, bytes * 2)]);
+  } catch {
+    // The radio did not send it, busy or gone: the repeater was not asked, and keeps its turn.
+    refused = true;
+  } finally {
+    checking = false;
+  }
+  const survey = runningSurvey();
+  if (state.run?.id !== id || !survey) return;
+  // A repeater on firmware older than sized hashes sends back no word of how it heard the radio.
+  if (back && back.snrs.length >= 2) {
+    const us = back.snrs[0]!;
+    const them = back.snrs.at(-1)!;
+    noteHeardUs(key, us, them);
+    replaceSurvey(withPoints(survey, [{ at: sentAt, lat: at.lat, lon: at.lon, accuracy: at.accuracy, replies: [{ key, us, them, rssi: null }], check: true }]));
+    persist();
+    nextCheckAt = sentAt + CHECK_EVERY_MS;
+    return;
+  }
+  if (!refused && turn[0] === key) turn = turn.slice(1);
+  nextCheckAt = Date.now() + CHECK_RETRY_MS;
 }
 
 // ---- run by the phone's radio core ----
@@ -358,9 +411,9 @@ function applyCore(core: CoreSurvey): void {
     replaceSurvey(withPoints(survey, points));
     persist();
     for (const point of points) for (const r of point.replies) noteHeardUs(r.key, r.us, r.them);
-    // Said aloud as the page's own are, but only a point made just now: not each of those read after a time away.
+    // Said aloud as the page's own are, but only an ask made just now: not a check, nor each of those read after a time away.
     const last = points.at(-1)!;
-    if (points.length === 1 && Date.now() - last.at < 2 * LISTEN_MS && surveySound()) void cue(last.replies.length ? "heard" : "unheard");
+    if (points.length === 1 && !last.check && Date.now() - last.at < 2 * LISTEN_MS && surveySound()) void cue(last.replies.length ? "heard" : "unheard");
   }
   // The core's asks count with the button's.
   if (core.lastPingAt !== null) noteAsk(core.lastPingAt);
@@ -389,7 +442,9 @@ async function hearCore(): Promise<void> {
 async function handToCore(survey: Survey): Promise<boolean> {
   try {
     await hearCore();
-    const answer = await coreSurveyStart(JSON.stringify({ id: survey.id, radio: survey.radio, startedAt: survey.startedAt, asks: recentAsks() }));
+    // `hash` is how many bytes of a repeater's key a check names it by, as the radio sizes its routes.
+    const hash = (session.getState().device?.pathHashMode ?? 0) + 1;
+    const answer = await coreSurveyStart(JSON.stringify({ id: survey.id, radio: survey.radio, startedAt: survey.startedAt, asks: recentAsks(), hash }));
     const core = readCore(answer.json);
     if (!answer.running || !core) throw new Error("the radio core started no survey");
     // Stopped while the core was taking it.

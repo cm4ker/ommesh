@@ -85,11 +85,12 @@ export interface MapRing {
   label: string;
 }
 
-/** A survey's point on the map, by its colour; "off" is one where the repeater picked did not answer. */
+/** A survey's point on the map, by its colour; "off" is one where the repeater picked did not answer. A check between asks is drawn smaller. */
 export interface MapDot {
   lat: number;
   lon: number;
   tone: "good" | "fair" | "weak" | "none" | "off";
+  check?: boolean;
 }
 
 export const EMPTY_OVERLAY: MapOverlay ={ lines: [], pins: [], numbers: {}, handles: [], pulse: null };

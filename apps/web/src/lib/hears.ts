@@ -65,8 +65,11 @@ export function hearsListening(): boolean {
   return state.listening;
 }
 
-/** Asks once, as the button and a coverage survey do; the answers, or null when the ask did not go out. */
-export async function askWhoHears(): Promise<DiscoverReply[] | null> {
+/**
+ * Asks once, as the button and a coverage survey do; the answers, or null when the ask did not go out.
+ * A survey asks for the short answers (`prefixOnly`); the button wants whole keys, to add a repeater it does not know.
+ */
+export async function askWhoHears(options: { prefixOnly?: boolean } = {}): Promise<DiscoverReply[] | null> {
   if (state.listening || asksLeft().left <= 0) return null;
   const now = Date.now();
   set({ listening: true, startedAt: now, at: now, replies: [], asks: [...state.asks.filter((t) => now - t < WINDOW_MS), now], error: null });
@@ -74,7 +77,7 @@ export async function askWhoHears(): Promise<DiscoverReply[] | null> {
     const replies = await session.discoverRepeaters(LISTEN_MS, (reply) => {
       noteHeardUs(reply.key, reply.heardUs, reply.heardThem);
       set({ replies: [...state.replies.filter((r) => r.key !== reply.key), reply] });
-    });
+    }, options);
     set({ replies });
     return replies;
   } catch (error) {

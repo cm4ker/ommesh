@@ -100,6 +100,7 @@ pub const RESP_LAST: u8 = RESP_CLI_REPLY;
 
 // Radio → app, unprompted. Always 0x80 and above, which is how they are told apart.
 pub const PUSH_MSG_WAITING: u8 = 0x83;
+pub const PUSH_TRACE_DATA: u8 = 0x89;
 pub const PUSH_NEW_ADVERT: u8 = 0x8a;
 pub const PUSH_CONTROL_DATA: u8 = 0x8e;
 /// Not the firmware's: a text or a reaction the other client sharing the radio sent, as

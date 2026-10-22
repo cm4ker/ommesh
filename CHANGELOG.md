@@ -2,7 +2,7 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
-## Unreleased
+## 0.10.0 — 2026-10-23
 
 ### Connecting
 - A phone that shares its radio with a computer now keeps what is read the same on both. A chat you read on the computer is read on the phone too, and its notification goes away there, even while the phone is locked; a chat read on the phone stops showing as unread on the computer. With Shared settings, under Settings › Connection on both and on at first, the theme, chat backgrounds, sounds, notification levels, pins and each chat's own settings stay the same on both as well: the latest change wins. The text size, the language and where notifications show stay each device's own. The phone needs this version too.

@@ -1,8 +1,9 @@
 import { useRef, useSyncExternalStore } from "react";
+import { useBackupSaved } from "../lib/backup/run.js";
 import { useBatteryType } from "../lib/batteryType.js";
 import { useFollowStatus } from "../lib/followPhone.js";
 import { t } from "../i18n/index.js";
-import { battery, batteryPercent, lowCharge, ownBatteryMv } from "../lib/format.js";
+import { battery, batteryPercent, dayLabel, lowCharge, ownBatteryMv } from "../lib/format.js";
 import { disconnect, useLink } from "../lib/link.js";
 import { useLookalikePrefs } from "../lib/lookalikes.js";
 import { openRadioPage, type RadioPage } from "../lib/nav.js";
@@ -24,6 +25,7 @@ import { SearchField } from "../ui/Field.js";
 import { Group, LinkRow } from "../ui/List.js";
 import { showMenu } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
+import { MovedStrip } from "./BackupPage.js";
 import { AirIcon, AlertIcon, BellIcon, FileIcon, GaugeIcon, InfoIcon, LinkIcon, LogIcon, PaletteIcon, PersonIcon, PowerIcon, RadioIcon, RefreshIcon, SearchIcon, ShieldIcon, SlidersIcon, TextIcon, UsersIcon, WavesIcon } from "./Icons.js";
 import { presetName, radioTitle } from "./RadioPages.js";
 import { readingsSummary } from "./Readings.js";
@@ -54,6 +56,7 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
   const self = state.self;
   const online = state.status === "ready";
   const cell = useBatteryType(self?.key);
+  const saved = useBackupSaved(self?.key);
   const mv = ownBatteryMv(state);
   const low = mv !== null && lowCharge(mv, cell);
   const own = state.telemetry["self"];
@@ -178,6 +181,7 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
             </Button>
           </div>
         </div>
+        <MovedStrip />
 
         <Group title={t("radio.home.thisRadio")}>
           {row("name", <PersonIcon size={17} />, self?.name)}
@@ -190,7 +194,7 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
         <Group title={t("radio.home.thisApp")}>
           {row("notifications", <BellIcon size={17} />, notices)}
           {row("messages", <TextIcon size={17} />, lookalikes.on ? t("radio.home.lookalikes") : undefined)}
-          {row("history", <FileIcon size={17} />)}
+          {row("backup", <FileIcon size={17} />, saved ? dayLabel(saved / 1000) : undefined)}
           {row("appearance", <PaletteIcon size={17} />, theme === "system" ? t("radio.home.themeSystem") : themeName(theme))}
           {row("connection", state.link ? <LinkIcon kind={state.link.kind} size={17} /> : <RadioIcon size={17} />, state.link ? { ble: "Bluetooth", serial: "USB", tcp: "Wi-Fi" }[state.link.kind] : undefined)}
         </Group>

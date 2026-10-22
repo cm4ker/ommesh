@@ -9,7 +9,7 @@ import {
   type MessageRecord,
   type MessageStatus,
 } from "@meshnet/meshcore";
-import { conversationOf, HistoryFileError, KIND_TYPES, parseHistory, type HistoryBody, type HistoryContact, type HistoryMessage } from "./format.js";
+import { conversationOf, HistoryFileError, KIND_TYPES, readHistory, type HistoryBody, type HistoryContact, type HistoryMessage } from "./format.js";
 import { readMeshCoreApp } from "./meshcoreApp.js";
 
 /** A history picked to bring in, whichever app wrote it, before it is matched to the radio. */
@@ -36,7 +36,15 @@ export function readHistorySource(bytes: Uint8Array): HistorySource {
   } catch {
     throw new HistoryFileError("notHistory");
   }
-  const file = parseHistory(text);
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new HistoryFileError("notHistory");
+  }
+  // A copy of the whole radio carries a history file of its own.
+  const inner = typeof json === "object" && json !== null && (json as { format?: unknown }).format === "ommesh-backup" ? (json as { history?: unknown }).history : json;
+  const file = readHistory(inner);
   return { kind: "ommesh", radioKey: file.radio.key, body: file, console: 0 };
 }
 
@@ -182,7 +190,7 @@ function messageRecord(m: HistoryMessage, conversation: string, n: number, self:
   };
 }
 
-function contactRecord(c: HistoryContact, now: number): ContactRecord {
+export function contactRecord(c: HistoryContact, now: number): ContactRecord {
   const route = c.route ?? null;
   const { outPathLen, outPath } = route ? pathOf(route) : { outPathLen: 0xff, outPath: "".padEnd(128, "0") };
   const lastAdvert = c.lastAdvert === undefined ? 0 : Math.floor(Date.parse(c.lastAdvert) / 1000);

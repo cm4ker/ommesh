@@ -75,6 +75,12 @@ function readKeyFile(text: string): FoundKey | KeyFault {
     return { fault: "notKey" };
   }
   if (!file || typeof file !== "object") return { fault: "notKey" };
+  // A copy of the whole radio carries the key as this file does, beside the rest.
+  if ((file as { format?: unknown }).format === "ommesh-backup") {
+    const { key, saved } = file as { key?: unknown; saved?: unknown };
+    if (!key || typeof key !== "object") return { fault: "notKey" };
+    file = { ...key, format: KEY_FORMAT, saved };
+  }
   const { format, version, privateKey, name, saved } = file as Partial<Record<keyof KeyFile, unknown>>;
   if (format !== KEY_FORMAT || typeof privateKey !== "string") return { fault: "notKey" };
   if (typeof version === "number" && version > KEY_VERSION) return { fault: "newer" };
@@ -82,7 +88,8 @@ function readKeyFile(text: string): FoundKey | KeyFault {
   return fromDigits(keyDigits(privateKey), typeof name === "string" && name ? name : null, Number.isFinite(at) ? at : null);
 }
 
-function fromDigits(digits: string, name: string | null, saved: number | null): FoundKey | KeyFault {
+/** A key from its hex digits, checked as the radio checks one; a radio's copy carries its key so. */
+export function fromDigits(digits: string, name: string | null, saved: number | null): FoundKey | KeyFault {
   if (!/^[0-9a-f]*$/i.test(digits)) return { fault: "notHex" };
   if (digits.length !== KEY_DIGITS) return { fault: "length", digits: digits.length };
   const privateKey = fromHex(digits.toLowerCase());

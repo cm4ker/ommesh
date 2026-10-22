@@ -144,6 +144,42 @@ export class SettingsSync {
     for (const name of names) if (this.timeOf(name) > 0) this.tell(name);
   }
 
+  /**
+   * Every setting as it stands here, by its name between the apps, those at
+   * their default left out: what a copy of the radio carries to another
+   * device (`backup/format.ts`).
+   */
+  snapshot(): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const one of this.ones.values()) {
+      const value = one.read();
+      if (json(value) !== json(one.fallback)) out[one.key] = value;
+    }
+    for (const many of this.manys.values()) {
+      for (const [id, value] of Object.entries(many.entries() ?? {})) if (!many.untouched?.(value)) out[`${many.key}:${id}`] = value;
+    }
+    return out;
+  }
+
+  /** Writes the settings of a snapshot, each one this app would take from the other app; returns how many it wrote. */
+  adopt(values: Readonly<Record<string, unknown>>): number {
+    let written = 0;
+    for (const [name, value] of Object.entries(values)) {
+      const { key, id } = split(name);
+      if (id === null) {
+        const one = this.ones.get(key);
+        if (!one?.valid(value)) continue;
+        one.write(value);
+      } else {
+        const many = this.manys.get(key);
+        if (!many?.valid(value)) continue;
+        many.write(id, value);
+      }
+      written++;
+    }
+    return written;
+  }
+
   /** Sharing was turned on here: what the other app sent meanwhile is taken, and what is here goes to it. */
   resume(): void {
     const held = this.held;

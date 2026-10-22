@@ -95,6 +95,16 @@ function lookSoon(): void {
   });
 }
 
+/** This app's settings as a copy of the radio carries them, the radio's pins among them (`backup/format.ts`). */
+export function settingsSnapshot(): Record<string, unknown> {
+  return sync.snapshot();
+}
+
+/** Takes the settings a copy carried; the pins only once the radio is the copy's. Returns how many it took. */
+export function adoptSettings(values: Readonly<Record<string, unknown>>): number {
+  return sync.adopt(values);
+}
+
 /** Follows every setting written, and the other app; returns the stop. */
 export function startSharedSettings(): () => void {
   const stops = [onSettingWritten(lookSoon), session.onPeerEntry((key, value) => sync.take(key, value)), session.onPeerReady(() => sync.tellAll())];

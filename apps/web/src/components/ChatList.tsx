@@ -23,6 +23,7 @@ import { Avatar } from "./Avatar.js";
 import { copyName } from "./HeroName.js";
 import { BellOffIcon, CheckIcon, CloseIcon, ChevronDownIcon, CopyIcon, HashIcon, PersonIcon, PinIcon, PinOffIcon, PlusIcon, SortIcon, StarFilledIcon, TrashIcon } from "./Icons.js";
 import { marked } from "./Marked.js";
+import { BlankRadioStrip } from "./BackupPage.js";
 import { NewBuildStrip } from "./NewBuild.js";
 import { NewsStrip } from "./News.js";
 import { NewChat } from "./NewChat.js";
@@ -103,6 +104,7 @@ export function ChatList({ selected }: { selected: string | null }) {
       <TwoAppsStrip />
       <NewsStrip />
       <NewBuildStrip />
+      <BlankRadioStrip />
       {rows.length === 0 ? (
         <div className="empty muted">{t("chats.list.empty")}</div>
       ) : q ? (

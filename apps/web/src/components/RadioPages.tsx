@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AdvertLocPolicy, AdvType, canControl, isTrusted, regionSupport, TelemMode, type ContactRecord, type SessionState } from "@meshnet/meshcore";
 import { autostartEnabled, autostartLabel, hasAutostart, setAutostart } from "../lib/autostart.js";
 import { agoPhrase, dayLabel, timeOfDay } from "../lib/format.js";
-import { saveKey, useKeyNote } from "../lib/radioKey.js";
+import { saveBackup, useBackupSaved } from "../lib/backup/run.js";
 import { HASH_MODES, hashHops, repeatAllowed, repeatFreqsText } from "../lib/radioNetwork.js";
 import { setFollowPhone, useFollowStatus } from "../lib/followPhone.js";
 import { parseLatLon, pointDecimal } from "../lib/geo.js";
@@ -44,6 +44,7 @@ import { Console } from "./node/Console.js";
 import { LogView } from "./LogView.js";
 import { AirView } from "./AirView.js";
 import { OwnReadings } from "./NodeReadings.js";
+import { BackupPage, RestorePage } from "./BackupPage.js";
 import { HistoryPage } from "./HistoryPage.js";
 import { KeyPage } from "./KeyPage.js";
 import { PinPage } from "./PinPage.js";
@@ -76,7 +77,9 @@ export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = {
   trusted: "privacy",
   remote: "privacy",
   console: "advanced",
-  key: "advanced",
+  key: "backup",
+  history: "backup",
+  restore: "backup",
   pin: "connection",
   wifi: "connection",
   background: "appearance",
@@ -107,6 +110,8 @@ export const RADIO_TITLES: Record<RadioPage, Key> = {
   soundNodes: "radio.notifications.nodes",
   messages: "radio.titles.messages",
   history: "radio.titles.history",
+  backup: "radio.titles.backup",
+  restore: "radio.titles.restore",
   appearance: "radio.titles.appearance",
   background: "radio.titles.background",
   connection: "radio.titles.connection",
@@ -149,7 +154,7 @@ const BANDWIDTHS = ["7.8", "10.4", "15.6", "20.8", "31.25", "41.7", "62.5", "125
 const CLOCK_LEAD_S = 2;
 
 /** The preset the radio is on, or its frequency and spreading factor when it is on none. */
-export function presetName(self: Self): string {
+export function presetName(self: Pick<Self, "frequencyKhz" | "bandwidthHz" | "spreadingFactor" | "codingRate">): string {
   const p = PRESETS.find((q) => q.frequencyKhz === self.frequencyKhz && q.bandwidthHz === self.bandwidthHz && q.spreadingFactor === self.spreadingFactor && q.codingRate === self.codingRate);
   return p ? presetLabel(p) : `${(self.frequencyKhz / 1000).toFixed(3)} · SF${self.spreadingFactor}`;
 }
@@ -297,6 +302,10 @@ function PageBody({ page }: { page: RadioPage }) {
       return <MessagesPage />;
     case "history":
       return self ? <HistoryPage self={self} /> : <Offline />;
+    case "backup":
+      return self ? <BackupPage self={self} online={online} /> : <Offline />;
+    case "restore":
+      return self ? <RestorePage self={self} online={online} /> : <Offline />;
     case "appearance":
       return <AppearancePage />;
     case "background":
@@ -747,7 +756,6 @@ function AdvancedPage({ self, online }: { self: Self; online: boolean }) {
         ) : null}
         <LinkRow label={t("radio.advanced.publicKey")} value={<span className="mono">{self.key.slice(0, 16)}…</span>} trailing={<CopyIcon size={14} className="line-chev" />} onClick={() => void navigator.clipboard?.writeText(self.key).then(() => toast(t("common.copied")))} />
       </Group>
-      <KeyGroup self={self} online={online} />
       <Group title={t("radio.advanced.clock")}>
         <ActionRow
           label={t("radio.advanced.setClock")}
@@ -765,30 +773,6 @@ function AdvancedPage({ self, online }: { self: Self; online: boolean }) {
         />
       </Group>
     </>
-  );
-}
-
-/**
- * The radio's private key to a file, and back from one on a page of its own.
- * Saved before a crash or a flash, it makes the radio the same node again.
- */
-function KeyGroup({ self, online }: { self: Self; online: boolean }) {
-  const note = useKeyNote(self.key);
-  const [saving, setSaving] = useState(false);
-  return (
-    <Group title={t("radio.key.group")} note={note.closed ? t("radio.key.closedNote") : t("radio.key.note", { name: self.name })}>
-      <ActionRow
-        label={t("radio.key.save")}
-        hint={note.closed ? t("radio.key.closed") : note.saved ? t("radio.key.savedOn", { when: agoPhrase(note.saved) }) : t("radio.key.neverSaved")}
-        disabled={!online}
-        busy={saving}
-        onClick={() => {
-          setSaving(true);
-          void saveKey().finally(() => setSaving(false));
-        }}
-      />
-      <LinkRow label={t("radio.titles.key")} hint={t("radio.key.restoreHint")} onClick={() => push({ kind: "radio", page: "key" })} />
-    </Group>
   );
 }
 
@@ -1424,12 +1408,12 @@ function PowerPage() {
 
 /**
  * The factory reset's question. A reset wipes the radio's key with the rest,
- * so the key can be saved from here first; that button stands out while the
- * key was never saved.
+ * so a copy of the radio can be saved from here first; that button stands
+ * out while none was ever saved.
  */
-function ResetQuestion({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function ResetQuestion({ open, onClose, onReset }: { open: boolean; onClose: () => void; onReset?: () => void }) {
   const self = useSession().self;
-  const note = useKeyNote(self?.key);
+  const saved = useBackupSaved(self?.key);
   const [busy, setBusy] = useState<"save" | "reset" | null>(null);
   return (
     <Dialog
@@ -1439,28 +1423,27 @@ function ResetQuestion({ open, onClose }: { open: boolean; onClose: () => void }
       footer={
         <>
           <Button onClick={onClose}>{t("common.cancel")}</Button>
-          {note.closed ? null : (
-            <Button
-              variant={note.saved ? "default" : "primary"}
-              busy={busy === "save"}
-              disabled={busy !== null}
-              onClick={async () => {
-                setBusy("save");
-                await saveKey();
-                setBusy(null);
-              }}
-            >
-              {t("radio.key.saveFirst")}
-            </Button>
-          )}
+          <Button
+            variant={saved ? "default" : "primary"}
+            busy={busy === "save"}
+            disabled={busy !== null}
+            onClick={async () => {
+              setBusy("save");
+              await saveBackup();
+              setBusy(null);
+            }}
+          >
+            {t("radio.backup.saveFirst")}
+          </Button>
           <Button
             variant="danger"
             busy={busy === "reset"}
             disabled={busy !== null}
             onClick={async () => {
               setBusy("reset");
-              await act(() => session.factoryReset());
+              const done = await act(() => session.factoryReset());
               setBusy(null);
+              if (done) onReset?.();
               onClose();
             }}
           >
@@ -1470,7 +1453,7 @@ function ResetQuestion({ open, onClose }: { open: boolean; onClose: () => void }
       }
     >
       <p>{t("radio.power.resetBody")}</p>
-      {self && !note.closed ? <p className="muted">{note.saved ? t("radio.key.resetSaved", { name: self.name, when: agoPhrase(note.saved) }) : t("radio.key.resetUnsaved", { name: self.name })}</p> : null}
+      {self ? <p className="muted">{saved ? t("radio.backup.resetSaved", { name: self.name, when: agoPhrase(saved) }) : t("radio.backup.resetUnsaved", { name: self.name })}</p> : null}
     </Dialog>
   );
 }

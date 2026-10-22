@@ -37,6 +37,8 @@ class ScriptedRadio extends BaseTransport {
   network: { repeat: boolean; hashMode: number } | null = null;
   /** Channels in slots past Public's; every other slot is empty. */
   slots: Record<number, { name: string; secret: Uint8Array }> = {};
+  /** How many channel slots it has. */
+  channelSlots = 2;
   /** Whether it runs console lines of its own (protocol 14); an older radio refuses the command. */
   console = false;
   /** The protocol its firmware says it speaks: 13 is MeshCore 1.17, 14 is 1.18. */
@@ -80,7 +82,7 @@ class ScriptedRadio extends BaseTransport {
   private answer(frame: Uint8Array): Uint8Array[] {
     switch (frame[0]) {
       case Cmd.DeviceQuery: {
-        const w = new ByteWriter().u8(Resp.DeviceInfo).u8(this.protocol).u8(50).u8(2).u32(this.blePin).fixedString("d", 12).fixedString("m", 40).fixedString(this.protocol >= 14 ? "v1.18.0" : "v1.17.1", 20);
+        const w = new ByteWriter().u8(Resp.DeviceInfo).u8(this.protocol).u8(50).u8(this.channelSlots).u32(this.blePin).fixedString("d", 12).fixedString("m", 40).fixedString(this.protocol >= 14 ? "v1.18.0" : "v1.17.1", 20);
         if (this.network) w.u8(this.network.repeat ? 1 : 0).u8(this.network.hashMode);
         return [w.toBytes()];
       }
@@ -196,6 +198,14 @@ class ScriptedRadio extends BaseTransport {
         return [new Uint8Array([Resp.AutoAddConfig, this.autoAdd.config, this.autoAdd.maxHops])];
       case Cmd.SetAutoAddConfig:
         this.autoAdd = { config: frame[1]!, maxHops: frame[2] ?? 0 };
+        return [new Uint8Array([Resp.Ok])];
+      case Cmd.SetChannel:
+        this.slots[frame[1]!] = { name: fromUtf8(frame.subarray(2, 34)).replace(/\0.*$/s, ""), secret: frame.slice(34, 50) };
+        return [new Uint8Array([Resp.Ok])];
+      case Cmd.SetRadioTxPower:
+        return [new Uint8Array(frame[1]! > 22 ? [Resp.Err, ErrCode.IllegalArg] : [Resp.Ok])];
+      case Cmd.SetAdvertLatLon:
+      case Cmd.SetOtherParams:
         return [new Uint8Array([Resp.Ok])];
       case Cmd.GetStats:
         if (frame[1] === 0) return [new ByteWriter().u8(Resp.Stats).u8(0).u16(4100).u32(7200).u16(2).u8(16).toBytes()];
@@ -3560,6 +3570,83 @@ test("a radio whose firmware takes no key is left as it was", async () => {
   assert.equal(session.getState().status, "ready");
 });
 
+// ---- a copy of a radio written onto another ----
+
+const CAROL_KEY = "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedf";
+
+function copiedContact(key: string, name: string): ContactRecord {
+  return {
+    key,
+    prefix: key.slice(0, 12),
+    type: 1,
+    flags: ContactFlag.Favourite,
+    outPathLen: 1,
+    outPath: "b9".padEnd(128, "0"),
+    name,
+    lastAdvert: 1_699_990_000,
+    lat: 55.75,
+    lon: 37.61,
+    lastMod: 1_699_990_000,
+    lastHeardAt: null,
+    pathSince: null,
+  };
+}
+
+const TEST_CHANNEL: ChannelRecord = { index: 1, name: "#test", secret: "22".repeat(16) };
+
+test("a copy goes onto the radio key first, then settings, channels, contacts and the name, and the radio reboots once", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000, writeGapMs: 0 });
+  await session.connect(radio);
+  const steps: string[] = [];
+  const result = await session.restoreRadio(
+    {
+      privateKey: new Uint8Array(64).fill(0x40),
+      name: "Node-21",
+      settings: { txPower: 20, location: { lat: 55.75, lon: 37.61 } },
+      channels: [{ index: 0, name: "Public", secret: "01".repeat(16) }, TEST_CHANNEL],
+      contacts: [copiedContact(CAROL_KEY, "Carol"), copiedContact(toHex(BOB), "Bob")],
+    },
+    (p) => steps.push(p.step),
+  );
+  assert.deepEqual(result, { ok: true, rebooted: true, failed: [], slots: { 0: 0, 1: 1 }, contacts: 1, full: false });
+  const writes: number[] = [Cmd.ImportPrivateKey, Cmd.SetRadioTxPower, Cmd.SetAdvertLatLon, Cmd.SetChannel, Cmd.AddUpdateContact, Cmd.SetAdvertName, Cmd.Reboot];
+  assert.deepEqual(
+    radio.sent.map((f) => f[0]!).filter((c) => writes.includes(c)),
+    writes,
+    "Public is there already and so is Bob: neither is written again",
+  );
+  assert.equal(radio.slots[1]?.name, "#test");
+  assert.equal(session.getState().contacts[CAROL_KEY]?.flags, ContactFlag.Favourite);
+  assert.deepEqual([...new Set(steps)], ["key", "settings", "channels", "contacts", "reboot"]);
+  await until(() => session.getState().status === "closed");
+});
+
+test("a copy is not written at all onto a radio that takes no key", async () => {
+  const radio = new ScriptedRadio();
+  radio.keys = false;
+  const session = new MeshSession({ now: () => 1_700_000_000_000, writeGapMs: 0 });
+  await session.connect(radio);
+  const result = await session.restoreRadio({ privateKey: new Uint8Array(64).fill(0x40), channels: [TEST_CHANNEL], contacts: [copiedContact(CAROL_KEY, "Carol")] });
+  assert.deepEqual(result, { ok: false, reason: "keyRefused" });
+  assert.ok(!radio.sent.some((f) => f[0] === Cmd.SetChannel || f[0] === Cmd.AddUpdateContact || f[0] === Cmd.Reboot));
+});
+
+test("without a key a copy needs no reboot; a channel whose slot is taken goes to a free one, and contacts stop when the radio is full", async () => {
+  const radio = new ScriptedRadio();
+  radio.capacity = 1;
+  radio.channelSlots = 4;
+  radio.slots[1] = { name: "Dacha", secret: new Uint8Array(16).fill(3) };
+  const session = new MeshSession({ now: () => 1_700_000_000_000, writeGapMs: 0 });
+  await session.connect(radio);
+  const result = await session.restoreRadio({ settings: { txPower: -5, location: { lat: 55.75, lon: 37.61 } }, channels: [TEST_CHANNEL], contacts: [copiedContact(CAROL_KEY, "Carol")] });
+  assert.deepEqual(result, { ok: true, rebooted: false, failed: ["txPower"], slots: { 1: 2 }, contacts: 0, full: true });
+  assert.equal(radio.slots[1]?.name, "Dacha", "the radio's own channel stays");
+  assert.equal(radio.slots[2]?.name, "#test");
+  assert.equal(session.getState().self?.lat, 55.75, "the settings after the refused one still went");
+  assert.equal(session.getState().status, "ready");
+});
+
 // ---- regions ----
 
 async function regionKeyOf(name: string): Promise<Uint8Array> {
@@ -3837,4 +3924,12 @@ test("stopping forgets the sensor's tag at once and tells it once", async () => 
   await settle();
   assert.equal(session.getState().telemetry[WEATHER_KEY], undefined);
   await session.disconnect();
+});
+
+test("a copy's routes and channel regions join what this app keeps for the radio, what is set here staying", () => {
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  session.adoptLocal({ routing: { resetAfterMin: 60, contacts: { [CAROL_KEY]: { flood: true } } }, channelRegions: { ["22".repeat(16)]: "ru-oms" } });
+  session.adoptLocal({ routing: { resetAfterMin: 30, contacts: { [CAROL_KEY]: { flood: false } } }, channelRegions: { ["22".repeat(16)]: "ru-nsk" } });
+  assert.deepEqual(session.getState().routing, { resetAfterMin: 30, contacts: { [CAROL_KEY]: { flood: true } } });
+  assert.deepEqual(session.getState().channelRegions, { ["22".repeat(16)]: "ru-oms" });
 });

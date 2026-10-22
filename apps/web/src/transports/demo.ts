@@ -52,6 +52,24 @@ const DEMO_KEY = fromHex("1088b9a5a4103e31b859e71fa9723589219e5651a7bd90a1a04b81
 const own = { privateKey: DEMO_KEY, publicKey: publicKeyOf(DEMO_KEY), name: "Demo radio", blePin: 0 };
 
 /**
+ * What a factory reset left, kept over the reboot that follows as a radio
+ * keeps it: no contacts and Public alone, until something is written back,
+ * a copy of the radio from Settings for one. Null until the demo radio is
+ * reset.
+ */
+let wiped: { gone: Set<Person>; channels: Map<number, { name: string; secret: Uint8Array }> } | null = null;
+
+/** A key of its own, as a radio makes one when it is reset: random, clamped, and not one the mesh keeps for itself. */
+function freshKey(): Uint8Array {
+  for (;;) {
+    const key = crypto.getRandomValues(new Uint8Array(64));
+    key[0]! &= 0xf8;
+    key[31] = (key[31]! & 0x3f) | 0x40;
+    if (!privateKeyFault(key)) return key;
+  }
+}
+
+/**
  * The demo radio's Wi-Fi (MeshCore 1.18) and the time zone its screen shows, kept over a reboot as a
  * radio keeps them: `wifi` as written, `started` as the radio took it when it last started.
  */
@@ -445,7 +463,7 @@ class DemoRadio extends BaseTransport {
   /** The route this radio holds to each contact, as a hop count; 0xff for none. */
   private routes = new Map<Person, number>(PEOPLE.map((p) => [p, p.hops]));
   /** Contacts taken off this radio, and the flags written to the others. */
-  private gone = new Set<Person>(PEOPLE.filter((p) => p.stranger));
+  private gone = wiped?.gone ?? new Set<Person>(PEOPLE.filter((p) => p.stranger));
   /** What was written for a stranger added by its key: all the radio knows of it. */
   private written = new Map<Person, { name: string; lat: number; lon: number }>();
   private flags = new Map<Person, number>();
@@ -1073,10 +1091,32 @@ class DemoRadio extends BaseTransport {
       }
       case Cmd.GetChannel: {
         const index = frame[1] ?? 0;
+        if (wiped) {
+          const held = wiped.channels.get(index);
+          return [held ? new ByteWriter().u8(Resp.ChannelInfo).u8(index).fixedString(held.name, 32).bytes(held.secret).toBytes() : new ByteWriter().u8(Resp.ChannelInfo).u8(index).fixedString("", 32).zeros(16).toBytes()];
+        }
         if (index === 0) return [new ByteWriter().u8(Resp.ChannelInfo).u8(0).fixedString("Public", 32).bytes(fromHex(CHANNELS[0]!)).toBytes()];
         if (index === 1) return [new ByteWriter().u8(Resp.ChannelInfo).u8(1).fixedString("Friends", 32).bytes(fromHex(CHANNELS[1]!)).toBytes()];
         return [new ByteWriter().u8(Resp.ChannelInfo).u8(index).fixedString("", 32).zeros(16).toBytes()];
       }
+      case Cmd.SetChannel:
+        // Kept only once the radio was reset: before, its two channels are fixed.
+        wiped?.channels.set(frame[1] ?? 0, { name: fromUtf8(frame.subarray(2, 34)).replace(/\0.*$/s, ""), secret: frame.slice(34, 50) });
+        return [new Uint8Array([Resp.Ok])];
+      case Cmd.FactoryReset:
+        // As the firmware: everything goes, the radio makes itself a new key and a name from it, and starts again.
+        wiped = { gone: new Set(PEOPLE), channels: new Map([[0, { name: "Public", secret: fromHex(CHANNELS[0]!) }]]) };
+        own.privateKey = freshKey();
+        own.publicKey = publicKeyOf(own.privateKey);
+        own.name = toHex(own.publicKey).slice(0, 8).toUpperCase();
+        own.blePin = 0;
+        this.timers.push(
+          setTimeout(() => {
+            void this.shutdown();
+            this.emitClose(new Error("the radio was reset"));
+          }, 200),
+        );
+        return [new Uint8Array([Resp.Ok])];
       case Cmd.SyncNextMessage:
         return [this.queue.shift() ?? new Uint8Array([Resp.NoMoreMessages])];
       case Cmd.GetBattAndStorage:

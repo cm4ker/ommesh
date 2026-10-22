@@ -195,6 +195,11 @@ export function parseHistory(text: string): HistoryFile {
   } catch {
     throw new HistoryFileError("notHistory");
   }
+  return readHistory(json);
+}
+
+/** A history already read as JSON, checked as `parseHistory` checks one: the history inside a radio's copy is one. */
+export function readHistory(json: unknown): HistoryFile {
   if (!isObject(json) || json.format !== HISTORY_FORMAT) throw new HistoryFileError("notHistory");
   if (typeof json.version !== "number" || !Number.isInteger(json.version) || json.version < 1) throw new HistoryFileError("field", "version");
   if (json.version > HISTORY_VERSION) throw new HistoryFileError("newer");

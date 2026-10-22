@@ -208,3 +208,18 @@ test("what this app would not take, or does not know, is left", () => {
   assert.deepEqual(r.state.chats, {});
   assert.equal(r.state.theme, "system");
 });
+
+test("a snapshot holds what is set here, defaults and untouched pins left out, and is taken back whole on another device", () => {
+  const r = rig().start();
+  r.state.theme = "amber";
+  r.state.chats = { "ch:1": "planets" };
+  r.state.pins = { "r1/ch:0": { at: 0 }, "r1/c:ab": { at: 7 } };
+  const snapshot = r.sync.snapshot();
+  assert.deepEqual(snapshot, { theme: "amber", "bg:ch:1": "planets", "pin:r1/c:ab": { at: 7 } });
+
+  const other = rig().start();
+  assert.equal(other.sync.adopt({ ...snapshot, "bg:ch:2": "plaid", unknown: 1 }), 3, "a value it would not take, and a setting it does not know, are left");
+  assert.equal(other.state.theme, "amber");
+  assert.deepEqual(other.state.chats, { "ch:1": "planets" });
+  assert.deepEqual(other.state.pins, { "r1/c:ab": { at: 7 } });
+});

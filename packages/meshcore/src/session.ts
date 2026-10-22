@@ -526,7 +526,58 @@ export interface SessionOptions {
   busyWaitMs?: number;
   /** Minutes this device's clock is ahead of UTC; for tests. */
   zoneOffsetMin?: () => number;
+  /** The pause between writes to the radio's flash while a copy is written back (`restoreRadio`); for tests. */
+  writeGapMs?: number;
 }
+
+/** The radio's own settings as a copy of it carries them; each one left out stays as the radio has it. */
+export interface RadioSettings {
+  radio?: RadioParams;
+  txPower?: number;
+  location?: { lat: number; lon: number };
+  other?: OtherParams;
+  tuning?: { rxDelayBase: number; airtimeFactor: number };
+  autoAdd?: { config: number; maxHops: number };
+  pathHashMode?: number;
+  /** The region it floods under, null for none. */
+  region?: string | null;
+  blePin?: number;
+}
+
+/** What `restoreRadio` writes onto the radio. */
+export interface RadioCopy {
+  privateKey?: Uint8Array;
+  name?: string;
+  settings?: RadioSettings;
+  /** Each goes into its own slot while that is free. */
+  channels?: ChannelRecord[];
+  /** In the order they should go: the radio may fill up before the last. */
+  contacts?: ContactRecord[];
+}
+
+export type RestoreStep = "key" | "settings" | "channels" | "contacts" | "reboot";
+
+export interface RestoreProgress {
+  step: RestoreStep;
+  done: number;
+  total: number;
+}
+
+export type RestoreResult =
+  | {
+      ok: true;
+      /** The radio was rebooted to take its key or PIN; the link comes back to it. */
+      rebooted: boolean;
+      /** The settings the radio refused, by their name in `RadioSettings`. */
+      failed: (keyof RadioSettings)[];
+      /** Where each channel of the copy is now, by the slot it had in the copy; one left out for want of a slot is not here. */
+      slots: Record<number, number>;
+      /** Contacts written, and whether the radio filled up before the last. */
+      contacts: number;
+      full: boolean;
+    }
+  /** The firmware does not take a key; nothing else was written. */
+  | { ok: false; reason: "keyRefused" };
 
 /** The radio's Wi-Fi, as its console tells it (MeshCore 1.18). */
 export interface RadioWifi {
@@ -1169,6 +1220,12 @@ const DM_MATCH_MS = 15 * 1000;
 const BUSY_TRIES = 2;
 const BUSY_WAIT_MS = 2_500;
 
+/**
+ * The pause between two writes to the radio's flash while a copy is written
+ * back: a XIAO C6 fell over once when about ten settings came back to back.
+ */
+const WRITE_GAP_MS = 250;
+
 /** How often at most the radio's state goes in the log after a refusal, ms. */
 const RADIO_NOTE_MS = 60_000;
 
@@ -1376,6 +1433,7 @@ export class MeshSession {
   private readonly traceWait: (estimateMs: number) => number;
   private readonly searchWait: (estimateMs: number) => number;
   private readonly busyWait: number;
+  private readonly writeGap: number;
 
   constructor(options: SessionOptions = {}) {
     this.appName = options.appName ?? "Meshnet";
@@ -1385,6 +1443,7 @@ export class MeshSession {
     this.traceWait = options.traceWaitMs ?? ((budget) => Math.min(30_000, Math.max(2_500, budget)));
     this.searchWait = options.searchWaitMs ?? ((budget) => budget);
     this.busyWait = options.busyWaitMs ?? BUSY_WAIT_MS;
+    this.writeGap = options.writeGapMs ?? WRITE_GAP_MS;
     this.zoneOffsetMin = options.zoneOffsetMin ?? (() => -new Date().getTimezoneOffset());
     this.trace = options.trace;
   }
@@ -4031,6 +4090,151 @@ export class MeshSession {
     await this.flush().catch(() => undefined);
     await client.reboot();
     return true;
+  }
+
+  /**
+   * Writes a copy of a radio onto this one, to move to it from another. The
+   * key goes first: a firmware that takes none says so before anything else
+   * is written, and the radio reads its contacts anew when it takes one, so
+   * those written before would be lost. Then the settings, the channels, the
+   * contacts and last the name, with a pause between writes: each is a write
+   * to the radio's flash. What the radio already has is not written again, so
+   * a copy that stopped half way can be written once more. A channel takes
+   * its own slot while that is free, else the first free one; contacts stop
+   * once the radio is full. The radio is rebooted only when it took a key or
+   * a PIN, which it takes at its start, and the link that comes back reads it
+   * anew, as any dropped link does.
+   */
+  async restoreRadio(copy: RadioCopy, onStep: (progress: RestoreProgress) => void = () => undefined): Promise<RestoreResult> {
+    const client = this.need();
+    let rebooting = false;
+    if (copy.privateKey && toHex(publicKeyOf(copy.privateKey)) !== this.state.self?.key) {
+      onStep({ step: "key", done: 0, total: 1 });
+      if (!(await client.importPrivateKey(copy.privateKey))) return { ok: false, reason: "keyRefused" };
+      this.log("link", `the radio took key ${toHex(publicKeyOf(copy.privateKey)).slice(0, PUB_KEY_PREFIX_SIZE * 2)}… from a copy`);
+      rebooting = true;
+      await this.pause();
+    }
+
+    const failed: (keyof RadioSettings)[] = [];
+    const writes = this.settingWrites(copy.settings ?? {});
+    for (const [i, [name, write]] of writes.entries()) {
+      onStep({ step: "settings", done: i, total: writes.length });
+      try {
+        await write();
+        if (name === "blePin") rebooting = true;
+      } catch (error) {
+        if (!(error instanceof MeshCoreError)) throw error;
+        failed.push(name);
+        this.log("error", `the copy's ${name} was not taken: ${error.message}`);
+      }
+      await this.pause();
+    }
+
+    const slots: Record<number, number> = {};
+    const channels = copy.channels ?? [];
+    const max = this.state.device?.maxChannels ?? 8;
+    for (const [i, channel] of channels.entries()) {
+      onStep({ step: "channels", done: i, total: channels.length });
+      const held = this.state.channels.find((c) => c.secret === channel.secret);
+      if (held) {
+        slots[channel.index] = held.index;
+        continue;
+      }
+      const taken = new Set(this.state.channels.map((c) => c.index));
+      const free = channel.index < max && !taken.has(channel.index) ? channel.index : Array.from({ length: max }, (_, n) => n).find((n) => !taken.has(n));
+      if (free === undefined) continue;
+      await this.setChannel(free, channel.name, fromHex(channel.secret));
+      slots[channel.index] = free;
+      await this.pause();
+    }
+
+    const contacts = (copy.contacts ?? []).filter((c) => !this.state.contacts[c.key] || this.state.contacts[c.key]!.unsaved);
+    let written = 0;
+    let full = false;
+    for (const contact of contacts) {
+      onStep({ step: "contacts", done: written, total: contacts.length });
+      try {
+        await this.writeContact(saved(contact));
+      } catch (error) {
+        if (error instanceof MeshCoreError && error.code === ErrCode.TableFull) {
+          full = true;
+          break;
+        }
+        throw error;
+      }
+      written++;
+      if (this.state.removed[contact.key]) this.set({ removed: this.withoutRemoved([contact.key]) });
+      await this.pause();
+    }
+    onStep({ step: "contacts", done: written, total: contacts.length });
+
+    if (copy.name && copy.name !== this.state.self?.name) await this.setName(copy.name);
+    this.log("contact", `a copy wrote ${written} contacts${full ? " before the radio was full" : ""}`);
+    if (rebooting) {
+      onStep({ step: "reboot", done: 0, total: 1 });
+      await this.flush().catch(() => undefined);
+      await client.reboot();
+    }
+    return { ok: true, rebooted: rebooting, failed, slots, contacts: written, full };
+  }
+
+  /** The writes a copy's settings need, each only where the radio has it otherwise or does not say. */
+  private settingWrites(settings: RadioSettings): [keyof RadioSettings, () => Promise<void>][] {
+    const { self, device, tuning, autoAdd, region } = this.state;
+    const writes: [keyof RadioSettings, () => Promise<void>][] = [];
+    const { radio, txPower, location, other, pathHashMode, blePin } = settings;
+    if (radio) {
+      // Repeating is a firmware 9 setting: an older one is not told of it, and a newer one keeps its own when the copy does not say.
+      const repeats = device?.repeatEnabled ?? null;
+      const { repeat: _given, ...tuned } = radio;
+      const params: RadioParams = repeats === null ? tuned : { ...tuned, repeat: radio.repeat ?? repeats };
+      const same =
+        self?.frequencyKhz === radio.frequencyKhz && self.bandwidthHz === radio.bandwidthHz && self.spreadingFactor === radio.spreadingFactor && self.codingRate === radio.codingRate;
+      if (!same || (params.repeat !== undefined && params.repeat !== device?.repeatEnabled)) writes.push(["radio", () => this.setRadioParams(params)]);
+    }
+    if (txPower !== undefined) {
+      // A board with a weaker amplifier refuses more than it has.
+      const dbm = self && self.maxTxPower > 0 ? Math.min(txPower, self.maxTxPower) : txPower;
+      if (dbm !== self?.txPower) writes.push(["txPower", () => this.setTxPower(dbm)]);
+    }
+    if (location && (location.lat !== self?.lat || location.lon !== self.lon)) writes.push(["location", () => this.setLocation(location.lat, location.lon)]);
+    if (other && (!self || (Object.keys(other) as (keyof OtherParams)[]).some((k) => other[k] !== self[k]))) writes.push(["other", () => this.setOtherParams(other)]);
+    const tune = settings.tuning;
+    if (tune && (tune.rxDelayBase !== tuning?.rxDelayBase || tune.airtimeFactor !== tuning.airtimeFactor)) writes.push(["tuning", () => this.setTuning(tune.rxDelayBase, tune.airtimeFactor)]);
+    const add = settings.autoAdd;
+    if (add && autoAdd && (add.config !== autoAdd.config || add.maxHops !== autoAdd.maxHops)) writes.push(["autoAdd", () => this.setAutoAdd(add.config, add.maxHops)]);
+    if (pathHashMode !== undefined && device?.pathHashMode !== null && device?.pathHashMode !== undefined && pathHashMode !== device.pathHashMode) {
+      writes.push(["pathHashMode", () => this.setPathHashMode(pathHashMode)]);
+    }
+    if (settings.region !== undefined && region && settings.region !== region.name) writes.push(["region", () => this.setRadioRegion(settings.region ?? null)]);
+    if (blePin !== undefined && device && blePin !== device.blePin) {
+      writes.push([
+        "blePin",
+        async () => {
+          await this.need().setDevicePin(blePin);
+          this.set({ device: { ...device, blePin } });
+        },
+      ]);
+    }
+    return writes;
+  }
+
+  private pause(): Promise<void> {
+    return this.writeGap > 0 ? new Promise((resolve) => setTimeout(resolve, this.writeGap)) : Promise.resolve();
+  }
+
+  /**
+   * What this app keeps for the radio beside its history, taken from a copy:
+   * the routes pinned or set by hand, how long a route is trusted, and the
+   * channels' own regions. A contact's route or a channel's region set here
+   * already stays; how long a route is trusted is the copy's.
+   */
+  adoptLocal(local: { routing?: RoutingSettings; channelRegions?: Record<string, string> }): void {
+    const routing = local.routing
+      ? { resetAfterMin: local.routing.resetAfterMin, contacts: { ...local.routing.contacts, ...this.state.routing.contacts } }
+      : this.state.routing;
+    this.set({ routing, channelRegions: { ...local.channelRegions, ...this.state.channelRegions } });
   }
 
   // ---- diagnostics ----

@@ -1,9 +1,29 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const { version } = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string };
+
+/**
+ * index.html tells a phone whose web view is too old for the client what to update. It cannot load
+ * the client's words, so the `oldWebView.*` lines of each language's app.json are written into it.
+ */
+const oldWebViewWords: Plugin = {
+  name: "old-webview-words",
+  transformIndexHtml(html) {
+    const i18n = new URL("src/i18n/", import.meta.url);
+    const words: Record<string, Record<string, unknown>> = {};
+    for (const entry of readdirSync(i18n, { withFileTypes: true })) {
+      const file = new URL(`${entry.name}/app.json`, i18n);
+      if (!entry.isDirectory() || !existsSync(file)) continue;
+      const app = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+      words[entry.name] = Object.fromEntries(Object.entries(app).filter(([key]) => key.startsWith("oldWebView.")));
+    }
+    // "<" goes in as <, so no word can close the script it is written into.
+    return html.replace("__OLD_WEBVIEW_WORDS__", JSON.stringify(words).replace(/</g, "\\u003c"));
+  },
+};
 
 /**
  * `base: "./"` because the same build is opened three ways — from a web
@@ -15,7 +35,7 @@ const { version } = JSON.parse(readFileSync(new URL("../../package.json", import
  * config's `devUrl` names.
  */
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), oldWebViewWords],
   base: "./",
   clearScreen: false,
   define: {

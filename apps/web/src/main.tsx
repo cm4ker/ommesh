@@ -19,6 +19,9 @@ import { keepLog } from "./lib/report.js";
 import "./i18n/languages.js";
 import "./styles.css";
 
+// index.html found this web view too old to run the client and has said what to update instead.
+if ("oldWebView" in window) throw new Error("The web view is too old for Ommesh");
+
 // For the console, and for driving the shell from a test rig: the session,
 // the link, the connectors and what the radio has heard of the mesh, under one name. Android's shell calls `back`
 // on its Back button (MainActivity).

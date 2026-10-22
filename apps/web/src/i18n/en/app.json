@@ -71,5 +71,10 @@
   "palette.contactsFetched": "Contacts fetched from the radio",
   "palette.disconnect": "Disconnect",
   "privacy.title": "Privacy policy",
-  "privacy.frame": "Ommesh privacy policy"
+  "privacy.frame": "Ommesh privacy policy",
+  "oldWebView.title": "Update Android System WebView",
+  "oldWebView.text": "Ommesh shows its screens through Android System WebView, and this phone has version {version}, which is too old. Update it in Google Play, then open Ommesh again.",
+  "oldWebView.chromeToo": "On this version of Android, Chrome may be doing that job instead, so update Chrome as well.",
+  "oldWebView.updateWebView": "Update WebView",
+  "oldWebView.updateChrome": "Update Chrome"
 }

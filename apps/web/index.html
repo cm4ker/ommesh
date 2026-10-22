@@ -34,6 +34,96 @@
         // A private window: the system's colours will do.
       }
     </script>
+    <!--
+      An Android phone whose Android System WebView has not been updated for years cannot run the
+      client and showed a blank page; it is told what to update instead. This is old JavaScript, so
+      that such a web view runs it, and its words are written in at build time (vite.config.ts).
+    -->
+    <style>
+      .old-webview {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        overflow: auto;
+        padding: 32px 24px;
+        background: #fafafa;
+        color: #383a42;
+        font: 16px/1.5 system-ui, sans-serif;
+      }
+      .old-webview div {
+        max-width: 30em;
+        margin: 0 auto;
+      }
+      .old-webview h1 {
+        margin: 0 0 16px;
+        font-size: 22px;
+        line-height: 1.25;
+      }
+      .old-webview p {
+        margin: 0 0 16px;
+      }
+      .old-webview a {
+        display: block;
+        margin-top: 12px;
+        padding: 12px 16px;
+        border-radius: 10px;
+        background: #5c78e2;
+        color: #fff;
+        font-weight: 600;
+        text-align: center;
+        text-decoration: none;
+      }
+    </style>
+    <script>
+      (function () {
+        // The stylesheets size the screen in dvh, which came in Chrome 108: a web view from 92 to 107
+        // opens the client laid out wrong, and an older one stops on its JavaScript.
+        var NEEDED = 108;
+        var agent = navigator.userAgent;
+        var chrome = /Chrome\/((\d+)[\d.]*)/.exec(agent);
+        if (!/Android/.test(agent) || !/; wv\)/.test(agent) || !chrome || Number(chrome[2]) >= NEEDED) return;
+        // main.tsx stops on this, so nothing starts behind the notice, least of all a link to the radio.
+        window.oldWebView = true;
+
+        var words = __OLD_WEBVIEW_WORDS__;
+        var wanted = [];
+        try {
+          var chosen = localStorage.getItem("meshnet.language");
+          if (chosen) wanted.push(chosen);
+        } catch (error) {
+          // A private window: the system's language will do.
+        }
+        wanted = wanted.concat(navigator.languages || [navigator.language]);
+        var said;
+        for (var i = 0; i < wanted.length; i++) {
+          var code = String(wanted[i] || "");
+          said = words[code] || words[code.split("-")[0]];
+          if (said) break;
+        }
+        said = said || words.en;
+        // On Android 7 to 9, Chrome itself may be the phone's web view.
+        var chromeToo = Number((/Android (\d+)/.exec(agent) || [])[1]) < 10;
+
+        document.addEventListener("DOMContentLoaded", function () {
+          var notice = document.createElement("div");
+          notice.className = "old-webview";
+          var column = notice.appendChild(document.createElement("div"));
+          var add = function (tag, text) {
+            var element = column.appendChild(document.createElement(tag));
+            element.textContent = text;
+            return element;
+          };
+          add("h1", said["oldWebView.title"]);
+          add("p", said["oldWebView.text"].replace("{version}", chrome[1]));
+          if (chromeToo) add("p", said["oldWebView.chromeToo"]);
+          add("a", said["oldWebView.updateWebView"]).href = "https://play.google.com/store/apps/details?id=com.google.android.webview";
+          if (chromeToo) add("a", said["oldWebView.updateChrome"]).href = "https://play.google.com/store/apps/details?id=com.android.chrome";
+          document.body.appendChild(notice);
+        });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

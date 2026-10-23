@@ -72,6 +72,10 @@ export const MoreIcon = icon('<circle cx="6" cy="12" r="1.2" fill="currentColor"
 export const MapIcon = icon('<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/>');
 export const MinusIcon = icon('<path d="M5 12h14"/>');
 export const LocateIcon = icon('<circle cx="12" cy="12" r="3.5"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/>');
+/** "Where am I" while the map keeps the phone in the middle, north up. */
+export const LocateOnIcon = icon('<circle cx="12" cy="12" r="3.5" fill="currentColor"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/>');
+/** "Where am I" while the map turns with the way the phone goes. */
+export const HeadingIcon = icon('<path d="M12 3l7 18-7-4-7 4z" fill="currentColor"/>');
 export const FitIcon = icon('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>');
 export const GroupIcon = icon('<circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><circle cx="12" cy="16.5" r="3"/>');
 export const LocationIcon = icon('<path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z"/><circle cx="12" cy="10" r="2"/>');

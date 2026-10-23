@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AdvType } from "@meshnet/meshcore";
-import { bearingDeg, compass, destination, distanceKm, formatDistance, formatLatLon, formatRoundDistance, freshness, hasPosition, metresPerPixel, parseLatLon, pointDecimal, scaleBar } from "./geo.js";
+import { bearingDeg, compass, courseStep, destination, distanceKm, formatDistance, formatLatLon, formatRoundDistance, freshness, hasPosition, metresPerPixel, parseLatLon, pointDecimal, scaleBar } from "./geo.js";
 
 test("0, 0 is no position, and so is anything off the globe", () => {
   assert.equal(hasPosition(0, 0), false);
@@ -80,4 +80,23 @@ test("a half typed with a decimal comma reads as one number", () => {
 test("a spot reads as a map copies it, and reads back the same", () => {
   assert.equal(formatLatLon(55.7558, -37.6173), "55.75580, -37.61730");
   assert.deepEqual(parseLatLon(formatLatLon(55.7558, -37.6173)), { lat: 55.7558, lon: -37.6173 });
+});
+
+test("the course is taken from fixes far enough apart, and kept while the phone stands or creeps", () => {
+  const east = 50 / (111_320 * Math.cos((55 * Math.PI) / 180));
+  const start = { lat: 55, lon: 73, at: 0, accuracy: 5 };
+  // The first fix has nothing to measure from.
+  assert.deepEqual(courseStep(null, start, null), { from: start, course: null });
+  // 50 m east in 3 s, 60 km/h.
+  const moved = courseStep(start, { lat: 55, lon: 73 + east, at: 3_000, accuracy: 5 }, null);
+  assert.ok(Math.abs(moved.course! - 90) < 0.5);
+  // A few metres of wander at a light keep the course, and the place it is measured from.
+  const wander = { lat: 55.00003, lon: 73, at: 6_000, accuracy: 5 };
+  assert.deepEqual(courseStep(start, wander, 90), { from: start, course: 90 });
+  // Standing long enough, the next measure starts from where the phone stands.
+  assert.equal(courseStep(start, { ...wander, at: 25_000 }, 90).from.at, 25_000);
+  // Creeping 12 m in 10 s turns nothing.
+  assert.equal(courseStep(start, { lat: 55, lon: 73 + (east * 12) / 50, at: 10_000, accuracy: 5 }, 90).course, 90);
+  // A vague fix must move more than half of how unsure it is.
+  assert.equal(courseStep(start, { lat: 55, lon: 73 + (east * 20) / 50, at: 2_000, accuracy: 60 }, 90).course, 90);
 });

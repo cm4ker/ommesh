@@ -66,6 +66,8 @@
   "spot.following": "Берётся с телефона: Настройки › Имя и местоположение.",
   "map.whereAmI": "Где я",
   "map.north": "Север вверх",
+  "map.course": "По ходу движения",
+  "map.wholeSurvey": "Весь замер",
   "map.phone": "Телефон",
   "map.putHere": "Поставить радио сюда",
   "atOneSpot": { "one": "{count} узел в одной точке", "few": "{count} узла в одной точке", "many": "{count} узлов в одной точке", "other": "{count} узла в одной точке" },

@@ -92,6 +92,27 @@ export function scaleBar(metresPerPx: number, maxPx: number): { metres: number; 
   return { metres, px: Math.round(metres / metresPerPx) };
 }
 
+/** Slower than this, in metres a second (about 7 km/h), the phone's fixes wander more than it moves. */
+const COURSE_SPEED = 2;
+/** A fix that has stayed this near the last one this long starts the next measure afresh. */
+const COURSE_STALE_MS = 20_000;
+
+/**
+ * The way the phone goes, in degrees clockwise from north, measured from
+ * `from`, the fix the last course was taken at, to a new fix once the phone
+ * is far enough from it to tell: ten metres at least, and half of how sure
+ * the fix is. Standing at a light or creeping along, the course is kept, so a
+ * map turned by it does not spin. Hands back where to measure from next.
+ */
+export function courseStep(from: { lat: number; lon: number; at: number } | null, fix: { lat: number; lon: number; at: number; accuracy: number }, kept: number | null): { from: { lat: number; lon: number; at: number }; course: number | null } {
+  if (!from) return { from: fix, course: kept };
+  const metres = distanceKm(from.lat, from.lon, fix.lat, fix.lon) * 1000;
+  const seconds = (fix.at - from.at) / 1000;
+  if (metres < Math.max(10, fix.accuracy / 2)) return { from: fix.at - from.at > COURSE_STALE_MS ? fix : from, course: kept };
+  if (seconds <= 0 || metres / seconds < COURSE_SPEED) return { from: fix, course: kept };
+  return { from: fix, course: bearingDeg(from.lat, from.lon, fix.lat, fix.lon) };
+}
+
 export type Freshness = "fresh" | "aging" | "stale";
 
 /**

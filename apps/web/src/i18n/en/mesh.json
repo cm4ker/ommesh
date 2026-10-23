@@ -66,6 +66,8 @@
   "spot.following": "Taken from the phone: Settings › Name and position.",
   "map.whereAmI": "Where am I",
   "map.north": "North up",
+  "map.course": "Heading up",
+  "map.wholeSurvey": "Whole survey",
   "map.phone": "Phone",
   "map.putHere": "Put the radio here",
   "atOneSpot": { "one": "{count} node at one spot", "other": "{count} nodes at one spot" },

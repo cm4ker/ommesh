@@ -22,7 +22,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AdvType, type ContactRecord } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
-import { destination, distanceKm, formatRoundDistance, hasPosition, metresPerPixel, scaleBar } from "../lib/geo.js";
+import { courseStep, destination, distanceKm, formatRoundDistance, hasPosition, metresPerPixel, scaleBar } from "../lib/geo.js";
 import { EMPTY_OVERLAY, type MapDot, type MapHandle, type MapOverlay } from "../lib/mapOverlay.js";
 import type { LosEnd } from "../lib/meshTool.js";
 import { NodeCanvas, type LatLon } from "../lib/nodeCanvas.js";
@@ -31,7 +31,7 @@ import type { MenuAt } from "../lib/press.js";
 import { useSession } from "../lib/session.js";
 import { tileAttribution } from "../lib/tiles.js";
 import { IconButton } from "../ui/Button.js";
-import { CompassIcon, FitIcon, GroupIcon, LocateIcon, MinusIcon, PlusIcon, WavesIcon } from "./Icons.js";
+import { CompassIcon, FitIcon, GroupIcon, HeadingIcon, LocateIcon, LocateOnIcon, MinusIcon, PlusIcon, WavesIcon } from "./Icons.js";
 import { darkTheme, mapStyle, serveTiles, tilePaint } from "./mapStyle.js";
 
 /** A group spread less than this, in metres, is the same spot at any zoom, and is listed rather than zoomed into. */
@@ -254,10 +254,11 @@ export interface MapProps {
   pickedDot?: number | null | undefined;
   onDot?: ((index: number) => void) | undefined;
   /**
-   * Keeps the phone in view as it moves, with these points: the repeaters
-   * that have answered in the survey `id`. The map moves out as far as they
-   * need and never back in by itself; a hand on it makes the scale the
-   * reader's, until "where am I" hands the view back.
+   * Follows the phone through the survey `id`: the map turned with the way
+   * the phone goes, or north up, or the whole survey, its points and these
+   * repeaters that have answered in it. "Where am I" goes from one way of
+   * following to the other; a hand on the map lets go of the phone until it
+   * is pressed.
    */
   follow?: { id: string; points: [number, number][] } | null | undefined;
   /** A survey running: a red dot on the "who hears me" button, and a scale in the corner. */
@@ -340,6 +341,40 @@ const DOT_PX = 18;
 const TOP_PX = 52;
 /** The longest the scale in the corner is drawn. */
 const SCALE_PX = 96;
+/** How close a survey follows the phone at first: streets, with some 600 m of road ahead. A pinch changes it until the survey ends. */
+const FOLLOW_ZOOM = 14.5;
+/** How far down what the map leaves clear the phone sits while the map turns with its course: much road ahead, a little behind. */
+const COURSE_AT = 0.7;
+/** How long after a hand last zoomed the map a fix leaves it where the hand has it. */
+const HAND_MS = 800;
+/** How long the name of the way the map now follows stays beside the button that changed it. */
+const MODE_WORD_MS = 1500;
+
+/** How the map follows the phone through a survey: turned with its course, north up, the whole survey, or let go by a hand. */
+type FollowMode = "course" | "north" | "all" | "loose";
+
+const FOLLOW_KEY = "meshnet.survey.follow";
+let followLast: "course" | "north" | null = null;
+
+/** The way of following the last survey ended with, which the next one starts with; turned with the course the first time. */
+function followWanted(): "course" | "north" {
+  if (followLast) return followLast;
+  try {
+    return localStorage.getItem(FOLLOW_KEY) === "north" ? "north" : "course";
+  } catch {
+    return "course";
+  }
+}
+
+function keepFollow(mode: "course" | "north"): void {
+  followLast = mode;
+  try {
+    localStorage.setItem(FOLLOW_KEY, mode);
+  } catch {
+    // Kept for this visit only.
+  }
+}
+
 /**
  * A finger held this long on the map opens the spot's menu. The map takes the
  * touch from its start, so neither Android's web view nor iOS's turns a long
@@ -379,8 +414,17 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
   // Whether the map is turned off north, which brings the compass; the needle itself is turned without a render.
   const [turned, setTurned] = useState(false);
   const needle = useRef<HTMLSpanElement>(null);
-  // A hand moved or scaled the map while it followed the phone: from then on the scale is the reader's.
-  const own = useRef(false);
+  // How the map follows the phone through a survey, read by the map's own handlers through the refs.
+  const [mode, setMode] = useState<FollowMode>(followWanted);
+  const modeNow = useRef(mode);
+  modeNow.current = mode;
+  const tracking = useRef(false);
+  tracking.current = follow !== null && phone !== null && (mode === "course" || mode === "north");
+  // How close the map follows, and when a hand last zoomed it as it did.
+  const followZoom = useRef(FOLLOW_ZOOM);
+  const handAt = useRef(0);
+  // The name of the way the map now follows, beside the button that changed it, for a moment.
+  const [word, setWord] = useState<{ text: string; on: "locate" | "fit"; at: number } | null>(null);
   // The handlers the map holds are set once; they read the latest callbacks from here.
   const calls = useRef({ onSelect, onGroup, onLeg, onHold, onHandleDrop, onPut: putHere?.onPut, onDot, dots });
   calls.current = { onSelect, onGroup, onLeg, onHold, onHandleDrop, onPut: putHere?.onPut, onDot, dots };
@@ -403,13 +447,13 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
     const { top, bottom } = cover.current;
     map.current?.easeTo({ center: [at.lon, at.lat], zoom: z, offset: [0, (top - bottom) / 2], ...(animate ? {} : { duration: 0 }) });
   };
-  /** Several points in view, the map left turned as it is. */
-  const fitPoints = (points: [number, number][], maxZoom: number, animate = true) => {
+  /** Several points in view, the map left turned as it is unless a bearing is given. */
+  const fitPoints = (points: [number, number][], maxZoom: number, animate = true, bearing?: number) => {
     const m = map.current;
     if (!m || points.length === 0) return;
     const bounds = new LngLatBounds();
     for (const [lat, lon] of points) bounds.extend([lon, lat]);
-    m.fitBounds(bounds, { padding: padding(), maxZoom, bearing: m.getBearing(), animate });
+    m.fitBounds(bounds, { padding: padding(), maxZoom, bearing: bearing ?? m.getBearing(), animate });
   };
   /** Whether a point is on the map as it stands: within what a fit keeps clear, or anywhere on it. */
   const inView = (lat: number, lon: number, clear: boolean) => {
@@ -569,12 +613,30 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
       if (needle.current) needle.current.style.transform = `rotate(${-b}deg)`;
     };
     m.on("rotate", turn);
-    m.on("dragstart", () => {
-      own.current = true;
+    // A hand on the map lets go of the phone it followed, until "where am I". While it follows, a pinch, a wheel
+    // or a double tap only changes how close, and two fingers that move the map as they pinch do not let go.
+    // The map's own moves carry no event of the reader's.
+    const loosen = () => {
+      if (modeNow.current !== "loose") setMode("loose");
+    };
+    const pinch = (e: { originalEvent?: unknown }) => tracking.current && ((e.originalEvent as TouchEvent | undefined)?.touches?.length ?? 0) > 1;
+    m.on("dragstart", (e) => {
+      if (!pinch(e)) loosen();
     });
-    // A pinch, a wheel or a double tap; the map's own moves carry no event of the reader's.
     m.on("zoomstart", (e) => {
-      if (e.originalEvent) own.current = true;
+      if (e.originalEvent && !tracking.current) loosen();
+    });
+    m.on("rotatestart", (e) => {
+      if (e.originalEvent) loosen();
+    });
+    // A hand's zoom while the map follows sets how close it follows; the map is not moved under the hand meanwhile.
+    m.on("zoom", (e) => {
+      if (!e.originalEvent || !tracking.current) return;
+      followZoom.current = m.getZoom();
+      handAt.current = Date.now();
+    });
+    m.on("drag", (e) => {
+      if (pinch(e)) handAt.current = Date.now();
     });
     setZoom(m.getZoom());
     turn();
@@ -692,40 +754,86 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
     layer.current?.setDots(dots, pickedDot);
   }, [dots, pickedDot]);
 
-  // Following the phone through a survey: it and every repeater that has answered are kept in what the sheet
-  // leaves, no closer than a street. The map moves out when a farther one answers and never back in by itself:
-  // a view that closed in and out with every point was hard to read from behind a wheel (#66). A hand on the
-  // map makes its scale the reader's, and the map then only goes along with the phone while the phone is in
-  // sight, until "where am I" hands the view back.
+  // Following the phone through a survey, kept where a glance from behind the wheel finds it, at a street's
+  // scale. Turned with its course, the phone sits low, the road ahead above it; north up, it sits in the middle
+  // of what the sheet leaves. Each fix moves the map over about the time to the next, so it runs
+  // along rather than jumping. The whole survey keeps the phone, the points and every repeater that has
+  // answered in view, and moves out when one leaves it. A hand on the map lets go of the phone: the map then
+  // only goes along with the phone while the phone is in sight, until "where am I" takes it up again.
   const followed = useRef<string | null>(null);
-  const phoneWas = useRef<[number, number] | null>(null);
+  const shownMode = useRef<FollowMode | null>(null);
+  const lastFix = useRef<Fix | null>(null);
+  const courseFrom = useRef<{ lat: number; lon: number; at: number } | null>(null);
+  const course = useRef<number | null>(null);
   const followKey = follow ? JSON.stringify(follow) : null;
+  const dotCount = dots?.length ?? 0;
   useEffect(() => {
     const m = map.current;
     // A map with no size, under a profile or another section, has nothing to fit into.
-    if (!follow || !m || phoneLat === null || phoneLon === null || size().y === 0) return;
+    if (!follow || !m || !phone || size().y === 0) return;
     // Nor has one the list has come up over: there is no room left to keep anything in.
     const clear = padding();
     if (size().y - clear.top - clear.bottom < 48) return;
-    const was = phoneWas.current;
-    phoneWas.current = [phoneLat, phoneLon];
-    const points: [number, number][] = [[phoneLat, phoneLon], ...follow.points];
     if (followed.current !== follow.id) {
       followed.current = follow.id;
-      own.current = false;
-      fitPoints(points, 15, false);
+      followZoom.current = FOLLOW_ZOOM;
+      lastFix.current = null;
+      courseFrom.current = null;
+      course.current = null;
+      shownMode.current = null;
+      const start = followWanted();
+      // A new survey starts the way the last one ended; the effect comes back with it.
+      if (mode !== start) {
+        setMode(start);
+        return;
+      }
+    }
+    const was = lastFix.current;
+    const fresh = phone !== was;
+    if (fresh) {
+      lastFix.current = phone;
+      const step = courseStep(courseFrom.current, phone, course.current);
+      courseFrom.current = step.from;
+      course.current = step.course;
+    }
+    const changed = shownMode.current !== mode;
+    shownMode.current = mode;
+    if (mode === "loose") {
+      if (fresh && was && inView(was.lat, was.lon, false) && !inView(phone.lat, phone.lon, true)) centerOn(phone, m.getZoom());
       return;
     }
-    // A move under way, the reader's or the map's, is let finish; the next fix is seconds off.
-    if (m.isMoving()) return;
-    if (own.current) {
-      if (was && inView(was[0], was[1], false) && !inView(phoneLat, phoneLon, true)) centerOn({ lat: phoneLat, lon: phoneLon }, m.getZoom());
+    if (mode === "all") {
+      const points: [number, number][] = [[phone.lat, phone.lon], ...follow.points, ...(dots ?? []).map((d): [number, number] => [d.lat, d.lon])];
+      if (changed || !points.every(([lat, lon]) => inView(lat, lon, true))) fitPoints(points, FOLLOW_ZOOM, true, 0);
       return;
     }
-    if (points.every(([lat, lon]) => inView(lat, lon, true))) return;
-    fitPoints(points, Math.min(15, m.getZoom()));
+    if (!changed && (!fresh || Date.now() - handAt.current < HAND_MS)) return;
+    const { y } = size();
+    const spot = mode === "course" ? clear.top + (y - clear.top - clear.bottom) * COURSE_AT : (clear.top + y - clear.bottom) / 2;
+    // A new way of following moves at the map's own pace; a fix, evenly over the time since the last one.
+    const pace = changed || !was ? {} : { duration: Math.min(2500, Math.max(300, phone.at - was.at)), easing: (k: number) => k };
+    m.easeTo({ center: [phone.lon, phone.lat], zoom: followZoom.current, bearing: mode === "course" ? (course.current ?? m.getBearing()) : 0, offset: [0, spot - y / 2], ...pace });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [followKey, phoneLat, phoneLon]);
+  }, [followKey, phone, mode, dotCount]);
+
+  /** The map follows the phone another way, and says so beside the button pressed. */
+  const followAs = (next: FollowMode, on: "locate" | "fit") => {
+    setMode(next);
+    if (next === "course" || next === "north") keepFollow(next);
+    const text = next === "course" ? t("mesh.map.course") : next === "north" ? t("mesh.map.north") : t("mesh.map.wholeSurvey");
+    setWord({ text, on, at: Date.now() });
+  };
+  useEffect(() => {
+    if (!word) return;
+    const timer = window.setTimeout(() => setWord(null), MODE_WORD_MS);
+    return () => window.clearTimeout(timer);
+  }, [word]);
+  const wordFor = (on: "locate" | "fit") =>
+    word?.on === on ? (
+      <span className="map-hold-word" aria-hidden="true">
+        {word.text}
+      </span>
+    ) : null;
 
   // The lines over the nodes: a route and how it sounded, a line of sight, the answers to "who hears me".
   useEffect(() => {
@@ -968,8 +1076,11 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [placed, self]);
 
+  // Following the phone through a survey, "show all" shows the whole survey, and pressed again goes back to following.
+  const surveyed = follow !== null && phone !== null;
   const fitAll = () => {
-    own.current = true;
+    if (surveyed) return followAs(mode === "all" ? followWanted() : "all", "fit");
+    setMode("loose");
     const points: [number, number][] = shown.map((c) => [c.lat, c.lon]);
     if (self) points.push([self.lat, self.lon]);
     if (points.length === 1) centerOn({ lat: points[0]![0], lon: points[0]![1] }, 13);
@@ -982,11 +1093,12 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
   };
   // "Where am I" finds the phone, and goes to this radio when the phone cannot say.
   const locate = async () => {
-    // During a survey the phone is on the map already: the view goes back to it and to those who answered.
-    if (follow && phone) {
-      own.current = false;
-      fitPoints([[phone.lat, phone.lon], ...follow.points], 15);
-      return;
+    // During a survey the phone is on the map already. Following it, the button turns the map from the course to
+    // north and back, as a car's navigator does; let go of or showing the whole survey, it takes up following
+    // again the way it last did, as close as a hand has left the map.
+    if (surveyed) {
+      if (mode === "loose" && map.current) followZoom.current = map.current.getZoom();
+      return followAs(mode === "course" ? "north" : mode === "north" ? "course" : followWanted(), "locate");
     }
     if (!onLocate) return toRadio();
     if (locating) return;
@@ -998,9 +1110,27 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
     else toRadio();
   };
 
+  // The buttons that zoom, while the map follows the phone, change how close it follows, round the phone.
+  const zoomBy = (delta: number) => {
+    const m = map.current;
+    if (!m) return;
+    if (tracking.current && phone) {
+      followZoom.current = Math.min(m.getMaxZoom(), Math.max(m.getMinZoom(), followZoom.current + delta));
+      m.easeTo({ zoom: followZoom.current, around: [phone.lon, phone.lat] });
+      return;
+    }
+    setMode("loose");
+    if (delta > 0) m.zoomIn();
+    else m.zoomOut();
+  };
+
   // The scale, while a survey runs: a map that holds a far view says how far.
   const at = recording && zoom !== null ? map.current?.getCenter() : undefined;
   const bar = at && zoom !== null ? scaleBar(metresPerPixel(at.lat, zoom), SCALE_PX) : null;
+  // "Where am I" says how the map follows the phone through a survey: an arrow while it turns with the course,
+  // a filled ring north up, an empty one when it does not follow.
+  const following = surveyed && (mode === "course" || mode === "north");
+  const locateIcon = surveyed && mode === "course" ? <HeadingIcon size={18} /> : surveyed && mode === "north" ? <LocateOnIcon size={18} /> : <LocateIcon size={18} />;
 
   return (
     <div className="map-view">
@@ -1014,7 +1144,7 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
       ) : null}
       <div className="map-controls">
         {turned ? (
-          <IconButton label={t("mesh.map.north")} onClick={() => map.current?.easeTo({ bearing: 0 })}>
+          <IconButton label={t("mesh.map.north")} onClick={() => (surveyed && mode === "course" ? followAs("north", "locate") : map.current?.easeTo({ bearing: 0 }))}>
             <span ref={needle} className="map-needle" style={{ transform: `rotate(${-(map.current?.getBearing() ?? 0)}deg)` }}>
               <CompassIcon size={18} />
             </span>
@@ -1022,22 +1152,10 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
         ) : null}
         {zoomButtons ? (
           <>
-            <IconButton
-              label={t("mesh.map.zoomIn")}
-              onClick={() => {
-                own.current = true;
-                map.current?.zoomIn();
-              }}
-            >
+            <IconButton label={t("mesh.map.zoomIn")} onClick={() => zoomBy(1)}>
               <PlusIcon size={18} />
             </IconButton>
-            <IconButton
-              label={t("mesh.map.zoomOut")}
-              onClick={() => {
-                own.current = true;
-                map.current?.zoomOut();
-              }}
-            >
+            <IconButton label={t("mesh.map.zoomOut")} onClick={() => zoomBy(-1)}>
               <MinusIcon size={18} />
             </IconButton>
           </>
@@ -1059,12 +1177,14 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
           <GroupIcon size={18} />
         </IconButton>
         {onHears ? <HearsButton on={hearsOn} recording={recording} onTap={onHears} onHoldDone={onHearsHold} /> : null}
-        <IconButton label={t("mesh.map.showAll")} onClick={fitAll}>
+        <IconButton label={surveyed ? t("mesh.map.wholeSurvey") : t("mesh.map.showAll")} className={surveyed && mode === "all" ? "on" : ""} aria-pressed={surveyed ? mode === "all" : undefined} onClick={fitAll}>
           <FitIcon size={18} />
+          {wordFor("fit")}
         </IconButton>
         {self || onLocate ? (
-          <IconButton label={onLocate ? t("mesh.map.whereAmI") : t("mesh.map.thisRadio")} className={[phone ? "on" : "", locating ? "busy" : ""].join(" ")} aria-busy={locating} onClick={() => void locate()}>
-            <LocateIcon size={18} />
+          <IconButton label={onLocate ? t("mesh.map.whereAmI") : t("mesh.map.thisRadio")} className={[phone && (!surveyed || following) ? "on" : "", locating ? "busy" : ""].join(" ")} aria-busy={locating} onClick={() => void locate()}>
+            {locateIcon}
+            {wordFor("locate")}
           </IconButton>
         ) : null}
       </div>

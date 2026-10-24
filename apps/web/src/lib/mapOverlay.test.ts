@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { ContactRecord, SessionState } from "@meshnet/meshcore";
-import { directOverlay, neighboursOverlay, routeOverlay } from "./mapOverlay.js";
+import { directOverlay, neighboursOverlay, routeOverlay, surveyOverlay } from "./mapOverlay.js";
 import type { Ping } from "./ping.js";
 import type { NeighboursTool } from "./meshTool.js";
 import { NO_FILTER, type NeighbourFilter } from "./neighbours.js";
+import type { Survey } from "./surveyData.js";
 
 const HILL = "aa".repeat(32);
 const NEAR = "bb".repeat(32);
@@ -67,4 +68,21 @@ test("a check with no relays draws one line, coloured by how it sounded", () => 
   assert.deepEqual(line(direct([{ ok: true, rttMs: 300, legs: [[-3, -4]] }])), [["self", TOWER, "fair", null]]);
   // Nothing came back: the line is marked where it breaks.
   assert.deepEqual(line(direct([{ ok: false, rttMs: null, legs: [] }])), [["self", TOWER, "fail", "breaks"]]);
+});
+
+// A survey's point heard by Hill, still a contact on the map, and by a repeater gone from the contacts since.
+test("a survey's point draws a line to each repeater, and a pin where one gone from the map was", () => {
+  const GONE = "dd".repeat(32);
+  const survey = {
+    id: "s",
+    radio: "r",
+    startedAt: 0,
+    endedAt: 1,
+    points: [{ at: 0, lat: 55.1, lon: 73.1, accuracy: 5, replies: [{ key: HILL, us: 6, them: 7, rssi: null }, { key: GONE, us: -9, them: 2, rssi: null }] }],
+    nodes: { [HILL]: { name: "Hill", lat: 55, lon: 73 }, [GONE]: { name: "Gone", lat: 55.2, lon: 73.2 } },
+  } as unknown as Survey;
+  const overlay = surveyOverlay(survey, 0, state);
+  assert.deepEqual(overlay.lines.map((l) => [l.to.key, l.tone]), [[HILL, "good"], [GONE, "weak"]]);
+  assert.deepEqual(overlay.pins, [{ lat: 55.2, lon: 73.2 }]);
+  assert.deepEqual(overlay.heard, [HILL, GONE]);
 });

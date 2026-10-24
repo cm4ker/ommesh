@@ -467,7 +467,11 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
   };
 
   const placed = useMemo(() => Object.values(contacts).filter((c) => hasPosition(c.lat, c.lon)).sort((a, b) => (a.key < b.key ? -1 : 1)), [contacts]);
-  const shown = useMemo(() => placed.filter(filter), [placed, filter]);
+  // The nodes the lines lead to are drawn whatever the filter, and never gathered into a circle (#99): a line to
+  // a repeater the filter hides, or one swallowed by a group, would end on nothing.
+  const endsKey = [...new Set(overlay.lines.flatMap((l) => [l.from.key, l.to.key]))].filter((k) => k !== null && k !== "self").sort().join(",");
+  const ends = useMemo(() => new Set(endsKey ? endsKey.split(",") : []), [endsKey]);
+  const shown = useMemo(() => placed.filter((c) => ends.has(c.key) || filter(c)), [placed, filter, ends]);
   const picked = selected ? contacts[selected] ?? null : null;
   const numbers = overlay.numbers;
   const heardKey = overlay.heard?.join(",") ?? "";
@@ -679,8 +683,8 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
 
   // The nodes: handed to the canvas, which groups them for the zoom and paints them.
   useEffect(() => {
-    nodes.current?.setData({ nodes: shown, selected, numbers, heard, grouping, self });
-  }, [shown, selected, numbers, heard, grouping, self]);
+    nodes.current?.setData({ nodes: shown, selected, numbers, heard, apart: ends, grouping, self });
+  }, [shown, selected, numbers, heard, ends, grouping, self]);
 
   // This radio, kept as one marker so its pulse is not restarted by every change.
   useEffect(() => {

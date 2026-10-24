@@ -46,6 +46,8 @@ export interface NodeData {
   numbers: Record<string, number>;
   /** The repeaters that answered at a survey's point: named before the rest and in bold, the rest's names faint. */
   heard: ReadonlySet<string>;
+  /** The nodes the lines over the map lead to, by key: each drawn on its own spot, never gathered with others. */
+  apart: ReadonlySet<string>;
   grouping: boolean;
   self: LatLon | null;
 }
@@ -233,7 +235,7 @@ function pinScale(zoom: number): number {
 }
 
 export class NodeCanvas {
-  private data: NodeData = { nodes: [], selected: null, numbers: {}, heard: new Set(), grouping: true, self: null };
+  private data: NodeData = { nodes: [], selected: null, numbers: {}, heard: new Set(), apart: new Set(), grouping: true, self: null };
   private placed: NodeGroup[] = [];
   private placedZoom: number | null = null;
   private drawn: Drawn[] = [];
@@ -259,9 +261,9 @@ export class NodeCanvas {
     this.canvas.remove();
   }
 
-  /** New nodes, a new pick, grouping turned on or off: grouped again and painted. */
+  /** New nodes, a new pick, grouping turned on or off, new lines to keep apart: grouped again and painted. */
   setData(data: NodeData): void {
-    const regroup = data.nodes !== this.data.nodes || data.grouping !== this.data.grouping;
+    const regroup = data.nodes !== this.data.nodes || data.grouping !== this.data.grouping || data.apart !== this.data.apart;
     this.data = data;
     if (regroup) this.placedZoom = null;
     this.map.triggerRepaint();
@@ -312,19 +314,21 @@ export class NodeCanvas {
    */
   private regroup(): void {
     const map = this.map;
-    const { nodes, grouping } = this.data;
+    const { nodes, grouping, apart } = this.data;
+    const single = (c: ContactRecord): NodeGroup => ({ members: [c], at: { lat: c.lat, lon: c.lon } });
     if (!grouping) {
-      this.placed = nodes.map((c) => ({ members: [c], at: { lat: c.lat, lon: c.lon } }));
+      this.placed = nodes.map(single);
     } else {
-      const points = nodes.map((c) => {
+      const points = nodes.filter((c) => !apart.has(c.key)).map((c) => {
         const p = map.project([c.lon, c.lat]);
         return { item: c, x: p.x, y: p.y };
       });
-      this.placed = clusterPoints(points, CLUSTER_RADIUS).map((g) => {
-        if (g.members.length === 1) return { members: g.members, at: { lat: g.members[0]!.lat, lon: g.members[0]!.lon } };
+      const groups = clusterPoints(points, CLUSTER_RADIUS).map((g) => {
+        if (g.members.length === 1) return single(g.members[0]!);
         const at = map.unproject([g.x, g.y]);
         return { members: g.members, at: { lat: at.lat, lon: at.lng } };
       });
+      this.placed = [...groups, ...nodes.filter((c) => apart.has(c.key)).map(single)];
     }
     this.placedZoom = map.getZoom();
   }

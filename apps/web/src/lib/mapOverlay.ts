@@ -56,7 +56,7 @@ export interface MapHandle {
 
 export interface MapOverlay {
   lines: OverlayLine[];
-  /** A spot picked on the map. */
+  /** A spot picked on the map, or where a repeater a survey heard was, when no node stands there now. */
   pins: { lat: number; lon: number }[];
   /** Relays of a route being changed, by contact key, numbered in order. */
   numbers: Record<string, number>;
@@ -355,19 +355,29 @@ export function hearsOverlay(hears: Hears, state: SessionState): MapOverlay {
   return { lines, pins: [], numbers: {}, handles: [], pulse: null };
 }
 
-/** From a survey's point opened on the map, a line to each repeater that answered there, coloured by the worse of the two ways. */
+/**
+ * From a survey's point opened on the map, a line to each repeater that answered there, coloured by the worse of
+ * the two ways. One no longer on the map, gone from the contacts or its place taken off, is drawn where it was
+ * then, and a pin marks that end, which no node does.
+ */
 export function surveyOverlay(survey: Survey | null, point: number | null, state: SessionState): MapOverlay {
   const p = survey && point !== null ? survey.points[point] : undefined;
   if (!survey || !p) return EMPTY_OVERLAY;
   const from: LosEnd = { lat: p.lat, lon: p.lon, name: t("tools.thisSpot"), key: null };
   const lines: OverlayLine[] = [];
+  const pins: MapOverlay["pins"] = [];
   for (const reply of p.replies) {
     const c = state.contacts[reply.key];
     const node = survey.nodes[reply.key];
-    const to = (c ? contactEnd(c) : null) ?? (node && node.lat !== null && node.lon !== null ? { lat: node.lat, lon: node.lon, name: node.name, key: reply.key } : null);
-    if (to) lines.push({ from, to, tone: quality(replyScore(reply)), tappable: false });
+    const tone = quality(replyScore(reply));
+    const end = c ? contactEnd(c) : null;
+    if (end) lines.push({ from, to: end, tone, tappable: false });
+    else if (node && node.lat !== null && node.lon !== null) {
+      lines.push({ from, to: { lat: node.lat, lon: node.lon, name: node.name, key: reply.key }, tone, tappable: false });
+      pins.push({ lat: node.lat, lon: node.lon });
+    }
   }
-  return { lines, pins: [], numbers: {}, handles: [], pulse: null, heard: p.replies.map((r) => r.key).sort() };
+  return { lines, pins, numbers: {}, handles: [], pulse: null, heard: p.replies.map((r) => r.key).sort() };
 }
 
 /**

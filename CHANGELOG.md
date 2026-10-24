@@ -7,6 +7,9 @@
 ### Mesh and the map
 - During a coverage survey the map keeps you where a glance from behind the wheel finds you, at a street's scale. It turns with the way you drive and keeps you low on the screen, the road ahead above you. Tap Where am I to put north up with you in the middle, and again to turn it back; Show all shows the whole survey, its points and every repeater that answered, and a second tap comes back to you. The arrow, the filled ring or the empty ring on Where am I says how the map follows, and its name shows beside the button for a moment. A pinch sets how close the map follows; moving the map by hand lets you go until you tap Where am I. The next survey starts the way the last one ended.
 
+### Fixes
+- The lines of Who hears me, and of a survey's point opened on the map, now end on the repeaters they lead to. When Show and order showed only some nodes, such as Yours, or a repeater was gathered with others into a circle, a line ran out onto the empty map. A repeater gone from your contacts since the survey is marked with a pin where it stood then.
+
 ## 0.10.0 — 2026-10-23
 
 ### Connecting

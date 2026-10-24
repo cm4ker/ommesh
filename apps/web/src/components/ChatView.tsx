@@ -20,6 +20,7 @@ import { onJump, takeJump, type Jump } from "../lib/jump.js";
 import { useWide } from "../lib/layout.js";
 import { shownText, useShownText } from "../lib/lookalikes.js";
 import { copiedText, toggled } from "../lib/messagePick.js";
+import { canShareText, shareText } from "../lib/saveFile.js";
 import { replyHead, sourceOf, type ReplyHead } from "../lib/replySource.js";
 import { findMessages, messagesFrom, searchTerm, type Sender } from "../lib/messageSearch.js";
 import { openChannel, openConversation, openMessage, openPlace, openProfile, openRadioPage } from "../lib/nav.js";
@@ -65,6 +66,7 @@ import {
   SearchIcon,
   SelectIcon,
   SendIcon,
+  ShareIcon,
   StopIcon,
   TerminalIcon,
   TrashIcon,
@@ -74,6 +76,7 @@ import {
 import { ChatBackdrop } from "./ChatBackdrop.js";
 import { marked } from "./Marked.js";
 import { ScreenHead, type Chrome } from "./ScreenHead.js";
+import { errorText } from "../i18n/errors.js";
 import { t } from "../i18n/index.js";
 
 /** Asks the open chat for its own search, from Ctrl+F on the desktop. */
@@ -498,16 +501,29 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   wideNow.current = wide;
   usePickGestures(scroller, { order: () => order.current, picked: () => pickedNow.current, set: setChosen, ringsLeft: () => !wideNow.current });
   const pick = useCallback((id: string) => setChosen((now) => toggled(order.current, now, id)), []);
-  const copyPicked = (done: boolean) => {
+  const pickedText = () => {
     const list = pickedNow.current.map((id) => byId.get(id)).filter((m): m is MessageRecord => m !== undefined);
     const text = copiedText(list.map((m) => ({ ...m, text: shownText(m.text) })), (m) => {
       const at = shown.get(m.id)?.at ?? m.timestamp;
       const name = m.direction === "out" ? (state.self?.name ?? t("chats.pick.you")) : m.sender || title;
       return t("chats.pick.copyHead", { name, day: fullDate(at), time: timeOfDay(at) });
     });
-    void navigator.clipboard?.writeText(text).then(() => toast(t("chats.pick.copied", { count: list.length })));
+    return { text, count: list.length };
+  };
+  const copyPicked = (done: boolean) => {
+    const { text, count } = pickedText();
+    void navigator.clipboard?.writeText(text).then(() => toast(t("chats.pick.copied", { count })));
     if (done) setChosen([]);
   };
+  // To another app, as they would be copied; the pick stays until the share sheet is done.
+  const sharePicked = canShareText()
+    ? () => {
+        void shareText(pickedText().text).then(
+          () => setChosen([]),
+          (error) => toast(errorText(error), "error"),
+        );
+      }
+    : undefined;
   const deletePicked = () => {
     const gone = session.deleteMessages(pickedNow.current);
     setChosen([]);
@@ -757,7 +773,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
       ) : null}
 
       {/* On a phone, while messages are picked, their actions take the field's place (styles/messages.css hides it). */}
-      {selecting && !wide ? <PickBar onCopy={() => copyPicked(true)} onReply={replyPicked} onDelete={deletePicked} /> : null}
+      {selecting && !wide ? <PickBar onCopy={() => copyPicked(true)} onShare={sharePicked} onReply={replyPicked} onDelete={deletePicked} /> : null}
 
       {target.kind === "contact" && (contact?.unsaved || (!contact && state.removed[target.key])) ? (
         <footer className="compose">
@@ -1019,6 +1035,8 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
     const items: (MenuItem | null)[] = [
       onReply ? { label: t("chats.message.reply"), icon: <ReplyIcon size={17} />, onSelect: onReply } : null,
       { label: t("chats.message.copyText"), icon: <CopyIcon size={17} />, onSelect: () => void navigator.clipboard?.writeText(text).then(() => toast(t("common.copied"))) },
+      // To another messenger or notes, where the phone or the browser has a share sheet.
+      canShareText() ? { label: t("common.share"), icon: <ShareIcon size={17} />, onSelect: () => void shareText(text).catch((error) => toast(errorText(error), "error")) } : null,
       { label: t("chats.message.select"), icon: <SelectIcon size={17} />, onSelect: () => onPick(message.id) },
       retryable && !looping ? { label: flood ? t("chats.message.sendAgainFlood") : t("chats.message.sendAgain"), icon: <AlertIcon size={17} />, air: true, onSelect: () => void retry() } : null,
       // A direct message has its tries from the settings; this is for one sent once.

@@ -15,7 +15,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { dragged, extended, toggled } from "../lib/messagePick.js";
 import { Button, IconButton } from "../ui/Button.js";
-import { CloseIcon, CopyIcon, ReplyIcon, TrashIcon } from "./Icons.js";
+import { CloseIcon, CopyIcon, ReplyIcon, ShareIcon, TrashIcon } from "./Icons.js";
 import { t } from "../i18n/index.js";
 
 interface Picking {
@@ -278,14 +278,20 @@ export function PickHead({ count, wide, onCopy, onDelete, onCancel }: { count: n
   );
 }
 
-/** A phone's actions on the messages picked, in place of the field: within reach of the thumb. */
-export function PickBar({ onCopy, onReply, onDelete }: { onCopy: () => void; onReply: (() => void) | undefined; onDelete: () => void }) {
+/** A phone's actions on the messages picked, in place of the field: within reach of the thumb. Share is there when a share sheet is. */
+export function PickBar({ onCopy, onShare, onReply, onDelete }: { onCopy: () => void; onShare: (() => void) | undefined; onReply: (() => void) | undefined; onDelete: () => void }) {
   return (
     <footer className="chat-pick-bar">
       <button type="button" onClick={onCopy}>
         <CopyIcon size={22} />
         {t("chats.pick.copy")}
       </button>
+      {onShare ? (
+        <button type="button" onClick={onShare}>
+          <ShareIcon size={22} />
+          {t("common.share")}
+        </button>
+      ) : null}
       {onReply ? (
         <button type="button" onClick={onReply}>
           <ReplyIcon size={22} />

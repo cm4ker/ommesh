@@ -1024,6 +1024,15 @@ function MessagesPage() {
           options={ROUTE_LIMITS.map((m) => ({ value: limitValue(m), label: limitLabel(m) }))}
           onChange={(v) => session.setDefaultRouteReset(parseLimit(v) ?? null)}
         />
+        {state.routing.resetAfterMin !== null ? (
+          <SwitchRow
+            label={t("radio.messages.routesNodes")}
+            hint={t("radio.messages.routesNodesHint")}
+            checked={!!state.routing.nodesToo}
+            disabled={!state.self}
+            onChange={(v) => session.setNodesRouteReset(v)}
+          />
+        ) : null}
       </Group>
     </>
   );

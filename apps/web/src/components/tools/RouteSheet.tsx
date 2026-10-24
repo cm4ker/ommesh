@@ -63,9 +63,9 @@ export function RouteLink({ contactKey }: { contactKey: string }) {
 
 /**
  * Forgets the route, under the row that stands for it on a node's page. Only a repeater or a
- * sensor has it: a route to a chat or a room is forgotten by the app once it is old, and theirs
- * is kept until someone drops it. Where the radio holds no route, or holds one only until the
- * pinned flood drops it, there is nothing to forget.
+ * sensor has it, on the page its requests go from: a route that went bad there is forgotten
+ * before the next request, as the time limit may never forget it. Where the radio holds no
+ * route, or holds one only until the pinned flood drops it, there is nothing to forget.
  */
 export function ForgetRouteRow({ contactKey }: { contactKey: string }) {
   const state = useSession();
@@ -140,8 +140,8 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
   const name = contact.name || contact.prefix;
   const online = state.status === "ready";
   const relaysItself = contact.type === AdvType.Repeater;
-  // Messages go to a chat or a room, requests to every other node; only routes to the first age.
-  const governed = isConversationType(contact.type);
+  // Messages go to a chat or a room, requests to every other node; the words follow which.
+  const messaged = isConversationType(contact.type);
   const policy = session.routePolicy(key);
   const flooding = policy.flood;
   const held = contactRoute(contact);
@@ -185,8 +185,8 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
 
   let sub: string;
   if (editing) sub = t("tools.route.notSaved");
-  else if (flooding) sub = governed ? t("tools.route.everyFloods") : t("tools.route.everyRequestFloods");
-  else if (held === null) sub = relaysItself ? t("tools.route.noneWritten") : governed ? t("tools.route.noneKnown") : t("tools.route.noneKnownRequests");
+  else if (flooding) sub = messaged ? t("tools.route.everyFloods") : t("tools.route.everyRequestFloods");
+  else if (held === null) sub = relaysItself ? t("tools.route.noneWritten") : messaged ? t("tools.route.noneKnown") : t("tools.route.noneKnownRequests");
   else {
     const bits = [byHand ? t("tools.route.byHand") : contact.pathSince ? t("tools.route.learned", { time: agoPhrase(contact.pathSince) }) : null, expires !== null ? t("tools.route.forgotten", { when: inMinutes(expires - now) }) : null].filter(Boolean).join(" · ");
     sub = bits ? bits[0]!.toUpperCase() + bits.slice(1) : held.length === 0 ? t("tools.route.heardDirect") : t("tools.route.keptUntil");
@@ -272,17 +272,17 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
     if (relaysItself) items.push({ label: t("tools.route.checkFrom"), hint: t("tools.route.checkFromHint"), disabled: !online, onSelect: () => openSpan(key) });
     items.push({
       label: flooding ? t("tools.route.useLearned") : t("tools.route.alwaysFlood"),
-      hint: flooding ? undefined : governed ? t("tools.route.alwaysFloodHint") : t("tools.route.alwaysFloodRequestsHint"),
+      hint: flooding ? undefined : messaged ? t("tools.route.alwaysFloodHint") : t("tools.route.alwaysFloodRequestsHint"),
       disabled: !online,
       onSelect: () =>
         void act(
           () => session.setFloodPinned(key, !flooding),
-          flooding ? unpinned : governed ? t("tools.route.everyToItFloods") : t("tools.route.everyRequestToItFloods"),
+          flooding ? unpinned : messaged ? t("tools.route.everyToItFloods") : t("tools.route.everyRequestToItFloods"),
         ),
     });
-    if (governed && !flooding) {
+    if (!flooding) {
       const own = state.routing.contacts[key]?.resetAfterMin;
-      items.push({ label: t("tools.route.forgetAfterValue", { value: own === undefined ? t("tools.route.default") : limitLabel(own).toLowerCase() }), onSelect: () => forgetAfter(key, own, state.routing.resetAfterMin) });
+      items.push({ label: t("tools.route.forgetAfterValue", { value: own === undefined ? t("tools.route.default") : limitLabel(own).toLowerCase() }), onSelect: () => forgetAfter(key, own, session.defaultRouteReset(key)) });
     }
     items.push({ label: t("tools.route.forgetNow"), danger: true, disabled: !online || held === null || flooding, onSelect: () => void forgetRoute(key) });
     showMenu(items, { title: t("tools.route.to", { name }) });

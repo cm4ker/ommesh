@@ -222,6 +222,7 @@ function routingOf(value: unknown, path: string): RoutingSettings {
   const minutes = (v: unknown, p: string): number | null => (v === null ? null : whole(v, p, 0, 10_000_000));
   return {
     resetAfterMin: minutes(o.resetAfterMin ?? null, `${path}.resetAfterMin`),
+    ...(o.nodesToo !== undefined && bool(o.nodesToo, `${path}.nodesToo`) ? { nodesToo: true } : {}),
     contacts: record(o.contacts ?? {}, `${path}.contacts`, (v, p) => {
       const r = object(v, p);
       const policy: RoutePolicy = {};

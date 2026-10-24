@@ -248,6 +248,8 @@ export interface RoutePolicy {
 export interface RoutingSettings {
   /** Minutes a route to a chat or a room is kept after the radio learned it; null keeps it until the radio replaces it. */
   resetAfterMin: number | null;
+  /** Whether that limit holds for repeaters and sensors too; absent, theirs are kept unless a node has a limit of its own. */
+  nodesToo?: boolean;
   contacts: Record<string, RoutePolicy>;
 }
 
@@ -879,7 +881,7 @@ export function contactRoute(contact: Pick<ContactRecord, "outPathLen" | "outPat
   return hashes;
 }
 
-/** The contacts one writes to, whose direct messages the routing settings govern: chats and rooms. */
+/** The contacts one writes to, whose routes the time limit governs unless it is asked to govern all: chats and rooms. */
 export function isConversationType(type: number): boolean {
   return type === AdvType.Chat || type === AdvType.Room;
 }
@@ -2477,25 +2479,34 @@ export class MeshSession {
   //
   // The radio sends a direct message along the route it last learned for the
   // contact, and floods only when it knows none. It keeps a route until a new
-  // one replaces it, however long ago the contact moved away. So the session
-  // drops routes: before every message or request to a contact whose flood is
-  // pinned, and once a route to a chat or a room is older than its time limit.
+  // one replaces it, however long ago the contact moved away, or this radio
+  // did. So the session drops routes: before every message or request to a
+  // contact whose flood is pinned, and once a route is older than its time
+  // limit. The limit governs chats and rooms, and repeaters and sensors only
+  // when the reader asks for it, or gives one node a limit of its own (#100).
   // A dropped route costs nothing on the air; the next message floods and its
-  // acknowledgement brings a fresh route back.
+  // acknowledgement brings a fresh route back, as the answer to a request does.
 
   /** What governs this contact's route once the defaults are filled in. */
   routePolicy(key: string): { flood: boolean; resetAfterMin: number | null } {
     const own = this.state.routing.contacts[key] ?? {};
     return {
       flood: own.flood ?? false,
-      resetAfterMin: own.resetAfterMin !== undefined ? own.resetAfterMin : this.state.routing.resetAfterMin,
+      resetAfterMin: own.resetAfterMin !== undefined ? own.resetAfterMin : this.defaultRouteReset(key),
     };
+  }
+
+  /** The time limit this contact follows when it has none of its own. */
+  defaultRouteReset(key: string): number | null {
+    const { resetAfterMin, nodesToo } = this.state.routing;
+    const contact = this.state.contacts[key];
+    return !contact || nodesToo || isConversationType(contact.type) ? resetAfterMin : null;
   }
 
   /** Local ms at which the route to this contact will be dropped for its age; null when it will not be. */
   routeExpiresAt(key: string): number | null {
     const contact = this.state.contacts[key];
-    if (!contact || contact.outPathLen === 0xff || contact.pathSince === null || !isConversationType(contact.type)) return null;
+    if (!contact || contact.outPathLen === 0xff || contact.pathSince === null || this.routeSetByHand(key)) return null;
     const { flood, resetAfterMin } = this.routePolicy(key);
     if (flood || resetAfterMin === null) return null;
     return contact.pathSince + resetAfterMin * 60_000;
@@ -2531,6 +2542,13 @@ export class MeshSession {
   /** Minutes a learned route to a chat or a room is kept unless the contact says otherwise; null keeps it. */
   setDefaultRouteReset(minutes: number | null): void {
     this.set({ routing: { ...this.state.routing, resetAfterMin: minutes } });
+    void this.sweepRoutes();
+  }
+
+  /** Whether the default limit holds for repeaters and sensors too. */
+  setNodesRouteReset(on: boolean): void {
+    const { nodesToo: _omit, ...routing } = this.state.routing;
+    this.set({ routing: on ? { ...routing, nodesToo: true } : routing });
     void this.sweepRoutes();
   }
 
@@ -2596,8 +2614,8 @@ export class MeshSession {
     if (contact.outPathLen === 0xff) return null;
     const { flood, resetAfterMin } = this.routePolicy(contact.key);
     if (flood) return "flood pinned";
-    // A route to a repeater or a sensor has no time limit: it is kept until someone drops it.
-    if (!isConversationType(contact.type) || this.routeSetByHand(contact.key)) return null;
+    // A route written by hand is kept past the limit, until the radio learns one of its own.
+    if (this.routeSetByHand(contact.key)) return null;
     if (resetAfterMin === null || contact.pathSince === null) return null;
     return this.now() - contact.pathSince >= resetAfterMin * 60_000 ? `older than ${resetAfterMin} min` : null;
   }
@@ -4232,7 +4250,7 @@ export class MeshSession {
    */
   adoptLocal(local: { routing?: RoutingSettings; channelRegions?: Record<string, string> }): void {
     const routing = local.routing
-      ? { resetAfterMin: local.routing.resetAfterMin, contacts: { ...local.routing.contacts, ...this.state.routing.contacts } }
+      ? { resetAfterMin: local.routing.resetAfterMin, ...(local.routing.nodesToo ? { nodesToo: true } : {}), contacts: { ...local.routing.contacts, ...this.state.routing.contacts } }
       : this.state.routing;
     this.set({ routing, channelRegions: { ...local.channelRegions, ...this.state.channelRegions } });
   }
@@ -5328,9 +5346,12 @@ export class MeshSession {
     const key = job.info.key;
     const name = this.state.contacts[key]?.name || key.slice(0, 12);
     try {
-      if ((this.state.contacts[key]?.outPathLen ?? 0xff) !== 0xff && this.routePolicy(key).flood) {
+      // A pinned flood, or a route past its time that the sweep has not reached: a phone may have slept through it.
+      const held = this.state.contacts[key];
+      const reason = held ? this.staleReason(held) : null;
+      if (reason) {
         try {
-          await this.dropRoute(client, key, "flood pinned");
+          await this.dropRoute(client, key, reason);
         } catch (error) {
           this.log("error", `could not drop the route to ${name}: ${(error as Error).message}`);
         }

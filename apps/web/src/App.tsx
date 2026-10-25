@@ -11,6 +11,7 @@ import { errorText } from "./i18n/errors.js";
 import { ALL_CHATS, createAnnouncer } from "./lib/announce.js";
 import { getNoticePrefs, messageWanted, nodeWanted, subscribeNoticePrefs } from "./lib/noticePrefs.js";
 import { noteUnread } from "./lib/firstUnread.js";
+import { quietAt, ringsThrough, startQuiet } from "./lib/quiet.js";
 import { askPermissionOnce, notify, onCardAction, onNotificationClick, pageOnScreen, tellChannels, withdraw } from "./lib/notify.js";
 import { quickReply } from "./lib/quickReply.js";
 import { toast } from "./lib/toast.js";
@@ -79,6 +80,10 @@ export function App() {
     const announcer = createAnnouncer({
       state: () => session.getState(),
       wanted: (message) => messageWanted(getNoticePrefs(), session.getState(), message),
+      loud: (message) => {
+        const { quiet } = getNoticePrefs();
+        return !quietAt(quiet, Date.now()) || ringsThrough(quiet, session.getState(), message);
+      },
       show: (notice) => void notify(notice),
       withdraw: (tag) => void withdraw(tag),
     });
@@ -97,6 +102,9 @@ export function App() {
     };
   }, []);
 
+  // Do not disturb turns on and off by the clock, and a chat silenced for a while rings again in time.
+  useEffect(() => startQuiet(), []);
+
   // The desktop's tray icon shows whether anything is unread, and from whom.
   useEffect(() => startTray(() => session.getState(), (listener) => session.subscribe(listener)), []);
 
@@ -107,7 +115,8 @@ export function App() {
   useEffect(
     () =>
       session.onDiscovered((contact) => {
-        if (!nodeWanted(getNoticePrefs(), contact.type)) return;
+        // While Do not disturb is on, a new node is not told of at all.
+        if (!nodeWanted(getNoticePrefs(), contact.type) || quietAt(getNoticePrefs().quiet, Date.now())) return;
         const name = contact.name || contact.prefix;
         void notify({ title: t(NEW[contact.type] ?? "notices.newNode", { name }), body: discoveredBody(contact), tag: `n:${contact.key}`, kind: "nodes", face: { name, type: contact.type } });
       }),

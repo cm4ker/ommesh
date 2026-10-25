@@ -15,6 +15,9 @@
  * - Who draws them: the system, or the app itself, Telegram's way. The app
  *   can only draw while it runs: a computer's app does in the tray, a phone's
  *   and a tab's only while on screen, and the system draws the rest.
+ * - Do not disturb (`quiet.ts`): for a while by hand, and at night by a
+ *   schedule. A chat may be silenced for a while of its own too, after which
+ *   its level goes back to its kind's (`chatUntil`).
  *
  * The rules are pure, so they are testable without storage or a radio.
  */
@@ -36,6 +39,43 @@ export type Corner = "br" | "bl" | "tr" | "tl";
 /** The app's signal (`public/sounds/signal_<id>.wav`, drawn by `scripts/sound-synth.mjs`), or none. */
 export type Signal = "chirp" | "roger" | "hop" | "sonar" | "none";
 
+/**
+ * Do not disturb, as the reader set it; `quiet.ts` reads when it is on. While
+ * it is on, notices come without a sound and without popping up, but for the
+ * ones that ring all the same.
+ */
+export interface QuietPrefs {
+  /** Quiet by hand: not, for an hour or till morning (until `until`), or until turned off. */
+  hand: "off" | "hour" | "morning" | "always";
+  /** When quiet by hand ends, ms, for an hour or till morning. */
+  until: number;
+  /** Whether nights are quiet by the schedule. */
+  nightly: boolean;
+  /** When a night starts and ends, minutes after midnight; it ends the next day when `to` is not after `from`. */
+  from: number;
+  to: number;
+  /** The days a night starts on, 0 for Sunday. */
+  days: number[];
+  /** Until when the schedule is set aside, ms: quiet was turned off in the middle of a night. */
+  awake: number;
+  /** Whether a direct message from a favourite rings all the same. */
+  favourites: boolean;
+  /** Whether a message that mentions this radio rings all the same. */
+  mentions: boolean;
+}
+
+export const DEFAULT_QUIET: QuietPrefs = {
+  hand: "off",
+  until: 0,
+  nightly: false,
+  from: 23 * 60,
+  to: 7 * 60,
+  days: [0, 1, 2, 3, 4, 5, 6],
+  awake: 0,
+  favourites: true,
+  mentions: false,
+};
+
 /** Each signal's name and what it sounds like, as keys: the view says them in the reader's language. */
 export const SIGNALS: { id: Signal; label: Key; hint: Key }[] = [
   { id: "chirp", label: "radio.signals.chirp", hint: "radio.signals.chirpHint" },
@@ -51,12 +91,15 @@ export interface NoticePrefs {
   nodes: NodeLevel;
   /** Chats with a level of their own, by conversation. */
   chat: Record<string, ChatLevel>;
+  /** Chats whose own level is for a while, when the while ends, ms (Telegram's "mute for 8 hours"). */
+  chatUntil: Record<string, number>;
   shownBy: ShownBy;
   corner: Corner;
   /** The sound of each kind's notices, on every shell; the system still decides when to be quiet. */
   sounds: Record<NoticeKind, Signal>;
   /** Chats with a sound of their own, by conversation. */
   chatSound: Record<string, Signal>;
+  quiet: QuietPrefs;
 }
 
 export const DEFAULT_PREFS: NoticePrefs = {
@@ -64,10 +107,12 @@ export const DEFAULT_PREFS: NoticePrefs = {
   chats: "all",
   nodes: "people",
   chat: {},
+  chatUntil: {},
   shownBy: "system",
   corner: "br",
   sounds: { direct: "chirp", chats: "chirp", nodes: "chirp" },
   chatSound: {},
+  quiet: DEFAULT_QUIET,
 };
 
 const KEY = "meshnet.notices";
@@ -81,7 +126,15 @@ type Stored = Partial<NoticePrefs> & { signal?: Signal };
 export function fromStored(stored: Stored): NoticePrefs {
   const { signal, ...rest } = stored;
   const before = signal ? { direct: signal, chats: signal, nodes: signal } : {};
-  return { ...DEFAULT_PREFS, ...rest, chat: { ...stored.chat }, sounds: { ...DEFAULT_PREFS.sounds, ...before, ...stored.sounds }, chatSound: { ...stored.chatSound } };
+  return {
+    ...DEFAULT_PREFS,
+    ...rest,
+    chat: { ...stored.chat },
+    chatUntil: { ...stored.chatUntil },
+    sounds: { ...DEFAULT_PREFS.sounds, ...before, ...stored.sounds },
+    chatSound: { ...stored.chatSound },
+    quiet: { ...DEFAULT_QUIET, ...stored.quiet },
+  };
 }
 
 function load(): NoticePrefs {
@@ -105,12 +158,44 @@ export function setNoticePrefs(patch: Partial<NoticePrefs>): void {
   for (const listener of listeners) listener();
 }
 
-/** Gives a chat a level of its own, or, with null, back to the one for its kind. */
-export function setChatLevel(conversation: string, level: ChatLevel | null): void {
+/**
+ * Gives a chat a level of its own, or, with null, back to the one for its kind;
+ * with `until` (ms) only for a while, after which it goes back by itself.
+ */
+export function setChatLevel(conversation: string, level: ChatLevel | null, until?: number): void {
   const chat = { ...prefs.chat };
+  const chatUntil = { ...prefs.chatUntil };
   if (level) chat[conversation] = level;
   else delete chat[conversation];
-  setNoticePrefs({ chat });
+  if (level && until !== undefined) chatUntil[conversation] = until;
+  else delete chatUntil[conversation];
+  setNoticePrefs({ chat, chatUntil });
+}
+
+/** When a chat's own level ends, from the other app sharing the radio; null, never. */
+export function setChatUntil(conversation: string, until: number | null): void {
+  const chatUntil = { ...prefs.chatUntil };
+  if (until !== null) chatUntil[conversation] = until;
+  else delete chatUntil[conversation];
+  setNoticePrefs({ chatUntil });
+}
+
+/** Gives the chats whose while is over the level of their kind again; whether any was. */
+export function endChatWhiles(now = Date.now()): boolean {
+  const over = Object.entries(prefs.chatUntil).filter(([, until]) => until <= now);
+  if (over.length === 0) return false;
+  const chat = { ...prefs.chat };
+  const chatUntil = { ...prefs.chatUntil };
+  for (const [conversation] of over) {
+    delete chat[conversation];
+    delete chatUntil[conversation];
+  }
+  setNoticePrefs({ chat, chatUntil });
+  return true;
+}
+
+export function setQuietPrefs(patch: Partial<QuietPrefs>): void {
+  setNoticePrefs({ quiet: { ...prefs.quiet, ...patch } });
 }
 
 /** Gives a chat a sound of its own, or, with null, back to the one for its kind. */
@@ -142,8 +227,14 @@ export function kindLevel(p: NoticePrefs, direct: boolean): ChatLevel {
   return direct ? (p.direct ? "all" : "off") : p.chats;
 }
 
-export function chatLevel(p: NoticePrefs, state: SessionState, conversation: string): ChatLevel {
-  return p.chat[conversation] ?? kindLevel(p, isDirect(state, conversation));
+/** A chat's own level, while it lasts. */
+export function ownLevel(p: NoticePrefs, conversation: string, now = Date.now()): ChatLevel | undefined {
+  const until = p.chatUntil[conversation];
+  return until !== undefined && until <= now ? undefined : p.chat[conversation];
+}
+
+export function chatLevel(p: NoticePrefs, state: SessionState, conversation: string, now = Date.now()): ChatLevel {
+  return ownLevel(p, conversation, now) ?? kindLevel(p, isDirect(state, conversation));
 }
 
 export function mentionsMe(state: SessionState, message: MessageRecord): boolean {
@@ -152,8 +243,8 @@ export function mentionsMe(state: SessionState, message: MessageRecord): boolean
 }
 
 /** Whether a message the radio handed over should ring. */
-export function messageWanted(p: NoticePrefs, state: SessionState, message: MessageRecord): boolean {
-  const level = chatLevel(p, state, message.conversation);
+export function messageWanted(p: NoticePrefs, state: SessionState, message: MessageRecord, now = Date.now()): boolean {
+  const level = chatLevel(p, state, message.conversation, now);
   return level === "all" || (level === "mentions" && mentionsMe(state, message));
 }
 

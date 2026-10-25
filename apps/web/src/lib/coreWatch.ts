@@ -9,11 +9,12 @@
  * notice channels (`Words.java`).
  */
 
-import type { SessionState } from "@meshnet/meshcore";
+import { isFavourite, type SessionState } from "@meshnet/meshcore";
 import { forms, language, pluralTable, subscribeLanguage, t, template } from "../i18n/index.js";
 import { signalFile } from "./chime.js";
 import { getNoticePrefs, subscribeNoticePrefs } from "./noticePrefs.js";
 import { tellChannels } from "./notify.js";
+import { quietSpans } from "./quiet.js";
 import { configureCore, relayAvailable } from "./relay.js";
 
 /** The core's words (`Words` in `watch.rs`), placeholders unfilled, and Android's (`Words.java`), filled but for `{name}`. */
@@ -65,11 +66,17 @@ function words() {
     channelNodesHint: t("notices.android.channelNodesHint"),
     channelSurvey: t("notices.android.channelSurvey"),
     channelSurveyHint: t("notices.android.channelSurveyHint"),
+    channelQuiet: t("notices.android.channelQuiet"),
+    channelQuietHint: t("notices.android.channelQuietHint"),
   };
 }
 
-/** The JSON the core reads (`WatchConfig` in `watch.rs`). */
-export function coreConfig(state: SessionState): string {
+/**
+ * The JSON the core reads (`WatchConfig` in `watch.rs`). The core has no clock
+ * of its own, so Do not disturb goes as the next two weeks of quiet in spans
+ * of the phone's clock, which the phone hands the core with each timer.
+ */
+export function coreConfig(state: SessionState, now = Date.now()): string {
   const prefs = getNoticePrefs();
   return JSON.stringify({
     me: state.self?.name ?? "",
@@ -77,10 +84,12 @@ export function coreConfig(state: SessionState): string {
     chats: prefs.chats,
     nodes: prefs.nodes,
     chat: prefs.chat,
+    chatUntil: prefs.chatUntil,
+    quiet: { spans: quietSpans(prefs.quiet, now), favourites: prefs.quiet.favourites, mentions: prefs.quiet.mentions },
     // As the files the phone rings with: null is a quiet kind or chat.
     sounds: { direct: signalFile(prefs.sounds.direct), chats: signalFile(prefs.sounds.chats), nodes: signalFile(prefs.sounds.nodes) },
     chatSound: Object.fromEntries(Object.entries(prefs.chatSound).map(([conversation, signal]) => [conversation, signalFile(signal)])),
-    contacts: Object.values(state.contacts).map((c) => ({ key: c.key, name: c.name, type: c.type })),
+    contacts: Object.values(state.contacts).map((c) => ({ key: c.key, name: c.name, type: c.type, favourite: isFavourite(c) })),
     channels: state.channels.map((c) => ({ index: c.index, name: c.name })),
     words: words(),
   });

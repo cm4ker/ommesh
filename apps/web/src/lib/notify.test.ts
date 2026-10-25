@@ -86,6 +86,7 @@ test("an iOS message goes to the native side with the app's signal, in words alo
     kind: "chats",
     sound: "signal_chirp.wav",
     silent: false,
+    quiet: false,
   } satisfies NativeNotice);
 });
 

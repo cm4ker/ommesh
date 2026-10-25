@@ -8,7 +8,7 @@ import { locale, t } from "../i18n/index.js";
  * a millisecond or more on a phone. A list of nodes or a long chat asks for hundreds of dates
  * on each render, so the formats are made once for each language the reader picks.
  */
-let formats: { locale: string; clock: Intl.DateTimeFormat; day: Intl.DateTimeFormat; dayOfYear: Intl.DateTimeFormat } | null = null;
+let formats: { locale: string; clock: Intl.DateTimeFormat; weekday: Intl.DateTimeFormat; day: Intl.DateTimeFormat; dayOfYear: Intl.DateTimeFormat } | null = null;
 
 function dates() {
   const tag = locale();
@@ -16,6 +16,7 @@ function dates() {
     formats = {
       locale: tag,
       clock: new Intl.DateTimeFormat(tag, { hour: "2-digit", minute: "2-digit" }),
+      weekday: new Intl.DateTimeFormat(tag, { weekday: "short" }),
       day: new Intl.DateTimeFormat(tag, { day: "numeric", month: "short" }),
       dayOfYear: new Intl.DateTimeFormat(tag, { day: "numeric", month: "short", year: "numeric" }),
     };
@@ -25,6 +26,12 @@ function dates() {
 
 export function timeOfDay(unixSeconds: number): string {
   return dates().clock.format(unixSeconds * 1000);
+}
+
+/** A moment ahead: its clock reading within a day, with the weekday before it after that ("07:00", "Mon 07:00"). */
+export function clockAhead(ms: number, now = Date.now()): string {
+  const clock = dates().clock.format(ms);
+  return ms - now < 86_400_000 ? clock : `${dates().weekday.format(ms)} ${clock}`;
 }
 
 export function dayLabel(unixSeconds: number, now = Date.now()): string {

@@ -20,6 +20,12 @@
  * screen, so a native watch announces what the radio pushes while the phone
  * is locked; the page tells it which notices are wanted.
  *
+ * A quiet notice, while Do not disturb is on (quiet.ts), is kept where the
+ * system keeps notices without being heard or popping up: in a phone's shade,
+ * in Windows' notification centre. The app's own banner and cards, which
+ * have nowhere to keep one, and a browser, which has no quiet notice, show
+ * none.
+ *
  * Each notice carries a tag saying what it is about, `c:<conversation>` or
  * `n:<contact key>`, and a click on it hands the tag back to open that. A
  * notice replaces the one out with its tag, and `withdraw` takes it back
@@ -172,6 +178,7 @@ export async function notify(notice: Notice): Promise<void> {
   // A quiet notice plays nothing, whichever signal the reader picked.
   const signal = notice.silent ? "none" : noticeSignal(prefs, notice);
   if (prefs.shownBy === "app") {
+    if (notice.quiet && (shell() === "tauri" || pageOnScreen())) return;
     if (shell() === "tauri") {
       const card: Card = { tag: notice.tag, title: notice.title, body: notice.body, face: notice.face ?? null, chat: notice.tag.startsWith("c:") && notice.tag !== "c:" };
       await invoke("notice_card", { card, corner: prefs.corner, signal }).catch(() => undefined);
@@ -193,7 +200,7 @@ async function system(notice: Notice, prefs: NoticePrefs): Promise<void> {
   switch (shell()) {
     case "tauri": {
       const avatar = notice.face ? await avatarPng(notice.face) : null;
-      await invoke("announce", { title, body, tag, avatar, signal: notice.silent ? "none" : noticeSignal(prefs, notice) }).catch(() => undefined);
+      await invoke("announce", { title, body, tag, avatar, signal: notice.silent ? "none" : noticeSignal(prefs, notice), quiet: notice.quiet ?? false }).catch(() => undefined);
       return;
     }
     case "capacitor": {
@@ -211,7 +218,7 @@ async function system(notice: Notice, prefs: NoticePrefs): Promise<void> {
       return;
     }
     default: {
-      if (!("Notification" in window) || Notification.permission !== "granted") return;
+      if (notice.quiet || !("Notification" in window) || Notification.permission !== "granted") return;
       const avatar = notice.face ? await avatarPng(notice.face, true) : null;
       try {
         const shownNotice = new Notification(title, { body, tag, icon: avatar ? `data:image/png;base64,${avatar}` : "./icon-192.png", badge: "./notification-badge.png", silent: notice.silent ?? false });
@@ -241,6 +248,7 @@ function nativeNotice(notice: Notice, prefs: NoticePrefs): NativeNotice {
     kind: notice.kind,
     sound: signalFile(noticeSignal(prefs, notice)),
     silent: notice.silent ?? false,
+    quiet: notice.quiet ?? false,
   };
 }
 

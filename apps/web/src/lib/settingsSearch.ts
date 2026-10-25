@@ -56,6 +56,7 @@ const PAGES: Partial<Record<RadioPage, { title: Key; parent?: RadioPage; when?: 
   pin: { title: "radio.titles.pin", parent: "connection", when: (c) => c.device !== null },
   wifi: { title: "radio.titles.wifi", parent: "connection", when: (c) => c.wifi },
   notifications: { title: "radio.titles.notifications" },
+  quiet: { title: "radio.titles.quiet", parent: "notifications" },
   sound: { title: "radio.titles.sound", parent: "notifications" },
   messages: { title: "radio.titles.messages" },
   backup: { title: "radio.titles.backup" },
@@ -122,6 +123,9 @@ export const SETTINGS: readonly Setting[] = [
   { page: "advanced", label: "radio.advanced.setClock", group: "radio.advanced.clock", words: "radio.search.words.clock" },
 
   { page: "notifications", words: "radio.search.words.notifications" },
+  { page: "quiet", words: "radio.search.words.quiet" },
+  { page: "quiet", label: "radio.quiet.nightly", group: "radio.quiet.schedule", words: "radio.search.words.quiet" },
+  { page: "quiet", label: "radio.quiet.favourites", group: "radio.quiet.through" },
   { page: "notifications", label: "radio.notifications.direct", group: "radio.notifications.messages", words: "radio.search.words.notifications" },
   { page: "notifications", label: "radio.notifications.chats", group: "radio.notifications.messages", words: "radio.search.words.notifications" },
   { page: "notifications", label: "radio.notifications.nodes", group: "radio.notifications.mesh", words: "radio.search.words.notifications" },

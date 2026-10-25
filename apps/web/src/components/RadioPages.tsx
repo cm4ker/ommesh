@@ -59,6 +59,7 @@ import { PrivacyButton } from "./Privacy.js";
 import { NewBuildRow } from "./NewBuild.js";
 import { NewsPage, NewsRow } from "./News.js";
 import { ReportPage } from "./ReportPage.js";
+import { QuietPage, QuietRow } from "./QuietPage.js";
 import { getLanguagePreference, languageName, languages, setLanguagePreference, subscribeLanguage, systemLanguage, t, type Key } from "../i18n/index.js";
 import { errorText } from "../i18n/errors.js";
 
@@ -67,6 +68,7 @@ type Self = NonNullable<SessionState["self"]>;
 /** Pages opened from another page rather than from the Radio list: the list keeps the parent picked. */
 export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = {
   removed: "contacts",
+  quiet: "notifications",
   sound: "notifications",
   soundDirect: "notifications",
   soundChats: "notifications",
@@ -104,6 +106,7 @@ export const RADIO_TITLES: Record<RadioPage, Key> = {
   pin: "radio.titles.pin",
   wifi: "radio.titles.wifi",
   notifications: "radio.titles.notifications",
+  quiet: "radio.titles.quiet",
   sound: "radio.titles.sound",
   soundDirect: "radio.notifications.direct",
   soundChats: "radio.notifications.chats",
@@ -290,6 +293,8 @@ function PageBody({ page }: { page: RadioPage }) {
       return self ? <WifiPage online={online} /> : <Offline />;
     case "notifications":
       return <NotificationsPage />;
+    case "quiet":
+      return <QuietPage />;
     case "sound":
       return <SoundPage />;
     case "soundDirect":
@@ -808,6 +813,9 @@ function NotificationsPage() {
   const one = oneSignal(prefs);
   return (
     <>
+      <Group>
+        <QuietRow />
+      </Group>
       <Group title={t("radio.notifications.messages")}>
         <SwitchRow label={t("radio.notifications.direct")} hint={t("radio.notifications.directHint")} checked={prefs.direct} onChange={(v) => void change({ direct: v }, v)} />
         <SelectRow

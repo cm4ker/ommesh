@@ -63,7 +63,8 @@ pub enum NodeLevel {
     Off,
 }
 
-/// A contact as the page knows it: its whole key in hex, its name, its advert type.
+/// A contact as the page knows it: its whole key in hex, its name, its advert type, and whether
+/// the reader starred it.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct Contact {
     pub key: String,
@@ -71,6 +72,30 @@ pub struct Contact {
     pub name: String,
     #[serde(rename = "type", default)]
     pub kind: u8,
+    #[serde(default)]
+    pub favourite: bool,
+}
+
+/// Do not disturb (the page's `quiet.ts`): when, and what rings all the same. The core has no
+/// clock, so the page says when as spans of the phone's clock, and the phone hands the time in
+/// with each timer.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct Quiet {
+    /// From and to, ms since 1970: the quiet in the two weeks after the page last said.
+    pub spans: Vec<[i64; 2]>,
+    /// Whether a direct message from a favourite rings all the same.
+    pub favourites: bool,
+    /// Whether a message that mentions this radio rings all the same.
+    pub mentions: bool,
+}
+
+impl Quiet {
+    fn at(&self, now: i64) -> bool {
+        self.spans
+            .iter()
+            .any(|[from, to]| *from <= now && now < *to)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
@@ -92,6 +117,10 @@ pub struct WatchConfig {
     pub nodes: NodeLevel,
     /// Chats with a level of their own, by conversation.
     pub chat: HashMap<String, ChatLevel>,
+    /// Chats whose own level is for a while: when it ends, ms. After it, the kind's level holds.
+    #[serde(rename = "chatUntil")]
+    pub chat_until: HashMap<String, i64>,
+    pub quiet: Quiet,
     /// The sound each kind of notice rings with.
     pub sounds: Sounds,
     /// Chats with a sound of their own, by conversation; none for a quiet one (gh #73).
@@ -112,6 +141,8 @@ impl Default for WatchConfig {
             chats: ChatLevel::All,
             nodes: NodeLevel::People,
             chat: HashMap::new(),
+            chat_until: HashMap::new(),
+            quiet: Quiet::default(),
             sounds: Sounds::default(),
             chat_sound: HashMap::new(),
             contacts: Vec::new(),
@@ -308,6 +339,8 @@ pub struct Notice {
     pub sound: Option<String>,
     /// Shown without the signal: a burst of news rings with its first notice only.
     pub silent: bool,
+    /// Do not disturb: kept in the shade without a sound or popping up.
+    pub quiet: bool,
 }
 
 impl Notice {
@@ -320,6 +353,7 @@ impl Notice {
             kind,
             sound: None,
             silent: false,
+            quiet: false,
         }
     }
 }
@@ -349,6 +383,8 @@ struct Line {
     mention: bool,
     /// Where it came among the messages heard while the app is away.
     seq: u64,
+    /// Whether it is heard: Do not disturb was off, or it rings through.
+    loud: bool,
 }
 
 /// A message heard while the app is away whose grace is over, rung or not: where a read mark
@@ -399,6 +435,8 @@ pub(crate) struct Watch {
     /// The number the next message heard takes.
     next_seq: u64,
     passed: Vec<Passed>,
+    /// The phone's clock when a timer was last due, ms.
+    now: i64,
     effects: Vec<Effect>,
 }
 
@@ -419,6 +457,7 @@ impl Watch {
             nodes_out: Vec::new(),
             next_seq: 0,
             passed: Vec::new(),
+            now: 0,
             effects: Vec::new(),
         }
     }
@@ -668,10 +707,16 @@ impl Watch {
         }
     }
 
-    /// Posts a notice: the burst's first rings, the rest bring what is out up to date quietly.
-    fn post(&mut self, mut notice: Notice) {
+    /// Posts a notice: the burst's first loud one rings, the rest bring what is out up to date
+    /// without a sound. One with no loud news in it is quiet, and leaves the burst still to ring.
+    fn post(&mut self, mut notice: Notice, loud: bool) {
         notice.sound = self.config.sound(&notice);
-        notice.silent = !std::mem::take(&mut self.unrung);
+        if loud {
+            notice.silent = !std::mem::take(&mut self.unrung);
+        } else {
+            notice.silent = true;
+            notice.quiet = true;
+        }
         self.effects.push(Effect::Post { notice });
     }
 
@@ -679,24 +724,50 @@ impl Watch {
     fn repost(&mut self, mut notice: Notice) {
         notice.sound = self.config.sound(&notice);
         notice.silent = true;
+        notice.quiet = self.config.quiet.at(self.now);
         self.effects.push(Effect::Post { notice });
     }
 
-    /// The grace is over: what the page left is announced.
-    pub fn timeout(&mut self, generation: i32) {
+    /// Whether a message is heard now: Do not disturb is off, or it rings through.
+    fn loud(&self, chat: &Chat, line: &Line) -> bool {
+        let quiet = &self.config.quiet;
+        if !quiet.at(self.now) || (quiet.mentions && line.mention) {
+            return true;
+        }
+        quiet.favourites
+            && chat.direct
+            && chat.conversation.strip_prefix("c:").is_some_and(|key| {
+                self.config
+                    .contacts
+                    .iter()
+                    .any(|c| c.key == key && c.favourite)
+            })
+    }
+
+    /// The grace is over, at `now` on the phone's clock: what the page left is announced. While
+    /// it is quiet, a new node is not told of at all.
+    pub fn timeout(&mut self, generation: i32, now: i64) {
+        self.now = now;
         if generation != self.grace || !self.armed {
             return;
         }
         self.armed = false;
         let mut fresh: Vec<String> = Vec::new();
+        let mut loud: Vec<String> = Vec::new();
         for waiting in std::mem::take(&mut self.waiting) {
             match waiting {
                 Waiting::Node(notice) => {
+                    if self.config.quiet.at(now) {
+                        continue;
+                    }
                     self.nodes_out.push(notice.tag.clone());
-                    self.post(notice);
+                    self.post(notice, true);
                 }
                 Waiting::Message(frame, seq) => {
-                    if let Some(conversation) = self.add(&frame, seq) {
+                    if let Some((conversation, heard)) = self.add(&frame, seq) {
+                        if heard && !loud.contains(&conversation) {
+                            loud.push(conversation.clone());
+                        }
                         if !fresh.contains(&conversation) {
                             fresh.push(conversation);
                         }
@@ -704,13 +775,14 @@ impl Watch {
                 }
             }
         }
-        self.announce(fresh);
+        self.announce(fresh, loud);
     }
 
-    /// Adds a message to its chat, if it should ring; its conversation, then.
-    fn add(&mut self, frame: &[u8], seq: u64) -> Option<String> {
+    /// Adds a message to its chat, if it should ring; its conversation then, and whether it is heard.
+    fn add(&mut self, frame: &[u8], seq: u64) -> Option<(String, bool)> {
         let (chat, mut line) = self.resolve(read_message(frame)?)?;
         line.seq = seq;
+        line.loud = self.loud(&chat, &line);
         self.passed.push(Passed {
             conversation: chat.conversation.clone(),
             timestamp: line.timestamp,
@@ -720,11 +792,18 @@ impl Watch {
         if self.passed.len() > PASSED_LIMIT {
             self.passed.remove(0);
         }
+        // A chat's own level holds while its while lasts.
         let level = self
             .config
             .chat
             .get(&chat.conversation)
             .copied()
+            .filter(|_| {
+                self.config
+                    .chat_until
+                    .get(&chat.conversation)
+                    .is_none_or(|until| self.now < *until)
+            })
             .unwrap_or(if chat.direct {
                 if self.config.direct {
                     ChatLevel::All
@@ -757,8 +836,9 @@ impl Watch {
         {
             return None;
         }
+        let loud = line.loud;
         lines.push(line);
-        Some(self.chats[at].conversation.clone())
+        Some((self.chats[at].conversation.clone(), loud))
     }
 
     /// Where a message goes and who wrote it, by the names the page gave.
@@ -873,11 +953,12 @@ impl Watch {
                 timestamp,
                 mention,
                 seq: 0,
+                loud: true,
             },
         ))
     }
 
-    fn announce(&mut self, fresh: Vec<String>) {
+    fn announce(&mut self, fresh: Vec<String>, loud: Vec<String>) {
         if fresh.is_empty() {
             return;
         }
@@ -892,7 +973,7 @@ impl Watch {
             }
             self.all_out = true;
             let notice = self.all_chats_notice();
-            self.post(notice);
+            self.post(notice, !loud.is_empty());
             return;
         }
         for conversation in fresh {
@@ -900,10 +981,11 @@ impl Watch {
                 continue;
             };
             let notice = chat_notice(chat, &self.config.words);
+            let heard = loud.contains(&conversation);
             if !self.out.contains(&conversation) {
                 self.out.push(conversation);
             }
-            self.post(notice);
+            self.post(notice, heard);
         }
     }
 
@@ -1011,16 +1093,19 @@ mod tests {
                     key: ALICE.into(),
                     name: "Alice".into(),
                     kind: ADV_TYPE_CHAT,
+                    favourite: true,
                 },
                 Contact {
                     key: ROOM.into(),
                     name: "Club".into(),
                     kind: ADV_TYPE_ROOM,
+                    favourite: false,
                 },
                 Contact {
                     key: BOB.into(),
                     name: "Bob".into(),
                     kind: ADV_TYPE_CHAT,
+                    favourite: false,
                 },
             ],
             channels: vec![
@@ -1079,6 +1164,8 @@ mod tests {
         quiet: Vec<Timer>,
         posted: Vec<Notice>,
         withdrawn: Vec<String>,
+        /// The phone's clock, which the timers hand in.
+        now: i64,
     }
 
     impl Rig {
@@ -1089,6 +1176,7 @@ mod tests {
                 quiet: vec![],
                 posted: vec![],
                 withdrawn: vec![],
+                now: 0,
             };
             rig.core.configure(config);
             let effects = [
@@ -1141,7 +1229,7 @@ mod tests {
 
         fn grace_ends(&mut self) -> &mut Self {
             for timer in std::mem::take(&mut self.grace) {
-                let effects = self.core.timeout(timer);
+                let effects = self.core.timeout(timer, self.now);
                 self.note(effects);
             }
             self
@@ -1151,7 +1239,7 @@ mod tests {
         fn quiet_comes(&mut self) -> &mut Self {
             while !self.quiet.is_empty() {
                 for timer in std::mem::take(&mut self.quiet) {
-                    let effects = self.core.timeout(timer);
+                    let effects = self.core.timeout(timer, self.now);
                     self.note(effects);
                 }
             }
@@ -1655,5 +1743,117 @@ mod tests {
             .arrives(channel(1, "b: 2"))
             .grace_ends();
         assert_eq!(rig.rang(), vec![true, false]);
+    }
+
+    /// Quiet from 1 000 to 10 000 ms on the phone's clock.
+    fn quiet_config(favourites: bool, mentions: bool) -> WatchConfig {
+        WatchConfig {
+            quiet: Quiet {
+                spans: vec![[1_000, 10_000]],
+                favourites,
+                mentions,
+            },
+            ..config()
+        }
+    }
+
+    #[test]
+    fn while_quiet_a_notice_is_kept_quietly() {
+        let mut rig = Rig::new(quiet_config(true, false));
+        rig.now = 5_000;
+        rig.arrives(channel(0, "a: 1")).grace_ends();
+        assert_eq!(rig.posted.len(), 1);
+        assert!(rig.posted[0].quiet, "kept in the shade");
+        assert_eq!(rig.rang(), vec![false]);
+    }
+
+    #[test]
+    fn a_favourite_rings_through_the_quiet_and_no_one_else() {
+        let mut rig = Rig::new(quiet_config(true, false));
+        rig.now = 5_000;
+        rig.arrives(direct(BOB, 5, "hi")).grace_ends();
+        rig.arrives(direct(ALICE, 6, "up?")).grace_ends();
+        let quiet: Vec<bool> = rig.posted.iter().map(|n| n.quiet).collect();
+        assert_eq!(quiet, vec![true, false]);
+        assert_eq!(
+            rig.rang(),
+            vec![false, true],
+            "the quiet one left the burst to ring"
+        );
+    }
+
+    #[test]
+    fn a_mention_rings_through_only_when_the_reader_asked() {
+        let mut rig = Rig::new(quiet_config(false, true));
+        rig.now = 5_000;
+        rig.arrives(channel(0, "a: @[Node-21] up?"))
+            .arrives(channel(1, "b: hello"))
+            .grace_ends();
+        let quiet: Vec<bool> = rig.posted.iter().map(|n| n.quiet).collect();
+        assert_eq!(quiet, vec![false, true]);
+        let mut rig = Rig::new(quiet_config(false, false));
+        rig.now = 5_000;
+        rig.arrives(channel(0, "a: @[Node-21] up?")).grace_ends();
+        assert!(rig.posted[0].quiet);
+    }
+
+    #[test]
+    fn before_and_after_the_quiet_notices_ring() {
+        let mut rig = Rig::new(quiet_config(false, false));
+        rig.now = 500;
+        rig.arrives(channel(0, "a: 1")).grace_ends().quiet_comes();
+        rig.now = 10_000;
+        rig.arrives(channel(1, "b: 2")).grace_ends();
+        let quiet: Vec<bool> = rig.posted.iter().map(|n| n.quiet).collect();
+        assert_eq!(quiet, vec![false, false]);
+        assert_eq!(rig.rang(), vec![true, true]);
+    }
+
+    #[test]
+    fn while_quiet_a_new_node_is_not_told_of() {
+        let mut advert = vec![PUSH_NEW_ADVERT, 2];
+        advert.extend([0u8; 31]);
+        advert.push(ADV_TYPE_CHAT);
+        advert.extend([0u8; 66]);
+        let mut field = [0u8; 32];
+        field[..4].copy_from_slice(b"Vlan");
+        advert.extend(field);
+        let mut rig = Rig::new(quiet_config(true, true));
+        rig.now = 5_000;
+        let effects = rig.core.from_radio(advert);
+        rig.note(effects);
+        rig.grace_ends();
+        assert!(rig.posted.is_empty());
+    }
+
+    #[test]
+    fn a_chat_silenced_for_a_while_rings_again_after_it() {
+        let mut config = config();
+        config.chat.insert("ch:0".into(), ChatLevel::Off);
+        config.chat_until.insert("ch:0".into(), 3_000);
+        let mut rig = Rig::new(config);
+        rig.now = 2_000;
+        rig.arrives(channel(0, "a: 1")).grace_ends();
+        assert!(rig.posted.is_empty(), "silenced");
+        rig.now = 3_000;
+        rig.arrives(channel(0, "a: 2")).grace_ends();
+        assert_eq!(rig.titles(), vec!["a in Public"]);
+    }
+
+    #[test]
+    fn the_pages_quiet_is_read_from_its_json() {
+        let config: WatchConfig = serde_json::from_str(
+            r#"{"chatUntil":{"ch:0":5},"quiet":{"spans":[[1,9007199254740991]],"favourites":true,"mentions":false},"contacts":[{"key":"aa","name":"A","type":1,"favourite":true}]}"#,
+        )
+        .unwrap();
+        assert_eq!(config.chat_until.get("ch:0"), Some(&5));
+        assert_eq!(config.quiet.spans, vec![[1, 9_007_199_254_740_991]]);
+        assert!(config.quiet.favourites && !config.quiet.mentions);
+        assert!(config.contacts[0].favourite);
+        let before: WatchConfig = serde_json::from_str(r#"{"contacts":[{"key":"aa"}]}"#).unwrap();
+        assert!(
+            !before.contacts[0].favourite && before.quiet.spans.is_empty(),
+            "an older page's"
+        );
     }
 }

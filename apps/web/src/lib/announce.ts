@@ -23,7 +23,10 @@
  *   notice stands for them all, until the app is opened or all is read;
  * - only what the reader wants rings (noticePrefs.ts): a chat left at
  *   mentions has a notice for the messages that mention this radio, and
- *   counts only those.
+ *   counts only those;
+ * - while Do not disturb is on (quiet.ts), a notice comes quietly: without
+ *   the signal and without popping up, unless news in it rings through. A
+ *   quiet notice leaves the burst still to ring for news that is loud.
  *
  * Pure apart from what it is handed, so the rules are testable without a
  * radio or a notification centre.
@@ -61,6 +64,8 @@ export interface Notice {
   face?: Face;
   /** Shown without the signal: a burst of news rings with its first notice only. */
   silent?: boolean;
+  /** Do not disturb: kept where the system keeps notices, but neither heard nor popped up. */
+  quiet?: boolean;
 }
 
 /** At most this many conversations each have a notice of their own. */
@@ -174,6 +179,8 @@ export function createAnnouncer(deps: {
   state: () => SessionState;
   /** Whether this message should ring (noticePrefs.ts). */
   wanted: Keep;
+  /** Whether a wanted message is heard now: Do not disturb is off, or it rings through (quiet.ts). Every one when not given. */
+  loud?: Keep;
   show: (notice: Notice) => void;
   withdraw: (tag: string) => void;
 }): Announcer {
@@ -192,19 +199,26 @@ export function createAnnouncer(deps: {
   /** When the burst's notices were last brought up to date. */
   let shownAt = 0;
 
-  /** Shows what is pending, the first notice with the signal if `ring`; whether anything was shown. */
+  /** Shows what is pending, the first loud notice with the signal if `ring`; whether a loud one was shown. */
   function announce(state: SessionState, ring: boolean): boolean {
     // Each message by the conversation it is in now: one from an unknown
     // sender moves under the contact once the contact is read.
     const fresh = new Set<string>();
+    const loud = new Set<string>();
     for (const m of state.messages) {
-      if (pending.has(m.id) && (state.unread[m.conversation] ?? 0) > 0 && deps.wanted(m)) fresh.add(m.conversation);
+      if (!pending.has(m.id) || !((state.unread[m.conversation] ?? 0) > 0) || !deps.wanted(m)) continue;
+      fresh.add(m.conversation);
+      if (!deps.loud || deps.loud(m)) loud.add(m.conversation);
     }
     pending.clear();
     if (fresh.size === 0) return false;
 
     let shown = false;
-    const show = (notice: Notice): void => {
+    const show = (notice: Notice, heard: boolean): void => {
+      if (!heard) {
+        deps.show({ ...notice, silent: true, quiet: true });
+        return;
+      }
       deps.show(ring && !shown ? notice : { ...notice, silent: true });
       shown = true;
     };
@@ -213,7 +227,7 @@ export function createAnnouncer(deps: {
       out.clear();
       const notice = allChatsNotice(state, deps.wanted);
       if (notice) {
-        show(notice);
+        show(notice, loud.size > 0);
         allOut = true;
       }
       return shown;
@@ -221,7 +235,7 @@ export function createAnnouncer(deps: {
     for (const c of fresh) {
       const notice = conversationNotice(state, c, deps.wanted);
       if (!notice) continue;
-      show(notice);
+      show(notice, loud.has(c));
       out.add(c);
     }
     return shown;
@@ -237,7 +251,7 @@ export function createAnnouncer(deps: {
     if (pending.size === 0 || state.syncing) return;
     const now = Date.now();
     if (unrung) {
-      // What nobody wants to hear of leaves the burst still to ring for what they do.
+      // What nobody wants to hear of, or hears only quietly, leaves the burst still to ring for what they do.
       if (announce(state, true)) unrung = false;
       shownAt = now;
     } else if (!quiet || now - shownAt >= CATCH_UP_MS) {

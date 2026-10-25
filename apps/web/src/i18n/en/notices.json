@@ -51,6 +51,8 @@
   "android.relaySurvey": "Coverage survey running",
   "android.channelSurvey": "Coverage survey",
   "android.channelSurveyHint": "Shown while a coverage survey runs: its time, its points and who heard the last one.",
+  "android.channelQuiet": "Do not disturb",
+  "android.channelQuietHint": "Messages while Do not disturb is on: no sound, no pop-up.",
   "survey.title": "Survey running · {points}",
   "survey.nobody": "Nobody answered",
   "survey.still": "Standing still",

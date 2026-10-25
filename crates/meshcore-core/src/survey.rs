@@ -808,7 +808,7 @@ mod tests {
         /// The listening runs out.
         fn listened(&mut self) {
             for timer in std::mem::take(&mut self.listens) {
-                let effects = self.core.timeout(timer);
+                let effects = self.core.timeout(timer, 0);
                 self.run(effects);
             }
         }
@@ -851,7 +851,7 @@ mod tests {
         /// The checks waited for run out.
         fn check_lost(&mut self) {
             for (timer, _) in std::mem::take(&mut self.checks) {
-                let effects = self.core.timeout(timer);
+                let effects = self.core.timeout(timer, 0);
                 self.run(effects);
             }
         }

@@ -3,14 +3,15 @@ import { isFavourite, parseConversation, TxtType, type MessageRecord } from "@me
 import { chatAccess } from "../lib/channels.js";
 import { CHAT_ORDERS, changed, chatGroups, chatsInOrder, getChatOrder, setChatOrder, useChatOrder } from "../lib/chatOrder.js";
 import { pinnedAt, radioPins, setPinned, usePinStore } from "../lib/chatPins.js";
-import { ago } from "../lib/format.js";
+import { ago, clockAhead } from "../lib/format.js";
 import { summarize, type ConversationSummary } from "../lib/conversations.js";
 import { useDraft } from "../lib/drafts.js";
 import { jumpTo } from "../lib/jump.js";
 import { shownText } from "../lib/lookalikes.js";
 import { findMessages, fold, snippet } from "../lib/messageSearch.js";
-import { openConversation, setStack } from "../lib/nav.js";
-import { useNoticePrefs } from "../lib/noticePrefs.js";
+import { openConversation, openRadioPage, setStack } from "../lib/nav.js";
+import { getNoticePrefs, ownLevel, setChatLevel, useNoticePrefs } from "../lib/noticePrefs.js";
+import { FOREVER, HOUR, quietLonger, quietOff, useQuiet } from "../lib/quiet.js";
 import { usePress, type MenuAt } from "../lib/press.js";
 import { session, useSession } from "../lib/session.js";
 import { dropShared, useShared } from "../lib/shareIn.js";
@@ -21,7 +22,7 @@ import { SearchField } from "../ui/Field.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
 import { copyName } from "./HeroName.js";
-import { BellOffIcon, CheckIcon, CloseIcon, ChevronDownIcon, CopyIcon, HashIcon, PersonIcon, PinIcon, PinOffIcon, PlusIcon, SortIcon, StarFilledIcon, TrashIcon } from "./Icons.js";
+import { BellIcon, BellOffIcon, CheckIcon, CloseIcon, ChevronDownIcon, CopyIcon, HashIcon, PersonIcon, MoonIcon, PinIcon, PinOffIcon, PlusIcon, SortIcon, StarFilledIcon, TrashIcon } from "./Icons.js";
 import { marked } from "./Marked.js";
 import { BlankRadioStrip } from "./BackupPage.js";
 import { NewBuildStrip } from "./NewBuild.js";
@@ -81,6 +82,7 @@ export function ChatList({ selected }: { selected: string | null }) {
     <div className="list-pane">
       <header className="list-head">
         <h1>{t("chats.list.title")}</h1>
+        <QuietChip />
         <RadioTag />
         <IconButton label={t("chats.newChat.title")} onClick={() => setAdding(true)}>
           <PlusIcon size={20} />
@@ -291,6 +293,63 @@ function openSortMenu(at: MenuAt): void {
   );
 }
 
+/**
+ * Do not disturb, while it is on: a moon after the title with till when, and
+ * on a tap its menu, to turn it off, give it an hour more or set it up.
+ */
+function QuietChip() {
+  const quiet = useQuiet();
+  if (quiet.until === null) return null;
+  const always = quiet.until >= FOREVER;
+  const title = always ? t("radio.quiet.titleAlways") : t("radio.quiet.titleUntil", { time: clockAhead(quiet.until) });
+  return (
+    <button
+      type="button"
+      className={["quiet-chip", always ? "bare" : ""].join(" ")}
+      aria-label={title}
+      title={title}
+      onClick={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        const items: (MenuItem | null)[] = [
+          { label: t("radio.quiet.turnOff"), icon: <BellIcon size={17} />, onSelect: quietOff },
+          always ? null : { label: t("radio.quiet.more"), icon: <PlusIcon size={17} />, onSelect: quietLonger },
+          { label: t("radio.quiet.setUp"), icon: <MoonIcon size={17} />, onSelect: () => openRadioPage("quiet") },
+        ];
+        showMenu(items.filter((x): x is MenuItem => x !== null), { title, at: { x: r.left, y: r.bottom + 4 } });
+      }}
+    >
+      <MoonIcon size={15} />
+      {always ? null : clockAhead(quiet.until)}
+    </button>
+  );
+}
+
+/** How long a chat can be muted for from its menu, as Telegram offers; none is for good. */
+const MUTES: { label: "chats.row.muteHour" | "chats.row.muteHours" | "chats.row.muteDays" | "chats.row.muteAlways"; ms: number | null }[] = [
+  { label: "chats.row.muteHour", ms: HOUR },
+  { label: "chats.row.muteHours", ms: 8 * HOUR },
+  { label: "chats.row.muteDays", ms: 48 * HOUR },
+  { label: "chats.row.muteAlways", ms: null },
+];
+
+function openMuteMenu(conversation: string, at: MenuAt): void {
+  showMenu(
+    MUTES.map((m) => ({
+      label: t(m.label),
+      onSelect: () => {
+        if (m.ms === null) {
+          setChatLevel(conversation, "off");
+          return;
+        }
+        const until = Date.now() + m.ms;
+        setChatLevel(conversation, "off", until);
+        toast(t("chats.row.mutedUntil", { time: clockAhead(until) }));
+      },
+    })),
+    { title: t("chats.row.muteTitle"), at },
+  );
+}
+
 /** A message the search found: its chat, who wrote it, the words around the match. Tapped, the chat opens at it. */
 function FoundRow({ message, row, query }: { message: MessageRecord; row: ConversationSummary; query: string }) {
   const who =
@@ -341,13 +400,18 @@ function ChatRow({ row, radio, selected, pinned, onPin, onDelete }: { row: Conve
           ? { label: target.kind === "channel" ? t("chats.row.copyChannelName") : t("common.copyName"), icon: <CopyIcon size={17} />, onSelect: () => copyName(row.title) }
           : null,
         row.unread > 0 ? { label: t("chats.row.markRead"), icon: <CheckIcon size={17} />, onSelect: () => session.markRead(row.id) } : null,
+        ownLevel(getNoticePrefs(), row.id) === "off"
+          ? { label: t("chats.row.unmute"), icon: <BellIcon size={17} />, onSelect: () => setChatLevel(row.id, null) }
+          : { label: t("chats.row.mute"), icon: <BellOffIcon size={17} />, onSelect: () => openMuteMenu(row.id, at) },
         pinned ? { label: t("chats.row.unpin"), icon: <PinOffIcon size={17} />, onSelect: onPin } : { label: t("chats.row.pin"), icon: <PinIcon size={17} />, onSelect: onPin },
         { label: staysListed(row) ? t("chats.row.clearMessages") : t("chats.row.deleteChat"), icon: <TrashIcon size={17} />, danger: true, onSelect: onDelete },
     ];
     showMenu(items.filter((x): x is MenuItem => x !== null), { title: row.title, at });
   });
   const swipe = useSwipe();
-  const own = useNoticePrefs().chat[row.id];
+  const prefs = useNoticePrefs();
+  const own = ownLevel(prefs, row.id);
+  const until = prefs.chatUntil[row.id];
   return (
     <li className="swipe" ref={swipe.ref}>
       <button type="button" className="swipe-action" tabIndex={-1} onClick={() => { swipe.close(); onDelete(); }}>
@@ -360,7 +424,13 @@ function ChatRow({ row, radio, selected, pinned, onPin, onDelete }: { row: Conve
             <span className="row-title">
               {row.title}
               {row.contact && isFavourite(row.contact) ? <StarFilledIcon size={11} className="star" /> : null}
-              {own === "off" || own === "mentions" ? <BellOffIcon size={12} className="row-quiet" aria-label={own === "off" ? t("chats.row.noticesOff") : t("chats.row.noticesMentions")} /> : null}
+              {own === "off" || own === "mentions" ? (
+                <BellOffIcon
+                  size={12}
+                  className="row-quiet"
+                  aria-label={own === "mentions" ? t("chats.row.noticesMentions") : until !== undefined ? t("chats.row.mutedUntil", { time: clockAhead(until) }) : t("chats.row.noticesOff")}
+                />
+              ) : null}
             </span>
             {row.lastAt ? <span className="row-when muted">{ago(row.lastAt)}</span> : null}
           </span>

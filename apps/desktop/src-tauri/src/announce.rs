@@ -27,11 +27,19 @@ const GROUP: &str = "meshnet";
 /// cropped round beside the text. `signal` is the app's sound, which plays
 /// here (`notices::play`) while the toast itself stays silent, since a toast
 /// from an app without a package can only take the system's own sounds.
+///
+/// `quiet`, while Do not disturb is on, puts the toast straight into the
+/// notification centre without popping it up or playing the signal. Other
+/// systems have no notice kept without popping up, so there it is left out.
 #[tauri::command]
-pub fn announce(app: AppHandle, title: String, body: String, tag: Option<String>, avatar: Option<String>, signal: Option<String>) -> Result<(), String> {
+pub fn announce(app: AppHandle, title: String, body: String, tag: Option<String>, avatar: Option<String>, signal: Option<String>, quiet: Option<bool>) -> Result<(), String> {
+    let quiet = quiet.unwrap_or(false);
+    if quiet && !cfg!(windows) {
+        return Ok(());
+    }
     let picture = avatar.as_deref().and_then(|png| picture(&app, png));
-    let shown = show(&app, &title, &body, tag, picture.as_deref())?;
-    if shown && !crate::notices::quiet() {
+    let shown = show(&app, &title, &body, tag, picture.as_deref(), quiet)?;
+    if shown && !quiet && !crate::notices::quiet() {
         crate::notices::play(signal.as_deref().unwrap_or("none"));
     }
     Ok(())
@@ -65,7 +73,7 @@ pub fn withdraw(app: AppHandle, tag: String) -> Result<(), String> {
 /// turned off in Settings is dropped without a word, and then its sound
 /// should not play either.
 #[cfg(windows)]
-fn show(app: &AppHandle, title: &str, body: &str, tag: Option<String>, picture: Option<&std::path::Path>) -> Result<bool, String> {
+fn show(app: &AppHandle, title: &str, body: &str, tag: Option<String>, picture: Option<&std::path::Path>, quiet: bool) -> Result<bool, String> {
     use windows::core::{IInspectable, HSTRING};
     use windows::Data::Xml::Dom::XmlDocument;
     use windows::Foundation::TypedEventHandler;
@@ -92,6 +100,9 @@ fn show(app: &AppHandle, title: &str, body: &str, tag: Option<String>, picture: 
             image
         )))?;
         let toast = ToastNotification::CreateToastNotification(&xml)?;
+        if quiet {
+            toast.SetSuppressPopup(true)?;
+        }
         if let Some(tag) = &tag {
             toast.SetTag(&HSTRING::from(slot(tag)))?;
             toast.SetGroup(&HSTRING::from(GROUP))?;
@@ -139,7 +150,7 @@ fn escape(text: &str) -> String {
 /// macOS notifies on behalf of a bundle and the plugin names it; Linux names
 /// the sender in the notice. The plugin is right there as it is.
 #[cfg(not(windows))]
-fn show(app: &AppHandle, title: &str, body: &str, _tag: Option<String>, _picture: Option<&std::path::Path>) -> Result<bool, String> {
+fn show(app: &AppHandle, title: &str, body: &str, _tag: Option<String>, _picture: Option<&std::path::Path>, _quiet: bool) -> Result<bool, String> {
     use tauri_plugin_notification::NotificationExt;
 
     app.notification()

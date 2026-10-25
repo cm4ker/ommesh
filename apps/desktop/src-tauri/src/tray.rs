@@ -10,6 +10,10 @@
 //! different radios are told apart (`instance.rs`). Its words are the page's,
 //! in the reader's language (`tray_words`), English until the page has said.
 //!
+//! The menu turns Do not disturb on and off (`lib/quiet.ts`): a submenu the
+//! page words and words again as it turns, whose picks go back to the page as
+//! `tray-quiet` with the item's id.
+//!
 //! The window's taskbar button carries the count as well: on Windows a badge
 //! over the button's corner that the page draws (`badge`), elsewhere the
 //! number the dock or launcher draws.
@@ -19,7 +23,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{App, AppHandle, Manager, Runtime, WebviewWindow, Window, WindowEvent};
 use tauri_plugin_window_state::AppHandleExt;
@@ -31,6 +35,23 @@ const ICON: &[u8] = include_bytes!("../icons/32x32.png");
 const DIRECT: [u8; 3] = [0xe5, 0x48, 0x4d];
 /// Channels and rooms, with no message from a person among them.
 const CHATS: [u8; 3] = [0xf5, 0xa5, 0x24];
+
+/// The event that hands the page a pick from Do not disturb's submenu.
+const QUIET_PICKED: &str = "tray-quiet";
+
+/// Do not disturb's submenu, from the page: its title, which says whether it is on and till
+/// when, and its items, each with the id the page knows it by.
+#[derive(serde::Deserialize)]
+pub struct QuietMenu {
+    title: String,
+    items: Vec<QuietItem>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct QuietItem {
+    id: String,
+    text: String,
+}
 
 /// Whether the icon is there. Where it could not be made (a Linux desktop
 /// without an indicator area), closing the window ends the app as it always did.
@@ -49,15 +70,26 @@ pub fn install(app: &App) {
     }
 }
 
-fn menu<R: Runtime, M: Manager<R>>(app: &M, open: &str, another: &str, quit: &str) -> tauri::Result<Menu<R>> {
+fn menu<R: Runtime, M: Manager<R>>(app: &M, open: &str, another: &str, quit: &str, quiet: Option<&QuietMenu>) -> tauri::Result<Menu<R>> {
     let open = MenuItem::with_id(app, "open", open, true, None::<&str>)?;
     let another = MenuItem::with_id(app, "another", another, true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", quit, true, None::<&str>)?;
-    Menu::with_items(app, &[&open, &another, &quit])
+    let menu = Menu::with_items(app, &[&open, &another])?;
+    if let Some(quiet) = quiet {
+        let submenu = Submenu::with_id(app, "quiet", &quiet.title, true)?;
+        for item in &quiet.items {
+            submenu.append(&MenuItem::with_id(app, format!("quiet:{}", item.id), &item.text, true, None::<&str>)?)?;
+        }
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+        menu.append(&submenu)?;
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+    }
+    menu.append(&quit)?;
+    Ok(menu)
 }
 
 fn build(app: &App) -> tauri::Result<TrayIcon> {
-    let menu = menu(app, "Open Ommesh", "Another window", "Quit")?;
+    let menu = menu(app, "Open Ommesh", "Another window", "Quit", None)?;
     TrayIconBuilder::with_id(ID)
         .icon(Image::from_bytes(ICON)?)
         .tooltip(&app.package_info().name)
@@ -71,7 +103,16 @@ fn build(app: &App) -> tauri::Result<TrayIcon> {
                 }
             }
             "quit" => app.exit(0),
-            _ => {}
+            id => {
+                if let Some(pick) = id.strip_prefix("quiet:") {
+                    use tauri::Emitter;
+                    // Its settings open in the window, which comes forward for them.
+                    if pick == "settings" {
+                        bring_back(app);
+                    }
+                    let _ = app.emit_to(ID, QUIET_PICKED, pick);
+                }
+            }
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
@@ -123,13 +164,13 @@ pub fn bring_back<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// The menu's words, in the page's language.
+/// The menu's words, in the page's language, with Do not disturb's submenu as it stands.
 #[tauri::command]
-pub fn tray_words(app: AppHandle, open: String, another: String, quit: String) -> Result<(), String> {
+pub fn tray_words(app: AppHandle, open: String, another: String, quit: String, quiet: Option<QuietMenu>) -> Result<(), String> {
     let Some(tray) = app.tray_by_id(ID) else {
         return Ok(());
     };
-    let menu = menu(&app, &open, &another, &quit).map_err(|error| error.to_string())?;
+    let menu = menu(&app, &open, &another, &quit, quiet.as_ref()).map_err(|error| error.to_string())?;
     tray.set_menu(Some(menu)).map_err(|error| error.to_string())
 }
 

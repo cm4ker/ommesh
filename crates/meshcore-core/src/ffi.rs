@@ -49,8 +49,9 @@ impl Radio {
         self.core().from_radio(frame)
     }
 
-    pub fn timeout(&self, timer: Timer) -> Vec<Effect> {
-        self.core().timeout(timer)
+    /// A timer is due; `now` is the phone's clock, ms.
+    pub fn timeout(&self, timer: Timer, now: i64) -> Vec<Effect> {
+        self.core().timeout(timer, now)
     }
 
     /// The page's notice settings and names, as the JSON it sends (see [`WatchConfig`]).

@@ -91,6 +91,8 @@ function initial(messages: MessageRecord[] = [], unread: Record<string, number> 
 let state: SessionState;
 let focused: string | null;
 let wanted: (m: MessageRecord) => boolean;
+/** Whether a message is heard: Do not disturb is off, or it rings through. */
+let loud: (m: MessageRecord) => boolean;
 /** What each notice says, as the tests below compare it; `full` keeps whose circle it shows. */
 let shown: Notice[];
 let full: Notice[];
@@ -133,7 +135,7 @@ function markRead(conversation: string): void {
 
 function start(from: SessionState = initial()): void {
   state = from;
-  announcer = createAnnouncer({ state: () => state, wanted: (m) => wanted(m), show: (n) => {
+  announcer = createAnnouncer({ state: () => state, wanted: (m) => wanted(m), loud: (m) => loud(m), show: (n) => {
     const { face: _face, silent, ...said } = n;
     shown.push(said);
     full.push(n);
@@ -146,6 +148,7 @@ beforeEach(() => {
   rang = [];
   focused = null;
   wanted = () => true;
+  loud = () => true;
   shown = [];
   full = [];
   withdrawn = [];
@@ -337,4 +340,29 @@ test("news nobody wants to hear of leaves the burst to ring for what they do", (
   mock.timers.tick(100);
   handOver(message(`c:${BOB}`, "ping"));
   assert.deepEqual(rang, [`c:c:${BOB}`]);
+});
+
+test("while it is quiet a notice comes quietly and rings nothing", () => {
+  loud = () => false;
+  handOver(message("ch:0", "chatter", "Alice"));
+  assert.equal(full.at(-1)?.quiet, true);
+  assert.equal(full.at(-1)?.silent, true);
+  assert.deepEqual(rang, []);
+});
+
+test("a favourite rings through the quiet, though quiet chatter came first in the burst", () => {
+  loud = (m) => m.conversation === `c:${BOB}`;
+  handOver(message("ch:0", "chatter", "Alice"));
+  mock.timers.tick(100);
+  handOver(message(`c:${BOB}`, "up?"));
+  assert.deepEqual(rang, [`c:c:${BOB}`]);
+  assert.equal(full.at(-1)?.quiet, undefined);
+});
+
+test("the notice for several chats is heard when news in any of them rings through", () => {
+  loud = (m) => m.conversation === `c:${BOB}`;
+  drain([message("ch:0", "a", "Alice"), message("ch:1", "b", "Alice"), message("ch:2", "c", "Alice"), message(`c:${BOB}`, "d")]);
+  assert.equal(full.at(-1)?.tag, ALL_CHATS);
+  assert.equal(full.at(-1)?.quiet, undefined);
+  assert.deepEqual(rang, [ALL_CHATS]);
 });

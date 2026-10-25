@@ -294,13 +294,13 @@ final class MeshRelay {
                 if (done != null) done.run();
             } else if (effect instanceof Effect.Wait) {
                 Effect.Wait wait = (Effect.Wait) effect;
-                main.postDelayed(() -> run(core.timeout(wait.getTimer())), wait.getMillis());
+                main.postDelayed(() -> run(core.timeout(wait.getTimer(), System.currentTimeMillis())), wait.getMillis());
             } else if (effect instanceof Effect.InboxesChanged) {
                 saveInboxes();
             } else if (effect instanceof Effect.Post) {
                 Notice notice = ((Effect.Post) effect).getNotice();
                 NoticesPlugin.show(context, notice.getId(), notice.getTag(), kind(notice), notice.getTitle(), notice.getBody(),
-                    notice.getSound(), notice.getSilent());
+                    notice.getSound(), notice.getSilent(), notice.getQuiet());
             } else if (effect instanceof Effect.Withdraw) {
                 NotificationManagerCompat.from(context).cancel(((Effect.Withdraw) effect).getId());
             } else if (effect instanceof Effect.SurveyChanged) {

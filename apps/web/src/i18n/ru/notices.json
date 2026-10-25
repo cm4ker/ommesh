@@ -59,6 +59,8 @@
   "android.relaySurvey": "Идёт замер покрытия",
   "android.channelSurvey": "Замер покрытия",
   "android.channelSurveyHint": "Видно, пока идёт замер покрытия: его время, точки и кто услышал последнюю.",
+  "android.channelQuiet": "Не беспокоить",
+  "android.channelQuietHint": "Сообщения, пока включено «Не беспокоить»: без звука и не всплывают.",
   "survey.title": "Идёт замер · {points}",
   "survey.nobody": "Никто не ответил",
   "survey.still": "Стоим на месте",

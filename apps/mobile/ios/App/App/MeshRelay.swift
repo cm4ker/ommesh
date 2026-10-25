@@ -140,7 +140,7 @@ final class MeshRelay: NSObject {
             case let .post(notice):
                 // A burst of news rings with its first notice only.
                 let sound = notice.silent ? nil : notice.sound
-                let shown = PageNotice(id: Int(notice.id), tag: notice.tag, title: notice.title, body: notice.body, sound: sound)
+                let shown = PageNotice(id: Int(notice.id), tag: notice.tag, title: notice.title, body: notice.body, sound: sound, quiet: notice.quiet)
                 MeshWatch.show(shown) { error in
                     if let error { NSLog("MeshRelay: a notice was not shown: %@", error.localizedDescription) }
                 }
@@ -165,7 +165,7 @@ final class MeshRelay: NSObject {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Int(millis))) { [weak self] in
             guard let self else { return }
-            self.run(self.core.timeout(timer: timer))
+            self.run(self.core.timeout(timer: timer, now: Int64(Date().timeIntervalSince1970 * 1000)))
             self.waiting -= 1
             if self.waiting == 0 { self.endBackgroundTask() }
         }

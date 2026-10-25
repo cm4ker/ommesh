@@ -30,6 +30,11 @@ export interface NativeNotice {
    * fixed, and `sound` picks the channel.
    */
   silent: boolean;
+  /**
+   * Do not disturb: kept in the shade without a sound or popping up, on
+   * Android a channel of its own, on iOS a passive notice.
+   */
+  quiet: boolean;
 }
 
 /**

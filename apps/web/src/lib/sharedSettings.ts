@@ -26,7 +26,7 @@ import { previewMode, setPreviewMode, type PreviewMode } from "./linkPreview.js"
 import { getLookalikePrefs, setLookalikePrefs, type LookalikePrefs } from "./lookalikes.js";
 import { getNeighbourSort, NEIGHBOUR_SORTS, setNeighbourSort } from "./neighbourSort.js";
 import { DEFAULT_NODE_ORDER, getNodeOrder, NODE_ORDERS, setNodeOrder, type NodeOrderPrefs } from "./nodeOrder.js";
-import { getNoticePrefs, setChatLevel, setChatSound, setNoticePrefs, SIGNALS, type ChatLevel, type NodeLevel, type NoticeKind, type Signal } from "./noticePrefs.js";
+import { DEFAULT_QUIET, getNoticePrefs, setChatSound, setChatUntil, setNoticePrefs, SIGNALS, type ChatLevel, type NodeLevel, type NoticeKind, type QuietPrefs, type Signal } from "./noticePrefs.js";
 import { RECENT_SIZE, recentReactions, setRecentReactions } from "./reactions.js";
 import { getSendTries, SEND_TRIES_MAX, setSendTries } from "./sendTries.js";
 import { session } from "./session.js";
@@ -157,6 +157,21 @@ sync.share<Record<NoticeKind, Signal>>({
   valid: (value): value is Record<NoticeKind, Signal> => isObject(value) && isSignal(value["direct"]) && isSignal(value["chats"]) && isSignal(value["nodes"]),
   fallback: { direct: "chirp", chats: "chirp", nodes: "chirp" },
 });
+sync.share<QuietPrefs>({
+  key: "quiet",
+  read: () => getNoticePrefs().quiet,
+  write: (quiet) => setNoticePrefs({ quiet }),
+  valid: (value): value is QuietPrefs =>
+    isObject(value) &&
+    oneOf<QuietPrefs["hand"]>(["off", "hour", "morning", "always"])(value["hand"]) &&
+    ["until", "from", "to", "awake"].every((k) => typeof value[k] === "number") &&
+    Array.isArray(value["days"]) &&
+    value["days"].every((d) => typeof d === "number" && d >= 0 && d <= 6) &&
+    isBool(value["nightly"]) &&
+    isBool(value["favourites"]) &&
+    isBool(value["mentions"]),
+  fallback: DEFAULT_QUIET,
+});
 sync.share<boolean>({ key: "openAtUnread", read: getOpenAtUnread, write: setOpenAtUnread, valid: isBool, fallback: true });
 sync.share<boolean>({ key: "jumboEmoji", read: getJumboEmoji, write: setJumboEmoji, valid: isBool, fallback: true });
 sync.share<ChatOrderPrefs>({
@@ -194,7 +209,19 @@ sync.share<readonly string[]>({
 });
 
 sync.shareEach<Background>({ key: "chatBackground", entries: () => backgroundPrefs().chat, write: setChatBackground, valid: isBackground });
-sync.shareEach<ChatLevel>({ key: "chatLevel", entries: () => getNoticePrefs().chat, write: setChatLevel, valid: isLevel });
+// A chat's level and how long it lasts go as two settings, so the level is written alone: it must not end the other's while.
+sync.shareEach<ChatLevel>({
+  key: "chatLevel",
+  entries: () => getNoticePrefs().chat,
+  write: (conversation, level) => {
+    const chat = { ...getNoticePrefs().chat };
+    if (level) chat[conversation] = level;
+    else delete chat[conversation];
+    setNoticePrefs({ chat });
+  },
+  valid: isLevel,
+});
+sync.shareEach<number>({ key: "chatUntil", entries: () => getNoticePrefs().chatUntil, write: setChatUntil, valid: (value): value is number => typeof value === "number" });
 sync.shareEach<Signal>({ key: "chatSound", entries: () => getNoticePrefs().chatSound, write: setChatSound, valid: isSignal });
 // A pin is the radio's: named `<radio>/<conversation>`, so the time it changed on one radio says nothing of another's.
 sync.shareEach<Pin>({

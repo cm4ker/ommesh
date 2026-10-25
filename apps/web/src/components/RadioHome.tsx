@@ -14,6 +14,8 @@ import { placeOpen } from "../lib/privacy.js";
 import { PULL_TRIGGER, usePull } from "../lib/pull.js";
 import { resync, STEP_COUNT, stepLabel, useResync } from "../lib/resync.js";
 import { summaryOf, useNoticePrefs } from "../lib/noticePrefs.js";
+import { useQuiet } from "../lib/quiet.js";
+import { quietStatus } from "./QuietPage.js";
 import { session, useSelector, useSession } from "../lib/session.js";
 import { act } from "../lib/toast.js";
 import { useDesktopUpdateInfo } from "../lib/updates.js";
@@ -64,7 +66,10 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
   const row = (page: RadioPage, icon: React.ReactNode, value?: string) => (
     <LinkRow key={page} icon={icon} label={radioTitle(page)} value={value} tone={page === "power" ? "danger" : undefined} selected={selected === page} onClick={() => openRadioPage(page)} />
   );
-  const notices = summaryOf(useNoticePrefs());
+  // While Do not disturb is on, the row says till when, before what rings.
+  const quiet = useQuiet();
+  const prefs = useNoticePrefs();
+  const notices = quiet.until !== null ? quietStatus(quiet.until) : summaryOf(prefs);
   const use = memoryUse(state);
   const contactsValue = state.contactsFull ? t("radio.home.full") : use ? t("radio.home.used", { used: use.used, max: use.max }) : undefined;
   const reading = useResync();

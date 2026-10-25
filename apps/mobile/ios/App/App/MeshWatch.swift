@@ -17,6 +17,9 @@ struct PageNotice {
     let body: String
     /// `signal_<id>.wav` in Library/Sounds, or none for a quiet notice.
     let sound: String?
+    /// Do not disturb (`lib/quiet.ts`): kept in Notification Centre, without a sound and without
+    /// lighting the screen.
+    let quiet: Bool
 }
 
 /// The page's notices, drawn here with the app's signal (gh #25).
@@ -46,7 +49,8 @@ extension MeshWatch {
         let content = UNMutableNotificationContent()
         content.title = notice.title
         content.body = notice.body
-        content.sound = notice.sound.map { UNNotificationSound(named: UNNotificationSoundName($0)) }
+        content.sound = notice.quiet ? nil : notice.sound.map { UNNotificationSound(named: UNNotificationSoundName($0)) }
+        if notice.quiet, #available(iOS 15.0, *) { content.interruptionLevel = .passive }
         content.threadIdentifier = notice.tag
         // Where LocalNotifications keeps a notice's extra: its tap listener hands the tag to the page.
         content.userInfo = ["cap_extra": ["tag": notice.tag]]
@@ -108,7 +112,8 @@ final class MeshWatchPlugin: CAPPlugin, CAPBridgedPlugin {
             title: call.getString("title") ?? "",
             body: call.getString("body") ?? "",
             // A burst of news rings with its first notice only.
-            sound: call.getBool("silent") == true ? nil : call.getString("sound")
+            sound: call.getBool("silent") == true ? nil : call.getString("sound"),
+            quiet: call.getBool("quiet") == true
         )
         MeshWatch.show(notice) { error in
             if let error {

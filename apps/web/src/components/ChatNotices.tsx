@@ -1,4 +1,5 @@
-import { kindLevel, setChatLevel, setChatSound, SIGNALS, useNoticePrefs, type ChatLevel, type Signal } from "../lib/noticePrefs.js";
+import { kindLevel, ownLevel, setChatLevel, setChatSound, SIGNALS, useNoticePrefs, type ChatLevel, type Signal } from "../lib/noticePrefs.js";
+import { clockAhead } from "../lib/format.js";
 import { previewSignal } from "../lib/chime.js";
 import { BACKGROUND_NAMES, BACKGROUNDS, setChatBackground, useBackgroundPrefs, type Background } from "../lib/chatBackground.js";
 import { Group, SelectRow } from "../ui/List.js";
@@ -16,7 +17,8 @@ const DIRECT_WORD: Record<ChatLevel, Key> = { all: "common.on", mentions: "commo
  */
 export function ChatNotices({ conversation, direct }: { conversation: string; direct: boolean }) {
   const prefs = useNoticePrefs();
-  const own = prefs.chat[conversation];
+  const own = ownLevel(prefs, conversation);
+  const until = own ? prefs.chatUntil[conversation] : undefined;
   const words = direct ? DIRECT_WORD : WORD;
   const levels: ChatLevel[] = direct ? ["all", "off"] : ["all", "mentions", "off"];
   return (
@@ -24,7 +26,7 @@ export function ChatNotices({ conversation, direct }: { conversation: string; di
       <SelectRow
         label={t("chats.notices.label")}
         icon={<BellIcon size={17} />}
-        hint={own === "mentions" ? t("chats.notices.mentionsHint") : undefined}
+        hint={until !== undefined ? t("chats.notices.until", { time: clockAhead(until) }) : own === "mentions" ? t("chats.notices.mentionsHint") : undefined}
         value={own ?? "default"}
         options={[{ value: "default", label: t("chats.notices.default", { level: t(words[kindLevel(prefs, direct)]) }) }, ...levels.map((l) => ({ value: l, label: t(words[l]) }))]}
         onChange={(v) => setChatLevel(conversation, v === "default" ? null : (v as ChatLevel))}

@@ -201,10 +201,11 @@ impl Core {
         self.settle()
     }
 
-    pub fn timeout(&mut self, timer: Timer) -> Vec<Effect> {
+    /// A timer is due, at `now` on the owner's clock, ms: Do not disturb goes by it.
+    pub fn timeout(&mut self, timer: Timer, now: i64) -> Vec<Effect> {
         match timer {
             Timer::Command { flight } => self.mux.timeout(flight),
-            Timer::Grace { generation } => self.watch.timeout(generation),
+            Timer::Grace { generation } => self.watch.timeout(generation, now),
             Timer::Quiet { generation } => self.watch.quiet(generation),
             Timer::Listen { generation } => self.survey.timeout(generation),
             Timer::Check { generation } => self.survey.check_timeout(generation),

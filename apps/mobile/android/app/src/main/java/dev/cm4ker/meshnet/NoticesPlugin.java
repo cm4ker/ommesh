@@ -44,6 +44,8 @@ import org.json.JSONObject;
  *       once it is made, so each kind has a channel for each sound it rings with, its own and the
  *       ones its chats have (gh #73), under ids that name the sound; a sound nobody rings with
  *       any more takes its channel with it;
+ *   <li>while Do not disturb is on ({@code lib/quiet.ts}), a notice goes on a channel of its own
+ *       of low importance: kept in the shade, but neither heard nor popped up;
  *   <li>a tap goes to the activity with LocalNotifications' own extras, so the page's listener
  *       for that plugin ({@code localNotificationActionPerformed}) opens the chat, cold start
  *       included.
@@ -74,6 +76,9 @@ public class NoticesPlugin extends Plugin {
     private static final String OBJECT_KEY = "LocalNotficationObject";
 
     private static final int COLOR = 0xFF74ADE8;
+
+    /** The channel of Do not disturb's notices: not one of the kinds, so {@link #channels} keeps it. */
+    private static final String QUIET = "dnd";
 
     @Override
     public void load() {
@@ -129,8 +134,8 @@ public class NoticesPlugin extends Plugin {
             call.reject("A notice needs an id");
             return;
         }
-        NotificationCompat.Builder builder =
-            builder(context, id, tag, call.getString("kind", "chats"), call.getString("title", ""), call.getString("body", ""), call.getString("sound"));
+        NotificationCompat.Builder builder = builder(context, id, tag, call.getString("kind", "chats"), call.getString("title", ""),
+            call.getString("body", ""), call.getString("sound"), Boolean.TRUE.equals(call.getBoolean("quiet", false)));
         // A burst of news rings with its first notice; the rest keep the channel and drop the sound.
         if (Boolean.TRUE.equals(call.getBoolean("silent", false))) builder.setSilent(true);
         try {
@@ -143,10 +148,11 @@ public class NoticesPlugin extends Plugin {
 
     /**
      * A notice of the radio core's, on the page's channel for its kind, under the page's id for its tag;
-     * {@code silent} for one after the first of a burst of news.
+     * {@code silent} for one after the first of a burst of news, {@code quiet} for one while Do not
+     * disturb is on.
      */
-    static void show(Context context, int id, String tag, String kind, String title, String body, String sound, boolean silent) {
-        NotificationCompat.Builder builder = builder(context, id, tag, kind, title, body, sound);
+    static void show(Context context, int id, String tag, String kind, String title, String body, String sound, boolean silent, boolean quiet) {
+        NotificationCompat.Builder builder = builder(context, id, tag, kind, title, body, sound, quiet);
         if (silent) builder.setSilent(true);
         try {
             NotificationManagerCompat.from(context).notify(id, builder.build());
@@ -157,22 +163,26 @@ public class NoticesPlugin extends Plugin {
 
     /**
      * A notice: its channel and sound, its words, whole once opened out, and the tap that opens its
-     * chat. A message's is filed as one, which Do not disturb's exceptions for messages go by.
+     * chat. A message's is filed as one, which Do not disturb's exceptions for messages go by. A
+     * {@code quiet} one goes on the quiet channel, without a sound.
      */
-    private static NotificationCompat.Builder builder(Context context, int id, String tag, String kind, String title, String body, String sound) {
-        made(context, kind, sound);
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, channelId(kind, sound))
+    private static NotificationCompat.Builder builder(Context context, int id, String tag, String kind, String title, String body, String sound, boolean quiet) {
+        if (quiet) quietChannel(context, false);
+        else made(context, kind, sound);
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, quiet ? QUIET : channelId(kind, sound))
             .setSmallIcon(R.drawable.ic_stat_meshnet)
             .setColor(COLOR)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
             .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(quiet ? NotificationCompat.PRIORITY_LOW : NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(opener(context, id, tag));
         if (!"nodes".equals(kind)) builder.setCategory(NotificationCompat.CATEGORY_MESSAGE);
-        // Before Android 8 a notice carries its own sound; after, its channel does.
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+        if (quiet) {
+            builder.setSilent(true);
+        } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            // Before Android 8 a notice carries its own sound; after, its channel does.
             Uri uri = soundUri(context, sound);
             if (uri != null) builder.setSound(uri);
             else builder.setSilent(true);
@@ -227,6 +237,7 @@ public class NoticesPlugin extends Plugin {
         if (manager == null) return;
         Set<String> wanted = new HashSet<>();
         for (String[] channel : channels) wanted.add(channel(context, manager, channel[0], channel[1], channel[2], true));
+        quietChannel(context, true);
         // The ones made for a sound nobody rings with any more, and the three LocalNotifications
         // made before these, with the bare kind as their id.
         for (NotificationChannel channel : manager.getNotificationChannels()) {
@@ -281,6 +292,28 @@ public class NoticesPlugin extends Plugin {
         channel.setSound(uri, uri != null ? attributes() : null);
         manager.createNotificationChannel(channel);
         return id;
+    }
+
+    /**
+     * The channel of Do not disturb's notices, of low importance and without a sound, made when it
+     * is not there and, when {@code rename}, named in the language now.
+     */
+    private static void quietChannel(Context context, boolean rename) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager == null) return;
+        String name = Words.get(context, "channelQuiet", "Do not disturb");
+        String description = Words.get(context, "channelQuietHint", "Messages while Do not disturb is on: no sound, no pop-up.");
+        NotificationChannel existing = manager.getNotificationChannel(QUIET);
+        if (existing != null && (!rename || (name.contentEquals(existing.getName()) && description.equals(existing.getDescription())))) return;
+        NotificationChannel channel = new NotificationChannel(QUIET, name, existing != null ? existing.getImportance() : NotificationManager.IMPORTANCE_LOW);
+        channel.setDescription(description);
+        if (existing == null) {
+            channel.setLockscreenVisibility(NotificationCompat.VISIBILITY_PRIVATE);
+            channel.setSound(null, null);
+            channel.enableVibration(false);
+        }
+        manager.createNotificationChannel(channel);
     }
 
     private static String channelId(String kind, String sound) {

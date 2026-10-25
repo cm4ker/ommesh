@@ -419,8 +419,7 @@ function RelayPicker({ picking, hops, hopName, target, size, onPick, onClose }: 
     );
   };
   return (
-    <Sheet open={open} onClose={onClose} title={title}>
-      <SearchField value={query} onValue={setQuery} placeholder={t("tools.route.pick.find")} aria-label={t("tools.route.pick.find")} />
+    <Sheet open={open} onClose={onClose} title={title} find={<SearchField value={query} onValue={setQuery} placeholder={t("tools.route.pick.find")} aria-label={t("tools.route.pick.find")} />}>
       {choices.near.length ? (
         <>
           <div className="group-title">{prevName ? t("tools.route.pick.near", { name: prevName }) : t("tools.route.pick.nearYou")}</div>

@@ -16,8 +16,12 @@ function reducedMotion(): boolean {
  * title, or tapped past, to close; on a wide screen the same content in a
  * dialog in the middle. On a phone it slides away when it closes, showing
  * what it last held while it goes.
+ *
+ * A sheet with a `find` field holds a list to search: the field stays above
+ * the list while the list scrolls, and the sheet keeps one height, so it does
+ * not jump as a search shortens the list or a keyboard comes and goes.
  */
-export function Sheet({ open, onClose, title, children, className }: { open: boolean; onClose: () => void; title?: string | undefined; children: ReactNode; className?: string | undefined }) {
+export function Sheet({ open, onClose, title, find, children, className }: { open: boolean; onClose: () => void; title?: string | undefined; find?: ReactNode; children: ReactNode; className?: string | undefined }) {
   const wide = useWide();
   const box = useRef<HTMLDivElement>(null);
   // Callers pass a fresh closure every render; the effect below runs once per opening.
@@ -31,8 +35,8 @@ export function Sheet({ open, onClose, title, children, className }: { open: boo
 
   // Still on screen for its slide down after the caller has closed it, with what it held.
   const [present, setPresent] = useState(open);
-  const kept = useRef<{ title: string | undefined; children: ReactNode }>({ title, children });
-  if (open) kept.current = { title, children };
+  const kept = useRef<{ title: string | undefined; find: ReactNode; children: ReactNode }>({ title, find, children });
+  if (open) kept.current = { title, find, children };
   if (open && !present) setPresent(true);
   const leaving = !open && present;
   useEffect(() => {
@@ -98,7 +102,7 @@ export function Sheet({ open, onClose, title, children, className }: { open: boo
     },
   };
 
-  const shown = open ? { title, children } : kept.current;
+  const shown = open ? { title, find, children } : kept.current;
   return createPortal(
     <div className={["sheet-layer", wide ? "wide" : "", leaving ? "leaving" : ""].join(" ")}>
       <div
@@ -112,7 +116,7 @@ export function Sheet({ open, onClose, title, children, className }: { open: boo
       <div
         ref={box}
         tabIndex={-1}
-        className={["sheet", className ?? ""].join(" ")}
+        className={["sheet", shown.find ? "sheet-find" : "", className ?? ""].join(" ")}
         role="dialog"
         aria-modal="true"
         aria-label={shown.title}
@@ -128,6 +132,7 @@ export function Sheet({ open, onClose, title, children, className }: { open: boo
             {shown.title ? <h2 className="sheet-title">{shown.title}</h2> : null}
           </div>
         )}
+        {shown.find}
         <div className="sheet-body">{shown.children}</div>
       </div>
     </div>,

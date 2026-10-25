@@ -19,8 +19,11 @@ type Step = "menu" | "people" | "public" | "create" | "join";
 /** Four ways to start talking: to someone the radio has heard, on a public channel known by name, on one someone shared, or on a new one. */
 export function NewChat({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [step, setStep] = useState<Step>("menu");
+  const [query, setQuery] = useState("");
   useEffect(() => {
-    if (open) setStep("menu");
+    if (!open) return;
+    setStep("menu");
+    setQuery("");
   }, [open]);
   const title =
     step === "people"
@@ -33,7 +36,12 @@ export function NewChat({ open, onClose }: { open: boolean; onClose: () => void 
             ? t("chats.newChat.private")
             : t("chats.newChat.title");
   return (
-    <Sheet open={open} onClose={onClose} title={title}>
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title={title}
+      find={step === "people" ? <SearchField value={query} onValue={setQuery} placeholder={t("chats.list.find")} aria-label={t("chats.newChat.findLabel")} autoFocus /> : undefined}
+    >
       {step === "menu" ? (
         <Group>
           <LinkRow icon={<PersonIcon size={18} />} label={t("chats.newChat.people")} hint={t("chats.newChat.peopleHint")} onClick={() => setStep("people")} />
@@ -42,7 +50,7 @@ export function NewChat({ open, onClose }: { open: boolean; onClose: () => void 
           <LinkRow icon={<PlusIcon size={18} />} label={t("chats.newChat.create")} hint={t("chats.newChat.createHint")} onClick={() => setStep("create")} />
         </Group>
       ) : step === "people" ? (
-        <People onDone={onClose} />
+        <People query={query} onDone={onClose} />
       ) : step === "public" ? (
         <PublicChannelForm onDone={onClose} />
       ) : (
@@ -52,45 +60,39 @@ export function NewChat({ open, onClose }: { open: boolean; onClose: () => void 
   );
 }
 
-function People({ onDone }: { onDone: () => void }) {
+function People({ query, onDone }: { query: string; onDone: () => void }) {
   const state = useSession();
-  const [query, setQuery] = useState("");
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return Object.values(state.contacts)
       .filter((c) => isConversationType(c.type) && (!q || c.name.toLowerCase().includes(q)))
       .sort((a, b) => Number(isFavourite(b)) - Number(isFavourite(a)) || heardAt(b) - heardAt(a));
   }, [state.contacts, query]);
-  return (
-    <>
-      <SearchField value={query} onValue={setQuery} placeholder={t("chats.list.find")} aria-label={t("chats.newChat.findLabel")} autoFocus />
-      {rows.length === 0 ? (
-        <p className="group-note">{query ? t("chats.newChat.nobodyNamed") : t("chats.newChat.nobodyYet")}</p>
-      ) : (
-        <ul className="list" role="list">
-          {rows.map((c) => (
-            <li key={c.key}>
-              <button
-                type="button"
-                className="row"
-                onClick={() => {
-                  openConversation(contactConversation(c.key));
-                  onDone();
-                }}
-              >
-                <Avatar name={c.name || c.prefix} type={c.type} size={36} />
-                <span className="row-main">
-                  <span className="row-title">{c.name || c.prefix}</span>
-                  <span className="row-sub muted">
-                    {kindLabel(c.type)} · {routeWords(c).text}
-                  </span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </>
+  return rows.length === 0 ? (
+    <p className="group-note">{query ? t("chats.newChat.nobodyNamed") : t("chats.newChat.nobodyYet")}</p>
+  ) : (
+    <ul className="list" role="list">
+      {rows.map((c) => (
+        <li key={c.key}>
+          <button
+            type="button"
+            className="row"
+            onClick={() => {
+              openConversation(contactConversation(c.key));
+              onDone();
+            }}
+          >
+            <Avatar name={c.name || c.prefix} type={c.type} size={36} />
+            <span className="row-main">
+              <span className="row-title">{c.name || c.prefix}</span>
+              <span className="row-sub muted">
+                {kindLabel(c.type)} · {routeWords(c).text}
+              </span>
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 

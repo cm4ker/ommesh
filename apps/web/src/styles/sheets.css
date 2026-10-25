@@ -517,6 +517,16 @@
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
 }
+/* A sheet with a search over its list (Sheet's `find`) keeps its top where it opened, whatever the search
+   leaves in the list: a gap of fixed size above it, not a share of the screen, as a phone's screen
+   shrinks under the keyboard on Android. Only the list under the field grows and shrinks. */
+.sheet.sheet-find {
+  height: calc(100% - var(--safe-top) - 56px);
+  max-height: none;
+}
+.sheet-layer.wide .sheet.sheet-find {
+  height: min(560px, 80vh);
+}
 @media (prefers-reduced-motion: no-preference) {
   .sheet-layer:not(.wide) .sheet {
     animation: sheet-up 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);

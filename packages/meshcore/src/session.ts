@@ -1207,6 +1207,9 @@ const ROUTE_SWEEP_MS = 30 * 1000;
 const HEARD_WINDOW_MS = 30 * 1000;
 const HEARD_LIMIT = 64;
 
+/** How often a node's adverts heard on the air move its last-heard time: each would be a write of the contacts. */
+const ADVERT_HEARD_GAP_MS = 60 * 1000;
+
 /** How long after an incoming message later copies of it are still looked for. */
 const IN_ECHO_WINDOW_MS = 60 * 1000;
 
@@ -2247,8 +2250,8 @@ export class MeshSession {
   /**
    * Notes that a contact was heard at `at`, local ms, from a packet only it could
    * have sent: its message, its acknowledgement, the route it sent back, its
-   * answer. A channel message names its sender by a name anyone may take, so it
-   * never counts.
+   * answer, its advert. A channel message names its sender by a name anyone may
+   * take, so it never counts.
    */
   private heardFrom(key: string, at: number): void {
     const contact = this.state.contacts[key];
@@ -3654,6 +3657,13 @@ export class MeshSession {
    */
   private noteHeard(snr: number, raw: Uint8Array): void {
     const packet = parseRawPacket(raw);
+    // An advert names its sender by the whole key. The radio drops one stamped no later than the last it kept, as a
+    // repeater restarted without its clock stamps them for a while, yet the node was heard, by our clock (#101).
+    if (packet?.payloadType === PayloadType.Advert && packet.payload.length >= 32) {
+      const key = toHex(packet.payload.subarray(0, 32));
+      const now = this.now();
+      if (now - (this.state.contacts[key]?.lastHeardAt ?? 0) >= ADVERT_HEARD_GAP_MS) this.heardFrom(key, now);
+    }
     // A datagram is only looked at for our reactions coming back: ours is never heard from us, so a copy has relays in it.
     if (packet?.flood && packet.payloadType === PayloadType.GroupData && packet.path.length > 0) this.reactionHeard(toHex(packet.payload));
     if (!packet || !packet.flood || (packet.payloadType !== PayloadType.GroupText && packet.payloadType !== PayloadType.TxtMsg)) return;

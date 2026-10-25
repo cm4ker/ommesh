@@ -2280,6 +2280,31 @@ test("a contact is heard when it writes, acknowledges, sends a route back or ans
   assert.equal(heard(HILL_KEY), now);
 });
 
+test("a node's advert heard on the air counts as heard by our clock, whatever its stamp, once a minute at most", async () => {
+  let now = 1_700_000_000_000;
+  const { radio, session } = await nodeSession({ now: () => now });
+  const heard = (key: string) => session.getState().contacts[key]?.lastHeardAt ?? null;
+  // Hill restarted without its clock: its advert is stamped long ago, and the radio drops it as a replay.
+  const advert = (stamp: number) => new ByteWriter().bytes(HILL).u32(stamp).bytes(new Uint8Array(64)).u8(0x82).toBytes();
+  radio.push(heardPacket(4, [0x3f], advert(1_600_000_000)));
+  await tick(5);
+  assert.equal(heard(HILL_KEY), now);
+
+  now += 30_000;
+  radio.push(heardPacket(4, [], advert(1_600_000_100)));
+  await tick(5);
+  assert.equal(heard(HILL_KEY), now - 30_000);
+  now += 40_000;
+  radio.push(heardPacket(4, [], advert(1_600_000_200)));
+  await tick(5);
+  assert.equal(heard(HILL_KEY), now);
+
+  // A node the radio does not keep is nobody's to move.
+  radio.push(heardPacket(4, [], new ByteWriter().bytes(new Uint8Array(32).fill(0x77)).u32(1).bytes(new Uint8Array(64)).toBytes()));
+  await tick(5);
+  assert.equal(session.getState().contacts["77".repeat(32)], undefined);
+});
+
 function neighboursReply(radio: ScriptedRadio, total: number, rows: [string, number, number][]): Uint8Array {
   const w = new ByteWriter().u8(Push.BinaryResponse).u8(0).u32(radio.binaryTag).u16(total).u16(rows.length);
   for (const [prefix, secs, snr] of rows) w.bytes(fromHex(prefix)).u32(secs).i8(snr * 4);

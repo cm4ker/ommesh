@@ -30,6 +30,7 @@ import { usePress, type MenuAt } from "../lib/press.js";
 import { directKey, usePing, measuredLegs, spanKey } from "../lib/ping.js";
 import { routeWords } from "../lib/routes.js";
 import { useSavedPasswords } from "../lib/secrets.js";
+import { isSilent, setSilentDays, SILENT_CHOICES, useSilentDays, type SilentDays } from "../lib/silentNodes.js";
 import { openCleanUp, removeNodes } from "../lib/cleanUp.js";
 import { isYours, memoryTight, memoryUse } from "../lib/tidy.js";
 import { session, useSelector, useSession } from "../lib/session.js";
@@ -39,7 +40,7 @@ import { closeAllTools, closeTool, dropOnRoute, lineOfSightTo, openLineOfSight, 
 import { getTextScale, subscribeTextSize } from "../theme/textSize.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { SearchField } from "../ui/Field.js";
-import { ActionRow, Block, Group, SwitchRow } from "../ui/List.js";
+import { ActionRow, Block, Group, SelectRow, SwitchRow } from "../ui/List.js";
 import { showMenu } from "../ui/Menu.js";
 import { pullSheetCover } from "../ui/PullSheet.js";
 import { Sheet } from "../ui/Sheet.js";
@@ -65,7 +66,8 @@ const KINDS: { id: Kind; label: Key }[] = [
 
 // ---- the filter, shared by the list and the map, and kept while the app lives ----
 
-let filter: { kind: Kind; query: string } = { kind: "all", query: "" };
+// `silentShown` puts back for now the nodes hidden for their silence.
+let filter: { kind: Kind; query: string; silentShown: boolean } = { kind: "all", query: "", silentShown: false };
 const filterListeners = new Set<() => void>();
 function setFilter(patch: Partial<typeof filter>): void {
   filter = { ...filter, ...patch };
@@ -100,10 +102,24 @@ function useFilterOpen(): boolean {
 }
 
 
-function matcher(state: SessionState, saved: readonly string[], kind: Kind, query: string): (c: ContactRecord) => boolean {
+/** The silence that hides a node now: none while they are shown for now. */
+function useHiding(): SilentDays {
+  const days = useSilentDays();
+  const { silentShown } = useFilter();
+  return silentShown ? null : days;
+}
+
+/** A node hidden for its silence (#101), unless it is yours: a node of yours gone silent is one to notice. */
+function silentHidden(state: SessionState, saved: readonly string[], c: ContactRecord, days: SilentDays, now: number): boolean {
+  return isSilent(c, days, now) && !isYours(state, saved, c);
+}
+
+/** What the list and the map show: the kind, the search, and no node silent for `hiding` days unless searched for by name. */
+function matcher(state: SessionState, saved: readonly string[], kind: Kind, query: string, hiding: SilentDays, now = Date.now()): (c: ContactRecord) => boolean {
   const q = query.trim().toLowerCase();
   return (c) => {
     if (q && !(c.name || c.prefix).toLowerCase().includes(q) && !c.key.startsWith(q)) return false;
+    if (!q && silentHidden(state, saved, c, hiding, now)) return false;
     switch (kind) {
       case "yours":
         return isYours(state, saved, c);
@@ -174,12 +190,14 @@ export function MeshListHead() {
 function useFilterChanged(): boolean {
   const { kind } = useFilter();
   const { order, pinned } = useNodeOrder();
-  return kind !== "all" || order !== DEFAULT_NODE_ORDER.order || pinned !== DEFAULT_NODE_ORDER.pinned;
+  const days = useSilentDays();
+  return kind !== "all" || order !== DEFAULT_NODE_ORDER.order || pinned !== DEFAULT_NODE_ORDER.pinned || days !== null;
 }
 
 function resetFilter(): void {
-  setFilter({ kind: "all" });
+  setFilter({ kind: "all", silentShown: false });
   setNodeOrder(DEFAULT_NODE_ORDER);
+  setSilentDays(null);
 }
 
 /** Beside the search: what the list shows and in what order, wanted rarely. A dot says something is changed. */
@@ -200,6 +218,7 @@ function FilterSheetHost() {
   const state = useSession();
   const { kind } = useFilter();
   const { order, pinned } = useNodeOrder();
+  const days = useSilentDays();
   const changed = useFilterChanged();
   const [busy, setBusy] = useState(false);
   const lost = !placed(state.self);
@@ -217,6 +236,16 @@ function FilterSheetHost() {
             </button>
           ))}
         </Block>
+        <SelectRow
+          label={t("mesh.silent.label")}
+          hint={t("mesh.silent.hint")}
+          value={String(days)}
+          options={SILENT_CHOICES.map((c) => ({ value: String(c.days), label: t(c.label) }))}
+          onChange={(v) => {
+            setSilentDays(SILENT_CHOICES.find((c) => String(c.days) === v)?.days ?? null);
+            setFilter({ silentShown: false });
+          }}
+        />
       </Group>
       <Group title={t("mesh.filter.order")}>
         <Block className="filter-grid pairs">
@@ -286,21 +315,28 @@ function MeshCount() {
   const state = useSession();
   const saved = useSavedPasswords();
   const { kind, query } = useFilter();
+  const hiding = useHiding();
   const all = Object.values(state.contacts);
   if (all.length === 0) return null;
-  if (kind === "all" && !query.trim()) return <span className="search-note">{t("mesh.list.count", { count: all.length })}</span>;
-  const shown = all.filter(matcher(state, saved, kind, query)).length;
+  const narrowed = kind !== "all" || !!query.trim();
+  const shown = narrowed || hiding !== null ? all.filter(matcher(state, saved, kind, query, hiding)).length : all.length;
+  if (!narrowed && shown === all.length) return <span className="search-note">{t("mesh.list.count", { count: all.length })}</span>;
   return <span className="search-note cut">{t("mesh.list.shown", { shown, count: all.length })}</span>;
 }
 
 function MeshListBody({ selected, onOpen, hideSearch = false, only }: { selected: string | null; onOpen: (key: string) => void; hideSearch?: boolean | undefined; only?: string[] | undefined }) {
   const state = useSession();
   const saved = useSavedPasswords();
-  const { kind, query } = useFilter();
+  const { kind, query, silentShown } = useFilter();
   const { order, pinned } = useNodeOrder();
+  const days = useSilentDays();
   const cells = useBatteryTypes();
   const all = Object.values(state.contacts);
-  const rows = all.filter(only ? (c) => only.includes(c.key) : matcher(state, saved, kind, query)).sort(nodeComparator(order, state.self));
+  const now = Date.now();
+  const rows = all.filter(only ? (c) => only.includes(c.key) : matcher(state, saved, kind, query, silentShown ? null : days, now)).sort(nodeComparator(order, state.self));
+  // How many of the kind shown are hidden for their silence, or would be: a search shows them all.
+  const ofKind = matcher(state, saved, kind, "", null, now);
+  const silent = only || query.trim() ? 0 : all.filter((c) => silentHidden(state, saved, c, days, now) && ofKind(c)).length;
   const list = pinnedFirst(rows, pinned);
   // Rows are memoised, so they get a stable tap and hold and the minute their "5 min" is counted from.
   const openRef = useRef(onOpen);
@@ -370,8 +406,22 @@ function MeshListBody({ selected, onOpen, hideSearch = false, only }: { selected
             </ul>
           </>
         )}
+        {silent > 0 && days !== null ? <SilentMore count={silent} days={days} shown={silentShown} /> : null}
       </div>
     </>
+  );
+}
+
+/** Under the list, how many it hides for their silence, and a button to see them for now or hide them again. */
+function SilentMore({ count, days, shown }: { count: number; days: Exclude<SilentDays, null>; shown: boolean }) {
+  const span = t(SILENT_CHOICES.find((c) => c.days === days)!.span!);
+  return (
+    <div className="silent-more">
+      <span className="grow">{shown ? t("mesh.silent.shown", { count, span }) : t("mesh.silent.hidden", { count, span })}</span>
+      <Button size="sm" onClick={() => setFilter({ silentShown: !shown })}>
+        {shown ? t("mesh.silent.hide") : t("mesh.silent.show")}
+      </Button>
+    </div>
   );
 }
 
@@ -490,8 +540,9 @@ function useShownKeys(): string[] {
   const state = useSession();
   const saved = useSavedPasswords();
   const { kind, query } = useFilter();
+  const hiding = useHiding();
   const { order, pinned } = useNodeOrder();
-  const rows = Object.values(state.contacts).filter(matcher(state, saved, kind, query)).sort(nodeComparator(order, state.self));
+  const rows = Object.values(state.contacts).filter(matcher(state, saved, kind, query, hiding)).sort(nodeComparator(order, state.self));
   return pinnedFirst(rows, pinned).map((c) => c.key);
 }
 
@@ -735,6 +786,7 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
   const { phone, putHere, onLocate } = usePhoneOnMap(state, active, surveying);
   const saved = useSavedPasswords();
   const { kind, query } = useFilter();
+  const hiding = useHiding();
   const tool = useMeshTool();
   // A survey's points, coloured by the repeater picked when one is.
   const survey = shownSurvey(tool, surveys);
@@ -745,7 +797,7 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
   const overlay = useMeshOverlay(selected, state);
   // The map redraws markers when the filter function changes, so it changes only with what it filters by.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const matches = useCallback(matcher(state, saved, kind, query), [state.logins, state.statusHistory, saved, kind, query]);
+  const matches = useCallback(matcher(state, saved, kind, query, hiding), [state.logins, state.statusHistory, saved, kind, query, hiding]);
   // A repeater's neighbours shown: only it and those it hears, as the filter leaves them, are drawn.
   const linked = tool?.kind === "neighbours" ? [tool.key, ...neighbourRows(state, tool.key, Date.now()).flatMap((n) => (n.contact && passes(n, tool.filter) ? [n.contact.key] : []))].join(",") : null;
   const test = useMemo(() => {

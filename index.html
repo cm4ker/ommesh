@@ -4,89 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>Ommesh / Meshnet — Privacy policy</title>
+  <title>Ommesh</title>
+  <link rel="canonical" href="https://ommesh.ru/">
+  <meta http-equiv="refresh" content="0; url=https://ommesh.ru/">
+  <script>location.replace("https://ommesh.ru/");</script>
   <style>
     :root { font: 16px/1.6 system-ui, sans-serif; color-scheme: light dark; }
     body { max-width: 48rem; margin: auto; padding: 1rem; overflow-wrap: anywhere; }
     h1 { font-size: 1.6rem; line-height: 1.2; }
-    h2 { font-size: 1.15rem; margin-top: 1.6rem; }
     a { color: light-dark(#24599c, #98c3ff); }
   </style>
 </head>
 <body>
-  <h1>Ommesh / Meshnet privacy policy</h1>
-  <p>Updated September 23, 2026.</p>
-  <p>Ommesh is the mobile version of Meshnet, a companion for MeshCore radios maintained by
-    <a href="https://github.com/cm4ker/meshnet" target="_blank" rel="noopener noreferrer">cm4ker and the Meshnet project</a>.
-    This policy describes the data handled by the app. No Ommesh account is required.</p>
-
-  <h2>Data on your device</h2>
-  <p>The app stores conversations, message drafts, radio contacts (not your phone's address book),
-    public node identifiers, routes, positions supplied by radios, telemetry history, connection
-    addresses and preferences locally. Map and elevation tiles are cached for reuse offline.
-    Message history is separate for each radio.</p>
-  <p>When you choose to remember a node password, mobile builds use the platform's secure storage;
-    desktop builds use the system credential store. Browser builds use the browser's local storage.
-    Conversation history and cached map data are not separately encrypted by the app.
-    The Android app excludes its private data from Android cloud backup and device-transfer backup.</p>
-
-  <h2>Data sent to your radio and other people</h2>
-  <p>Connecting sends companion-protocol commands to the radio you select over Bluetooth or Wi-Fi/TCP.
-    Messages, channel settings, node names, passwords for remote administration and positions you
-    set can be transmitted to that radio to perform the actions you request. The radio may forward
-    messages, advertisements, positions and telemetry to other radios according to its settings.
-    Anyone with access to a channel may be able to read that channel's messages.</p>
-  <p>Wi-Fi/TCP connections to companion radios do not use TLS. Use a network you trust.
-    Radio encryption depends on the firmware, message type and channel keys; this app does not
-    promise that all radio traffic is encrypted or that it can erase data received by other people.</p>
-
-  <h2>Maps and elevation services</h2>
-  <p>Opening the map or a terrain profile can request images from
-    <a href="https://osmfoundation.org/wiki/Privacy_Policy" target="_blank" rel="noopener noreferrer">OpenStreetMap tile services</a>
-    and the public elevation-tiles-prod dataset hosted on
-    <a href="https://aws.amazon.com/privacy/" target="_blank" rel="noopener noreferrer">Amazon Web Services</a>.
-    Those services receive your IP address, request time, client information and the coordinates
-    of the requested map tiles. A viewed area may reveal an area of interest or a radio's location.
-    These HTTPS requests do not include your conversations, node passwords or radio contact list.
-    Provider logs and retention are governed by the providers' policies.</p>
-
-  <h2>Permissions</h2>
-  <ul>
-    <li>Nearby devices / Bluetooth: finding and connecting to a compatible radio.</li>
-    <li>Location on Android 11 and earlier: required by Android for Bluetooth scanning.
-      The Android app does not read the phone's GPS position or track background location.
-      Radio positions may still be received from the mesh or entered manually.
-      On supported browser and iOS builds, using the device's position is a separate action
-      that requests permission and writes the chosen position to the connected radio.</li>
-    <li>Notifications: optional local notices for messages and discovered nodes. A notice
-      can show a contact name and message preview on your lock screen, subject to your device settings.</li>
-    <li>Network access: connecting to a Wi-Fi radio and loading map or elevation tiles.</li>
-  </ul>
-  <p>You can change permissions in your device settings. Denying Bluetooth access prevents
-    Bluetooth connections; demo mode does not require a radio.</p>
-
-  <h2>Analytics, advertising and updates</h2>
-  <p>The app contains no advertising SDK, analytics SDK or automatic crash-reporting service.
-    The project does not operate an account or message-storage server. Google Play may process
-    installation and diagnostic information according to Google's settings and policies.
-    Desktop builds can also contact GitHub for update checks and downloads; these requests expose
-    the IP address and normal request information to GitHub. Android updates are distributed by the store.</p>
-
-  <h2>Retention and deletion</h2>
-  <p>Local history remains until you delete it or clear the app's storage. In the app, use
-    Radio → Reboot, reset, erase → Delete the history on this device to remove the selected
-    radio's conversation history. Saved node passwords can be forgotten in the node's sign-in controls.
-    On Android, Settings → Apps → Ommesh → Storage → Clear storage removes the app's local
-    history, settings, cached tiles and remembered passwords. Uninstalling also removes its app data.</p>
-  <p>Deleting local history does not delete data stored on a radio, copies held by recipients,
-    or logs retained by map providers. Manage the radio's data separately. No app account needs
-    to be deleted because the app does not create one.</p>
-
-  <h2>Contact and changes</h2>
-  <p>For privacy questions, email <a href="mailto:support@it-adapt.ru">support@it-adapt.ru</a>.
-    You can also reach the maintainer through the
-    <a href="https://github.com/cm4ker/meshnet/issues" target="_blank" rel="noopener noreferrer">Meshnet project support page</a>.
-    GitHub issues are public: do not post passwords,
-    private messages or precise private locations there. The date above changes when this policy is updated.</p>
+  <h1>Ommesh</h1>
+  <p>Ommesh lives at <a href="https://ommesh.ru/">ommesh.ru</a>.
+    Its privacy policy is at <a href="https://client.ommesh.ru/privacy.html">client.ommesh.ru/privacy.html</a>.</p>
 </body>
 </html>

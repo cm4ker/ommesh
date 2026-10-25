@@ -593,8 +593,11 @@
 .sheet-body > .group {
   margin-top: 0;
 }
+/* In a sheet the body scrolls and the list only grows. Left a scroller of its own, with nothing to scroll and
+   its overscroll contained, it would stop a swipe on its rows short of the body in Chromium (Android). */
 .sheet-body > .list {
   flex: none;
+  overflow: visible;
 }
 .sheet-form {
   padding: 0 var(--space-4) var(--space-2);

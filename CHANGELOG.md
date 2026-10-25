@@ -20,6 +20,7 @@
 - A repeater restarted without its clock no longer looks silent. The radio drops its adverts as old, but Ommesh hears them on the air and counts the repeater heard now.
 - The lines of Who hears me, and of a survey's point opened on the map, now end on the repeaters they lead to. When Show and order showed only some nodes, such as Yours, or a repeater was gathered with others into a circle, a line ran out onto the empty map. A repeater gone from your contacts since the survey is marked with a pin where it stood then.
 - On Android, the list in New chat › Message someone, and the repeaters to choose from when you set a route by hand, now scroll under your finger. Before, a long list stood still, and the names further down could not be reached. The search field stays above the list as it scrolls, and the sheet keeps its height while you type or the keyboard comes and goes, instead of jumping up and down.
+- A route to a person, a room or a sensor can be set to direct, with no relays: Route › ⋯ › Set direct, then Save route. Taking every relay out of the chain can be saved too; before, it waited for a check that cannot reach anything but a repeater. When Ask the whole mesh gets no answer from a person's radio, the reason is now given: it answers only if its owner lets you ask for its readings and has you among its contacts.
 
 ## 0.10.0 — 2026-10-23
 

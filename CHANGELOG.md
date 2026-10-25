@@ -16,6 +16,9 @@
 - Do not disturb: Settings › Notifications › Do not disturb makes notifications quiet for an hour, until morning or until you turn it off, and every night on a schedule, 23:00 to 07:00 unless you change it. While it is on, notifications come without a sound and without popping up: a phone keeps them in the shade, Windows in its notification centre, and new nodes are not announced. Direct messages from favourites still ring, and mentions of you too if you switch that on. A moon by the Chats title says till when; tap it to turn quiet off or add an hour. On a computer the tray menu has it as well, and a phone and a computer sharing one radio keep it alike.
 - Mute a chat for an hour, eight hours or two days: hold it in the chat list and choose Mute. It rings again by itself when the time is up.
 
+### Desktop
+- Ommesh for macOS and Linux. A Mac takes one disk image, for Apple silicon and Intel alike; Linux an AppImage, or a .deb package for Debian and Ubuntu, for x64 and ARM64. As on Windows, they connect to a radio over Bluetooth, USB and Wi-Fi, keep node passwords in the system's keychain, stay in the menu bar or the tray with the window closed, and offer each new version themselves.
+
 ### Fixes
 - A repeater restarted without its clock no longer looks silent. The radio drops its adverts as old, but Ommesh hears them on the air and counts the repeater heard now.
 - The lines of Who hears me, and of a survey's point opened on the map, now end on the repeaters they lead to. When Show and order showed only some nodes, such as Yours, or a repeater was gathered with others into a circle, a line ran out onto the empty map. A repeater gone from your contacts since the survey is marked with a pin where it stood then.

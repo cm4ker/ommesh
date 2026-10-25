@@ -21,6 +21,24 @@ export function releaseInfo(base, env) {
 }
 
 /**
+ * What the updater of each platform downloads, by the key it looks for, and the end of that file's name.
+ * The updater looks for `<os>-<arch>-<installer>` first and `<os>-<arch>` after it, so a Linux copy
+ * installed from the .deb finds its package and an AppImage the plain key. One universal macOS archive
+ * serves both kinds of Mac.
+ */
+const UPDATES = [
+  ["windows-x86_64", "x64", "_x64-setup.exe"],
+  ["windows-aarch64", "arm64", "_arm64-setup.exe"],
+  ["windows-i686", "x86", "_x86-setup.exe"],
+  ["darwin-aarch64", "macOS", "_universal.app.tar.gz"],
+  ["darwin-x86_64", "macOS", "_universal.app.tar.gz"],
+  ["linux-x86_64", "Linux x64 AppImage", "_amd64.AppImage"],
+  ["linux-x86_64-deb", "Linux x64 .deb", "_amd64.deb"],
+  ["linux-aarch64", "Linux ARM64 AppImage", "_aarch64.AppImage"],
+  ["linux-aarch64-deb", "Linux ARM64 .deb", "_arm64.deb"],
+];
+
+/**
  * The feed the desktop updater reads. With the version's news (scripts/news.mjs) it carries them whole
  * under `news`, which the app shows in the reader's language before the download; its notes then list
  * the new things in both languages, for clients from before 0.7.0, which show the notes as they are.
@@ -28,14 +46,14 @@ export function releaseInfo(base, env) {
 export function makeManifest({ version, tag, repository, files, signature, news = null, date = new Date().toISOString() }) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error("Invalid GitHub repository");
   const platforms = {};
-  for (const [arch, target] of [["x64", "windows-x86_64"], ["arm64", "windows-aarch64"], ["x86", "windows-i686"]]) {
-    const matches = files.filter((name) => name.endsWith(`_${arch}-setup.exe`));
-    if (matches.length !== 1) throw new Error(`Expected exactly one ${arch} installer`);
+  for (const [target, what, ending] of UPDATES) {
+    const matches = files.filter((name) => name.endsWith(ending));
+    if (matches.length !== 1) throw new Error(`Expected exactly one ${what} installer`);
     const name = matches[0];
     if (basename(name) !== name || !name.includes(`_${version}_`)) throw new Error(`Installer version does not match ${version}`);
-    if (!files.includes(`${name}.sig`)) throw new Error(`Missing signature for ${arch}`);
+    if (!files.includes(`${name}.sig`)) throw new Error(`Missing signature for ${what}`);
     const signed = signature(`${name}.sig`).trim();
-    if (!signed) throw new Error(`Empty signature for ${arch}`);
+    if (!signed) throw new Error(`Empty signature for ${what}`);
     platforms[target] = { signature: signed, url: `https://github.com/${repository}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(name)}` };
   }
   const notes = news ? updaterNotes(news) : `Ommesh ${version}\nRelease details: https://github.com/${repository}/releases/tag/${encodeURIComponent(tag)}`;
@@ -121,13 +139,13 @@ export function publish(info, directory, env, run = gh, pause = sleep) {
   for (const asset of channelRelease?.assets ?? []) {
     // Only rolling download aliases are replaced here; old versioned releases go in pruneDevReleases.
     // Builds from before the rename to Ommesh were named Meshnet.
-    if (/^(?:Ommesh|Meshnet).*\.(?:exe(?:\.sig)?|apk|zip)$/.test(asset.name) && !currentNames.has(asset.name)) {
+    if (/^(?:Ommesh|Meshnet).*\.(?:exe|app\.tar\.gz|AppImage|deb|dmg|apk|zip)(?:\.sig)?$/.test(asset.name) && !currentNames.has(asset.name)) {
       run("release", "delete-asset", "dev", asset.name, "--repo", repo, "--yes");
     }
   }
-  writeFileSync(notesFile, `Latest development build: [Ommesh ${info.version}](https://github.com/${repo}/releases/tag/${info.tag}).\n\nWindows installers, Android APK and web bundle are also attached here for manual download. Desktop clients use latest.json below, which points to the immutable versioned release.\n`);
+  writeFileSync(notesFile, `Latest development build: [Ommesh ${info.version}](https://github.com/${repo}/releases/tag/${info.tag}).\n\nWindows installers, the macOS disk image, Linux AppImages and .deb packages, Android APK and web bundle are also attached here for manual download. Desktop clients use latest.json below, which points to the immutable versioned release.\n`);
   run("release", "edit", "dev", "--repo", repo, "--prerelease", "--latest=false", "--title", `Dev · ${info.version}`, "--notes-file", notesFile);
-  // This is the final write, after both architectures and their signatures exist.
+  // This is the final write, after every platform's package and its signature exist.
   uploadAgain(run, pause, "release", "upload", "dev", "--repo", repo, "--clobber", resolve(directory, "latest.json"));
 }
 

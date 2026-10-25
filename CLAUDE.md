@@ -28,7 +28,7 @@ cd packages/meshcore && node --import tsx --test --test-name-pattern "trace" src
 
 `@meshnet/meshcore` is consumed through its `dist`. `pnpm web`, `pnpm typecheck` and `pnpm test` rebuild it first, but a running dev server does not: after editing `packages/meshcore`, run `pnpm meshcore`.
 
-Shell builds (`pnpm desktop`, `pnpm desktop:bundle`, `pnpm android`, `pnpm ios`) need Rust, the Android SDK or Xcode, and are not part of `pnpm build`. CI (`.github/workflows/build.yml`) builds the Windows installers and the Android APK.
+Shell builds (`pnpm desktop`, `pnpm desktop:bundle`, `pnpm android`, `pnpm ios`) need Rust, the Android SDK or Xcode, and are not part of `pnpm build`. CI (`.github/workflows/build.yml`) builds the Windows installers, the macOS app, the Linux AppImages and .deb packages, and the Android APK. The shell's macOS and Linux code is compiled only there and on a Mac; `desktop:check` on Windows does not see it.
 
 ## Trying a change without a radio
 

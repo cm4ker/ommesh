@@ -8,7 +8,7 @@
     &nbsp;
     <a href="https://apps.apple.com/app/ommesh/id6814511595"><img src="docs/badges/app-store-en.svg" height="56" alt="Download on the App Store" /></a>
     &nbsp;
-    <a href="https://github.com/cm4ker/ommesh/releases/latest"><img src="docs/badges/windows-en.svg" height="56" alt="Download for Windows" /></a>
+    <a href="https://github.com/cm4ker/ommesh/releases/latest"><img src="docs/badges/desktop-en.svg" height="56" alt="Download for Windows, macOS, Linux" /></a>
   </p>
   <p><strong>English</strong> · <a href="README.ru.md">Русский</a></p>
   <p>
@@ -29,10 +29,13 @@
 | **Android** | [Google Play](https://play.google.com/store/apps/details?id=dev.cm4ker.meshnet). Updates come through the store. |
 | **Windows 10 and 11** | Installer for [x64](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x64.exe), [ARM](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-arm64.exe) or [32-bit](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x86.exe). The app offers each new version itself. |
 | **iPhone and iPad** | [App Store](https://apps.apple.com/app/ommesh/id6814511595). Updates come through the store. |
-| **macOS and Linux** | Build the desktop app from source; see [Development](#development). |
+| **macOS 11 and later** | [Disk image](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-macos.dmg) for Apple silicon and Intel Macs. The app offers each new version itself. |
+| **Linux** | AppImage for [x64](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-linux-x64.AppImage) or [ARM64](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-linux-arm64.AppImage), or a package for Debian and Ubuntu: [x64](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-linux-x64.deb) or [ARM64](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-linux-arm64.deb). The app offers each new version itself. |
 | **Browser** | Open [client.ommesh.ru](https://client.ommesh.ru) in Chrome or Edge, nothing to install; they reach a radio over Bluetooth or USB. The site takes every change as it lands, like the Dev channel. |
 
-Ommesh comes out once a week. The Windows installers are the newest version, and the app itself offers the next (**Settings → About**, or **App updates** on the connection screen); after an update, **What's new** says what it brought. Testers who want every change as it lands can pick the **Dev** channel in **App updates**. A PC with neither WebView2 nor internet access (Windows 10 LTSC, a fresh image) needs the offline installer from the [latest release page](https://github.com/cm4ker/ommesh/releases/latest); it carries WebView2 and is about 190 MB larger. Windows 11 already has WebView2. Testers can also take the [Dev Android APK](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh_android-debug.apk); it is signed with a different key, so remove the Google Play version first. See [update channels and signing](docs/desktop-updates.md).
+Ommesh comes out once a week. The desktop downloads are the newest version, and the app itself offers the next (**Settings → About**, or **App updates** on the connection screen); after an update, **What's new** says what it brought. Testers who want every change as it lands can pick the **Dev** channel in **App updates**. A PC with neither WebView2 nor internet access (Windows 10 LTSC, a fresh image) needs the offline installer from the [latest release page](https://github.com/cm4ker/ommesh/releases/latest); it carries WebView2 and is about 190 MB larger. Windows 11 already has WebView2. Testers can also take the [Dev Android APK](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh_android-debug.apk); it is signed with a different key, so remove the Google Play version first. See [update channels and signing](docs/desktop-updates.md).
+
+On a Mac, open the disk image and drag Ommesh to Applications. Apple has not checked the app yet, so the first time macOS refuses to open it: choose **Open Anyway** in **System Settings → Privacy & Security**. On Linux, make the AppImage executable (`chmod +x Ommesh-linux-x64.AppImage`) and run it, or install the package with `sudo apt install ./Ommesh-linux-x64.deb`. A radio on USB needs your user in the group that owns serial ports: `sudo usermod -aG dialout $USER`, then sign in again.
 
 ### Connect a radio
 
@@ -80,7 +83,7 @@ Ommesh comes out once a week. The Windows installers are the newest version, and
 ### At home on every screen
 
 - **Desktop workspace.** Conversation list, chat and details side by side, with a command palette and keyboard shortcuts.
-- **Windows updates.** Stable/Dev channels, optional automatic checks, signed downloads and installation on demand. Available even before connecting a radio; history and drafts are saved before restart.
+- **Desktop updates.** Stable/Dev channels, optional automatic checks, signed downloads and installation on demand, on Windows, macOS and Linux (AppImage and .deb). Available even before connecting a radio; history and drafts are saved before restart.
 - **Phone navigation.** Bottom tabs, a sliding node list over the map, long-press menus and swipe-back navigation.
 - **Light and dark themes.** One Light, One Dark, system theme selection and adjustable text size.
 - **English and Russian.** The app follows the system's language or the one picked under Appearance, notifications included.
@@ -137,7 +140,7 @@ The client runs at **http://localhost:5180**. The protocol package is rebuilt au
 | `pnpm android` | Build and sync the client, then open Android Studio |
 | `pnpm ios` | Build and sync the client, then open Xcode on macOS |
 
-Desktop builds need a Rust toolchain and the platform's native build tools. Installers are written under `apps/desktop/src-tauri/target/release/bundle`. Mobile builds need Android Studio / Android SDK or Xcode; see the [mobile guide](apps/mobile/README.md).
+Desktop builds need a Rust toolchain and the platform's native build tools; on Linux also the development packages the Linux job in `.github/workflows/build.yml` installs (WebKitGTK, AppIndicator, D-Bus, udev). Installers are written under `apps/desktop/src-tauri/target/release/bundle`. Mobile builds need Android Studio / Android SDK or Xcode; see the [mobile guide](apps/mobile/README.md).
 
 <details>
 <summary><strong>Point a mobile development build at your local server</strong></summary>
@@ -205,6 +208,8 @@ App artwork has one source: `apps/web/public/icon.svg`. After changing it, run `
 
 - **Windows:** the radio only lets a paired computer use its UART service. With no pairing, the app asks for the PIN — shown on the radio's screen, or `123456` on a radio without one unless changed — pairs, and connects again. It also replaces a stale bond after a radio reset or reflash. Its native GATT implementation reads the Windows characteristic cache after pairing.
 - **Windows, if no PIN prompt appears:** open **Settings → Bluetooth & devices → Add device → Bluetooth**, pick the radio and enter the same PIN, then connect in Ommesh. After a radio reset or reflash, remove it there first. In a browser (Web Bluetooth), pair the radio in the system beforehand.
+- **macOS:** the first search for radios asks to let Ommesh use Bluetooth. The system asks for the radio's PIN itself.
+- **Linux:** Bluetooth goes through BlueZ, and the desktop's Bluetooth agent asks for the PIN. Where none runs, pair the radio once with `bluetoothctl` (`pair <address>`), then connect in Ommesh.
 - **nRF52 USB:** boards such as T-Echo, RAK4631 and Heltec T114 need the **`_usb` firmware build** for a USB connection. The `_ble` build's serial port does not carry the companion protocol.
 - **Android:** the BLE plugin requests an MTU of 512 bytes; companion frames can be up to 176 bytes. The system pairing prompt handles the PIN.
 - **iOS:** the shell enables `bluetooth-central` background mode to support the connection while switching apps.

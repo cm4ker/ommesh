@@ -20,7 +20,17 @@ const PERIOD = 6 * 60 * 60_000;
 export const updates = new UpdateController(async (channel) => {
   const { Update } = await import("@tauri-apps/plugin-updater");
   const metadata = await invoke<ConstructorParameters<typeof Update>[0] | null>("desktop_check_update", { channel });
-  return metadata ? new Update(metadata) : null;
+  if (!metadata) return null;
+  const update = new Update(metadata);
+  // On Windows the installer ends the app and starts the new version itself, so
+  // install never returns. macOS and Linux put the new files in place and return:
+  // the shell then starts the app again on them.
+  const install = update.install.bind(update);
+  update.install = async (options) => {
+    await install(options);
+    await invoke("desktop_restart");
+  };
+  return update;
 }, initialChannel);
 
 interface DesktopInfo { version: string; supported: boolean }

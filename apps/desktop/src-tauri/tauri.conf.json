@@ -11,6 +11,7 @@
   },
   "app": {
     "withGlobalTauri": false,
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Ommesh",
@@ -40,6 +41,11 @@
     "publisher": "Ommesh",
     "shortDescription": "A MeshCore companion",
     "longDescription": "Chat over a MeshCore LoRa mesh through a radio on Bluetooth, USB or Wi-Fi.",
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-",
+      "files": { "Resources/ru.lproj/InfoPlist.strings": "macos/ru.lproj/InfoPlist.strings" }
+    },
     "windows": {
       "nsis": {
         "installMode": "currentUser",

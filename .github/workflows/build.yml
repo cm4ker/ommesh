@@ -1,5 +1,6 @@
 # Every push to master is checked and built for every home the client has:
-# Windows installers for x64, 32-bit x86 and ARM64, a debug Android APK and the web
+# Windows installers for x64, 32-bit x86 and ARM64, a universal macOS app, Linux
+# AppImages and .deb packages for x64 and ARM64, a debug Android APK and the web
 # bundle. Each push gets its own pre-release, and only the newest two are kept;
 # `dev/latest.json` points to the newest one. A matching `vX.Y.Z` tag makes a stable release. PRs get
 # workflow artifacts. The web bundle of every published push also goes to
@@ -154,6 +155,125 @@ jobs:
           path: dist-win/*
           if-no-files-found: error
 
+  # One app for Apple silicon and Intel Macs: a disk image to install from and the
+  # archive the updater downloads. Without a Developer ID the app is signed ad hoc
+  # (tauri.conf.json), and macOS asks once, in System Settings, to let it open. With
+  # the APPLE_* secrets of a publishing push it is signed with the Developer ID and,
+  # given the App Store Connect key, notarized, and opens like any other app.
+  desktop-macos:
+    name: macOS
+    needs: check
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          key: universal-apple-darwin
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/release.mjs prepare
+      - name: Build the app, its disk image and updater signature
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ needs.check.outputs.publish == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.check.outputs.publish == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+          DEVELOPER_ID_CERTIFICATE: ${{ needs.check.outputs.publish == 'true' && secrets.APPLE_CERTIFICATE || '' }}
+          DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          DEVELOPER_ID: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          NOTARY_KEY: ${{ secrets.APPLE_API_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.APPLE_API_KEY }}
+          NOTARY_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          # Tauri reads these names whenever they are set, empty or not, so they are set only with a value.
+          if [ -n "$DEVELOPER_ID_CERTIFICATE" ]; then
+            export APPLE_CERTIFICATE="$DEVELOPER_ID_CERTIFICATE" APPLE_CERTIFICATE_PASSWORD="$DEVELOPER_ID_CERTIFICATE_PASSWORD" APPLE_SIGNING_IDENTITY="$DEVELOPER_ID"
+            if [ -n "$NOTARY_KEY" ]; then
+              export APPLE_API_KEY="$NOTARY_KEY_ID" APPLE_API_ISSUER="$NOTARY_ISSUER" APPLE_API_KEY_PATH="$RUNNER_TEMP/notary.p8"
+              printf '%s\n' "$NOTARY_KEY" > "$APPLE_API_KEY_PATH"
+            fi
+          elif [ "${{ needs.check.outputs.publish }}" = "true" ]; then
+            echo "::warning::No Developer ID: the Mac app is signed ad hoc, and macOS asks to allow it on first opening."
+          fi
+          pnpm --filter @meshnet/desktop exec tauri build --config src-tauri/tauri.release.json --target universal-apple-darwin --bundles app,dmg
+          bundle=apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle
+          mkdir dist-mac
+          mv "$bundle"/dmg/*.dmg dist-mac/
+          # The updater's archive is named after the app alone; the feed wants the version
+          # and the architecture in the name, as every other package has them.
+          if [ -f "$bundle/macos/Ommesh.app.tar.gz" ]; then
+            for f in "$bundle"/macos/Ommesh.app.tar.gz*; do mv "$f" "dist-mac/Ommesh_${MESHNET_VERSION}_universal${f#"$bundle"/macos/Ommesh}"; done
+          fi
+          ls -l dist-mac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: meshnet-macos
+          path: dist-mac/*
+          if-no-files-found: error
+
+  # Linux on x64 and ARM64 (a Raspberry Pi 4 or 5 with a 64-bit system): an AppImage
+  # that runs on most distributions and updates itself, and a .deb for Debian and
+  # Ubuntu, which the updater installs with the system asking for the password.
+  # Built on the oldest Ubuntu GitHub offers, as an AppImage runs only where glibc
+  # is at least as new as the one it was built against (2.35 here).
+  desktop-linux:
+    name: Linux ${{ matrix.arch }}
+    needs: check
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      # The webview and the tray icon, the menu's shortcuts, D-Bus for Bluetooth and the
+      # keyring, udev for the serial ports; patchelf, file and FUSE for the AppImage, which
+      # also carries xdg-open to open links in the system's browser.
+      - name: System libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libdbus-1-dev libudev-dev patchelf file libfuse2 xdg-utils
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          key: linux-${{ matrix.arch }}
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/release.mjs prepare
+      - name: Build AppImage, .deb and updater signatures
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ needs.check.outputs.publish == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.check.outputs.publish == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+        run: |
+          set -euo pipefail
+          pnpm --filter @meshnet/desktop exec tauri build --config src-tauri/tauri.release.json --bundles appimage,deb
+          bundle=apps/desktop/src-tauri/target/release/bundle
+          mkdir dist-linux
+          mv "$bundle"/appimage/*.AppImage* "$bundle"/deb/*.deb* dist-linux/
+          dpkg-deb --field dist-linux/*.deb Package Version Architecture Depends
+          ls -l dist-linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: meshnet-linux-${{ matrix.arch }}
+          path: dist-linux/*
+          if-no-files-found: error
+
   android:
     name: Android APK
     needs: check
@@ -205,7 +325,7 @@ jobs:
 
   release:
     name: Publish
-    needs: [check, desktop-windows, android]
+    needs: [check, desktop-windows, desktop-macos, desktop-linux, android]
     if: needs.check.outputs.publish == 'true'
     runs-on: ubuntu-latest
     concurrency:
@@ -227,9 +347,15 @@ jobs:
           cp artifacts/meshnet-windows-x64/*.exe* out/
           cp artifacts/meshnet-windows-arm64/*.exe* out/
           cp artifacts/meshnet-windows-x86/*.exe* out/
+          cp artifacts/meshnet-macos/* artifacts/meshnet-linux-x64/* artifacts/meshnet-linux-arm64/* out/
           # The README links these names, which stay the same from build to build.
-          # They do not end in `_<arch>-setup.exe`, so the update feed never picks them.
+          # They do not end the way the feed's packages do, so the update feed never picks them.
           for arch in x64 arm64 x86; do cp out/Ommesh_*_${arch}-setup.exe out/Ommesh-setup-${arch}.exe; done
+          cp out/Ommesh_*_universal.dmg out/Ommesh-macos.dmg
+          cp out/Ommesh_*_amd64.AppImage out/Ommesh-linux-x64.AppImage
+          cp out/Ommesh_*_amd64.deb out/Ommesh-linux-x64.deb
+          cp out/Ommesh_*_aarch64.AppImage out/Ommesh-linux-arm64.AppImage
+          cp out/Ommesh_*_arm64.deb out/Ommesh-linux-arm64.deb
           cp artifacts/meshnet-android/app-debug.apk out/Ommesh_android-debug.apk
           (cd artifacts/meshnet-web && zip -qr ../../out/Ommesh_web.zip .)
           ls -l out

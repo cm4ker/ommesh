@@ -8,7 +8,7 @@
     &nbsp;
     <a href="https://apps.apple.com/ru/app/ommesh/id6814511595"><img src="docs/badges/app-store-ru.svg" height="56" alt="Загрузите в App Store" /></a>
     &nbsp;
-    <a href="https://github.com/cm4ker/ommesh/releases/latest"><img src="docs/badges/windows-ru.svg" height="56" alt="Скачать для Windows" /></a>
+    <a href="https://github.com/cm4ker/ommesh/releases/latest"><img src="docs/badges/desktop-ru.svg" height="56" alt="Скачать для Windows, macOS, Linux" /></a>
   </p>
   <p><a href="README.md">English</a> · <strong>Русский</strong></p>
   <p>
@@ -29,10 +29,13 @@
 | **Android** | [Google Play](https://play.google.com/store/apps/details?id=dev.cm4ker.meshnet). Обновления приходят через магазин. |
 | **Windows 10 и 11** | Установщик для [x64](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x64.exe), [ARM](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-arm64.exe) или [32-bit](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x86.exe). Каждую новую версию приложение предложит само. |
 | **iPhone и iPad** | [App Store](https://apps.apple.com/ru/app/ommesh/id6814511595). Обновления приходят через магазин. |
-| **macOS и Linux** | Соберите приложение из исходников, см. [Разработку](#разработка). |
+| **macOS 11 и новее** | [Образ диска](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-macos.dmg) для Mac на Apple silicon и Intel. Каждую новую версию приложение предложит само. |
+| **Linux** | AppImage для [x64](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-linux-x64.AppImage) или [ARM64](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-linux-arm64.AppImage) либо пакет для Debian и Ubuntu: [x64](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-linux-x64.deb) или [ARM64](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh-linux-arm64.deb). Каждую новую версию приложение предложит само. |
 | **Браузер** | Откройте [client.ommesh.ru](https://client.ommesh.ru) в Chrome или Edge, ничего не устанавливая; они подключаются к радио по Bluetooth и USB. Сайт получает каждую правку сразу, как канал Dev. |
 
-Ommesh выходит раз в неделю. Установщики для Windows — это свежая версия, и приложение само предлагает следующую (**Настройки → О приложении** или **Обновления приложения** на экране подключения); после обновления **Что нового** расскажет, что она принесла. Тестировщики, которым нужна каждая правка сразу, могут выбрать канал **Dev** в **Обновлениях приложения**. Компьютеру без WebView2 и без интернета (Windows 10 LTSC, чистый образ) нужен офлайн-установщик со [страницы последнего релиза](https://github.com/cm4ker/ommesh/releases/latest): в нём есть WebView2, и он больше примерно на 190 МБ. В Windows 11 WebView2 уже есть. Тестировщики могут поставить и [Dev APK для Android](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh_android-debug.apk); он подписан другим ключом, поэтому сначала удалите версию из Google Play. Подробнее — в [каналах обновлений и подписи](docs/desktop-updates.md).
+Ommesh выходит раз в неделю. Загрузки для компьютера — это свежая версия, и приложение само предлагает следующую (**Настройки → О приложении** или **Обновления приложения** на экране подключения); после обновления **Что нового** расскажет, что она принесла. Тестировщики, которым нужна каждая правка сразу, могут выбрать канал **Dev** в **Обновлениях приложения**. Компьютеру без WebView2 и без интернета (Windows 10 LTSC, чистый образ) нужен офлайн-установщик со [страницы последнего релиза](https://github.com/cm4ker/ommesh/releases/latest): в нём есть WebView2, и он больше примерно на 190 МБ. В Windows 11 WebView2 уже есть. Тестировщики могут поставить и [Dev APK для Android](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh_android-debug.apk); он подписан другим ключом, поэтому сначала удалите версию из Google Play. Подробнее — в [каналах обновлений и подписи](docs/desktop-updates.md).
+
+На Mac откройте образ диска и перетащите Ommesh в «Программы». Apple ещё не проверила приложение, поэтому в первый раз macOS откажется его открыть: нажмите **Всё равно открыть** в **Системных настройках → Конфиденциальность и безопасность**. В Linux сделайте AppImage исполняемым (`chmod +x Ommesh-linux-x64.AppImage`) и запустите его или поставьте пакет: `sudo apt install ./Ommesh-linux-x64.deb`. Для радио по USB ваш пользователь должен быть в группе, которой принадлежат последовательные порты: `sudo usermod -aG dialout $USER`, затем войдите в систему заново.
 
 ### Подключение радио
 
@@ -80,7 +83,7 @@ Ommesh выходит раз в неделю. Установщики для Wind
 ### Удобно на любом экране
 
 - **На компьютере.** Список чатов, переписка и панель подробностей рядом, палитра команд и горячие клавиши.
-- **Обновления Windows.** Каналы Stable/Dev, отключаемая автоматическая проверка, проверка подписи и установка по кнопке. Доступны без подключения радио; перед перезапуском сохраняются история и черновики.
+- **Обновления на компьютере.** Каналы Stable/Dev, отключаемая автоматическая проверка, проверка подписи и установка по кнопке — в Windows, macOS и Linux (AppImage и .deb). Доступны без подключения радио; перед перезапуском сохраняются история и черновики.
 - **На телефоне.** Нижние вкладки, выдвижной список узлов поверх карты, меню по долгому нажатию и возврат свайпом.
 - **Светлая и тёмная темы.** One Light, One Dark, выбор по настройкам системы и изменение размера текста.
 - **Русский и английский.** Язык берётся из системы или выбирается в «Оформлении», уведомления тоже на нём.
@@ -137,7 +140,7 @@ pnpm web
 | `pnpm android` | Сборка и синхронизация клиента, открытие Android Studio |
 | `pnpm ios` | Сборка и синхронизация клиента, открытие Xcode на macOS |
 
-Для десктопа нужны Rust и нативные инструменты сборки соответствующей ОС. Установщики создаются в `apps/desktop/src-tauri/target/release/bundle`. Для мобильных приложений нужны Android Studio / Android SDK или Xcode; подробности — в [мобильной документации](apps/mobile/README.md).
+Для десктопа нужны Rust и нативные инструменты сборки соответствующей ОС; в Linux ещё пакеты для разработки, которые ставит Linux-задача в `.github/workflows/build.yml` (WebKitGTK, AppIndicator, D-Bus, udev). Установщики создаются в `apps/desktop/src-tauri/target/release/bundle`. Для мобильных приложений нужны Android Studio / Android SDK или Xcode; подробности — в [мобильной документации](apps/mobile/README.md).
 
 <details>
 <summary><strong>Подключить мобильную dev-сборку к локальному серверу</strong></summary>
@@ -205,6 +208,8 @@ docs/screenshots   Демонстрационные снимки для обеи
 
 - **Windows:** радио пускает к UART-сервису только сопряжённый компьютер. Если сопряжения нет, приложение само спрашивает PIN — он на экране радио, у радио без экрана `123456`, если его не меняли, — сопрягается и подключается снова. Оно же заменяет устаревшую привязку после сброса или перепрошивки радио. Нативная реализация GATT после сопряжения читает характеристики из кеша Windows.
 - **Windows, если PIN не спросили:** откройте **Параметры → Bluetooth и устройства → Добавить устройство → Bluetooth**, выберите радио и введите тот же PIN, затем подключитесь в Ommesh. После сброса или перепрошивки радио сначала удалите его там. В браузере (Web Bluetooth) сопрягайте радио в системе заранее.
+- **macOS:** при первом поиске радио система спросит, можно ли Ommesh пользоваться Bluetooth. PIN радио она спрашивает сама.
+- **Linux:** Bluetooth работает через BlueZ, PIN спрашивает Bluetooth-агент рабочего стола. Если агента нет, сопрягите радио один раз через `bluetoothctl` (`pair <адрес>`), затем подключитесь в Ommesh.
 - **USB на nRF52:** для T-Echo, RAK4631, Heltec T114 и подобных плат нужна **прошивка `_usb`**. Serial-порт сборки `_ble` не передаёт companion-протокол.
 - **Android:** BLE-плагин запрашивает MTU 512 байт; кадры companion-протокола могут достигать 176 байт. PIN вводится в системном диалоге сопряжения.
 - **iOS:** оболочка включает фоновый режим `bluetooth-central`, чтобы поддерживать соединение при переключении между приложениями.

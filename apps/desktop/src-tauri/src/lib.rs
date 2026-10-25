@@ -94,6 +94,7 @@ pub fn run() {
     let builder = builder.manage(winble::WinBle::default()).invoke_handler(tauri::generate_handler![
         updates::desktop_update_info,
         updates::desktop_check_update,
+        updates::desktop_restart,
         instance::desktop_open_another,
         winble::winble_scan,
         winble::winble_stop_scan,
@@ -124,6 +125,7 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         updates::desktop_update_info,
         updates::desktop_check_update,
+        updates::desktop_restart,
         instance::desktop_open_another,
         tcp::tcp_open,
         tcp::tcp_write,
@@ -146,6 +148,15 @@ pub fn run() {
     ]);
 
     builder
-        .run(context)
-        .expect("error while running the desktop shell");
+        .build(context)
+        .expect("error while building the desktop shell")
+        .run(|_app, _event| {
+            // On macOS a closed window leaves the app in the Dock as well as in
+            // the menu bar, and a click on the Dock icon is how people bring it
+            // back; without this the click would do nothing.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { has_visible_windows: false, .. } = _event {
+                tray::bring_back(_app);
+            }
+        });
 }

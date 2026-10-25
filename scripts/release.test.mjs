@@ -13,28 +13,51 @@ test("stable tags must match the shared version; dev runs and retries have uniqu
   assert.equal(releaseInfo("0.2.0", { ...env, GITHUB_EVENT_NAME: "pull_request" }).publish, false);
   assert.equal(releaseInfo("0.2.0", { ...env, GITHUB_EVENT_NAME: "workflow_dispatch" }).publish, false);
 });
-const files = ["Ommesh_0.2.0_x64-setup.exe", "Ommesh_0.2.0_arm64-setup.exe", "Ommesh_0.2.0_x86-setup.exe"].flatMap((name) => [name, `${name}.sig`]);
+const files = [
+  "Ommesh_0.2.0_x64-setup.exe", "Ommesh_0.2.0_arm64-setup.exe", "Ommesh_0.2.0_x86-setup.exe",
+  "Ommesh_0.2.0_universal.app.tar.gz",
+  "Ommesh_0.2.0_amd64.AppImage", "Ommesh_0.2.0_amd64.deb", "Ommesh_0.2.0_aarch64.AppImage", "Ommesh_0.2.0_arm64.deb",
+].flatMap((name) => [name, `${name}.sig`]);
 const options = { version: "0.2.0", tag: "v0.2.0", repository: "cm4ker/ommesh", files, signature: () => "signed-package\n", date: "2026-09-22T00:00:00Z" };
 test("feed selects the exact architecture and immutable release files", () => {
   const manifest = makeManifest(options);
-  assert.deepEqual(Object.keys(manifest.platforms), ["windows-x86_64", "windows-aarch64", "windows-i686"]);
+  assert.deepEqual(Object.keys(manifest.platforms), [
+    "windows-x86_64", "windows-aarch64", "windows-i686", "darwin-aarch64", "darwin-x86_64",
+    "linux-x86_64", "linux-x86_64-deb", "linux-aarch64", "linux-aarch64-deb",
+  ]);
   assert.match(manifest.platforms["windows-i686"].url, /\/v0.2.0\/Ommesh_0.2.0_x86-setup.exe$/);
   assert.match(manifest.platforms["windows-aarch64"].url, /\/v0.2.0\/Ommesh_0.2.0_arm64-setup.exe$/);
   assert.equal(manifest.platforms["windows-x86_64"].signature, "signed-package");
+});
+test("both kinds of Mac take the universal archive, and Linux the package it was installed from", () => {
+  const { platforms } = makeManifest(options);
+  assert.match(platforms["darwin-aarch64"].url, /\/Ommesh_0.2.0_universal.app.tar.gz$/);
+  assert.equal(platforms["darwin-x86_64"].url, platforms["darwin-aarch64"].url);
+  assert.match(platforms["linux-x86_64"].url, /_amd64.AppImage$/);
+  assert.match(platforms["linux-x86_64-deb"].url, /_amd64.deb$/);
+  assert.match(platforms["linux-aarch64"].url, /_aarch64.AppImage$/);
+  assert.match(platforms["linux-aarch64-deb"].url, /_arm64.deb$/);
 });
 test("the unsigned offline installers with WebView2 inside stay out of the feed", () => {
   const offline = ["x64", "arm64", "x86"].map((arch) => `Ommesh_0.2.0_${arch}-offline-setup.exe`);
   assert.deepEqual(makeManifest({ ...options, files: [...offline, ...files] }), makeManifest(options));
 });
-test("the README's fixed-name download copies stay out of the feed", () => {
-  const copies = ["x64", "arm64", "x86"].map((arch) => `Ommesh-setup-${arch}.exe`);
+test("the disk image and the README's fixed-name download copies stay out of the feed", () => {
+  const copies = [
+    ...["x64", "arm64", "x86"].map((arch) => `Ommesh-setup-${arch}.exe`),
+    "Ommesh_0.2.0_universal.dmg", "Ommesh-macos.dmg",
+    ...["x64", "arm64"].flatMap((arch) => [`Ommesh-linux-${arch}.AppImage`, `Ommesh-linux-${arch}.deb`]),
+  ];
   assert.deepEqual(makeManifest({ ...options, files: [...copies, ...files] }), makeManifest(options));
 });
 test("never publish a partial or mismatched update", () => {
   assert.throws(() => makeManifest({ ...options, files: files.slice(0, 2) }), /arm64/);
   assert.throws(() => makeManifest({ ...options, files: files.slice(0, 4) }), /x86/);
   assert.throws(() => makeManifest({ ...options, files: files.slice(1) }), /x64/);
+  assert.throws(() => makeManifest({ ...options, files: files.filter((f) => !f.includes(".app.tar.gz")) }), /macOS/);
+  assert.throws(() => makeManifest({ ...options, files: files.filter((f) => !f.endsWith("_arm64.deb")) }), /Linux ARM64 .deb/);
   assert.throws(() => makeManifest({ ...options, files: files.filter((f) => !f.endsWith("arm64-setup.exe.sig")) }), /signature/);
+  assert.throws(() => makeManifest({ ...options, files: files.filter((f) => !f.endsWith("AppImage.sig")) }), /signature for Linux x64 AppImage/);
   assert.throws(() => makeManifest({ ...options, signature: () => " " }), /Empty signature/);
   assert.throws(() => makeManifest({ ...options, version: "0.3.0" }), /version/);
   assert.throws(() => makeManifest({ ...options, files: [...files, files[0]] }), /exactly one/);
@@ -61,7 +84,7 @@ test("publishes the complete immutable release before updating the rolling feed"
   publish(info, directory, env, (...args) => {
     calls.push(args);
     if (args[1] === "download") return JSON.stringify({ version: "0.2.0-dev.41.1" });
-    if (args[0] === "api") return JSON.stringify({ draft: false, assets: [{ name: "Meshnet_0.1.0_x64-setup.exe" }, { name: "latest.json" }] });
+    if (args[0] === "api") return JSON.stringify({ draft: false, assets: ["Meshnet_0.1.0_x64-setup.exe", "Ommesh_0.1.0_universal.dmg", "Ommesh_0.1.0_amd64.AppImage.sig", "latest.json"].map((name) => ({ name })) });
     return "";
   });
   assert.deepEqual(calls.slice(0, 3).map((call) => call.slice(0, 3)), [["release", "create", "dev-test"], ["release", "upload", "dev-test"], ["release", "edit", "dev-test"]]);
@@ -72,8 +95,7 @@ test("publishes the complete immutable release before updating the rolling feed"
   assert.deepEqual(calls.at(-1).slice(0, 3), ["release", "upload", "dev"]);
   assert.equal(basename(calls.at(-1).at(-1)), "latest.json");
   const removals = calls.filter((call) => call[1] === "delete-asset");
-  assert.equal(removals.length, 1);
-  assert.deepEqual(removals[0].slice(2, 4), ["dev", "Meshnet_0.1.0_x64-setup.exe"]);
+  assert.deepEqual(removals.map((call) => call.slice(2, 4)), [["dev", "Meshnet_0.1.0_x64-setup.exe"], ["dev", "Ommesh_0.1.0_universal.dmg"], ["dev", "Ommesh_0.1.0_amd64.AppImage.sig"]]);
 });
 
 test("an upload failure or stale build never changes the channel feed", (t) => {

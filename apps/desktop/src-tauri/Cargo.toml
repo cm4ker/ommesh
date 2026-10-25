@@ -14,7 +14,9 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # The icon by the clock, drawn from the bundled PNG with a dot for what is unread; see `tray.rs`.
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
+# macOS draws a clear window, the one the notice cards float in (`notices.rs`), only
+# through its private API; the app is not sold in the Mac App Store, which forbids it.
+tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
 # The two links a desktop has to a radio. WebView2 and WebKit have neither
 # Web Bluetooth nor Web Serial, so the shell carries them: btleplug for BLE,
 # serialport for the cable. The client calls them through the plugins' JS.
@@ -29,8 +31,10 @@ log = "0.4"
 env_logger = "0.11"
 serde = { version = "1", features = ["derive"] }
 # Node passwords the client is asked to remember go to the system's
-# credential store, not to a file of the webview's.
-keyring = { version = "3", features = ["windows-native", "apple-native"] }
+# credential store, not to a file of the webview's. On Linux that is the
+# Secret Service (GNOME Keyring, KWallet) over D-Bus; without a feature for it
+# the crate keeps passwords in memory and forgets them when the app quits.
+keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service", "crypto-rust"] }
 # A message or a new node, announced by the system while the window is
 # elsewhere: WebView2 has no notification of its own. The plugin draws it on
 # macOS and Linux; Windows is drawn directly, see `announce.rs`.

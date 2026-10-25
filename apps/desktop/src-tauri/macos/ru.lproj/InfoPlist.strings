@@ -1,0 +1,2 @@
+/* What macOS asks the reader in Russian; the English is in Info.plist. */
+"NSBluetoothAlwaysUsageDescription" = "Ommesh связывается с вашим радио MeshCore по Bluetooth.";

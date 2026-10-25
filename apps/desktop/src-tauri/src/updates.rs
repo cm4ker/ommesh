@@ -19,8 +19,29 @@ pub fn desktop_update_info(app: tauri::AppHandle) -> serde_json::Value {
     // No channel: every build starts on Stable until its user picks Dev (updates.ts).
     serde_json::json!({
         "version": version.to_string(),
-        "supported": cfg!(windows),
+        "supported": supported(),
     })
+}
+
+/// Whether this copy can put a new version in place of itself: an installed
+/// Windows app, a macOS app bundle, and on Linux an AppImage or a .deb package,
+/// which the updater installs through `pkexec`, the system asking for the
+/// password. Anything else on Linux (an .rpm, a build run from the source
+/// tree) is updated the way it was installed.
+fn supported() -> bool {
+    use tauri::utils::{config::BundleType, platform::bundle_type};
+    cfg!(any(windows, target_os = "macos")) || matches!(bundle_type(), Some(BundleType::AppImage | BundleType::Deb))
+}
+
+/// Starts the app again on the version just installed. Windows never comes
+/// here: its installer ends the app and starts the new one itself. macOS and
+/// Linux put the new files in place and leave the old process running.
+/// Asked for off the main thread, the restart goes through the app's own
+/// exit, so the window's place is written down and the one-copy lock let go
+/// before the new process looks for it.
+#[tauri::command]
+pub async fn desktop_restart(app: tauri::AppHandle) {
+    app.request_restart();
 }
 
 #[derive(Serialize)]
@@ -38,8 +59,8 @@ pub async fn desktop_check_update(
     webview: Webview,
     channel: Channel,
 ) -> Result<Option<UpdateMetadata>, String> {
-    if !cfg!(windows) {
-        return Err("In-app updates are currently available on Windows.".into());
+    if !supported() {
+        return Err("This copy of the app is updated the way it was installed.".into());
     }
     let endpoint = match channel {
         Channel::Stable => "https://github.com/cm4ker/ommesh/releases/latest/download/latest.json",

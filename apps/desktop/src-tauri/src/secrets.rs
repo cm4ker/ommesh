@@ -1,6 +1,7 @@
 //! Node passwords in the system's credential store: Windows Credential
-//! Manager, the macOS keychain. The client asks for them by an id of its own
-//! (`node-<key>`); the store files them under the service `meshnet`.
+//! Manager, the macOS keychain, the Secret Service on Linux. The client asks
+//! for them by an id of its own (`node-<key>`); the store files them under the
+//! service `meshnet`.
 
 use keyring::{Entry, Error};
 

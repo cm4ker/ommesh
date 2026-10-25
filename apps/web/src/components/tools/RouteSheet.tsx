@@ -225,11 +225,14 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
   const links: Action[] = [];
   if (editing) {
     const cameBack = !!draftPing && !draftPing.running && draftPing.runs.some((r) => r.ok);
+    // A check is a trace, which only repeaters pass on: with no relays to anything but a repeater there is nothing
+    // to check, and the route is saved as it is.
+    const nothingToCheck = hashes.length === 0 && !relaysItself;
     primary = running
       ? { label: t("tools.stop"), onClick: () => stopPing(key), plain: true }
-      : cameBack
+      : cameBack || nothingToCheck
         ? { label: t("tools.route.save"), onClick: () => void save(), busy: saving, disabled: !online }
-        : { label: t("tools.check"), onClick: () => void ping(key, hashes), disabled: !online || !(relaysItself || hashes.length > 0) };
+        : { label: t("tools.check"), onClick: () => void ping(key, hashes), disabled: !online };
     if (!running) links.push({ label: t("common.cancel"), onClick: cancelRouteEdit });
   } else if (running) {
     primary = { label: t("tools.stop"), onClick: () => stopPing(key), plain: true };
@@ -262,6 +265,10 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
     // A repeater the radio already reaches with no relays is checked that way by the button itself.
     if (relaysItself && !(held !== null && held.length === 0)) {
       items.push({ label: t("tools.direct.menu"), hint: t("tools.direct.menuHint"), disabled: !online || running || flooded, onSelect: () => openDirect(key) });
+    }
+    // Anything else close by is set straight to no relays, to save with no check.
+    if (!relaysItself && !flooding && !(held !== null && held.length === 0)) {
+      items.push({ label: t("tools.route.setDirect"), hint: t("tools.route.setDirectHint"), disabled: running || flooded, onSelect: () => change([]) });
     }
     items.push({
       label: t("tools.route.askMesh"),
@@ -521,10 +528,13 @@ function SearchResult({ d, contact, state }: { d: Discovery; contact: ContactRec
     );
   }
   if (!d.silent) return <p className="check-note">{d.error}</p>;
+  const name = contact.name || contact.prefix;
   const needsSignIn = (contact.type === AdvType.Repeater || contact.type === AdvType.Room) && !state.logins[contact.key]?.ok;
+  // The flood asks for readings, and a person's radio answers it only when its owner lets this one ask for them.
+  const why = needsSignIn ? t("tools.search.signedOnly", { name }) : contact.type === AdvType.Chat ? t("tools.search.readingsOnly", { name }) : t("tools.search.outOfRange");
   return (
     <p className="disc-line bad">
-      <b>{t("tools.search.noAnswer", { seconds: d.waitedS })}</b> {needsSignIn ? t("tools.search.signedOnly", { name: contact.name || contact.prefix }) : t("tools.search.outOfRange")}
+      <b>{t("tools.search.noAnswer", { seconds: d.waitedS })}</b> {why}
     </p>
   );
 }

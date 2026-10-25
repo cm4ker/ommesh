@@ -122,7 +122,7 @@
 - Who hears me brings its answers into view, as a survey and a repeater's neighbours do. Ask now puts the map on your radio, and once the answers are in, it moves out as far as the farthest repeater that answered, so every line is on the screen. The map used to stay where it was, and the lines ran off its edge.
 
 ### In a browser
-- Ommesh opens at [ommesh.cm4ker.ru](https://ommesh.cm4ker.ru) with nothing to install: in Chrome or Edge it reaches a radio over Bluetooth or USB, and [ommesh.cm4ker.ru/?demo](https://ommesh.cm4ker.ru/?demo) shows it with a made-up radio. The site takes every change as it lands, like the Dev channel. The web version used to need building from source.
+- Ommesh opens at [client.ommesh.ru](https://client.ommesh.ru) with nothing to install: in Chrome or Edge it reaches a radio over Bluetooth or USB, and [client.ommesh.ru/?demo](https://client.ommesh.ru/?demo) shows it with a made-up radio. The site takes every change as it lands, like the Dev channel. The web version used to need building from source.
 
 ### Fixes
 - A battery's charge no longer leaps up and down from one reading to the next. Many radios read their own battery a tenth of a volt off from one time to the next, and on a LiFePO4 cell, whose voltage hardly moves through most of its charge, a tenth of a volt is half the charge: one radio's read 23%, then 78% as its readings opened, then 26% a minute later. The charge and the volts beside it are now the mean of the readings over the last half hour, and the week's line draws the mean of each ten minutes.

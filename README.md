@@ -30,7 +30,7 @@
 | **Windows 10 and 11** | Installer for [x64](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x64.exe), [ARM](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-arm64.exe) or [32-bit](https://github.com/cm4ker/ommesh/releases/latest/download/Ommesh-setup-x86.exe). The app offers each new version itself. |
 | **iPhone and iPad** | [App Store](https://apps.apple.com/app/ommesh/id6814511595). Updates come through the store. |
 | **macOS and Linux** | Build the desktop app from source; see [Development](#development). |
-| **Browser** | Open [ommesh.cm4ker.ru](https://ommesh.cm4ker.ru) in Chrome or Edge, nothing to install; they reach a radio over Bluetooth or USB. The site takes every change as it lands, like the Dev channel. |
+| **Browser** | Open [client.ommesh.ru](https://client.ommesh.ru) in Chrome or Edge, nothing to install; they reach a radio over Bluetooth or USB. The site takes every change as it lands, like the Dev channel. |
 
 Ommesh comes out once a week. The Windows installers are the newest version, and the app itself offers the next (**Settings → About**, or **App updates** on the connection screen); after an update, **What's new** says what it brought. Testers who want every change as it lands can pick the **Dev** channel in **App updates**. A PC with neither WebView2 nor internet access (Windows 10 LTSC, a fresh image) needs the offline installer from the [latest release page](https://github.com/cm4ker/ommesh/releases/latest); it carries WebView2 and is about 190 MB larger. Windows 11 already has WebView2. Testers can also take the [Dev Android APK](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh_android-debug.apk); it is signed with a different key, so remove the Google Play version first. See [update channels and signing](docs/desktop-updates.md).
 
@@ -48,7 +48,7 @@ Ommesh comes out once a week. The Windows installers are the newest version, and
 
 ¹ Chrome or Edge, where the system offers Web Bluetooth and Web Serial. Pair the radio in the system's Bluetooth settings first.
 
-**No radio yet?** On a phone, choose **Demo** on the connection screen. In a browser, open [ommesh.cm4ker.ru/?demo](https://ommesh.cm4ker.ru/?demo).
+**No radio yet?** On a phone, choose **Demo** on the connection screen. In a browser, open [client.ommesh.ru/?demo](https://client.ommesh.ru/?demo).
 
 ## Features
 

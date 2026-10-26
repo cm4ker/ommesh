@@ -35,7 +35,7 @@
 
 Ommesh comes out once a week. The desktop downloads are the newest version, and the app itself offers the next (**Settings → About**, or **App updates** on the connection screen); after an update, **What's new** says what it brought. Testers who want every change as it lands can pick the **Dev** channel in **App updates**. A PC with neither WebView2 nor internet access (Windows 10 LTSC, a fresh image) needs the offline installer from the [latest release page](https://github.com/cm4ker/ommesh/releases/latest); it carries WebView2 and is about 190 MB larger. Windows 11 already has WebView2. Testers can also take the [Dev Android APK](https://github.com/cm4ker/ommesh/releases/download/dev/Ommesh_android-debug.apk); it is signed with a different key, so remove the Google Play version first. See [update channels and signing](docs/desktop-updates.md).
 
-On a Mac, open the disk image and drag Ommesh to Applications. Apple has not checked the app yet, so the first time macOS refuses to open it: choose **Open Anyway** in **System Settings → Privacy & Security**. On Linux, make the AppImage executable (`chmod +x Ommesh-linux-x64.AppImage`) and run it, or install the package with `sudo apt install ./Ommesh-linux-x64.deb`. A radio on USB needs your user in the group that owns serial ports: `sudo usermod -aG dialout $USER`, then sign in again.
+On a Mac, open the disk image and drag Ommesh to Applications. On Linux, make the AppImage executable (`chmod +x Ommesh-linux-x64.AppImage`) and run it, or install the package with `sudo apt install ./Ommesh-linux-x64.deb`. A radio on USB needs your user in the group that owns serial ports: `sudo usermod -aG dialout $USER`, then sign in again.
 
 ### Connect a radio
 

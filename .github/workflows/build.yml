@@ -204,6 +204,15 @@ jobs:
           fi
           pnpm --filter @meshnet/desktop exec tauri build --config src-tauri/tauri.release.json --target universal-apple-darwin --bundles app,dmg
           bundle=apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle
+          # Tauri notarizes the app but not the disk image around it, and macOS judges a
+          # downloaded image before it opens it. The staple fails, and the build with it,
+          # unless Apple accepted the image.
+          if [ -n "${APPLE_API_KEY_PATH:-}" ]; then
+            for dmg in "$bundle"/dmg/*.dmg; do
+              xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
+              xcrun stapler staple "$dmg"
+            done
+          fi
           mkdir dist-mac
           mv "$bundle"/dmg/*.dmg dist-mac/
           # The updater's archive is named after the app alone; the feed wants the version

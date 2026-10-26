@@ -300,7 +300,6 @@
   "unit.s": "{value} s",
   "quick.ping": "Ping",
   "quick.how": "How to ping",
-  "quick.title": "Ping {name}",
   "quick.way.route": "Along the route",
   "quick.way.direct": "Direct",
   "quick.way.flood": "Whole mesh",

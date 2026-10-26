@@ -300,7 +300,6 @@
   "unit.s": "{value} с",
   "quick.ping": "Пинг",
   "quick.how": "Как пинговать",
-  "quick.title": "Пинг до {name}",
   "quick.way.route": "По маршруту",
   "quick.way.direct": "Напрямую",
   "quick.way.flood": "По всей сети",

@@ -432,36 +432,24 @@
   flex: 1;
   min-width: 0;
 }
-.route-row-sep {
+/*
+ * The ping: a quiet filled square, grey until the pointer is on it or the
+ * ways are up. The fill is the text's own colour thinned, since in some
+ * themes the hover colour is the card's.
+ */
+.ping-button {
   flex: none;
-  align-self: stretch;
-  width: 1px;
-  margin: var(--space-2) 0;
-  background: var(--border);
-}
-/* The ping, and with a mouse ▾ for the other ways: one framed button, as the app's actions are. */
-.ping-buttons {
-  flex: none;
-  display: flex;
-  margin: 0 var(--space-2);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
-  background: var(--elevated);
-  overflow: hidden;
-}
-.ping-buttons.held {
-  background: var(--selected);
-}
-.ping-button,
-.ping-more {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: calc(40px * var(--box-scale));
   height: calc(40px * var(--box-scale));
+  margin: 0 var(--space-2) 0 var(--space-1);
   padding: 0;
   border: 0;
-  background: none;
-  color: var(--accent);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--text) 8%, transparent);
+  color: var(--text-muted);
   font: inherit;
   cursor: pointer;
   /* Held on purpose: no text picked, no callout, no double-tap zoom. */
@@ -470,22 +458,18 @@
   -webkit-touch-callout: none;
   touch-action: manipulation;
 }
-.ping-button {
-  width: calc(46px * var(--box-scale));
+.ping-button.held {
+  background: color-mix(in oklab, var(--text) 16%, transparent);
+  color: var(--accent);
 }
-.ping-more {
-  width: calc(30px * var(--box-scale));
-  border-left: 1px solid var(--border-strong);
-}
-.ping-button:disabled,
-.ping-more:disabled {
+.ping-button:disabled {
   color: var(--text-faint);
   cursor: default;
 }
 @media (hover: hover) {
-  .ping-button:hover:not(:disabled),
-  .ping-more:hover:not(:disabled) {
-    background: var(--hover);
+  .ping-button:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--text) 16%, transparent);
+    color: var(--accent);
   }
 }
 /* What the last ping came to, under the route's row. */
@@ -559,6 +543,11 @@
 }
 .ways-item.lit {
   background: var(--selected);
+}
+@media (hover: hover) {
+  .ways-item:hover:not(:disabled):not(.lit) {
+    background: var(--hover);
+  }
 }
 .ways-item:disabled {
   cursor: default;

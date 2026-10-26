@@ -6,10 +6,10 @@
  *
  * A finger held on the ping brings the other ways up over it: slid onto one
  * and let go, the ping goes that way, as Telegram's send button does; let go
- * where it is, the ways stay for a tap. A mouse has ▾ beside it, and a right
- * click. The way picked holds while the page is open. Two pings lost in a row
- * offer the way round, and another way, in the answer itself, so nobody has
- * to know about the hold to get there.
+ * where it is, the ways stay for a tap. A mouse holds it the same way, and a
+ * right click brings the ways up to click. The way picked holds while the
+ * page is open. Two pings lost in a row offer the way round, and another way,
+ * in the answer itself, so nobody has to know about the hold to get there.
  */
 
 import { AdvType, contactHops, contactRoute, type ContactRecord, type SessionState } from "@meshnet/meshcore";
@@ -21,7 +21,6 @@ import { discover, undoDiscovery, useDiscovery, type Discovery } from "../../lib
 import { nameOfHash } from "../../lib/echoes.js";
 import { haptic } from "../../lib/haptic.js";
 import { contactEnd } from "../../lib/mapOverlay.js";
-import { touchFirst } from "../../lib/platform.js";
 import { directKey, findWayRound, keepLooking, measuredLegs, pingOnce, settleDirect, undoFound, usePing, weakestLeg, type Ping } from "../../lib/ping.js";
 import { lostInARow, newestWay, routeShort, tookText, wayChoices, type PingWay, type WayChoice } from "../../lib/pingWays.js";
 import { forgetWay, pingByMessage, setWay, useMessagePing, useWay, type MessagePing } from "../../lib/quickPing.js";
@@ -29,8 +28,7 @@ import { session, useSession } from "../../lib/session.js";
 import { act } from "../../lib/toast.js";
 import { openLineOfSight, openRoute } from "../../lib/toolActions.js";
 import { Button } from "../../ui/Button.js";
-import { showMenu } from "../../ui/Menu.js";
-import { CheckIcon, ChevronDownIcon, ChevronRightIcon, DirectIcon, NodesIcon, PingIcon, SearchIcon, SendIcon } from "../Icons.js";
+import { CheckIcon, ChevronRightIcon, DirectIcon, NodesIcon, PingIcon, SearchIcon, SendIcon } from "../Icons.js";
 import { CheckResult, Dots, legEnds, namesAlong, QualityChip, relaysOf } from "./RouteSheet.js";
 
 /** How long a finger holds the ping before the ways come up, ms; shorter than a row's menu, as the ping is held on purpose. */
@@ -57,7 +55,6 @@ export function RouteRow({ contactKey }: { contactKey: string }) {
   const contact = state.contacts[contactKey];
   if (!contact) return null;
   const key = contact.key;
-  const name = contact.name || contact.prefix;
   const online = state.status === "ready";
   const flooding = session.routePolicy(key).flood;
   const held = flooding ? null : contactRoute(contact);
@@ -77,12 +74,6 @@ export function RouteRow({ contactKey }: { contactKey: string }) {
     else void pingByMessage(key);
   };
 
-  const menuAt = (x: number, y: number) =>
-    showMenu(
-      choices.map((c) => ({ label: c.label, hint: c.hint, disabled: c.disabled || !online || busy, checked: c.way === way, onSelect: () => go(c.way) })),
-      { title: t("tools.quick.title", { name }), at: { x, y }, hints: true },
-    );
-
   const stopHold = () => {
     const h = hold.current;
     if (h.timer) clearTimeout(h.timer);
@@ -90,7 +81,8 @@ export function RouteRow({ contactKey }: { contactKey: string }) {
   };
   const press = {
     onPointerDown: (e: ReactPointerEvent) => {
-      if (e.pointerType === "mouse" || !online) return;
+      // A mouse holds with its main button; the right one opens the ways from onContextMenu.
+      if (!online || (e.pointerType === "mouse" && e.button !== 0)) return;
       const h = hold.current;
       stopHold();
       h.held = false;
@@ -112,8 +104,8 @@ export function RouteRow({ contactKey }: { contactKey: string }) {
     onContextMenu: (e: ReactMouseEvent) => {
       e.preventDefault();
       // A finger's long press is timed above; Android sends this for it too.
-      if ((e.nativeEvent as unknown as { pointerType?: string }).pointerType === "touch" || hold.current.held) return;
-      menuAt(e.clientX, e.clientY);
+      if ((e.nativeEvent as unknown as { pointerType?: string }).pointerType === "touch" || hold.current.held || !online) return;
+      setCard({ held: false });
     },
     onClick: () => {
       // The tap that ends a hold is not a ping.
@@ -137,27 +129,18 @@ export function RouteRow({ contactKey }: { contactKey: string }) {
           <span className="line-value route-row-beside">{short}</span>
           <ChevronRightIcon size={14} className="line-chev" />
         </button>
-        <span className="route-row-sep" aria-hidden="true" />
-        <span className={["ping-buttons", card ? "held" : ""].join(" ")}>
-          <button ref={button} type="button" className="ping-button" aria-label={t("tools.quick.ping")} title={t("tools.quick.ping")} disabled={!online} {...press}>
-            {busy ? <span className="spinner" aria-hidden="true" /> : <PingIcon size={20} />}
-          </button>
-          {touchFirst() ? null : (
-            <button
-              type="button"
-              className="ping-more"
-              aria-label={t("tools.quick.how")}
-              title={t("tools.quick.how")}
-              disabled={!online}
-              onClick={(e) => {
-                const r = e.currentTarget.getBoundingClientRect();
-                menuAt(r.left, r.bottom + 4);
-              }}
-            >
-              <ChevronDownIcon size={16} />
-            </button>
-          )}
-        </span>
+        <button
+          ref={button}
+          type="button"
+          className={["ping-button", card ? "held" : ""].join(" ")}
+          aria-label={t("tools.quick.ping")}
+          aria-haspopup="menu"
+          title={t("tools.quick.ping")}
+          disabled={!online}
+          {...press}
+        >
+          {busy ? <span className="spinner" aria-hidden="true" /> : <PingIcon size={20} />}
+        </button>
       </div>
       <PingAnswer contact={contact} state={state} route={shown} direct={directPing} flood={flood} message={message} open={open} go={go} />
       {card && button.current ? (
@@ -375,6 +358,12 @@ function WaysCard({ anchor, choices, current, held, onPick, onClose }: { anchor:
     const above = r.top - 10 - height;
     setPlace({ right, top: above >= 8 ? above : Math.min(window.innerHeight - height - 8, r.bottom + 10) });
   }, [anchor]);
+  // Brought up by a right click or the menu key, the ways take the keyboard, starting at the way in use.
+  useEffect(() => {
+    if (!place || held) return;
+    const items = box.current;
+    (items?.querySelector<HTMLElement>('[aria-checked="true"]:not(:disabled)') ?? items?.querySelector<HTMLElement>("[data-way]:not(:disabled)"))?.focus();
+  }, [place, held]);
 
   const latest = useRef({ choices, onPick, onClose });
   latest.current = { choices, onPick, onClose };

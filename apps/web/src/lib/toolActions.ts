@@ -12,7 +12,7 @@ import { getMeshTool, setMeshTool, type LosEnd, type NeighboursTool, type RouteT
 import { fetchAllNeighbours } from "./neighbourFetch.js";
 import { isFiltering, neighbourRows, passes, type NeighbourFilter } from "./neighbours.js";
 import { focusOnMap, getNav, goSection, setStack, showOnMap } from "./nav.js";
-import { clearPing, directKey, getPing, ping, spanKey, stopPing } from "./ping.js";
+import { clearPing, getPing, spanKey, stopPing } from "./ping.js";
 import { session } from "./session.js";
 import { discardSurvey, getSurveys, noteSurveyHold, startSurvey, stopSurvey, surveyById } from "./survey.js";
 import { lastAsk } from "./surveyData.js";
@@ -35,15 +35,7 @@ export function openRoute(key: string): void {
   setMeshTool({ kind: "route", key, draft: null, returnTo });
 }
 
-/** The repeater whose route is open, checked with no relays between; the check starts at once, as the tap that opens it asks. */
-export function openDirect(key: string): void {
-  const tool = getMeshTool();
-  showOnMap(key);
-  setMeshTool({ kind: "direct", key, prev: tool?.kind === "route" ? { ...tool, draft: null } : null });
-  void ping(directKey(key));
-}
-
-/** The way from the repeater whose route is open to another, picked next on the map. */
+/** The way from a repeater to another, picked next on the map: from its page, or from its route when that is open. */
 export function openSpan(from: string): void {
   const tool = getMeshTool();
   showOnMap(from);
@@ -67,7 +59,7 @@ export function tapInSpan(key: string | null, state: SessionState): boolean {
 /** The line of sight between two ends, over the map; `back` is the node to pick again after, or the route it was opened from. */
 export function openLineOfSight(from: LosEnd, to: LosEnd, back: string | null, heard: [number, number | null] | null = null): void {
   const current = getMeshTool();
-  const prev = current?.kind === "route" || current?.kind === "direct" || current?.kind === "span" || current?.kind === "neighbours" ? current : current?.kind === "los" ? (current.prev ?? null) : null;
+  const prev = current?.kind === "route" || current?.kind === "span" || current?.kind === "neighbours" ? current : current?.kind === "los" ? (current.prev ?? null) : null;
   if (back) showOnMap(back);
   else focusOnMap(null);
   setMeshTool({ kind: "los", from, to, back, heard, prev });
@@ -300,8 +292,8 @@ export function openLastAnswers(): void {
 /**
  * Puts the tool away, one step: a line of sight back to the route it was
  * opened from, or to the node picked; a route back to where it was opened,
- * and a check along a change that was not saved goes with it; a check with
- * no relays, or the way between two repeaters, back to the route; a link
+ * and a check along a change that was not saved goes with it; the way
+ * between two repeaters back to the route; a link
  * between neighbours back to the list, and the list back to the link it was
  * opened from, or to the screens it was opened from.
  */
@@ -331,14 +323,6 @@ export function closeTool(): void {
       setMeshTool({ ...tool.prev, filter: tool.filter ?? null });
     } else leaveNeighbours(tool);
     return;
-  }
-  if (tool?.kind === "direct") {
-    stopPing(directKey(tool.key));
-    if (tool.prev) {
-      showOnMap(tool.prev.key);
-      setMeshTool(tool.prev);
-      return;
-    }
   }
   if (tool?.kind === "span") {
     if (tool.to) stopPing(spanKey(tool.from, tool.to));

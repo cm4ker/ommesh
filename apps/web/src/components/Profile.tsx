@@ -9,6 +9,7 @@ import { heardAt, isAdmin, kindLabel } from "../lib/nodes.js";
 import { forgetPassword, hasSavedPassword, useSavedPasswords } from "../lib/secrets.js";
 import { session, useSession } from "../lib/session.js";
 import { act, toast } from "../lib/toast.js";
+import { openSpan } from "../lib/toolActions.js";
 import { IconButton } from "../ui/Button.js";
 import { Confirm, Prompt } from "../ui/Dialog.js";
 import { Group, InfoRow, LinkRow } from "../ui/List.js";
@@ -16,14 +17,14 @@ import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
 import { ChatNotices } from "./ChatNotices.js";
 import { HeroName } from "./HeroName.js";
-import { AirIcon, ChartIcon, ChatIcon, CheckIcon, CopyIcon, EditIcon, LockIcon, MapIcon, MoreIcon, PowerIcon, ShieldIcon, SlidersIcon, StarFilledIcon, StarIcon, TerminalIcon, TrashIcon, UsersIcon, CloseIcon } from "./Icons.js";
+import { AirIcon, ChartIcon, ChatIcon, CheckIcon, CopyIcon, EditIcon, LockIcon, MapIcon, MoreIcon, NodesIcon, PowerIcon, ShieldIcon, SlidersIcon, StarFilledIcon, StarIcon, TerminalIcon, TrashIcon, UsersIcon, CloseIcon } from "./Icons.js";
 import { NodeReadings } from "./NodeReadings.js";
 import { ClockRow } from "./node/Clock.js";
 import { QueuePill } from "./node/QueuePill.js";
 import { SignIn } from "./node/SignIn.js";
 import { NotOnRadio } from "./ContactsPages.js";
 import { Gone, ScreenHead, type Chrome } from "./ScreenHead.js";
-import { ForgetRouteRow, RouteLink } from "./tools/RouteSheet.js";
+import { RouteRow } from "./tools/RoutePing.js";
 
 const PAGES: Record<NodePage, { label: Key; icon: React.ReactNode; admin: boolean }> = {
   neighbours: { label: "mesh.tab.neighbours", icon: <UsersIcon size={17} />, admin: false },
@@ -127,6 +128,8 @@ export function Profile({ contactKey, chrome, sheet = false }: { contactKey: str
     ];
     // A person's radio on MeshCore 1.18 runs console commands from those it lets; only a radio on 1.18 sends them.
     if (contact.type === AdvType.Chat && (state.device?.firmwareVerCode ?? 0) >= 14) items.push({ label: t("mesh.profile.console"), icon: <TerminalIcon size={17} />, onSelect: () => openNodePage(key, "console") });
+    // How this repeater and another hear each other, the other tapped on the map next.
+    if (contact.type === AdvType.Repeater) items.push({ label: t("tools.route.checkFrom"), icon: <NodesIcon size={17} />, hint: t("tools.route.checkFromHint"), disabled: !online, onSelect: () => openSpan(key) });
     if (admin) {
       items.push(
         { label: t("mesh.profile.advertMesh"), icon: <AirIcon size={17} />, air: true, disabled: !online, onSelect: cli("advert", t("mesh.profile.advertised", { name })) },
@@ -210,8 +213,7 @@ export function Profile({ contactKey, chrome, sheet = false }: { contactKey: str
       </div>
 
       <Group>
-        <RouteLink contactKey={key} />
-        <ForgetRouteRow contactKey={key} />
+        <RouteRow contactKey={key} />
       </Group>
 
       {isConversationType(contact.type) ? <ChatNotices conversation={contactConversation(key)} direct={contact.type !== AdvType.Room} /> : null}

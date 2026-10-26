@@ -649,7 +649,9 @@ function useMeshOverlay(selected: string | null, state: SessionState): MapOverla
   const tool = useMeshTool();
   const surveys = useSurveys();
   const focus = tool?.kind === "route" ? tool.key : tool?.kind === "span" ? tool.from : selected;
-  const ping = usePing(tool?.kind === "span" ? (tool.to ? spanKey(tool.from, tool.to) : null) : tool?.kind === "direct" ? directKey(tool.key) : focus);
+  const ping = usePing(tool?.kind === "span" ? (tool.to ? spanKey(tool.from, tool.to) : null) : focus);
+  // A node pinged by itself, from beside its route, with no tool open.
+  const direct = usePing(!tool && focus ? directKey(focus) : null);
   // A link between neighbours being checked marches.
   const linkPing = usePing(tool?.kind === "neighbours" && tool.link ? spanKey(tool.key, tool.link) : null);
   const discovery = useDiscovery(focus);
@@ -681,16 +683,16 @@ function useMeshOverlay(selected: string | null, state: SessionState): MapOverla
           ? hearsOverlay(hears, state)
         : tool?.kind === "survey"
           ? surveyOverlay(shownSurvey(tool, surveys), shownPoint(tool, surveys), state)
-          : tool?.kind === "direct"
-            ? directOverlay(tool.key, state, ping)
           : tool?.kind === "span"
             ? spanOverlay(tool.from, tool.to, state, ping)
           : tool?.kind === "neighbours"
             ? neighboursOverlay(tool, state, linkPing?.running ?? false)
           : focus
-            ? discovery && (discovery.running || discovery.found) && discovery.at >= (ping?.at ?? 0)
+            ? discovery && (discovery.running || discovery.found) && discovery.at >= Math.max(ping?.at ?? 0, direct?.at ?? 0)
               ? discoveryOverlay(focus, state, discovery)
-              : routeOverlay(focus, state, ping)
+              : direct && direct.at > (ping?.at ?? 0)
+                ? directOverlay(focus, state, direct)
+                : routeOverlay(focus, state, ping)
             : place
               ? { ...EMPTY_OVERLAY, pins: [{ lat: place.lat, lon: place.lon }] }
               : EMPTY_OVERLAY;
@@ -793,7 +795,10 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
   const only = tool?.kind === "survey" ? tool.only : null;
   const dots = useMemo<MapDot[] | null>(() => (survey ? survey.points.map((p) => ({ lat: p.lat, lon: p.lon, tone: toneFor(p, only), check: p.check === true })) : null), [survey, only]);
   const onDot = tool?.kind === "survey" ? (index: number) => setMeshTool({ ...tool, point: index }) : undefined;
-  const ping = usePing(tool?.kind === "span" ? (tool.to ? spanKey(tool.from, tool.to) : null) : tool?.kind === "direct" ? directKey(tool.key) : selected);
+  const routePing = usePing(tool?.kind === "span" ? (tool.to ? spanKey(tool.from, tool.to) : null) : selected);
+  const directPing = usePing(!tool && selected ? directKey(selected) : null);
+  // What a leg tapped carries: the newer of a ping along the route and one with no relays.
+  const ping = directPing && directPing.at > (routePing?.at ?? 0) ? directPing : routePing;
   const overlay = useMeshOverlay(selected, state);
   // The map redraws markers when the filter function changes, so it changes only with what it filters by.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -826,9 +831,9 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
     const back = tool?.kind === "los" ? tool.back : selected;
     let heard: [number, number | null] | null = null;
     const span = tool?.kind === "span";
-    if ((!tool || (tool.kind === "route" && !tool.draft) || tool.kind === "direct" || span) && (selected || span) && ping && !ping.via) {
+    if ((!tool || (tool.kind === "route" && !tool.draft) || span) && (selected || span) && ping && !ping.via) {
       const relays = span || !ping.targetInChain ? ping.chain : ping.chain.slice(0, -1);
-      const keys = ["self", ...relays.map((h) => relayOf(h, state.contacts)?.key ?? h), ...(span ? [] : [tool?.kind === "direct" ? tool.key : selected])];
+      const keys = ["self", ...relays.map((h) => relayOf(h, state.contacts)?.key ?? h), ...(span ? [] : [selected])];
       const index = keys.findIndex((k, i) => k === from.key && keys[i + 1] === to.key);
       heard = index >= 0 ? (measuredLegs(ping)[index] ?? null) : null;
     }
@@ -870,10 +875,6 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
     if (overlay.tail) points.push([overlay.tail.lat, overlay.tail.lon]);
     routeFit = { id: `route:${routeTo.key}:${points.length > 0}`, points };
   }
-  // A repeater checked with no relays between is brought into view with this radio, once.
-  const directTo = tool?.kind === "direct" ? state.contacts[tool.key] : undefined;
-  const radioEnd = selfEnd(state);
-  const directFit = directTo && radioEnd && hasPosition(directTo.lat, directTo.lon) ? { id: `direct:${directTo.key}`, points: [[radioEnd.lat, radioEnd.lon], [directTo.lat, directTo.lon]] as [number, number][] } : null;
   // A place from a chat is brought into view each time it is shown.
   const place = useMeshPlace();
   const placeFit = place ? { id: `place:${place.id}`, points: [[place.lat, place.lon]] as [number, number][] } : null;
@@ -892,7 +893,7 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
     }
     hearsFit = { id: `hears:${hears.at}:${hears.listening ? "asked" : "answered"}`, points };
   }
-  const fit = hub ? { id: `${hub}:${whole ? "all" : "part"}:${refit}`, points: fitPoints } : (surveyFit ?? routeFit ?? directFit ?? hearsFit ?? placeFit ?? show);
+  const fit = hub ? { id: `${hub}:${whole ? "all" : "part"}:${refit}`, points: fitPoints } : (surveyFit ?? routeFit ?? hearsFit ?? placeFit ?? show);
   // A point of it opened, the map goes on following: the answers there are read with the phone still in sight.
   const running = tool?.kind === "survey" && tool.view === "run" && surveying;
   // A new list only when a repeater answers for the first time or one of them moves, so the map is not fitted on every render.

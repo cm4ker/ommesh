@@ -2180,7 +2180,7 @@ test("a path discovery writes the way it found as the route, and says how the an
   const found = session.discoverPath(HILL_KEY);
   await tick();
   radio.push(new ByteWriter().u8(Push.PathDiscoveryResponse).u8(0).bytes(HILL.subarray(0, 6)).u8(2).bytes(fromHex("3fa1")).u8(3).bytes(fromHex("a1c03f")).toBytes());
-  assert.deepEqual(await found, { out: ["3f", "a1"], back: ["a1", "c0", "3f"], changed: true });
+  assert.deepEqual(await found, { out: ["3f", "a1"], back: ["a1", "c0", "3f"], changed: true, kept: true });
   const write = radio.sent.find((f) => f[0] === Cmd.AddUpdateContact)!;
   assert.equal(write[35], 2);
   assert.deepEqual([...write.subarray(36, 38)], [0x3f, 0xa1]);
@@ -2208,6 +2208,20 @@ test("a path discovery that finds the route already held writes nothing", async 
   radio.push(new ByteWriter().u8(Push.PathDiscoveryResponse).u8(0).bytes(HILL.subarray(0, 6)).u8(1).bytes(fromHex("3f")).u8(1).bytes(fromHex("3f")).toBytes());
   assert.equal((await found).changed, false);
   assert.ok(!radio.sent.some((f) => f[0] === Cmd.AddUpdateContact));
+});
+
+test("a path discovery leaves a route set by hand as it is, and says the way it found is not the route", async () => {
+  const { radio, session } = await nodeSession();
+  radio.contacts = [contactFrame(HILL, "Hill", 10, 2, [0x77])];
+  await session.refreshContacts(true);
+  await session.setRoute(HILL_KEY, ["77"]);
+  const writes = radio.sent.filter((f) => f[0] === Cmd.AddUpdateContact).length;
+  const found = session.discoverPath(HILL_KEY);
+  await tick();
+  radio.push(new ByteWriter().u8(Push.PathDiscoveryResponse).u8(0).bytes(HILL.subarray(0, 6)).u8(2).bytes(fromHex("3fa1")).u8(3).bytes(fromHex("a1c03f")).toBytes());
+  assert.deepEqual(await found, { out: ["3f", "a1"], back: ["a1", "c0", "3f"], changed: true, kept: false });
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.AddUpdateContact).length, writes);
+  assert.ok(session.routeSetByHand(HILL_KEY));
 });
 
 test("neighbours come back under the radio's tag, with prefixes, age and SNR", async () => {
@@ -3390,6 +3404,50 @@ test("a route written by hand goes to the radio and outlives the time limit on l
   session.setDefaultRouteReset(5);
   await tick();
   assert.ok(!radio.sent.some((f) => f[0] === Cmd.ResetPath));
+  await session.disconnect();
+});
+
+test("letting the radio learn routes again keeps a route set by hand as learned, and lets a pinned flood go", async () => {
+  let now = 1_700_000_000_000;
+  const session = new MeshSession({ now: () => now });
+  await session.connect(new ScriptedRadio());
+  await session.setRoute(bobKey(), ["3f"]);
+  session.setRouteReset(bobKey(), 5);
+  now += 60_000;
+  await session.useLearnedRoutes(bobKey());
+  assert.ok(!session.routeSetByHand(bobKey()));
+  assert.deepEqual(session.getState().routing.contacts, {});
+  assert.equal(session.getState().contacts[bobKey()]?.outPathLen, 1);
+  assert.equal(session.getState().contacts[bobKey()]?.pathSince, now);
+  await session.setFloodPinned(bobKey(), true);
+  await session.useLearnedRoutes(bobKey());
+  assert.equal(session.routePolicy(bobKey()).flood, false);
+  await session.disconnect();
+});
+
+test("a direct message that went unacknowledged along a route set by hand goes again along it", async () => {
+  const storage = new MemoryStorage();
+  const first = new MeshSession({ storage, now: () => 1_700_000_000_000 });
+  const routed = () => {
+    const radio = new ScriptedRadio();
+    radio.contacts = [contactFrame(BOB, "Bob", 1_699_999_990, 1, [0x7f])];
+    return radio;
+  };
+  await first.connect(routed());
+  await first.setRoute(bobKey(), ["7f"]);
+  await first.sendText(contactConversation(bobKey()), "hello?");
+  await first.disconnect();
+  const saved = storage.saved.get(first.getState().self!.key)!;
+  saved.messages[0]!.status = "unconfirmed";
+
+  const radio = routed();
+  const session = new MeshSession({ storage, now: () => 1_700_000_600_000 });
+  await session.connect(radio);
+  const message = session.getState().messages[0]!;
+  assert.equal(session.retryFloods(message), false);
+  await session.retry(message.id);
+  assert.ok(!radio.sent.some((f) => f[0] === Cmd.ResetPath));
+  assert.ok(radio.sent.some((f) => f[0] === Cmd.SendTxtMsg));
   await session.disconnect();
 });
 

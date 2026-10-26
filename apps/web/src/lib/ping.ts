@@ -12,6 +12,10 @@
  * only it, so it comes back only if the two hear each other from where they
  * stand.
  *
+ * The ping beside a route is lighter: one trace a tap, added to the last few
+ * (`pingOnce`). Two lost in a row and the search for a way round can start
+ * from what they found (`findWayRound`).
+ *
  * Only a tap starts any of it; nothing here repeats on its own.
  */
 
@@ -51,8 +55,8 @@ export interface Search {
   /** The way the one found came home, relays as hashes nearest the turn first; null when it came back the way it went. */
   back: string[] | null;
   found: boolean;
-  /** The route held before the one found was written, to put back; absent when nothing was written. */
-  before?: { relays: string[] | null; since: number | null };
+  /** The route held before the one found was written, to put back, and whether it was set by hand; absent when nothing was written. */
+  before?: { relays: string[] | null; since: number | null; byHand?: boolean };
   done: boolean;
 }
 
@@ -76,7 +80,14 @@ export interface Ping {
   search: Search | null;
   error: string | null;
   at: number;
+  /** Pinged a trace a tap, beside the route, not checked five rounds through. */
+  quick?: boolean;
+  /** Why a ping beside the route had nothing to trace: no way known, or no relays between. */
+  why?: "noWay" | "nothingBetween";
 }
+
+/** How many of the last pings a tap at a time are kept, and shown. */
+export const QUICK_KEPT = 5;
 
 const pings = new Map<string, Ping>();
 const listeners = new Set<() => void>();
@@ -293,6 +304,83 @@ export async function ping(key: string, via: string[] | null = null): Promise<vo
   finish(p);
 }
 
+/**
+ * One trace a tap, from the ping beside a route: along the route held, or
+ * with `direct` to a repeater by itself. It joins the last few along the same
+ * way, so a row of taps reads as a row of checks; along another way it
+ * starts a row of its own. With no way known, or none to trace, it says so.
+ */
+export async function pingOnce(key: string, direct = false): Promise<void> {
+  const id = direct ? directKey(key) : key;
+  const prior = pings.get(id);
+  if (prior?.running) return;
+  stopped.delete(id);
+  const p = blank(id, null);
+  p.quick = true;
+  try {
+    const state = session.getState();
+    const contact = state.contacts[key];
+    let path: { relays: string[]; target: string | null } | null;
+    if (!contact) path = null;
+    else if (direct) path = contact.type === AdvType.Repeater ? { relays: [], target: key.slice(0, hashSize(state, key) * 2) } : null;
+    else path = await session.pingPath(key);
+    if (!path) {
+      p.running = false;
+      if (contact) p.why = "noWay";
+      else p.error = t("tools.contactGone");
+      return publish(p);
+    }
+    p.chain = path.target ? [...path.relays, path.target] : path.relays;
+    p.targetInChain = path.target !== null;
+    if (p.chain.length === 0) {
+      p.running = false;
+      p.why = "nothingBetween";
+      return publish(p);
+    }
+    if (prior?.quick && !prior.error && !prior.why && prior.chain.join(" ") === p.chain.join(" ")) p.runs = prior.runs.slice(-(QUICK_KEPT - 1));
+    p.stage = "rounds";
+    publish(p);
+    const index = p.runs.length;
+    // One that comes back after it was given up on came back.
+    const late = (res: TraceResult) => {
+      const now = pings.get(id);
+      if (!now?.quick || now.at !== p.at || now.runs[index]?.ok !== false) return;
+      publish({ ...now, runs: now.runs.map((r, j) => (j === index ? { ok: true, rttMs: res.rttMs, legs: traceLegs(res.snrs, now.chain.length) } : r)) });
+    };
+    const back = await trace(p.chain, null, new Set(), late);
+    if (stopped.has(id)) return;
+    p.runs = [...p.runs, back ? { ok: true, rttMs: back.rttMs, legs: traceLegs(back.snrs, p.chain.length) } : { ok: false, rttMs: null, legs: [] }];
+  } catch (error) {
+    p.error = errorText(error);
+  }
+  p.running = false;
+  p.stage = null;
+  publish(p);
+}
+
+/**
+ * The route stayed silent to the pings beside it: finds where it breaks and
+ * looks for a way round, as a check does after its rounds. With no way known
+ * at all it looks for one.
+ */
+export async function findWayRound(key: string): Promise<void> {
+  const prior = pings.get(key);
+  if (prior?.running) return;
+  if (!prior?.quick) return ping(key);
+  stopped.delete(key);
+  const { why: _why, ...last } = prior;
+  const p: Ping = { ...last, quick: false, running: true, error: null, broken: null, search: null, at: Date.now() };
+  const heard = new Set<string>();
+  publish(p);
+  try {
+    if (p.chain.length > 0) await locate(p, heard);
+    if (!stopped.has(key)) await search(p, p.broken, heard);
+  } catch (error) {
+    p.error = errorText(error);
+  }
+  finish(p);
+}
+
 function finish(p: Ping): void {
   if (stopped.has(p.key)) return;
   p.running = false;
@@ -442,12 +530,18 @@ async function goOn(p: Ping, look: Look): Promise<void> {
   }
 }
 
-/** Writes a way found as the route, as learned: it ages like any other. Not for a contact pinned to flood. */
+/**
+ * Writes a way found as the route, as learned: it ages like any other. A
+ * route set by hand gives way to it, since it was asked to be looked past.
+ * Not for a contact pinned to flood.
+ */
 async function keep(p: Ping, key: string, relays: string[]): Promise<void> {
   const contact = session.getState().contacts[key];
   if (!contact || !p.search) return;
   if (session.routePolicy(key).flood) return;
-  const before = { relays: contactRoute(contact), since: contact.pathSince };
+  const byHand = session.routeSetByHand(key);
+  const before = { relays: contactRoute(contact), since: contact.pathSince, byHand };
+  if (byHand) await session.useLearnedRoutes(key);
   await session.setRoute(key, relays, { learnedAt: Date.now() });
   p.search.before = before;
 }
@@ -456,7 +550,8 @@ async function keep(p: Ping, key: string, relays: string[]): Promise<void> {
 export async function undoFound(key: string): Promise<void> {
   const before = pings.get(key)?.search?.before;
   if (!before) return;
-  if (before.relays) await session.setRoute(key, before.relays, { learnedAt: before.since });
+  if (before.relays && before.byHand) await session.setRoute(key, before.relays);
+  else if (before.relays) await session.setRoute(key, before.relays, { learnedAt: before.since });
   else await session.resetPath(key);
   clearPing(key);
 }

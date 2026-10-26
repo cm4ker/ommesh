@@ -23,6 +23,8 @@ export interface Discovery {
   silent: boolean;
   /** How long it was waited for, s. */
   waitedS: number;
+  /** How long the answer took, ms; null until one came. */
+  tookMs: number | null;
   error: string | null;
 }
 
@@ -60,14 +62,15 @@ export async function discover(key: string): Promise<Discovery> {
     before: held ? { relays: held, since: contact?.pathSince ?? null } : null,
     silent: false,
     waitedS: 0,
+    tookMs: null,
     error: null,
   };
   publish(base);
   try {
     const found = await session.discoverPath(key);
     // What a ping measured was along the route it replaced.
-    if (found.changed) clearPing(key);
-    const done = { ...base, running: false, found };
+    if (found.changed && found.kept) clearPing(key);
+    const done = { ...base, running: false, found, tookMs: Date.now() - base.at };
     publish(done);
     return done;
   } catch (error) {
@@ -80,7 +83,7 @@ export async function discover(key: string): Promise<Discovery> {
 /** Puts back the route held before the discovery, as it was learned. */
 export async function undoDiscovery(key: string): Promise<void> {
   const d = discoveries.get(key);
-  if (!d?.found) return;
+  if (!d?.found?.kept) return;
   if (d.before) await session.setRoute(key, d.before.relays, { learnedAt: d.before.since });
   else await session.resetPath(key);
   forgetDiscovery(key);

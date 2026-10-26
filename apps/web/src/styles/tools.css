@@ -87,12 +87,7 @@
 .check .button {
   width: 100%;
 }
-/* What a discovery found: a line, the key to the lines on the map, or a bar while the flood is out. */
-.disc {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
+/* What a check found: a line, and the key to the lines on the map. */
 .disc-line {
   margin: 0;
   font-size: var(--text-sm);
@@ -104,30 +99,6 @@
 }
 .disc-line.bad b {
   color: var(--danger);
-}
-.disc-bar {
-  display: block;
-  height: 3px;
-  overflow: hidden;
-  border-radius: 2px;
-  background: color-mix(in oklch, var(--accent) 22%, transparent);
-}
-.disc-bar i {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: 2px;
-  background: var(--accent);
-  transform-origin: left;
-  animation: disc-wait linear forwards;
-}
-@keyframes disc-wait {
-  from {
-    transform: scaleX(0);
-  }
-  to {
-    transform: scaleX(1);
-  }
 }
 .disc-key {
   display: flex;
@@ -337,19 +308,17 @@
   display: flex;
   gap: var(--space-2);
 }
-/* Under the route's one button: what else is worth doing, and what it costs. */
-.route-links {
+/* The route's ways to pick, and under the one picked what goes with it: the chain of my own way, Find again. */
+.route-mode-more {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.route-own-acts {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-1) var(--space-5);
-  font-size: var(--text-sm);
-}
-.route-links .check-link small {
-  margin-left: 6px;
-  font-size: var(--text-xs);
-  font-weight: 400;
-  color: var(--warning);
+  gap: var(--space-2);
 }
 .tool-actions .button {
   flex: 1;
@@ -367,4 +336,188 @@
 }
 .tool .list-rows.hears .row.selected {
   background: var(--accent-subtle);
+}
+
+/* ---- a node's route as one row, with the ping beside it (RoutePing.tsx) ---- */
+
+.route-row {
+  display: flex;
+  align-items: center;
+  container-type: inline-size;
+}
+.route-row-beside {
+  white-space: nowrap;
+}
+.route-row-under {
+  display: none;
+}
+@container (max-width: 350px) {
+  .route-row-beside {
+    display: none;
+  }
+  .route-row-under {
+    display: block;
+  }
+}
+.route-row-link {
+  flex: 1;
+  min-width: 0;
+}
+.route-row-sep {
+  flex: none;
+  align-self: stretch;
+  width: 1px;
+  margin: var(--space-2) 0;
+  background: var(--border);
+}
+/* The ping, and with a mouse ▾ for the other ways: one framed button, as the app's actions are. */
+.ping-buttons {
+  flex: none;
+  display: flex;
+  margin: 0 var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--elevated);
+  overflow: hidden;
+}
+.ping-buttons.held {
+  background: var(--selected);
+}
+.ping-button,
+.ping-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(40px * var(--box-scale));
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  /* Held on purpose: no text picked, no callout, no double-tap zoom. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
+.ping-button {
+  width: calc(46px * var(--box-scale));
+}
+.ping-more {
+  width: calc(30px * var(--box-scale));
+  border-left: 1px solid var(--border-strong);
+}
+.ping-button:disabled,
+.ping-more:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+@media (hover: hover) {
+  .ping-button:hover:not(:disabled),
+  .ping-more:hover:not(:disabled) {
+    background: var(--hover);
+  }
+}
+/* What the last ping came to, under the route's row. */
+.ping-answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.ping-answer-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  min-height: calc(26px * var(--box-scale));
+}
+.ping-answer-text {
+  flex: 1;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+.ping-answer-text.muted {
+  color: var(--text-muted);
+}
+.ping-answer-text.bad {
+  color: var(--danger);
+}
+.ping-answer-note {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.ping-answer-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+/* The ways to ping, over the finger that held it; the screen dims a little under them. */
+.ways-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1099;
+  background: rgb(var(--shadow-rgb) / 0.18);
+}
+.ways-card {
+  position: fixed;
+  z-index: 1100;
+  width: min(290px, calc(100vw - 16px));
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border-radius: 14px;
+  background: var(--elevated);
+  box-shadow: 0 10px 40px rgb(var(--shadow-rgb) / 0.35);
+}
+.ways-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: 9px 12px 9px 6px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.ways-item.lit {
+  background: var(--selected);
+}
+.ways-item:disabled {
+  cursor: default;
+}
+.ways-check {
+  flex: none;
+  width: 20px;
+  display: flex;
+  justify-content: center;
+  padding-top: 2px;
+  color: var(--accent);
+}
+.ways-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ways-text > span {
+  color: var(--accent);
+  font-weight: 500;
+}
+.ways-item:disabled .ways-text > span {
+  color: var(--text-faint);
+}
+.ways-text small {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.35;
 }

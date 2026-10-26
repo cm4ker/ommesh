@@ -310,7 +310,7 @@
   "messages.triesMinute": { "one": "{count} try within a minute, then the message turns red.", "other": "{count} tries within a minute, then the message turns red." },
   "messages.triesOver": { "one": "{count} try over ~{minutes} min, then the message turns red.", "other": "{count} tries over ~{minutes} min, then the message turns red." },
   "messages.once": "Once",
-  "messages.routesNote": "Chats and rooms. A route learned this long ago is dropped, and the next message floods to find a fresh one. A route set by hand stays. A contact can set its own on its Route page.",
+  "messages.routesNote": "Chats and rooms. A route learned this long ago is dropped, and the next message floods to find a fresh one. A route set by hand stays.",
   "messages.routesOffline": "Kept per radio: connect to change it.",
   "messages.forgetRoutes": "Forget learned routes after",
   "messages.routesNodes": "Repeaters and sensors too",

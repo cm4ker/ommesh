@@ -3,8 +3,6 @@
 import { contactHops, type ContactRecord } from "@meshnet/meshcore";
 import { useEffect, useState } from "react";
 import { t } from "../i18n/index.js";
-import type { Discovery } from "./discovery.js";
-import type { Ping } from "./ping.js";
 import { session } from "./session.js";
 
 /** The time limits offered for a learned route, in minutes; null keeps it. */
@@ -63,24 +61,4 @@ export function routeWords(contact: ContactRecord): { text: string; tone: "" | "
   if (hops === null) return { text: t("tools.routeWords.none"), tone: "none" };
   if (hops === 0) return { text: t("tools.routeWords.direct"), tone: "" };
   return { text: t("tools.viaRelays", { count: hops }), tone: "" };
-}
-
-/**
- * A contact's route in a few words, and what the last check of it or search
- * for it came to, whichever is newer: the row that opens the route.
- */
-export function routeStatus(contact: ContactRecord, ping: Ping | null, found: Discovery | null): { text: string; tone: "" | "pinned" | "none" | "good" | "bad" } {
-  const words = routeWords(contact);
-  const route = words.text;
-  const checked = ping && !ping.via ? ping : null;
-  if (found && (!checked || found.at >= checked.at)) {
-    if (found.running) return { text: t("tools.status.looking", { route }), tone: words.tone };
-    if (found.silent) return { text: t("tools.status.noAnswer", { route }), tone: "bad" };
-    return words;
-  }
-  if (!checked) return words;
-  if (checked.running) return { text: t(checked.stage === "search" ? "tools.status.looking" : "tools.status.checking", { route }), tone: words.tone };
-  if (checked.search) return checked.search.found ? { text: t("tools.status.works", { route }), tone: "good" } : { text: t("tools.status.noAnswer", { route }), tone: "bad" };
-  if (checked.runs.length === 0) return words;
-  return checked.runs.some((r) => r.ok) ? { text: t("tools.status.works", { route }), tone: "good" } : { text: t("tools.status.noAnswer", { route }), tone: "bad" };
 }

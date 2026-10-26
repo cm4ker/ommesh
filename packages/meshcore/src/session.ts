@@ -647,6 +647,8 @@ export interface PathFound {
   back: string[];
   /** Whether the route the radio held before was another one. */
   changed: boolean;
+  /** Whether the way found is now the route: not while a flood is pinned, nor over a route set by hand. */
+  kept: boolean;
 }
 
 /** A node in direct range that answered "who hears me". */
@@ -2535,6 +2537,23 @@ export class MeshSession {
     this.log("path", `${contact.name || key.slice(0, 12)}: route set by hand put back, ${pathHashes(manual.outPathLen, manual.outPath).join(" ") || "direct"}`);
   }
 
+  /**
+   * Lets the radio find the route to this contact by itself again: a pinned
+   * flood is let go, and a route written by hand stays as if it had just
+   * been learned, to age and give way like one. The contact's own time limit
+   * goes too, so it follows the default.
+   */
+  async useLearnedRoutes(key: string): Promise<void> {
+    const contact = this.needContact(key);
+    const flooding = this.routePolicy(key).flood;
+    const byHand = this.routeSetByHand(key);
+    this.setPolicy(key, { flood: false, manual: undefined, resetAfterMin: undefined });
+    const held = this.state.contacts[key] ?? contact;
+    if (byHand) this.set({ contacts: { ...this.state.contacts, [key]: { ...held, pathSince: this.now() } } });
+    this.log("path", `${contact.name || key.slice(0, 12)}: routes are learned again${flooding ? ", flood let go" : ""}${byHand ? ", the route set by hand kept as learned" : ""}`);
+    void this.sweepRoutes();
+  }
+
   /** Minutes a learned route to this contact is kept; null keeps it; undefined follows the default. */
   setRouteReset(key: string, minutes: number | null | undefined): void {
     this.needContact(key);
@@ -3522,13 +3541,13 @@ export class MeshSession {
   /**
    * Sends an unheard, unconfirmed or failed message again, one attempt up. A direct
    * message that went unacknowledged along a learned route floods this time:
-   * the route is the likeliest thing to have broken.
+   * the route is the likeliest thing to have broken. One set by hand stays.
    */
   async retry(id: string): Promise<void> {
     const message = this.state.messages.find((m) => m.id === id);
     if (!message || message.direction !== "out") throw new Error("not an outgoing message");
     const attempt = message.attempt + 1;
-    const flood = message.status === "unconfirmed" && message.flood === false;
+    const flood = this.retryFloods(message);
     const past = message.ackTag === null ? {} : { pastAckTags: [...(message.pastAckTags ?? []), message.ackTag] };
     if (!this.isReady) {
       // It goes again with the queue, once the radio is back.
@@ -3568,9 +3587,11 @@ export class MeshSession {
     return DIRECT_LADDER_MS;
   }
 
-  /** Whether a retry of this message will drop the route and flood. */
+  /** Whether a retry of this message will drop the route and flood: not along a route set by hand, which is kept as it was chosen. */
   retryFloods(message: MessageRecord): boolean {
-    return message.direction === "out" && message.status === "unconfirmed" && message.flood === false && message.conversation.startsWith("c:");
+    if (message.direction !== "out" || message.status !== "unconfirmed" || message.flood !== false) return false;
+    const target = parseConversation(message.conversation);
+    return target.kind === "contact" && !this.routeSetByHand(target.key);
   }
 
   /** `dropRoute`, when given, is why a contact's route is dropped before the send, so that it floods. */
@@ -4915,8 +4936,8 @@ export class MeshSession {
    * Floods a request to the node and resolves with the way it went there and
    * the way its answer came back. The radio keeps no route from a discovery,
    * so the way there, which has just worked, is written as the contact's
-   * route here; not for a contact pinned to flood. A repeater or a room
-   * answers only a radio signed in to it.
+   * route here; not for a contact pinned to flood, nor over a route set by
+   * hand. A repeater or a room answers only a radio signed in to it.
    */
   async discoverPath(key: string): Promise<PathFound> {
     const contact = this.needContact(key);
@@ -4932,7 +4953,8 @@ export class MeshSession {
     const held = this.state.contacts[key] ?? contact;
     const outPath = event.outPath.padEnd(128, "0");
     const changed = routeKey(held.outPathLen, held.outPath) !== routeKey(event.outPathLen, outPath);
-    if (!this.routePolicy(key).flood && this.isReady) {
+    const writes = !this.routePolicy(key).flood && !this.routeSetByHand(key) && this.isReady;
+    if (writes) {
       if (changed) {
         await this.writeContact({ ...held, outPathLen: event.outPathLen, outPath, pathSince: this.now() });
         this.log("path", `${held.name || key.slice(0, 12)}: route set from discovery, ${pathHashes(event.outPathLen, event.outPath).join(" ") || "direct"}`);
@@ -4940,7 +4962,7 @@ export class MeshSession {
         this.set({ contacts: { ...this.state.contacts, [key]: { ...held, pathSince: this.now() } } });
       }
     }
-    return { out: pathHashes(event.outPathLen, event.outPath), back: pathHashes(event.inPathLen, event.inPath), changed };
+    return { out: pathHashes(event.outPathLen, event.outPath), back: pathHashes(event.inPathLen, event.inPath), changed, kept: !changed || writes };
   }
 
   /** A page of the repeaters a repeater hears direct. A page past the first is added to what was fetched. */

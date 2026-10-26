@@ -67,6 +67,10 @@ export const RoomIcon = icon(ROOM_GLYPH);
 export const SensorIcon = icon(SENSOR_GLYPH);
 export const PersonIcon = icon('<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/>');
 export const SignalIcon = icon('<path d="M4 18v-3M9 18v-7M14 18V7M19 18V4"/>');
+/** A ping: out to a node and back. Not waves, which stand for sending into the air. */
+export const PingIcon = icon('<path d="M4 8h15"/><path d="M15 4l4 4-4 4"/><path d="M20 16H5"/><path d="M9 12l-4 4 4 4"/>');
+/** Two radios with nothing between them. */
+export const DirectIcon = icon('<circle cx="5" cy="12" r="2.4"/><circle cx="19" cy="12" r="2.4"/><path d="M8 12h8"/>');
 export const LinkOffIcon = icon('<path d="M10 14l4-4"/><path d="M8.5 15.5l-2 2a3 3 0 0 1-4-4l2-2"/><path d="M15.5 8.5l2-2a3 3 0 0 1 4 4l-2 2"/><path d="M4 4l16 16"/>');
 export const MoreIcon = icon('<circle cx="6" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="18" cy="12" r="1.2" fill="currentColor"/>');
 export const MapIcon = icon('<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/>');

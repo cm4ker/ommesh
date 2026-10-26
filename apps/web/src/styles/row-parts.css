@@ -147,18 +147,6 @@
   font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }
-.route-pinned {
-  color: var(--accent);
-}
-.route-none {
-  color: var(--warning);
-}
-.route-good {
-  color: var(--success);
-}
-.route-bad {
-  color: var(--danger);
-}
 details.more {
   margin-top: var(--space-3);
   font-size: var(--text-sm);

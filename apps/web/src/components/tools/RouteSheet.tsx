@@ -14,7 +14,7 @@
  */
 
 import { AdvType, contactRoute, isConversationType, type ContactRecord, type SessionState } from "@meshnet/meshcore";
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { t } from "../../i18n/index.js";
 import { nameOfHash } from "../../lib/echoes.js";
 import { agoPhrase } from "../../lib/format.js";
@@ -33,10 +33,10 @@ import { act } from "../../lib/toast.js";
 import { cancelRouteEdit, editRoute, forgetRoute, openLineOfSight } from "../../lib/toolActions.js";
 import { Button, IconButton } from "../../ui/Button.js";
 import { SearchField } from "../../ui/Field.js";
-import { Block, ChoiceRow, Group } from "../../ui/List.js";
+import { Block, Group } from "../../ui/List.js";
 import { showMenu } from "../../ui/Menu.js";
 import { Sheet } from "../../ui/Sheet.js";
-import { AlertIcon, BackIcon, ChevronRightIcon, MoreIcon, PlusIcon, RefreshIcon } from "../Icons.js";
+import { AlertIcon, BackIcon, CheckIcon, ChevronRightIcon, CloseIcon, MoreIcon, PingIcon, PlusIcon, RefreshIcon, SaveIcon, StopIcon } from "../Icons.js";
 
 export function QualityChip({ snr, numbers = true }: { snr: number; numbers?: boolean }) {
   const q = quality(snr);
@@ -228,48 +228,49 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
           </p>
         ))}
       {draftPing ? <CheckResult p={draftPing} names={namesAlong(draftPing, contact, state)} reach={draftPing.targetInChain ? null : relaysOf(draftPing).length ? namesAlong(draftPing, contact, state).at(-2)! : null} placed={!!contactEnd(contact)} onLeg={openLeg} /> : null}
-      <div className="route-own-acts">
-        {running ? (
-          <Button size="sm" onClick={() => stopPing(key)}>
-            {t("tools.stop")}
-          </Button>
-        ) : (
-          <>
-            {nothingToCheck ? null : (
-              <Button size="sm" variant={cameBack ? "default" : "primary"} disabled={!online} onClick={() => void ping(key, hashes)}>
-                {t("tools.check")}
-              </Button>
-            )}
-            <Button size="sm" variant={cameBack || nothingToCheck ? "primary" : "default"} busy={saving} disabled={!online} onClick={() => void save()}>
-              {t("tools.route.save")}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={cancelRouteEdit}>
-              {t("common.cancel")}
-            </Button>
-          </>
-        )}
-      </div>
       <p className="tool-credit muted">{t("tools.route.hintEditing")}</p>
     </>
   ) : (
     chain
   );
 
-  const modes: { mode: Mode; label: string; hint: string; more?: ReactNode }[] = [
+  // What a way picked can do, as small buttons on its own line: find the route again, or check, save and drop a change.
+  const ownActs = editing ? (
+    running ? (
+      <IconAct label={t("tools.stop")} onClick={() => stopPing(key)}>
+        <StopIcon size={16} />
+      </IconAct>
+    ) : (
+      <>
+        {nothingToCheck ? null : (
+          <IconAct label={t("tools.check")} primary={!cameBack} disabled={!online} onClick={() => void ping(key, hashes)}>
+            <PingIcon size={16} />
+          </IconAct>
+        )}
+        <IconAct label={t("tools.route.save")} primary={cameBack || nothingToCheck} busy={saving} disabled={!online} onClick={() => void save()}>
+          <SaveIcon size={16} />
+        </IconAct>
+        <IconAct label={t("common.cancel")} onClick={cancelRouteEdit}>
+          <CloseIcon size={16} />
+        </IconAct>
+      </>
+    )
+  ) : null;
+
+  const modes: { mode: Mode; label: string; hint: string; acts?: ReactNode; more?: ReactNode }[] = [
     {
       mode: "auto",
       label: t("tools.route.mode.auto"),
       hint: shownMode === "auto" ? learned : t("tools.route.mode.autoHint"),
-      more:
+      acts:
         shownMode === "auto" && held !== null ? (
-          <Button size="sm" disabled={!online} onClick={() => void forgetRoute(key)}>
+          <IconAct label={t("tools.route.findAgain")} disabled={!online} onClick={() => void forgetRoute(key)}>
             <RefreshIcon size={16} />
-            {t("tools.route.findAgain")}
-          </Button>
+          </IconAct>
         ) : null,
     },
     { mode: "direct", label: t("tools.route.mode.direct"), hint: t("tools.route.mode.directHint") },
-    { mode: "own", label: t("tools.route.mode.own"), hint: t("tools.route.mode.ownHint"), more: shownMode === "own" ? own : null },
+    { mode: "own", label: t("tools.route.mode.own"), hint: t("tools.route.mode.ownHint"), acts: shownMode === "own" ? ownActs : null, more: shownMode === "own" ? own : null },
     { mode: "flood", label: t("tools.route.alwaysFlood"), hint: messaged ? t("tools.route.mode.floodHint") : t("tools.route.mode.floodRequestsHint") },
   ];
 
@@ -279,13 +280,47 @@ export function RouteSheet({ tool, onClose }: { tool: RouteTool; onClose: () => 
       <Group>
         {modes.map((m) => (
           <Fragment key={m.mode}>
-            <ChoiceRow label={m.label} hint={m.mode === shownMode && m.mode === "own" ? undefined : m.hint} checked={m.mode === shownMode} disabled={!online || running} onSelect={() => pick(m.mode)} />
+            <ModeRow label={m.label} hint={m.mode === shownMode && m.mode === "own" ? undefined : m.hint} checked={m.mode === shownMode} disabled={!online || running} onPick={() => pick(m.mode)} acts={m.acts} />
             {m.more ? <Block className="route-mode-more">{m.more}</Block> : null}
           </Fragment>
         ))}
       </Group>
       <RelayPicker picking={picking} hops={hops} hopName={hopName} target={contact} size={size} onPick={picked} onClose={() => setPicking(null)} />
     </div>
+  );
+}
+
+/**
+ * One of the route's ways: a radio as wide as the row, with what the way
+ * picked can do as small buttons on the line of its name, before the check
+ * mark, and what it says under them. The buttons sit over the radio, so a
+ * tap on them does not pick the way again.
+ */
+function ModeRow({ label, hint, checked, disabled, onPick, acts }: { label: string; hint: string | undefined; checked: boolean; disabled: boolean; onPick: () => void; acts?: ReactNode }) {
+  const id = useId();
+  return (
+    <div className={["line", "route-choice", checked ? "on" : ""].join(" ")}>
+      <button type="button" role="radio" aria-checked={checked} aria-label={label} aria-describedby={hint ? id : undefined} className="route-choice-pick" disabled={disabled} onClick={onPick} />
+      <span className="route-choice-label" aria-hidden="true">
+        {label}
+      </span>
+      {acts ? <span className="route-choice-acts">{acts}</span> : null}
+      <CheckIcon size={16} className="line-check" />
+      {hint ? (
+        <small id={id} className="route-choice-hint">
+          {hint}
+        </small>
+      ) : null}
+    </div>
+  );
+}
+
+/** A small framed button with an icon alone, its name in its tooltip and for a screen reader. */
+function IconAct({ label, primary = false, busy = false, disabled = false, onClick, children }: { label: string; primary?: boolean; busy?: boolean; disabled?: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <Button size="sm" variant={primary ? "primary" : "default"} className="icon-only" aria-label={label} title={label} busy={busy} disabled={disabled} onClick={onClick}>
+      {children}
+    </Button>
   );
 }
 

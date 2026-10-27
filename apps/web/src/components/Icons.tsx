@@ -23,11 +23,17 @@ function icon(paths: string, viewBox = "0 0 24 24") {
   };
 }
 
-export const ChatIcon = icon('<path d="M4 5h16v11H8l-4 4z"/>');
+/** The app icon's bubble with the mesh in it; on the open chats tab its top node, `apex`, turns green as in the icon. */
+export const ChatIcon = icon(
+  '<path d="M7.5 3h9a5 5 0 0 1 5 5v5.5a5 5 0 0 1-5 5H9.5l-6 3v-5a5 5 0 0 1-1-3V8a5 5 0 0 1 5-5Z"/><path d="m7.5 13 4.5-4.5 4.5 4.5" stroke-width="1.4"/><g fill="currentColor" stroke="none"><circle cx="7.5" cy="13" r="1.75"/><circle cx="16.5" cy="13" r="1.75"/><circle class="apex" cx="12" cy="8.5" r="1.75"/></g>',
+);
 export const ContactsIcon = icon('<circle cx="9" cy="8" r="3.5"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7"/><path d="M17.5 14.5c2 .8 3.5 2.8 3.5 5.5"/>');
 export const RadioIcon = icon('<circle cx="12" cy="13" r="2.5"/><path d="M7.5 17.5a6.5 6.5 0 0 1 0-9M16.5 8.5a6.5 6.5 0 0 1 0 9"/><path d="M4.5 20.5a10.5 10.5 0 0 1 0-15M19.5 5.5a10.5 10.5 0 0 1 0 15"/>');
 export const LogIcon = icon('<path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/>');
-export const SettingsIcon = icon('<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/>');
+/** A gear, since a ring of rays reads as brightness. */
+export const SettingsIcon = icon(
+  '<path d="M10.54 4.95 10.8 2.48h2.4l.26 2.47 2.49 1.03 1.93-1.57 1.71 1.71-1.57 1.93 1.03 2.49 2.47.26v2.4l-2.47.26-1.03 2.49 1.57 1.93-1.71 1.71-1.93-1.57-2.49 1.03-.26 2.47h-2.4l-.26-2.47-2.49-1.03-1.93 1.57-1.71-1.71 1.57-1.93-1.03-2.49-2.47-.26v-2.4l2.47-.26 1.03-2.49-1.57-1.93 1.71-1.71 1.93 1.57Z"/><circle cx="12" cy="12" r="3"/>',
+);
 export const EyeIcon = icon('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>');
 export const EyeOffIcon = icon('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/><path d="M4 20L20 4"/>');
 export const BackIcon = icon('<path d="M15 5l-7 7 7 7"/>');
@@ -87,7 +93,10 @@ export const GroupIcon = icon('<circle cx="8" cy="9" r="3"/><circle cx="16" cy="
 export const LocationIcon = icon('<path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z"/><circle cx="12" cy="10" r="2"/>');
 export const BatteryIcon = icon('<rect x="2.5" y="7" width="16.5" height="10" rx="2"/><path d="M21.5 10.5v3M6 10.5v3M9 10.5v3"/>');
 export const PowerIcon = icon('<path d="M12 3v8"/><path d="M6.5 6.5a8 8 0 1 0 11 0"/>');
-export const NodesIcon = icon('<circle cx="12" cy="5.5" r="2.5"/><circle cx="5.5" cy="17.5" r="2.5"/><circle cx="18.5" cy="17.5" r="2.5"/><path d="M10.8 7.7 6.8 15.3M13.2 7.7l4 7.6M8 17.5h8"/>');
+/** Solid nodes and thin links, as the mesh is drawn in the app icon. */
+export const NodesIcon = icon(
+  '<path d="M12 5.5 5.5 17.5h13Z" stroke-width="1.5"/><g fill="currentColor" stroke="none"><circle cx="12" cy="5.5" r="2.4"/><circle cx="5.5" cy="17.5" r="2.4"/><circle cx="18.5" cy="17.5" r="2.4"/></g>',
+);
 export const LockIcon = icon(LOCK_GLYPH);
 export const UnlockIcon = icon(UNLOCK_GLYPH);
 export const DownIcon = icon('<path d="M12 5v14M6 13l6 6 6-6"/>');

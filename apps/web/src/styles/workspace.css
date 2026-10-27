@@ -71,6 +71,10 @@
   background: var(--selected);
   color: var(--text);
 }
+/* The open chats tab wears the app icon's green on the top node of its bubble. */
+:is(.rail, .tabbar) button.on .apex {
+  fill: var(--success);
+}
 .update-link {
   display: inline-flex;
   align-items: center;

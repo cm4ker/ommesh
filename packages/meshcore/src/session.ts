@@ -3780,6 +3780,10 @@ export class MeshSession {
    */
   private async sweepRetries(): Promise<void> {
     if (!this.isReady) return;
+    // A room's tries are the reader's (tryAgainOnItsOwn): a run on one, kept from before they were, stops where it stands.
+    for (const m of this.state.messages) {
+      if (m.retryPlan && m.retryPlan.made < m.retryPlan.total && this.isRoom(m.conversation)) this.patchMessage(m.id, { retryPlan: { ...m.retryPlan, total: m.retryPlan.made, nextAt: null } });
+    }
     const isDue = (m: MessageRecord | undefined): m is MessageRecord =>
       !!m &&
       !!m.retryPlan &&
@@ -3798,10 +3802,20 @@ export class MeshSession {
   /**
    * A direct message that went unanswered goes again on its own, as many
    * times as the app allows; the first time it does, a plan is made for it.
+   *
+   * One to a room does not: it stands as given up, and each try more is the
+   * reader's tap. A room drops a post stamped older than the newest of ours
+   * it has taken, and says nothing, so a try behind a newer message could
+   * never be answered, and every one of them flooded the mesh.
    */
   private tryAgainOnItsOwn(id: string): void {
     const message = this.state.messages.find((m) => m.id === id);
     if (!message || !isDirect(message)) return;
+    if (this.isRoom(message.conversation)) {
+      const made = message.attempt + 1;
+      this.patchMessage(id, { retryPlan: { made, total: made, nextAt: null } });
+      return;
+    }
     if (!message.retryPlan) {
       if (this.sendTries < 2) return;
       this.patchMessage(id, { retryPlan: { made: 1, total: this.sendTries, nextAt: this.now() } });
@@ -3989,6 +4003,11 @@ export class MeshSession {
     };
     this.set({ messages: [...this.state.messages, message] });
     if (!late) sent(message.id, true);
+  }
+
+  private isRoom(conversation: string): boolean {
+    const target = parseConversation(conversation);
+    return target.kind === "contact" && this.state.contacts[target.key]?.type === AdvType.Room;
   }
 
   /** How many bytes of text a message to this conversation may carry. */

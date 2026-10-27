@@ -1,7 +1,7 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { ByteWriter, fromHex, fromUtf8, toHex } from "./protocol/bytes.js";
-import { Cmd, ContactFlag, ErrCode, Push, Resp, TxtType } from "./protocol/codes.js";
+import { AdvType, Cmd, ContactFlag, ErrCode, Push, Resp, TxtType } from "./protocol/codes.js";
 import { groupDataPayload, groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
 import { crockford, decodeReaction, encodeReaction, messageHash, REACTION_DATA_TYPE } from "./protocol/reaction.js";
 import { PEER_ENTRY, PEER_HELLO, peerEntry, peerKeep, peerSaved, readMarkOf, readMarkValue, textHash } from "./protocol/peer.js";
@@ -1461,12 +1461,12 @@ test("starting a loop stops the other one in the same chat", async (t) => {
 });
 
 /** A session with Bob one relay away, trying a direct message `tries` times, on the mocked clock. */
-async function tryingSession(t: TestContext, tries: number) {
+async function tryingSession(t: TestContext, tries: number, type: number = AdvType.Chat) {
   t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
   t.mock.method(Math, "random", () => 0.5); // no jitter
   const clock = { now: 1_700_000_000_000 };
   const radio = new ScriptedRadio();
-  radio.contacts = [contactFrame(BOB, "Bob", 1_699_999_990, 1, [0x7f])];
+  radio.contacts = [contactFrame(BOB, "Bob", 1_699_999_990, type, [0x7f])];
   const session = new MeshSession({ now: () => clock.now });
   session.setSendTries(tries);
   const connecting = session.connect(radio);
@@ -1517,6 +1517,33 @@ test("one try is left to the user", async (t) => {
   assert.equal(sends(), 1);
   assert.equal(message().status, "unconfirmed");
   assert.equal(message().retryPlan, null);
+});
+
+test("a post to a room is not sent again on its own: each try more is the reader's tap", async (t) => {
+  const { session, sends, message, wait } = await tryingSession(t, 5, AdvType.Room);
+  await wait(6_000);
+  await wait(3_600_000);
+  assert.equal(sends(), 1);
+  assert.equal(message().status, "unconfirmed");
+  // Given up at once, so the bubble offers Send again.
+  assert.deepEqual(message().retryPlan, { made: 1, total: 1, nextAt: null });
+
+  await session.sendAgain(message().id);
+  assert.equal(sends(), 2);
+  await wait(6_000);
+  await wait(3_600_000);
+  assert.equal(sends(), 2);
+  assert.deepEqual(message().retryPlan, { made: 2, total: 2, nextAt: null });
+});
+
+test("a run of tries on a room stops where it stands", async (t) => {
+  const { session, sends, message, wait } = await tryingSession(t, 5, AdvType.Room);
+  await session.keepTrying(message().id);
+  assert.equal(sends(), 2);
+  await wait(6_000);
+  await wait(3_600_000);
+  assert.equal(sends(), 2);
+  assert.equal(message().retryPlan!.made, message().retryPlan!.total);
 });
 
 test("a late acknowledgement of an earlier try still counts, and the tries stop", async (t) => {

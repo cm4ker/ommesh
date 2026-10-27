@@ -304,7 +304,7 @@
   "messages.previewsAuto": "At once",
   "messages.previewsAutoHint": "A preview appears by itself when its message is on screen.",
   "messages.previewsNote": "Previews are made by the Ommesh server, preview.cm4ker.ru: it visits the link, so the site sees the server, never your device. The server gets only the link, keeps the preview for a day and keeps no log of links. Previews never go on air.",
-  "messages.triesNote": "Chats and rooms. A message the other side has not acknowledged goes again on its own: the first try by the route, the rest flood. Channels keep their own Keep trying.",
+  "messages.triesNote": "Chats with people. A message the other side has not acknowledged goes again on its own: the first try by the route, the rest flood. To a room, only you send it again, with Send again. Channels keep their own Keep trying.",
   "messages.sendTries": "Send tries",
   "messages.sentOnce": "Sent once. With no acknowledgement, sending again is up to you.",
   "messages.triesMinute": { "one": "{count} try within a minute, then the message turns red.", "other": "{count} tries within a minute, then the message turns red." },

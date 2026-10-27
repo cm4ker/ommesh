@@ -168,6 +168,10 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   known.current ??= new Set(messages.map((m) => m.id));
   const [below, setBelow] = useState(0);
   const [away, setAway] = useState(false);
+  // The replies the reader went up from to the message each answers (#32), the latest last. The button
+  // down takes them back to these first, one at a time, as Telegram's does, and to the latest after.
+  const returns = useRef<string[]>([]);
+  const [back, setBack] = useState(false);
   const measure = useCallback(() => {
     const el = scroller.current;
     if (!el) return;
@@ -182,6 +186,15 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
     setBelow(unseen.current.length);
     setAway(distance > 160 || (unseen.current.length > 0 && distance > 40));
+    // A reply no longer below the middle of what is in sight, scrolled down to or past, is no way back
+    // down any more; at the bottom, none is.
+    const box = el.getBoundingClientRect();
+    const middle = box.top + rise.current + (box.height - rise.current) / 2;
+    returns.current = returns.current.filter((id) => {
+      const row = distance < 40 ? null : el.querySelector(`[data-id="${CSS.escape(id)}"]`);
+      return row !== null && row.getBoundingClientRect().top > middle;
+    });
+    setBack(returns.current.length > 0);
   }, []);
 
   // Pinned to the bottom, as a chat is, unless the reader has scrolled up to read. Opened with
@@ -469,11 +482,14 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
         setPicked(id);
         setFinding(true);
       };
+      const leave = () => (returns.current = [...returns.current.filter((id) => id !== message.id), message.id]);
       if (source.kind === "found") {
+        leave();
         closeFind();
         setFound({ conversation, id: source.id, query: "" });
         setFlashing(source.id);
       } else if (source.kind === "guess") {
+        leave();
         lookThrough(source.name, source.mine, source.id);
       } else {
         toast(t("chats.reply.notFound"), "", source.theirs ? { label: t("chats.reply.lookThrough"), run: () => lookThrough(source.name, source.mine, null) } : undefined);
@@ -481,6 +497,14 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     },
     [conversation, closeFind],
   );
+
+  // Down: back to the reply last gone up from, flashing in the middle; with none, to the latest.
+  const down = () => {
+    const id = returns.current.pop();
+    if (!id) return toLatest();
+    centre(id);
+    setFlashing(id);
+  };
 
   // Messages picked to copy or delete, as Telegram picks them (ChatPick.tsx).
   const wide = useWide();
@@ -743,13 +767,14 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
 
       <NextChat conversation={conversation} scroller={scroller} inner={inner} enabled={!finding && !selecting} />
 
-      {/* Back to the latest, once scrolled away from it; the count is of the new ones still below. */}
+      {/* Back to the latest, once scrolled away from it, or first to a reply gone up from; the count is of
+          the new ones still below. */}
       <div className="chat-jump-slot">
         <button
           type="button"
           className={["chat-jump", away ? "" : "off"].join(" ")}
-          aria-label={below ? t("chats.chat.latestBelow", { count: below }) : t("chats.chat.latest")}
-          onClick={toLatest}
+          aria-label={back ? t("chats.chat.backToReply") : below ? t("chats.chat.latestBelow", { count: below }) : t("chats.chat.latest")}
+          onClick={down}
         >
           {below ? <span className="badge">{below}</span> : null}
           <ChevronDownIcon size={20} />

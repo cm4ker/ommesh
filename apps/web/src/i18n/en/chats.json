@@ -95,6 +95,7 @@
     "other": "{count} new messages"
   },
   "chat.latest": "Latest message",
+  "chat.backToReply": "Back to the reply",
   "chat.latestBelow": {
     "one": "Latest message, {count} new message below",
     "other": "Latest message, {count} new messages below"

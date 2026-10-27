@@ -77,6 +77,18 @@ test("a sodium cell and two titanate cells in series read off their own curves",
   assert.equal(lowCharge(4440, "lto2s"), true);
 });
 
+test("a linear count goes straight from 3.0 to 4.2 V and drops the fraction, as the radio's screen does (#81)", () => {
+  assert.equal(batteryPercent(3330, "linear"), 27);
+  assert.equal(batteryPercent(3330), 7);
+  assert.equal(batteryPercent(3600, "linear"), 50);
+  assert.equal(batteryPercent(4200, "linear"), 100);
+  assert.equal(batteryPercent(4350, "linear"), 100);
+  assert.equal(batteryPercent(3000, "linear"), 0);
+  assert.equal(batteryPercent(2900, "linear"), 0);
+  assert.equal(lowCharge(3240, "linear"), true);
+  assert.equal(lowCharge(3260, "linear"), false);
+});
+
 test("a charge is read off the curve, straight between its points, and kept within 0 to 100", () => {
   assert.equal(batteryPercent(3890), 70);
   assert.equal(batteryPercent(3940), 75);

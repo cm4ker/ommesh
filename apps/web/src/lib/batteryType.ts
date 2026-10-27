@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { Key } from "../i18n/index.js";
+import { t, type Key } from "../i18n/index.js";
 import type { BatteryType } from "./format.js";
 import { readSetting, writeSetting } from "./storage.js";
 
@@ -12,9 +12,13 @@ import { readSetting, writeSetting } from "./storage.js";
 
 const KEY = "meshnet.batteryTypes";
 
-/** The chemistries by their names, which read the same in every language; the hints are keys. */
-export const BATTERY_TYPES: { value: BatteryType; label: string; hint: Key }[] = [
+/**
+ * The chemistries by their names, which read the same in every language; the straight count is a
+ * word, so its name is a key, as the hints are.
+ */
+export const BATTERY_TYPES: { value: BatteryType; label?: string; name?: Key; hint: Key }[] = [
   { value: "liion", label: "Li-ion / LiPo", hint: "radio.battery.liionHint" },
+  { value: "linear", name: "radio.battery.linear", hint: "radio.battery.linearHint" },
   { value: "lifepo4", label: "LiFePO4", hint: "radio.battery.lifepo4Hint" },
   { value: "naion", label: "Na-ion", hint: "radio.battery.naionHint" },
   { value: "lto2s", label: "LTO 2S", hint: "radio.battery.lto2sHint" },
@@ -38,7 +42,8 @@ export function batteryType(radioKey: string | undefined): BatteryType {
 }
 
 export function batteryTypeLabel(type: BatteryType): string {
-  return BATTERY_TYPES.find((t) => t.value === type)?.label ?? type;
+  const known = BATTERY_TYPES.find((b) => b.value === type);
+  return known?.name ? t(known.name) : (known?.label ?? type);
 }
 
 /** A node's cell; null forgets it, and the node reads as Li-ion again. */

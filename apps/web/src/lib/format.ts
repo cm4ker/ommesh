@@ -151,14 +151,14 @@ export function battery(mv: number): string {
 }
 
 /** What a cell is made of. The radio reports only its voltage. */
-export type BatteryType = "liion" | "lifepo4" | "naion" | "lto2s";
+export type BatteryType = "liion" | "linear" | "lifepo4" | "naion" | "lto2s";
 
 /**
  * A cell's resting voltage, mV, at 100%, 90% … 0%. Charge is not linear in
  * voltage: LiFePO4 sits near 3.3 V for most of its charge, so a straight line
  * from empty to full reads a full one as nearly empty.
  */
-const BATTERY_CURVES: Record<BatteryType, readonly number[]> = {
+const BATTERY_CURVES: Record<Exclude<BatteryType, "linear">, readonly number[]> = {
   liion: [4190, 4050, 3990, 3890, 3800, 3720, 3650, 3580, 3530, 3420, 3100],
   lifepo4: [3400, 3350, 3320, 3290, 3270, 3260, 3250, 3230, 3200, 3120, 3000],
   // A sodium cell's resting voltage slopes nearly straight from 4.0 V to 1.8 V, with no flat
@@ -172,6 +172,10 @@ const BATTERY_CURVES: Record<BatteryType, readonly number[]> = {
 
 /** A cell's charge from its voltage, straight between the curve's points; rough, and honest about it. */
 export function batteryPercent(mv: number, type: BatteryType = "liion"): number {
+  // A Li-ion cell counted straight from 3.0 V empty to 4.2 V full, each mV alike, the way the radio's
+  // own screen counts it (#81), and cut down to a whole percent as the radio's integer arithmetic does.
+  // It reads the bottom of the charge higher than the curve: 3.6 V is half on the line, a third on the curve.
+  if (type === "linear") return Math.min(100, Math.max(0, Math.trunc(((mv - 3000) * 100) / 1200)));
   const curve = BATTERY_CURVES[type];
   const step = 100 / (curve.length - 1);
   if (mv >= curve[0]!) return 100;

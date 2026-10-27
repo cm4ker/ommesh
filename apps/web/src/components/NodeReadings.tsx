@@ -103,7 +103,7 @@ function BatterySheet({ open, onClose, nodeKey, name, mv }: { open: boolean; onC
         {BATTERY_TYPES.map((b) => (
           <ChoiceRow
             key={b.value}
-            label={b.label}
+            label={batteryTypeLabel(b.value)}
             hint={t(b.hint)}
             value={`${batteryPercent(mv, b.value)} ${t("node.unit.percent")}`}
             checked={chosen === b.value}

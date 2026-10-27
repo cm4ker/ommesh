@@ -6,6 +6,7 @@
 
 ### Chats
 - Share a message to a messenger, notes or any other app: hold it and choose Share. On a phone, messages you picked can be shared together too, each with its name and time, as Copy gives them; a single message goes as its text alone.
+- Tap a reply's quote to go up to the message it answers, and the button down now takes you back to the reply first, as in Telegram, then on to the latest message.
 
 ### Mesh and the map
 - Hide repeaters, rooms and sensors not heard for a week, a month or three months: Show and order › Hide nodes silent for. They leave the Mesh list and the map but stay on the radio, and come back as soon as one is heard again. People, favourites and nodes of yours are never hidden, and a search by name still finds the hidden ones. A line under the list says how many are hidden, with Show.

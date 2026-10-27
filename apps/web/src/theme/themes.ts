@@ -45,7 +45,7 @@ export interface BubblePalette {
 export type BubbleToken = Exclude<keyof BubblePalette, "appearance">;
 
 /** Beyond colour: corners, rules and a face of its own, drawn by the `:root[data-look]` blocks in styles/looks.css. */
-export type ThemeLook = "terminal" | "lcd" | "classic";
+export type ThemeLook = "lcd" | "classic";
 
 export interface Theme {
   id: string;
@@ -112,32 +112,6 @@ const oneLight: Theme = {
 /** By name, as the picker shows them in the reader's language, so no kind of theme stands apart from the rest. */
 export const themes: Theme[] = [
   {
-    id: "amber",
-    name: "radio.themes.amber",
-    appearance: "dark",
-    look: "terminal",
-    tokens: {
-      bg: "#0c0904",
-      panel: "#110c05",
-      chrome: "#110c05",
-      elevated: "#140e06",
-      hover: "#1d150a",
-      selected: "#2b1f0c",
-      border: "#2a1e0b",
-      borderStrong: "#4a3514",
-      text: "#ffb54a",
-      textMuted: "#cc8f38",
-      textFaint: "#8f6427",
-      accent: "#ffb000",
-      accentContrast: "#0c0904",
-      danger: "#ff5a36",
-      warning: "#ffd24a",
-      success: "#d8c24a",
-      bubbleOut: "#22180a",
-      bubbleIn: "#140e06",
-    },
-  },
-  {
     id: "apricot",
     name: "radio.themes.apricot",
     appearance: "light",
@@ -185,6 +159,33 @@ export const themes: Theme[] = [
       success: "#3f9142",
       bubbleOut: "#ffd1e4",
       bubbleIn: "#ffffff",
+    },
+  },
+  {
+    // Catppuccin Mocha's palette (catppuccin.com/palette). Catppuccin puts its panels darker than the ground; here
+    // they go lighter, as in every theme, so the panel and the hover are mixed between its Base and Surface 0.
+    id: "catppuccin-mocha",
+    name: "radio.themes.catppuccin",
+    appearance: "dark",
+    tokens: {
+      bg: "#1e1e2e",
+      panel: "#262637",
+      chrome: "#313244",
+      elevated: "#262637",
+      hover: "#2c2d40",
+      selected: "#45475a",
+      border: "#2c2d40",
+      borderStrong: "#45475a",
+      text: "#cdd6f4",
+      textMuted: "#a6adc8",
+      textFaint: "#7f849c",
+      accent: "#cba6f7",
+      accentContrast: "#11111b",
+      danger: "#f38ba8",
+      warning: "#f9e2af",
+      success: "#a6e3a1",
+      bubbleOut: "#4e4466",
+      bubbleIn: "#313244",
     },
   },
   {

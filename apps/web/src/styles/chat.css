@@ -184,7 +184,7 @@
   color: var(--text);
 }
 /* Where the date lines are drawn hollow, the floating one is filled, or the messages show through it. */
-:root:is([data-look="terminal"], [data-look="lcd"]) .chat-day .day {
+:root[data-look="lcd"] .chat-day .day {
   background: var(--bg);
 }
 /* The list's own date line, while the floating one covers it. */

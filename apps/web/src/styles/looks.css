@@ -1,38 +1,10 @@
-/* ---- looks: Amber, Olive and Pebble draw more than colour ---- */
+/* ---- looks: Olive and Pebble draw more than colour ---- */
 
-/* Shipped with the app, not fetched: a radio out in a field has no network. A face loads only once a look names it. */
-@font-face {
-  font-family: "IBM Plex Mono";
-  font-weight: 400;
-  font-display: swap;
-  src: url("../fonts/plex-mono-400-latin.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-  font-family: "IBM Plex Mono";
-  font-weight: 400;
-  font-display: swap;
-  src: url("../fonts/plex-mono-400-cyrillic.woff2") format("woff2");
-  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
-}
-@font-face {
-  font-family: "IBM Plex Mono";
-  font-weight: 500 700;
-  font-display: swap;
-  src: url("../fonts/plex-mono-600-latin.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-  font-family: "IBM Plex Mono";
-  font-weight: 500 700;
-  font-display: swap;
-  src: url("../fonts/plex-mono-600-cyrillic.woff2") format("woff2");
-  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
-}
 /*
- * Handjet as fixed weights cut from its variable font (fontTools' instancer, wght 400 to 700), not the
- * variable font itself. Each of its letters is some seventy dots, and drawn from the variable font
- * every screen of text took about ten times as long to paint as in any other theme.
+ * Shipped with the app, not fetched: a radio out in a field has no network, and a face loads only once
+ * a look names it. Handjet comes as fixed weights cut from its variable font (fontTools' instancer, wght
+ * 400 to 700): each of its letters is some seventy dots, and drawn from the variable font every screen
+ * of text took about ten times as long to paint as in any other theme.
  */
 @font-face {
   font-family: "Handjet";
@@ -97,50 +69,6 @@
 :root[data-look] *::after {
   border-radius: 0 !important;
 }
-/* A layer over everything for the glass a look is seen through; it takes no touch. */
-:root[data-look="terminal"] body::after,
-:root[data-look="lcd"] body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 2147483647;
-  pointer-events: none;
-}
-
-/* Amber: an amber tube. Scan lines, a glow on the letters, the edge of the glass darker. */
-:root[data-look="terminal"] {
-  --font-ui: "IBM Plex Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
-}
-:root[data-look="terminal"] body {
-  text-shadow: 0 0 4px color-mix(in srgb, var(--text) 35%, transparent);
-}
-:root[data-look="terminal"] body::after {
-  background:
-    repeating-linear-gradient(to bottom, transparent 0 2px, color-mix(in srgb, var(--bg) 45%, transparent) 2px 3px),
-    radial-gradient(ellipse at center, transparent 62%, color-mix(in srgb, var(--bg) 70%, transparent));
-}
-:root[data-look="terminal"] .avatar {
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--accent);
-  color: var(--accent);
-}
-:root[data-look="terminal"] .msg-sender {
-  color: var(--accent);
-}
-:root[data-look="terminal"] .bubble {
-  box-shadow: inset 0 0 0 1px var(--border-strong);
-}
-:root[data-look="terminal"] .msg.out .bubble {
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-:root[data-look="terminal"] .unread-line {
-  background: transparent;
-  border-block: 1px dashed var(--accent);
-}
-:root[data-look="terminal"] .day {
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--border-strong);
-}
 
 /* Olive: a push-button phone's screen. Pixel letters, a dot grid, two-pixel rules. */
 :root[data-look="lcd"] {
@@ -151,7 +79,13 @@
   font-size-adjust: 0.62;
   font-weight: 500;
 }
+/* The glass the screen is seen through: a layer over everything that takes no touch. */
 :root[data-look="lcd"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  pointer-events: none;
   background:
     linear-gradient(color-mix(in srgb, var(--text) 5%, transparent) 1px, transparent 1px) 0 0 / 3px 3px,
     linear-gradient(90deg, color-mix(in srgb, var(--text) 5%, transparent) 1px, transparent 1px) 0 0 / 3px 3px;

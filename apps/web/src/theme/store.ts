@@ -8,6 +8,8 @@ const BUBBLE_TOKENS: BubbleToken[] = ["text", "textMuted", "textFaint", "accent"
 const KEY = "meshnet.theme";
 /** The chosen theme's ground, for the boot screen `index.html` paints before this runs. */
 const GROUND_KEY = "meshnet.theme.ground";
+/** Themes taken out, each with the one put in its place: a reader who had picked one keeps a theme of its kind. */
+const REPLACED: Record<string, string> = { amber: "catppuccin-mocha" };
 
 /** A theme id, or `"system"` to follow the OS. */
 export type ThemePreference = string;
@@ -18,7 +20,13 @@ let media: MediaQueryList | null = null;
 
 function read(): ThemePreference {
   try {
-    return localStorage.getItem(KEY) ?? "system";
+    const stored = localStorage.getItem(KEY) ?? "system";
+    const next = REPLACED[stored];
+    if (!next) return stored;
+    // Written back, ground and all, so the boot screen paints the new theme too.
+    localStorage.setItem(KEY, next);
+    localStorage.setItem(GROUND_KEY, findTheme(next)!.tokens.bg);
+    return next;
   } catch {
     return "system";
   }

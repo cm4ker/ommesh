@@ -72,6 +72,12 @@
   box-sizing: border-box;
 }
 
+/* The hint in an empty field in the theme's own faint ink: the browser's grey stood apart from every tinted theme. */
+::placeholder {
+  color: var(--text-faint);
+  opacity: 1;
+}
+
 /*
  * How far the keyboard reaches up the screen, where the page makes room for it
  * itself (iOS, lib/keyboard.ts); 0 elsewhere. `--keyboard` is where the

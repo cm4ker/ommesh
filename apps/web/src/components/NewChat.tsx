@@ -106,9 +106,9 @@ function PublicChannelForm({ onDone }: { onDone: () => void }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const index = freeChannelIndex(state);
   const name = hashtagName(text);
   const key = name ? hashtagSecret(name) : null;
+  const index = freeChannelIndex(state, key ?? undefined);
   const existing = name ? state.channels.find((c) => c.name.toLowerCase() === name) : undefined;
 
   const submit = async (e: FormEvent) => {
@@ -175,8 +175,8 @@ function ChannelForm({ join, onDone }: { join: boolean; onDone: () => void }) {
   const [key, setKey] = useState(() => (join ? "" : randomSecret()));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const index = freeChannelIndex(state);
   const secret = parseSecret(key);
+  const index = freeChannelIndex(state, secret ?? undefined);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();

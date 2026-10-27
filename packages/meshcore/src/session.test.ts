@@ -2948,6 +2948,66 @@ test("a message on a slot not read yet reads it, and a channel there keeps its o
   await session.disconnect();
 });
 
+/** A radio with #yug in slot 1, and a session that heard ADW write there. */
+async function withYug(storage = new MemoryStorage()): Promise<{ radio: ScriptedRadio; session: MeshSession }> {
+  const radio = new ScriptedRadio();
+  radio.channelSlots = 4;
+  radio.slots[1] = { name: "#yug", secret: new Uint8Array(16).fill(7) };
+  const session = new MeshSession({ storage, now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  await settle();
+  radio.queue.push(channelFrame(1, "ADW: 1"));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(10);
+  assert.equal(session.getState().messages.length, 1);
+  return { radio, session };
+}
+
+test("a channel put in the slot of one taken off opens without the old one's messages (#104)", async () => {
+  const { session } = await withYug();
+  await session.clearChannel(1);
+  assert.equal(session.getState().messages.length, 1, "the chat of a channel taken off is left to read");
+  await session.setChannel(1, "Deep", new Uint8Array(16).fill(9));
+  assert.deepEqual(session.getState().messages, []);
+  assert.deepEqual(session.getState().unread, {});
+  await session.disconnect();
+});
+
+test("a channel put back in its slot finds its messages there, and a rename keeps them", async () => {
+  const { session } = await withYug();
+  await session.clearChannel(1);
+  await session.setChannel(1, "#yug", new Uint8Array(16).fill(7));
+  await session.setChannel(1, "Yug", new Uint8Array(16).fill(7));
+  assert.deepEqual(session.getState().messages.map((m) => m.text), ["1"]);
+  await session.disconnect();
+});
+
+test("a slot another app gave another channel drops the old one's messages when the list is read", async () => {
+  const { radio, session } = await withYug();
+  radio.slots[1] = { name: "Deep", secret: new Uint8Array(16).fill(9) };
+  await session.refreshChannels();
+  assert.deepEqual(session.getState().messages, []);
+  assert.deepEqual(session.getState().unread, {});
+  await session.disconnect();
+});
+
+test("history saved before chats knew their keys takes each listed channel's key", async () => {
+  const storage = new MemoryStorage();
+  const { radio, session } = await withYug(storage);
+  await session.disconnect();
+  const saved = storage.saved.get(session.getState().self!.key)!;
+  delete saved.chatKeys;
+
+  const again = new MeshSession({ storage, now: () => 1_700_000_000_000 });
+  await again.connect(radio);
+  await settle();
+  assert.deepEqual(again.getState().messages.map((m) => m.text), ["1"], "the same channel keeps its chat");
+  radio.slots[1] = { name: "Deep", secret: new Uint8Array(16).fill(9) };
+  await again.refreshChannels();
+  assert.deepEqual(again.getState().messages, []);
+  await again.disconnect();
+});
+
 test("nothing goes out to a slot that holds no channel, nor to the chat without a key", async () => {
   const radio = new ScriptedRadio();
   const session = new MeshSession({ now: () => 1_700_000_000_000 });

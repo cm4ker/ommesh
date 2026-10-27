@@ -65,6 +65,7 @@ function state(messages: MessageRecord[]): SessionState {
       { index: 0, name: "Public", secret: "00" },
       { index: 1, name: "Friends", secret: "01" },
     ],
+    chatKeys: {},
     messages,
     unread: { [`c:${BOB}`]: 2 },
     battery: null,

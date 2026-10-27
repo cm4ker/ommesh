@@ -11,12 +11,21 @@ export function isPublicChannel(channel: Pick<ChannelRecord, "secret">): boolean
   return channel.secret.toLowerCase() === PUBLIC_SECRET;
 }
 
-/** The first slot the radio has free, or -1. */
-export function freeChannelIndex(state: SessionState): number {
+/**
+ * The slot a new channel goes to, or -1 when the radio has none free. A chat
+ * is its channel's slot, and a channel taken off leaves its history there: the
+ * channel's own slot is taken when it comes back, else one with nothing left
+ * in it, so a new channel seldom pushes out another's history.
+ */
+export function freeChannelIndex(state: Pick<SessionState, "channels" | "device" | "chatKeys" | "messages">, secret?: string): number {
   const used = new Set(state.channels.map((c) => c.index));
   const max = state.device?.maxChannels ?? 8;
-  for (let i = 0; i < max; i++) if (!used.has(i)) return i;
-  return -1;
+  const free = Array.from({ length: max }, (_, i) => i).filter((i) => !used.has(i));
+  if (!free.length) return -1;
+  const own = secret ? free.find((i) => state.chatKeys[channelConversation(i)] === secret.toLowerCase()) : undefined;
+  if (own !== undefined) return own;
+  const written = new Set(state.messages.map((m) => m.conversation));
+  return free.find((i) => !written.has(channelConversation(i))) ?? free[0]!;
 }
 
 export function randomSecret(): string {

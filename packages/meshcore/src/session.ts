@@ -399,6 +399,13 @@ export interface SessionState {
   /** Contacts being taken off the radio one by one, while that runs. */
   removing: { done: number; total: number } | null;
   channels: ChannelRecord[];
+  /**
+   * The key each channel chat's history was written under, by chat. A chat is
+   * its channel's slot, and its history stays when the channel leaves the
+   * radio, so this tells a channel put in that slot later whether the history
+   * there is its own.
+   */
+  chatKeys: Record<string, string>;
   messages: MessageRecord[];
   unread: Record<string, number>;
   battery: { mv: number; at: number } | null;
@@ -467,6 +474,8 @@ export interface PersistedState {
   /** Absent in history saved before removed contacts were kept. */
   removed?: Record<string, RemovedContact>;
   channels: ChannelRecord[];
+  /** Absent in history saved before a chat knew its channel's key. */
+  chatKeys?: Record<string, string>;
   messages: MessageRecord[];
   unread: Record<string, number>;
   /** Absent in history saved before remote nodes were managed. */
@@ -989,8 +998,8 @@ function guessPathSince(lastMod: number, now: number): number {
 
 /** The part of the state that is kept per radio. */
 function historyOf(state: SessionState): PersistedState {
-  const { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles, channelRegions, pushes } = state;
-  return { contacts, contactsCursor, removed, channels, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles, channelRegions, pushes };
+  const { contacts, contactsCursor, removed, channels, chatKeys, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles, channelRegions, pushes } = state;
+  return { contacts, contactsCursor, removed, channels, chatKeys, messages, unread, logins, statusHistory, batteryHistory, readingHistory, routing, consoles, channelRegions, pushes };
 }
 
 /** Each key's list, the stored one first, then what came after it. */
@@ -1041,6 +1050,7 @@ export function mergeHistory(stored: PersistedState, later: PersistedState): Per
     contactsCursor: Math.max(stored.contactsCursor, later.contactsCursor),
     removed,
     channels: later.channels.length ? later.channels : stored.channels,
+    chatKeys: { ...stored.chatKeys, ...later.chatKeys },
     messages,
     unread,
     logins: { ...stored.logins, ...later.logins },
@@ -1142,6 +1152,7 @@ const EMPTY: SessionState = {
   contactsFull: false,
   removing: null,
   channels: [],
+  chatKeys: {},
   messages: [],
   unread: {},
   battery: null,
@@ -1548,6 +1559,7 @@ export class MeshSession {
       "contactsCursor" in patch ||
       "removed" in patch ||
       "channels" in patch ||
+      "chatKeys" in patch ||
       "messages" in patch ||
       "unread" in patch ||
       "logins" in patch ||
@@ -1804,6 +1816,9 @@ export class MeshSession {
       contactsCursor: persisted?.contactsCursor ?? 0,
       removed,
       channels: persisted?.channels ?? [],
+      // History saved before chats knew their keys takes each listed channel's
+      // history for its own; a chat whose channel is gone stays unknown.
+      chatKeys: persisted?.chatKeys ?? Object.fromEntries((persisted?.channels ?? []).map((c) => [channelConversation(c.index), c.secret])),
       // History saved before the hop count was masked holds the raw path_len
       // byte (the low six bits are the hops either way), and history saved
       // before echoes were kept has none.
@@ -2717,7 +2732,7 @@ export class MeshSession {
         throw error;
       }
     }
-    this.set({ channels });
+    this.takeChannels(channels);
   }
 
   async setChannel(index: number, name: string, secret: Uint8Array): Promise<void> {
@@ -2725,12 +2740,42 @@ export class MeshSession {
     const record: ChannelRecord = { index, name, secret: toHex(secret) };
     const channels = this.state.channels.filter((c) => c.index !== index).concat(record);
     channels.sort((a, b) => a.index - b.index);
-    this.set({ channels });
+    this.takeChannels(channels);
   }
 
   async clearChannel(index: number): Promise<void> {
     await this.need().setChannel(index, "", new Uint8Array(16));
     this.set({ channels: this.state.channels.filter((c) => c.index !== index) });
+  }
+
+  /**
+   * The radio's channels, as read or written. A slot that holds another key
+   * than the one its chat's history was written under had its channel taken
+   * off and another put in its place: that history is the old channel's, and
+   * goes rather than show as the new one's (#104).
+   */
+  private takeChannels(channels: ChannelRecord[]): void {
+    const chatKeys = { ...this.state.chatKeys };
+    const stale = new Set<string>();
+    for (const channel of channels) {
+      const conversation = channelConversation(channel.index);
+      const known = chatKeys[conversation];
+      if (known !== undefined && known !== channel.secret) stale.add(conversation);
+      chatKeys[conversation] = channel.secret;
+    }
+    const messages = stale.size ? this.state.messages.filter((m) => !stale.has(m.conversation)) : this.state.messages;
+    if (messages.length === this.state.messages.length) {
+      this.set({ channels, chatKeys });
+      return;
+    }
+    const unread = { ...this.state.unread };
+    for (const conversation of stale) {
+      delete unread[conversation];
+      this.marksTold.delete(conversation);
+      this.pendingMarks.delete(conversation);
+    }
+    this.log("message", `dropped ${this.state.messages.length - messages.length} messages of channels no longer on the radio, from ${[...stale].join(", ")}`);
+    this.set({ channels, chatKeys, messages, unread });
   }
 
   // ---- messages ----
@@ -3320,7 +3365,7 @@ export class MeshSession {
       if (isEmptySlot(ch.name, secret)) return KEYLESS_CONVERSATION;
       const channels = this.state.channels.filter((c) => c.index !== index).concat({ index, name: ch.name, secret });
       channels.sort((a, b) => a.index - b.index);
-      this.set({ channels });
+      this.takeChannels(channels);
     } catch (error) {
       this.log("error", `cannot read channel slot ${index}: ${(error as Error).message}`);
     }

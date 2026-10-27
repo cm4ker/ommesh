@@ -58,6 +58,7 @@ function initial(messages: MessageRecord[] = [], unread: Record<string, number> 
       { index: 1, name: "test", secret: "01" },
       { index: 2, name: "Friends", secret: "02" },
     ],
+    chatKeys: {},
     messages,
     unread,
     battery: null,

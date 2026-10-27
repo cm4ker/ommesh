@@ -38,6 +38,7 @@
 - The Olive theme no longer slows Ommesh down. Its letters took about ten times as long to draw as in any other theme, so on a phone opening a chat or a new message stuttered; they now come from a lighter copy of the same font and look the same.
 - In the Olive theme a zero no longer passes for an eight: on a computer's screen 100 read as 188.
 - In the Apricot, Berry and Dusk themes an error is no longer the colour of the buttons and links. Its red is of another shade now, so a message that did not go or a warning stands out at once.
+- On a phone left with Ommesh in the background all day, the morning's messages no longer go missing. While the app is out of sight the phone keeps what the radio hears for it, but it kept only the last 500 messages, and a busy mesh fills that in a few hours. It now keeps 5000.
 - A channel you add no longer shows messages of a channel removed before. They could turn up in the new one as if written there, even in a private channel nobody else had. A channel you add back still finds its own old messages.
 - A message to a room is no longer sent again on its own. A room quietly drops a message older than the latest of yours it has taken, so those tries could never be answered, and each went across the whole mesh. When the room does not answer, the message turns red with Send again, and every try more is yours to make.
 

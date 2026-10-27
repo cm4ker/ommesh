@@ -21,6 +21,9 @@
 ### Desktop
 - Ommesh for macOS and Linux. A Mac takes one disk image, for Apple silicon and Intel alike; Linux an AppImage, or a .deb package for Debian and Ubuntu, for x64 and ARM64. As on Windows, they connect to a radio over Bluetooth, USB and Wi-Fi, keep node passwords in the system's keychain, stay in the menu bar or the tray with the window closed, and offer each new version themselves.
 
+### Look
+- The tabs have new icons, drawn like Ommesh's own. Chats is the app icon's bubble with the mesh inside, its top node green on the open tab; Mesh has solid nodes, as in the icon; Settings is a gear instead of a ring of rays that looked like brightness.
+
 ### Fixes
 - A repeater restarted without its clock no longer looks silent. The radio drops its adverts as old, but Ommesh hears them on the air and counts the repeater heard now.
 - The lines of Who hears me, and of a survey's point opened on the map, now end on the repeaters they lead to. When Show and order showed only some nodes, such as Yours, or a repeater was gathered with others into a circle, a line ran out onto the empty map. A repeater gone from your contacts since the survey is marked with a pin where it stood then.

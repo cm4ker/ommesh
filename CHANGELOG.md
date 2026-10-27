@@ -21,6 +21,7 @@
 
 ### Desktop
 - Ommesh for macOS and Linux. A Mac takes one disk image, for Apple silicon and Intel alike; Linux an AppImage, or a .deb package for Debian and Ubuntu, for x64 and ARM64. As on Windows, they connect to a radio over Bluetooth, USB and Wi-Fi, keep node passwords in the system's keychain, stay in the menu bar or the tray with the window closed, and offer each new version themselves.
+- The window has a title bar of its own, as in VS Code: in the theme's colours, with the radio's name and the buttons to minimise, maximise and close. On a Mac the traffic lights stay in their corner. On Windows 11 the window's edge takes the theme's accent while the window is in front.
 
 ### Look
 - The tabs have new icons, drawn like Ommesh's own. Chats is the app icon's bubble with the mesh inside, its top node green on the open tab; Mesh has solid nodes, as in the icon; Settings is a gear instead of a ring of rays that looked like brightness.

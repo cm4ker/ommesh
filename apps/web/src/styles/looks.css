@@ -4,7 +4,8 @@
  * Shipped with the app, not fetched: a radio out in a field has no network, and a face loads only once
  * a look names it. Handjet comes as fixed weights cut from its variable font (fontTools' instancer, wght
  * 400 to 700): each of its letters is some seventy dots, and drawn from the variable font every screen
- * of text took about ten times as long to paint as in any other theme.
+ * of text took about ten times as long to paint as in any other theme. Its zero is cut without the bar
+ * down the middle: on a screen of ordinary density the bar filled in, and 100 read as 188.
  */
 @font-face {
   font-family: "Handjet";

@@ -13,6 +13,7 @@ import { initSendTries } from "./lib/sendTries.js";
 import { session } from "./lib/session.js";
 import { connectors } from "./transports/index.js";
 import { initTheme } from "./theme/store.js";
+import { initFrame } from "./lib/frame.js";
 import { initTextSize } from "./theme/textSize.js";
 import { initLanguage } from "./i18n/index.js";
 import { keepLog } from "./lib/report.js";
@@ -41,6 +42,8 @@ initSendTries();
 // into another.
 initTheme();
 initTextSize();
+// The desktop's own title bar takes its room before the first paint, and the window's edge the theme's colours.
+initFrame();
 // The words, in the reader's language, are loaded before anything is drawn in them.
 await initLanguage();
 // The log from before this start comes back, so a problem noticed after a restart can still be read and reported.

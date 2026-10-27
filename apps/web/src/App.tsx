@@ -4,6 +4,7 @@ import { ConnectView } from "./components/connect/ConnectView.js";
 import { Workspace } from "./components/Workspace.js";
 import { UpdatesDialog } from "./components/Updates.js";
 import { NoticeBanner } from "./components/NoticeBanner.js";
+import { TitleBar } from "./components/TitleBar.js";
 import { bearingDeg, compass, distanceKm, formatDistance, hasPosition } from "./lib/geo.js";
 import { useLink } from "./lib/link.js";
 import { t, useLanguage, type Key } from "./i18n/index.js";
@@ -204,5 +205,5 @@ export function App() {
   // asked for after a disconnect is connected from the connect screen, which shows how it goes.
   const showWorkspace = status === "ready" || (link.dropped && known && link.phase !== "idle");
   // A new language redraws every screen: a word made before the change would stay in the old one.
-  return <Fragment key={language}>{showWorkspace ? <Workspace /> : <ConnectView />}<UpdatesDialog /><NoticeBanner /></Fragment>;
+  return <Fragment key={language}><TitleBar />{showWorkspace ? <Workspace /> : <ConnectView />}<UpdatesDialog /><NoticeBanner /></Fragment>;
 }

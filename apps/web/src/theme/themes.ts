@@ -401,6 +401,8 @@ export const sharedTokens = {
   toastErrorBorder: "#6b3434",
   toastError: "#ff9b93",
   toastErrorIcon: "#5a2a2a",
+  /* The close button of the desktop's own title bar under the pointer: Windows' red, in every theme (styles/frame.css). */
+  windowClose: "#c42b1c",
 };
 
 export type SharedToken = keyof typeof sharedTokens;

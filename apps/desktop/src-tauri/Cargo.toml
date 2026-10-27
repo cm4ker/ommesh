@@ -86,6 +86,8 @@ windows-future = "0.2"
 # from memory, and whether Windows is keeping quiet; see `notices.rs`.
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
+    # The colour of the window's edge; see `frame.rs`.
+    "Win32_Graphics_Dwm",
     "Win32_Media_Audio",
     "Win32_Security",
     "Win32_System_LibraryLoader",

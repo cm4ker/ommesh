@@ -1,0 +1,110 @@
+/* ---- the desktop window's own title bar (TitleBar.tsx, lib/frame.ts) ---- */
+
+/*
+ * The window has no frame of the system's: the page lays itself out under a bar of its own, in the
+ * chrome's colour, so the bar and the rail read as one frame around what is read, as in VS Code.
+ */
+:root.framed {
+  --frame-top: 32px;
+}
+:root.framed body {
+  padding-top: var(--frame-top);
+}
+:root.framed #root {
+  height: calc(100dvh - var(--frame-top));
+}
+/* The layers that cover the page cover what is under the bar: the bar stays, to move the window and close it. */
+:root.framed :is(.sheet-layer, .palette-layer, .pull-layer) {
+  top: var(--frame-top);
+}
+
+.titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--frame-top);
+  z-index: 2147483000;
+  display: flex;
+  align-items: center;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+/* Over the rail, so the icon heads its column. */
+.titlebar-icon {
+  flex: none;
+  margin: 0 calc((var(--rail-width) - 16px) / 2);
+  pointer-events: none;
+}
+.titlebar-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+/* macOS: the title in the middle, as there, clear of the traffic lights on the left. */
+:root[data-frame="macos"] .titlebar-title {
+  padding: 0 80px;
+  text-align: center;
+}
+
+.titlebar-buttons {
+  display: flex;
+  align-self: stretch;
+}
+.titlebar-buttons button {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: default;
+}
+.titlebar-buttons svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+.titlebar-buttons button:hover {
+  background: var(--hover);
+}
+.titlebar-buttons button:active {
+  background: var(--selected);
+}
+/* Red under the pointer, as everywhere on Windows: the one button that ends something. */
+.titlebar-buttons .titlebar-close:hover,
+.titlebar-buttons .titlebar-close:active {
+  background: var(--window-close);
+  color: var(--on-fill);
+}
+/* Behind another window the bar goes quiet, as the system's does. */
+:root.window-away .titlebar,
+:root.window-away .titlebar-buttons button:not(:hover) {
+  color: var(--text-faint);
+}
+
+/*
+ * Linux draws no edge around a window without a frame: the page draws a hairline, in the accent
+ * while the window is in front, as Windows 11 colours its own (frame.rs). Not where the window
+ * fills the screen, where it would only cut into what is shown.
+ */
+:root[data-frame="linux"]:not(.window-maximized) body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 2147483001;
+  border: 1px solid var(--accent);
+  pointer-events: none;
+}
+:root[data-frame="linux"].window-away body::before {
+  border-color: var(--border-strong);
+}

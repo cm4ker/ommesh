@@ -5,6 +5,7 @@
 
 mod announce;
 mod coverage;
+mod frame;
 mod instance;
 mod notices;
 mod secrets;
@@ -79,6 +80,7 @@ pub fn run() {
             if window.label() == notices::LABEL {
                 notices::on_window_event(window, event);
             } else {
+                frame::on_window_event(window, event);
                 tray::on_window_event(window, event);
             }
         })
@@ -96,6 +98,7 @@ pub fn run() {
         updates::desktop_check_update,
         updates::desktop_restart,
         instance::desktop_open_another,
+        frame::frame_colors,
         winble::winble_scan,
         winble::winble_stop_scan,
         winble::winble_pair,
@@ -127,6 +130,7 @@ pub fn run() {
         updates::desktop_check_update,
         updates::desktop_restart,
         instance::desktop_open_another,
+        frame::frame_colors,
         tcp::tcp_open,
         tcp::tcp_write,
         tcp::tcp_close,

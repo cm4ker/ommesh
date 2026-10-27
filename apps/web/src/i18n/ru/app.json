@@ -76,5 +76,9 @@
   "oldWebView.text": "Ommesh показывает свои экраны через Android System WebView, а на этом телефоне стоит версия {version} — слишком старая. Обновите её в Google Play и откройте Ommesh снова.",
   "oldWebView.chromeToo": "На этой версии Android вместо него может работать Chrome, поэтому обновите и Chrome.",
   "oldWebView.updateWebView": "Обновить WebView",
-  "oldWebView.updateChrome": "Обновить Chrome"
+  "oldWebView.updateChrome": "Обновить Chrome",
+  "window.minimize": "Свернуть",
+  "window.maximize": "Развернуть",
+  "window.restore": "Свернуть в окно",
+  "window.close": "Закрыть"
 }

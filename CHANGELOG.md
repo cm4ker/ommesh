@@ -33,6 +33,8 @@
 - A route to a person, a room or a sensor can be set to direct, with no relays: Route › Direct. Taking every relay out of the chain can be saved too; before, it waited for a check that cannot reach anything but a repeater. When a ping across the whole mesh gets no answer from a person's radio, the reason is now given: it answers only if its owner lets you ask for its readings and has you among its contacts.
 - A route set by hand is no longer dropped on its own: a message along it that goes unanswered is sent again the same way instead of to the whole mesh, and a ping across the mesh that finds another way leaves it as it is. Only routes the radio learned itself are forgotten after a while.
 - The Olive theme no longer slows Ommesh down. Its letters took about ten times as long to draw as in any other theme, so on a phone opening a chat or a new message stuttered; they now come from a lighter copy of the same font and look the same.
+- In the Olive theme a zero no longer passes for an eight: on a computer's screen 100 read as 188.
+- In the Apricot, Berry and Dusk themes an error is no longer the colour of the buttons and links. Its red is of another shade now, so a message that did not go or a warning stands out at once.
 
 ## 0.10.0 — 2026-10-23
 

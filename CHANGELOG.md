@@ -23,6 +23,8 @@
 
 ### Look
 - The tabs have new icons, drawn like Ommesh's own. Chats is the app icon's bubble with the mesh inside, its top node green on the open tab; Mesh has solid nodes, as in the icon; Settings is a gear instead of a ring of rays that looked like brightness.
+- A new dark theme, Catppuccin, in the colours of the Catppuccin Mocha palette. It takes the place of Amber: if you had Amber, Ommesh opens in Catppuccin.
+- The hint in an empty field, such as Search, is now in the theme's own colours instead of one grey in every theme.
 
 ### Fixes
 - A repeater restarted without its clock no longer looks silent. The radio drops its adverts as old, but Ommesh hears them on the air and counts the repeater heard now.
@@ -30,6 +32,7 @@
 - On Android, the list in New chat › Message someone, and the repeaters to choose from when you set a route by hand, now scroll under your finger. Before, a long list stood still, and the names further down could not be reached. The search field stays above the list as it scrolls, and the sheet keeps its height while you type or the keyboard comes and goes, instead of jumping up and down.
 - A route to a person, a room or a sensor can be set to direct, with no relays: Route › Direct. Taking every relay out of the chain can be saved too; before, it waited for a check that cannot reach anything but a repeater. When a ping across the whole mesh gets no answer from a person's radio, the reason is now given: it answers only if its owner lets you ask for its readings and has you among its contacts.
 - A route set by hand is no longer dropped on its own: a message along it that goes unanswered is sent again the same way instead of to the whole mesh, and a ping across the mesh that finds another way leaves it as it is. Only routes the radio learned itself are forgotten after a while.
+- The Olive theme no longer slows Ommesh down. Its letters took about ten times as long to draw as in any other theme, so on a phone opening a chat or a new message stuttered; they now come from a lighter copy of the same font and look the same.
 
 ## 0.10.0 — 2026-10-23
 

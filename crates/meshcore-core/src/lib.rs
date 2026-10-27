@@ -8,6 +8,7 @@
 //! - [`mux`]: one radio shared by several clients (the page, a computer
 //!   through the phone). The core reads the radio's message queue itself and
 //!   keeps every message for each client until it asks.
+//! - [`store`]: those messages on the phone's disk, so they outlive the app.
 //! - [`watch`]: notices for what the page leaves unread while it sleeps.
 //! - [`survey`]: a coverage survey, asking who hears the radio as the phone moves.
 //! - [`frames`]: the few frames they read.
@@ -22,6 +23,7 @@ pub mod codes;
 mod ffi;
 pub mod frames;
 pub mod mux;
+mod store;
 pub mod survey;
 pub mod watch;
 
@@ -32,6 +34,7 @@ pub use watch::{
 };
 
 use mux::{Event, Mux};
+use store::Store;
 use survey::{Fix, Survey};
 use watch::Watch;
 
@@ -79,7 +82,13 @@ pub enum Timer {
     Listen { generation: i32 },
     /// The time a survey's check of one repeater is waited for.
     Check { generation: i32 },
+    /// The moment the inboxes are saved, after a change ([`SAVE_MS`]).
+    Save,
 }
+
+/// How long after a change the inboxes are saved: a burst of changes, as a page taking what
+/// waited for it, is saved once, and a message read off the radio is on disk this soon.
+pub const SAVE_MS: i64 = 2000;
 
 /// What the core asks its owner to do.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -102,8 +111,14 @@ pub enum Effect {
         timer: Timer,
         millis: i64,
     },
-    /// The inboxes changed: save [`Core::inboxes`], so they outlive the app.
-    InboxesChanged,
+    /// Add these bytes at the end of the inboxes' log ([`store`]).
+    InboxLog {
+        bytes: Vec<u8>,
+    },
+    /// Put these bytes in place of the inboxes' snapshot, then empty their log ([`store`]).
+    InboxSnapshot {
+        bytes: Vec<u8>,
+    },
     /// Show this notice, in place of one out with its tag ([`notice_id`] of it).
     Post {
         notice: Notice,
@@ -131,15 +146,32 @@ pub struct Core {
     mux: Mux,
     watch: Watch,
     survey: Survey,
+    store: Store,
+    /// Whether a save waits for its timer.
+    saving: bool,
 }
 
 impl Core {
-    /// With the inboxes saved last time, if any.
+    /// With inboxes saved another way, as before [`store`], if any: the first save writes them
+    /// as the store keeps them.
     pub fn new(inboxes: Vec<Inbox>) -> Self {
+        let store = Store::new(&inboxes);
+        Core::with(inboxes, store)
+    }
+
+    /// With the inboxes' snapshot and log as the owner kept them ([`store`]).
+    pub fn restore(snapshot: &[u8], log: &[u8]) -> Self {
+        let (store, inboxes) = Store::restore(snapshot, log);
+        Core::with(inboxes, store)
+    }
+
+    fn with(inboxes: Vec<Inbox>, store: Store) -> Self {
         Core {
             mux: Mux::new(inboxes.into_iter().map(|i| (i.client, i.frames)).collect()),
             watch: Watch::new(),
             survey: Survey::new(),
+            store,
+            saving: false,
         }
     }
 
@@ -209,6 +241,11 @@ impl Core {
             Timer::Quiet { generation } => self.watch.quiet(generation),
             Timer::Listen { generation } => self.survey.timeout(generation),
             Timer::Check { generation } => self.survey.check_timeout(generation),
+            Timer::Save => {
+                self.saving = false;
+                let now = Client::ALL.map(|client| self.mux.kept_frames(client).collect());
+                return self.store.save(now).into_iter().collect();
+            }
         }
         self.settle()
     }
@@ -298,6 +335,14 @@ impl Core {
                     Event::Asked(frame) => self.survey.asked(&frame),
                     Event::Answered(frame) => self.survey.answered(&frame),
                     Event::Unanswered => self.survey.unanswered(),
+                    Event::InboxesChanged if !self.saving => {
+                        self.saving = true;
+                        effects.push(Effect::Wait {
+                            timer: Timer::Save,
+                            millis: SAVE_MS,
+                        });
+                    }
+                    Event::InboxesChanged => {}
                 }
             }
             // A survey's ask goes through the mux, which may have more to say for it.
@@ -312,5 +357,65 @@ impl Core {
         effects.extend(self.watch.take());
         effects.extend(self.survey.take());
         effects
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use codes::{RESP_CONTACT_MSG_RECV_V3, RESP_NO_MORE_MESSAGES};
+
+    fn save_timers(effects: &[Effect]) -> usize {
+        effects
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    Effect::Wait {
+                        timer: Timer::Save,
+                        ..
+                    }
+                )
+            })
+            .count()
+    }
+
+    #[test]
+    fn messages_read_off_the_radio_are_saved_once_after_their_burst_and_read_back() {
+        let mut core = Core::restore(&[], &[]);
+        let mut effects = core.radio_up();
+        for n in 0..3 {
+            effects.extend(core.from_radio(vec![RESP_CONTACT_MSG_RECV_V3, n]));
+        }
+        effects.extend(core.from_radio(vec![RESP_NO_MORE_MESSAGES]));
+        assert_eq!(save_timers(&effects), 1, "one save for the burst");
+
+        let (mut snapshot, mut log) = (Vec::new(), Vec::new());
+        for effect in core.timeout(Timer::Save, 0) {
+            match effect {
+                Effect::InboxSnapshot { bytes } => {
+                    snapshot = bytes;
+                    log.clear();
+                }
+                Effect::InboxLog { bytes } => log.extend(bytes),
+                other => panic!("not a save: {other:?}"),
+            }
+        }
+        assert!(!snapshot.is_empty(), "the first save is a snapshot");
+
+        // Taken by the page, and the next save logs only that.
+        let effects = core.from_client(Client::Page, vec![codes::CMD_SYNC_NEXT_MESSAGE], None);
+        assert_eq!(save_timers(&effects), 1);
+        for effect in core.timeout(Timer::Save, 0) {
+            let Effect::InboxLog { bytes } = effect else {
+                panic!("{effect:?}")
+            };
+            log.extend(bytes);
+        }
+
+        let again = Core::restore(&snapshot, &log);
+        assert_eq!(again.inboxes(), core.inboxes());
+        assert_eq!(again.mux.inbox(Client::Page).len(), 2);
+        assert_eq!(again.mux.inbox(Client::Computer).len(), 3);
     }
 }

@@ -44,12 +44,18 @@ import dev.cm4ker.meshnet.core.Inbox;
 import dev.cm4ker.meshnet.core.Notice;
 import dev.cm4ker.meshnet.core.Radio;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -92,7 +98,11 @@ final class MeshRelay {
     private static final UUID TX = UUID.fromString("6E400003-B5A3-F393-E0A9-E50E24DCCA9E");
     private static final UUID CCCD = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     private static final String PREFS = "meshnet.relay";
+    /** Where the inboxes were saved before the core kept a snapshot and a log of them. */
     private static final String INBOXES_KEY = "inboxes";
+    /** The inboxes' snapshot and the log of what changed since, as the core writes them. */
+    private static final String SNAPSHOT_FILE = "inboxes.snapshot";
+    private static final String LOG_FILE = "inboxes.log";
     /** The page's notice settings, sounds included, and names for the core. */
     private static final String WATCH_KEY = "watch";
     /** The survey running, points and all, as the core gives it: what is left of it if the app stops under it. */
@@ -223,10 +233,12 @@ final class MeshRelay {
     private int surveyPoints = 0;
     /** Hears where the phone is while a survey runs. */
     private LocationListenerCompat fixes;
+    /** Writes the inboxes' files as the core says, in order and off the main thread. */
+    private final ExecutorService disk = Executors.newSingleThreadExecutor();
 
     private MeshRelay(Context context) {
         this.context = context;
-        core = new Radio(loadInboxes());
+        core = loadCore();
         String watch = prefs().getString(WATCH_KEY, null);
         if (watch != null) run(core.configure(watch));
     }
@@ -295,8 +307,10 @@ final class MeshRelay {
             } else if (effect instanceof Effect.Wait) {
                 Effect.Wait wait = (Effect.Wait) effect;
                 main.postDelayed(() -> run(core.timeout(wait.getTimer(), System.currentTimeMillis())), wait.getMillis());
-            } else if (effect instanceof Effect.InboxesChanged) {
-                saveInboxes();
+            } else if (effect instanceof Effect.InboxLog) {
+                appendLog(((Effect.InboxLog) effect).getBytes());
+            } else if (effect instanceof Effect.InboxSnapshot) {
+                writeSnapshot(((Effect.InboxSnapshot) effect).getBytes());
             } else if (effect instanceof Effect.Post) {
                 Notice notice = ((Effect.Post) effect).getNotice();
                 NoticesPlugin.show(context, notice.getId(), notice.getTag(), kind(notice), notice.getTitle(), notice.getBody(),
@@ -325,6 +339,62 @@ final class MeshRelay {
 
     // The inboxes outlive the app: the radio's copy of a message is gone once the core has read it.
 
+    private File inboxFile(String name) {
+        return new File(context.getNoBackupFilesDir(), name);
+    }
+
+    /** The core with the inboxes from its snapshot and log, or from where they were saved before. */
+    private Radio loadCore() {
+        File snapshot = inboxFile(SNAPSHOT_FILE);
+        if (snapshot.exists()) {
+            try {
+                File log = inboxFile(LOG_FILE);
+                return Radio.Companion.restore(readFile(snapshot), log.exists() ? readFile(log) : new byte[0]);
+            } catch (IOException e) {
+                Log.w(TAG, "the saved inboxes could not be read", e);
+            }
+        }
+        return new Radio(loadInboxes());
+    }
+
+    private static byte[] readFile(File file) throws IOException {
+        try (FileInputStream in = new FileInputStream(file)) {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream((int) file.length());
+            byte[] chunk = new byte[64 * 1024];
+            for (int n; (n = in.read(chunk)) > 0; ) bytes.write(chunk, 0, n);
+            return bytes.toByteArray();
+        }
+    }
+
+    private void appendLog(byte[] bytes) {
+        disk.execute(() -> {
+            try (FileOutputStream out = new FileOutputStream(inboxFile(LOG_FILE), true)) {
+                out.write(bytes);
+            } catch (IOException e) {
+                Log.w(TAG, "the inboxes' log could not be written", e);
+            }
+        });
+    }
+
+    /** A new snapshot in place of the old one, and only then an empty log: the core passes over a log older than its snapshot. */
+    private void writeSnapshot(byte[] bytes) {
+        disk.execute(() -> {
+            File next = inboxFile(SNAPSHOT_FILE + ".new");
+            try {
+                try (FileOutputStream out = new FileOutputStream(next)) {
+                    out.write(bytes);
+                    out.getFD().sync();
+                }
+                if (!next.renameTo(inboxFile(SNAPSHOT_FILE))) throw new IOException("the snapshot could not be put in place");
+                new FileOutputStream(inboxFile(LOG_FILE)).close();
+                if (prefs().contains(INBOXES_KEY)) prefs().edit().remove(INBOXES_KEY).apply();
+            } catch (IOException e) {
+                Log.w(TAG, "the inboxes' snapshot could not be written", e);
+            }
+        });
+    }
+
+    /** The inboxes as they were saved before the core kept a snapshot and a log of them. */
     private List<Inbox> loadInboxes() {
         List<Inbox> inboxes = new ArrayList<>();
         String text = prefs().getString(INBOXES_KEY, null);
@@ -342,21 +412,6 @@ final class MeshRelay {
             Log.w(TAG, "the saved inboxes could not be read", e);
         }
         return inboxes;
-    }
-
-    private void saveInboxes() {
-        JSONObject saved = new JSONObject();
-        try {
-            for (Inbox inbox : core.inboxes()) {
-                JSONArray frames = new JSONArray();
-                for (byte[] frame : inbox.getFrames()) frames.put(Base64.encodeToString(frame, Base64.NO_WRAP));
-                saved.put(key(inbox.getClient()), frames);
-            }
-        } catch (JSONException e) {
-            Log.w(TAG, "the inboxes could not be saved", e);
-            return;
-        }
-        prefs().edit().putString(INBOXES_KEY, saved.toString()).apply();
     }
 
     /** Where a client's inbox is saved, as before the core: {@code page} and {@code computer}. */

@@ -30,13 +30,35 @@ const QUIET: ReadonlySet<string> = new Set<keyof SessionState>(["log"]);
  */
 let shown = session.getState();
 const shownListeners = new Set<() => void>();
-session.subscribe(() => {
+
+/**
+ * While the radio's queue is read, a phone's after a day asleep thousands of
+ * messages long, the screens are drawn again this often rather than for every
+ * message; once it is read, at once.
+ */
+const SYNC_DRAW_MS = 200;
+let drawLater: ReturnType<typeof setTimeout> | null = null;
+
+function show(): void {
   const next = session.getState();
   if (next === shown) return;
   const loud = (Object.keys(next) as (keyof SessionState)[]).some((key) => !QUIET.has(key) && next[key] !== shown[key]);
   if (!loud) return;
   shown = next;
   for (const listener of shownListeners) listener();
+}
+
+session.subscribe(() => {
+  if (session.getState().syncing) {
+    drawLater ??= setTimeout(() => {
+      drawLater = null;
+      show();
+    }, SYNC_DRAW_MS);
+    return;
+  }
+  if (drawLater) clearTimeout(drawLater);
+  drawLater = null;
+  show();
 });
 
 function subscribeShown(listener: () => void): () => void {

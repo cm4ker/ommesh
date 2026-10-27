@@ -33,8 +33,9 @@ use crate::codes::*;
 use crate::frames::entry_key;
 use crate::{Client, Effect, Timer};
 
-/// Messages kept per client at most; the oldest go first.
-pub const INBOX_LIMIT: usize = 500;
+/// Messages kept per client at most; the oldest go first. A page asleep for a day in a busy
+/// mesh misses no more than this (#105): five hundred ran out in a morning.
+pub const INBOX_LIMIT: usize = 5000;
 /// The other app's entries kept per client at most, one per key, beside the messages.
 pub const ENTRY_LIMIT: usize = 2000;
 
@@ -53,6 +54,8 @@ pub(crate) enum Event {
     Answered(Vec<u8>),
     /// A command of the core's own got no answer.
     Unanswered,
+    /// What the inboxes keep changed, and is to be saved ([`crate::store`]).
+    InboxesChanged,
 }
 
 /// Whose command it is.
@@ -128,12 +131,16 @@ impl Mux {
     /// The inbox as it is saved: the messages taken and not yet saved by the client first, as
     /// they would go again once it came back.
     pub fn kept(&self, client: Client) -> Vec<Vec<u8>> {
+        self.kept_frames(client).map(|f| f.to_vec()).collect()
+    }
+
+    /// The same, borrowed.
+    pub fn kept_frames(&self, client: Client) -> impl Iterator<Item = &[u8]> {
         let i = client.index();
         self.handed[i]
             .iter()
             .chain(self.inboxes[i].iter())
-            .cloned()
-            .collect()
+            .map(|f| f.as_slice())
     }
 
     /// What the mux asks of its owner, and what happened, since the last call.
@@ -248,7 +255,7 @@ impl Mux {
             }
         }
         if changed {
-            self.out.push(Effect::InboxesChanged);
+            self.events.push(Event::InboxesChanged);
         }
         for push in pushes {
             self.tell(client, push);
@@ -276,7 +283,7 @@ impl Mux {
             changed = true;
         }
         if changed {
-            self.out.push(Effect::InboxesChanged);
+            self.events.push(Event::InboxesChanged);
         }
     }
 
@@ -305,7 +312,7 @@ impl Mux {
             }
             true
         });
-        self.out.push(Effect::InboxesChanged);
+        self.events.push(Event::InboxesChanged);
         // On attach, the inbox's own news says so.
         if keeping && self.is_attached(client) {
             self.tell(client, vec![PUSH_MSG_WAITING]);
@@ -478,7 +485,7 @@ impl Mux {
             }
         }
         self.events.push(Event::Kept(message.to_vec()));
-        self.out.push(Effect::InboxesChanged);
+        self.events.push(Event::InboxesChanged);
     }
 
     /// A text or a channel datagram the radio took from one client, told to the others.
@@ -505,7 +512,7 @@ impl Mux {
             }
         }
         if kept {
-            self.out.push(Effect::InboxesChanged);
+            self.events.push(Event::InboxesChanged);
         }
     }
 
@@ -534,7 +541,7 @@ impl Mux {
             }
         }
         if kept {
-            self.out.push(Effect::InboxesChanged);
+            self.events.push(Event::InboxesChanged);
         }
     }
 

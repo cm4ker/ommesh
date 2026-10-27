@@ -40,7 +40,19 @@ final class MeshRelay: NSObject {
     private static let service = CBUUID(string: "6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
     private static let rx = CBUUID(string: "6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
     private static let tx = CBUUID(string: "6E400003-B5A3-F393-E0A9-E50E24DCCA9E")
+    /// Where the inboxes were saved before the core kept a snapshot and a log of them.
     private static let inboxesKey = "meshnet.relay.inboxes"
+    /// The inboxes' snapshot and the log of what changed since, as the core writes them; left out of backups.
+    private static let inboxesDir: URL = {
+        var dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("relay", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? dir.setResourceValues(values)
+        return dir
+    }()
+    private static let snapshotFile = inboxesDir.appendingPathComponent("inboxes.snapshot")
+    private static let logFile = inboxesDir.appendingPathComponent("inboxes.log")
     /// The page's notice settings, sounds included, and names for the core.
     private static let watchKey = "meshnet.relay.watch"
     /// The survey running, points and all, as the core gives it: what is left of it if the app stops under it.
@@ -57,6 +69,8 @@ final class MeshRelay: NSObject {
     /// The page's writes waiting to hear they went, by the number the core knows them by.
     private var writes: [Int64: () -> Void] = [:]
     private var lastWrite: Int64 = 0
+    /// Writes the inboxes' files as the core says, in order and off the main thread.
+    private let disk = DispatchQueue(label: "dev.cm4ker.meshnet.relay.disk")
     /// Timers the core is waiting on, and the background time that lets them fire with the app out of sight.
     private var waiting = 0
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
@@ -87,13 +101,7 @@ final class MeshRelay: NSObject {
     var isSharing: Bool { isOn && sharing }
 
     override init() {
-        // The inboxes outlive the app: the radio's copy of a message is gone once the core has read it.
-        let saved = UserDefaults.standard.dictionary(forKey: MeshRelay.inboxesKey) as? [String: [Data]] ?? [:]
-        var inboxes: [Inbox] = []
-        for (name, frames) in saved {
-            if let client = MeshRelay.client(named: name) { inboxes.append(Inbox(client: client, frames: frames)) }
-        }
-        core = Radio(inboxes: inboxes)
+        core = MeshRelay.loadCore()
         super.init()
         if let watch = UserDefaults.standard.string(forKey: MeshRelay.watchKey) { run(core.configure(json: watch)) }
         let center = NotificationCenter.default
@@ -103,11 +111,24 @@ final class MeshRelay: NSObject {
         SurveyGlance.end()
     }
 
-    /// Where a client's inbox is saved, as before the core: `page` and `computer`.
-    private static func name(of client: Client) -> String {
-        client == .computer ? "computer" : "page"
+    // MARK: the inboxes
+    //
+    // They outlive the app: the radio's copy of a message is gone once the core has read it.
+
+    /// The core with the inboxes from its snapshot and log, or from where they were saved before.
+    private static func loadCore() -> Radio {
+        if let snapshot = try? Data(contentsOf: snapshotFile) {
+            return Radio.restore(snapshot: snapshot, log: (try? Data(contentsOf: logFile)) ?? Data())
+        }
+        let saved = UserDefaults.standard.dictionary(forKey: inboxesKey) as? [String: [Data]] ?? [:]
+        var inboxes: [Inbox] = []
+        for (name, frames) in saved {
+            if let client = MeshRelay.client(named: name) { inboxes.append(Inbox(client: client, frames: frames)) }
+        }
+        return Radio(inboxes: inboxes)
     }
 
+    /// A client's inbox as it was saved before the core: `page` and `computer`.
     private static func client(named name: String) -> Client? {
         switch name {
         case "page": return .page
@@ -116,10 +137,33 @@ final class MeshRelay: NSObject {
         }
     }
 
-    private func saveInboxes() {
-        var saved: [String: [Data]] = [:]
-        for inbox in core.inboxes() { saved[MeshRelay.name(of: inbox.client)] = inbox.frames }
-        UserDefaults.standard.set(saved, forKey: MeshRelay.inboxesKey)
+    private func appendLog(_ bytes: Data) {
+        disk.async {
+            do {
+                guard let handle = try? FileHandle(forWritingTo: MeshRelay.logFile) else {
+                    try bytes.write(to: MeshRelay.logFile)
+                    return
+                }
+                defer { try? handle.close() }
+                try handle.seekToEnd()
+                try handle.write(contentsOf: bytes)
+            } catch {
+                NSLog("MeshRelay: the inboxes' log could not be written: %@", error.localizedDescription)
+            }
+        }
+    }
+
+    /// A new snapshot in place of the old one, and only then an empty log: the core passes over a log older than its snapshot.
+    private func writeSnapshot(_ bytes: Data) {
+        disk.async {
+            do {
+                try bytes.write(to: MeshRelay.snapshotFile, options: .atomic)
+                try Data().write(to: MeshRelay.logFile)
+                UserDefaults.standard.removeObject(forKey: MeshRelay.inboxesKey)
+            } catch {
+                NSLog("MeshRelay: the inboxes' snapshot could not be written: %@", error.localizedDescription)
+            }
+        }
     }
 
     // MARK: the core asks; this does
@@ -135,8 +179,10 @@ final class MeshRelay: NSObject {
                 writes.removeValue(forKey: write)?()
             case let .wait(timer, millis):
                 wait(timer, millis: millis)
-            case .inboxesChanged:
-                saveInboxes()
+            case let .inboxLog(bytes):
+                appendLog(bytes)
+            case let .inboxSnapshot(bytes):
+                writeSnapshot(bytes)
             case let .post(notice):
                 // A burst of news rings with its first notice only.
                 let sound = notice.silent ? nil : notice.sound

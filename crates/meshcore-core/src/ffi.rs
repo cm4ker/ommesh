@@ -13,7 +13,8 @@ pub struct Radio {
 
 #[uniffi::export]
 impl Radio {
-    /// With the inboxes saved last time, if any.
+    /// With the inboxes saved before the core kept a snapshot and log of them, if any; its
+    /// first save writes the snapshot.
     #[uniffi::constructor]
     pub fn new(inboxes: Vec<Inbox>) -> Arc<Self> {
         Arc::new(Radio {
@@ -21,8 +22,12 @@ impl Radio {
         })
     }
 
-    pub fn inboxes(&self) -> Vec<Inbox> {
-        self.core().inboxes()
+    /// With the inboxes' snapshot and log as the effects had them written.
+    #[uniffi::constructor]
+    pub fn restore(snapshot: Vec<u8>, log: Vec<u8>) -> Arc<Self> {
+        Arc::new(Radio {
+            core: Mutex::new(Core::restore(&snapshot, &log)),
+        })
     }
 
     pub fn attach(&self, client: Client) -> Vec<Effect> {

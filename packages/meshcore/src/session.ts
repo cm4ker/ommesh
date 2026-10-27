@@ -2983,7 +2983,7 @@ export class MeshSession {
       // A sender that heard no acknowledgement sends the same message again,
       // stamp and all, and the radio hands up every copy that arrives.
       const twin = this.state.messages.some(
-        (m) => m.direction === "in" && m.conversation === conversation && m.timestamp === frame.timestamp && m.senderPrefix === (signer ?? prefix) && m.text === frame.text,
+        (m) => m.timestamp === frame.timestamp && m.direction === "in" && m.conversation === conversation && m.senderPrefix === (signer ?? prefix) && m.text === frame.text,
       );
       if (twin) {
         this.log("message", `another copy of a message from ${contact?.name ?? prefix}, sent again`);
@@ -3021,8 +3021,9 @@ export class MeshSession {
         return;
       }
       // A phone's relay hands a message again when it was not told it was saved; the radio
-      // itself never hands one up twice, as it drops a packet it has heard before.
-      const twin = this.state.messages.some((m) => m.direction === "in" && m.conversation === conversation && m.timestamp === frame.timestamp && m.sender === sender && m.text === text);
+      // itself never hands one up twice, as it drops a packet it has heard before. The stamp
+      // is asked first: after a day asleep thousands of messages are looked up in a long history.
+      const twin = this.state.messages.some((m) => m.timestamp === frame.timestamp && m.direction === "in" && m.conversation === conversation && m.sender === sender && m.text === text);
       if (twin) {
         this.log("message", `another copy of a message from ${sender ?? "someone"} in ${conversation}, set aside`);
         return;

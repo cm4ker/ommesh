@@ -41,6 +41,7 @@
 - On a phone left with Ommesh in the background all day, the morning's messages no longer go missing. While the app is out of sight the phone keeps what the radio hears for it, but it kept only the last 500 messages, and a busy mesh fills that in a few hours. It now keeps 5000.
 - A channel you add no longer shows messages of a channel removed before. They could turn up in the new one as if written there, even in a private channel nobody else had. A channel you add back still finds its own old messages.
 - A message to a room is no longer sent again on its own. A room quietly drops a message older than the latest of yours it has taken, so those tries could never be answered, and each went across the whole mesh. When the room does not answer, the message turns red with Send again, and every try more is yours to make.
+- With a phone and a computer sharing one radio, words you say often, such as "Good morning", no longer pull an old message into today. When one of them sent the same text as some days before, the other took it for a resend of the old one: the old message left its day and came down with its reactions, so one showed reactions under today's message that the other rightly did not.
 
 ## 0.10.0 — 2026-10-23
 

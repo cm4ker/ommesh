@@ -18,10 +18,11 @@ interface SharePlugin {
 let files: FilesystemPlugin | null = null;
 let share: SharePlugin | null = null;
 
-async function sharePlugin(): Promise<SharePlugin> {
+/** Runs `use` with the Share plugin, handed in rather than returned: a promise resolved with the proxy would hang. */
+async function withShare<T>(use: (plugin: SharePlugin) => Promise<T>): Promise<T> {
   const { registerPlugin } = await import("@capacitor/core");
   share ??= registerPlugin<SharePlugin>("Share");
-  return share;
+  return use(share);
 }
 
 /** Whether the share sheet was put away without picking anything, which is no error. */
@@ -36,7 +37,7 @@ export async function saveFile(name: string, text: string, type: string, dialogT
     files ??= registerPlugin<FilesystemPlugin>("Filesystem");
     const { uri } = await files.writeFile({ path: `exports/${name}`, data: text, directory: "CACHE", encoding: "utf8", recursive: true });
     try {
-      await (await sharePlugin()).share({ title: name, files: [uri], dialogTitle });
+      await withShare((plugin) => plugin.share({ title: name, files: [uri], dialogTitle }));
     } catch (error) {
       if (putAway(error)) return "cancelled";
       throw error;
@@ -62,7 +63,7 @@ export function canShareText(): boolean {
 /** A text to another app, a messenger or notes, through the share sheet; nothing happens when it is put away. */
 export async function shareText(text: string): Promise<void> {
   try {
-    if (isCapacitor()) await (await sharePlugin()).share({ text });
+    if (isCapacitor()) await withShare((plugin) => plugin.share({ text }));
     else await navigator.share({ text });
   } catch (error) {
     if (!putAway(error)) throw error;

@@ -159,7 +159,8 @@ function tilesOf(
   list.forEach((r, i) => {
     const id = `${r.type}:${i}`;
     if (supply && r.type === "power") return;
-    if (channel === SELF_CHANNEL && r.type === "voltage") {
+    // A node with no battery has plain volts on its own channel, drawn as any other channel's are.
+    if (channel === SELF_CHANNEL && r.type === "voltage" && how.cell !== "none") {
       const type = how.cell ?? "liion";
       const percent = batteryPercent(Math.round(r.volts * 1000), type);
       tiles.push({

@@ -183,6 +183,8 @@
   "battery.lifepo4Hint": "2.5–3.65 V · solar builds",
   "battery.naionHint": "1.8–4.0 V · sodium cells",
   "battery.lto2sHint": "3.6–5.6 V · two titanate cells in series",
+  "battery.none": "No battery",
+  "battery.noneHint": "Runs off mains or a panel · volts only, no charge",
   "advanced.device": "Device",
   "advanced.manage": "Radio control",
   "advanced.consoleHint": "Commands straight to this radio",

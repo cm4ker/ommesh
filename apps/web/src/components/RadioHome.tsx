@@ -163,7 +163,12 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
                   </span>
                 </span>
                 <button type="button" className="radio-battery" disabled={!self} title={t("radio.titles.readings")} onClick={() => openRadioPage("readings")}>
-                  {mv !== null ? (
+                  {mv === null ? (
+                    <b>—</b>
+                  ) : cell === "none" ? (
+                    // A radio with no battery has only its volts to show.
+                    <b>{battery(mv)}</b>
+                  ) : (
                     <>
                       <b className={low ? "low" : undefined} title={low ? t("node.readings.lowCharge") : undefined}>
                         {low ? <AlertIcon size={13} role="img" aria-hidden={false} aria-label={t("node.readings.lowCharge")} /> : null}
@@ -171,8 +176,6 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
                       </b>
                       <small>{battery(mv)}</small>
                 </>
-              ) : (
-                <b>—</b>
               )}
             </button>
           </div>
@@ -191,7 +194,7 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
         <Group title={t("radio.home.thisRadio")}>
           {row("name", <PersonIcon size={17} />, self?.name)}
           {row("frequency", <RadioIcon size={17} />, self ? t("radio.home.presetPower", { preset: presetName(self), tx: self.txPower }) : undefined)}
-          {row("readings", <GaugeIcon size={17} />, [mv !== null ? `${batteryPercent(mv, cell)}%` : null, own ? readingsSummary(own.readings) : null].filter(Boolean).join(" · ") || undefined)}
+          {row("readings", <GaugeIcon size={17} />, [mv === null ? null : cell === "none" ? battery(mv) : `${batteryPercent(mv, cell)}%`, own ? readingsSummary(own.readings) : null].filter(Boolean).join(" · ") || undefined)}
           {row("contacts", <UsersIcon size={17} />, contactsValue)}
           {row("privacy", <ShieldIcon size={17} />, self ? (placeOpen(self, gps) ? t("radio.privacy.placeShown") : t("radio.privacy.placeHidden")) : undefined)}
           {row("advanced", <SlidersIcon size={17} />)}

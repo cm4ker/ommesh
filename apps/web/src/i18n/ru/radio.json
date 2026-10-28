@@ -183,6 +183,8 @@
   "battery.lifepo4Hint": "2,5–3,65 В · солнечные сборки",
   "battery.naionHint": "1,8–4,0 В · натриевые банки",
   "battery.lto2sHint": "3,6–5,6 В · две титанатные банки последовательно",
+  "battery.none": "Без АКБ",
+  "battery.noneHint": "Питание от сети или панели · только вольты, без заряда",
   "advanced.device": "Устройство",
   "advanced.manage": "Управление радио",
   "advanced.consoleHint": "Команды прямо этому радио",

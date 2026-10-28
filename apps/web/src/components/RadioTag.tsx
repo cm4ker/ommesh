@@ -22,8 +22,8 @@ export function RadioTag() {
   if (key === undefined) return null;
 
   const shown = name || t("connect.rail.theRadio");
-  // A charge read before the link dropped says nothing about now.
-  const charge = online && mv !== null ? { percent: batteryPercent(mv, cell), low: lowCharge(mv, cell) } : null;
+  // A charge read before the link dropped says nothing about now, and a radio with no battery has none.
+  const charge = online && mv !== null && cell !== "none" ? { percent: batteryPercent(mv, cell), low: lowCharge(mv, cell) } : null;
   const label = !online ? t("connect.tag.offline", { name: shown }) : charge ? t(charge.low ? "connect.tag.lowCharge" : "connect.tag.charge", { name: shown, percent: charge.percent }) : shown;
   return (
     // To the radio's card: on top of Settings on a phone, beside the Connection page on a desktop.

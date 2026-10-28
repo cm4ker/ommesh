@@ -62,11 +62,10 @@ function volts(mv: number): string {
 /**
  * The battery, as a charge by the cell someone picked for this node, or "≈" by Li-ion when
  * nobody did; this radio's own reads without "≈". `mv` is steadied over the last half hour. A low charge colours the number, judged by
- * the same cell. A week of answers draws its line, and a tap picks the cell.
+ * the same cell. A week of answers draws its line, and a tap picks the cell. A node with no
+ * battery shows its volts alone.
  */
 function batteryTile(mv: number, history: BatterySample[], chosen: ReturnType<typeof useChosenBatteryType>, own: boolean, onClick: () => void): Tile {
-  const type = chosen ?? "liion";
-  const percent = batteryPercent(mv, type);
   const first = history[0];
   const last = history.at(-1);
   const falling = !!first && !!last && history.length > 1 && first.mv - last.mv >= FALLING_MV;
@@ -80,15 +79,30 @@ function batteryTile(mv: number, history: BatterySample[], chosen: ReturnType<ty
         : highest - lowest < 10
           ? volts(last!.mv)
           : `${numberText(lowest / 1000, 2)}–${volts(highest)}`;
+  const line = { values: history.map((s) => s.mv / 1000), times: history.map((s) => s.at), unit: t("node.unit.volt"), digits: 2 };
+  const weekText = week ? t("node.readings.week", { range: week }) : null;
+  if (chosen === "none") {
+    return {
+      id: "battery",
+      label: t("radio.readings.voltage"),
+      value: numberText(mv / 1000, 2),
+      unit: t("node.unit.volt"),
+      sub: [batteryTypeLabel("none"), weekText].filter(Boolean).join(" · "),
+      line,
+      onClick,
+    };
+  }
+  const type = chosen ?? "liion";
+  const percent = batteryPercent(mv, type);
   const kind = chosen ? batteryTypeLabel(chosen) : own ? batteryTypeLabel("liion") : t("node.readings.typeUnknown");
   return {
     id: "battery",
     label: t("node.readings.battery"),
     value: chosen || own ? String(percent) : t("radio.readings.about", { value: percent }),
     unit: t("node.unit.percent"),
-    sub: [volts(mv), kind, week ? t("node.readings.week", { range: week }) : null].filter(Boolean).join(" · "),
+    sub: [volts(mv), kind, weekText].filter(Boolean).join(" · "),
     low: lowCharge(mv, type),
-    line: { values: history.map((s) => s.mv / 1000), times: history.map((s) => s.at), unit: t("node.unit.volt"), digits: 2 },
+    line,
     onClick,
   };
 }
@@ -105,7 +119,7 @@ function BatterySheet({ open, onClose, nodeKey, name, mv }: { open: boolean; onC
             key={b.value}
             label={batteryTypeLabel(b.value)}
             hint={t(b.hint)}
-            value={`${batteryPercent(mv, b.value)} ${t("node.unit.percent")}`}
+            value={b.value === "none" ? undefined : `${batteryPercent(mv, b.value)} ${t("node.unit.percent")}`}
             checked={chosen === b.value}
             onSelect={() => {
               setBatteryType(nodeKey, b.value);

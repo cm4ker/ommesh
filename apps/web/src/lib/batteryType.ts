@@ -7,14 +7,16 @@ import { readSetting, writeSetting } from "./storage.js";
  * What each node's cell is made of (#26), by the node's public key. A node
  * reports only volts and the firmware has no setting for the cell, so the
  * app keeps it and turns the volts into a percent with it. A node nobody
- * picked a cell for reads as Li-ion, and its charge is said with "≈".
+ * picked a cell for reads as Li-ion, and its charge is said with "≈". A node
+ * marked as having no battery (#107) shows its volts, never a charge, and is
+ * never called low.
  */
 
 const KEY = "meshnet.batteryTypes";
 
 /**
- * The chemistries by their names, which read the same in every language; the straight count is a
- * word, so its name is a key, as the hints are.
+ * The chemistries by their names, which read the same in every language; the straight count and
+ * no battery at all are words, so their names are keys, as the hints are.
  */
 export const BATTERY_TYPES: { value: BatteryType; label?: string; name?: Key; hint: Key }[] = [
   { value: "liion", label: "Li-ion / LiPo", hint: "radio.battery.liionHint" },
@@ -22,6 +24,7 @@ export const BATTERY_TYPES: { value: BatteryType; label?: string; name?: Key; hi
   { value: "lifepo4", label: "LiFePO4", hint: "radio.battery.lifepo4Hint" },
   { value: "naion", label: "Na-ion", hint: "radio.battery.naionHint" },
   { value: "lto2s", label: "LTO 2S", hint: "radio.battery.lto2sHint" },
+  { value: "none", name: "radio.battery.none", hint: "radio.battery.noneHint" },
 ];
 
 function restore(saved: unknown): Record<string, BatteryType> {

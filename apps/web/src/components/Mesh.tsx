@@ -500,8 +500,8 @@ const NodeRow = memo(function NodeRow({ contact: c, selected, picking, picked, y
   const bits = yours
     ? [kindLabel(c.type), login?.ok ? t("mesh.row.signedIn") : t("mesh.row.notSignedIn")]
     : [kindLabel(c.type), c.unsaved ? t("mesh.row.notOnRadio") : whereFrom(self, c)];
-  // A node of yours says its charge as its readings do: by its cell, "≈" by Li-ion until one is picked.
-  const percent = yours && mv !== null && mv > 0 ? batteryPercent(mv, cell) : null;
+  // A node of yours says its charge as its readings do: by its cell, "≈" by Li-ion until one is picked, none without a battery.
+  const percent = yours && mv !== null && mv > 0 && cell !== "none" ? batteryPercent(mv, cell) : null;
   const low = mv !== null && lowCharge(mv, cell);
   return (
     <li>

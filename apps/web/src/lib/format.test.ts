@@ -89,6 +89,12 @@ test("a linear count goes straight from 3.0 to 4.2 V and drops the fraction, as 
   assert.equal(lowCharge(3260, "linear"), false);
 });
 
+test("a node with no battery is never low, whatever volts it reports (#107)", () => {
+  assert.equal(lowCharge(0, "none"), false);
+  assert.equal(lowCharge(120, "none"), false);
+  assert.equal(lowCharge(3100, "none"), false);
+});
+
 test("a charge is read off the curve, straight between its points, and kept within 0 to 100", () => {
   assert.equal(batteryPercent(3890), 70);
   assert.equal(batteryPercent(3940), 75);

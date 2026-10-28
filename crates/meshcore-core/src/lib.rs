@@ -90,10 +90,10 @@ pub enum Timer {
     Save,
 }
 
-/// How long after a change the inboxes are saved, unless it was a message read off the radio,
-/// which is saved at once: a burst of changes, as a page taking and saving what waited for it,
-/// is written once. Lost meanwhile, what a client took comes to it once more, and it sets
-/// aside what it has.
+/// How long after a change the inboxes are saved, unless something was added to them (a
+/// message read off the radio, or a mirror or an entry kept for an app away), which is saved at
+/// once: a burst of changes, as a page taking and saving what waited for it, is written once.
+/// Lost meanwhile, what a client took comes to it once more, and it sets aside what it has.
 pub const SAVE_MS: i64 = 2000;
 
 /// What the core asks its owner to do.
@@ -352,6 +352,7 @@ impl Core {
             .collect();
         // A message read off the radio is gone from it: on disk before the owner reads the next.
         let mut read = Vec::new();
+        let mut added = false;
         let mut changed = false;
         loop {
             let (out, events) = self.mux.take();
@@ -375,6 +376,7 @@ impl Core {
                     Event::Answered(frame) => self.survey.answered(&frame),
                     Event::Unanswered => self.survey.unanswered(),
                     Event::InboxesChanged => changed = true,
+                    Event::Added => added = true,
                 }
             }
             // A survey's ask goes through the mux, which may have more to say for it.
@@ -386,10 +388,14 @@ impl Core {
                 self.mux.send_own(ask);
             }
         }
-        if !read.is_empty() {
+        // What another app sent or set for one away is not on the radio either.
+        if added {
+            effects.extend(self.save());
+        } else if !read.is_empty() {
             effects.extend(self.save_read(&read));
         }
-        // Whatever else changed, as an inbox over its limit losing its oldest, is written in time.
+        // Whatever else changed, as an inbox over its limit losing its oldest, is written in time:
+        // lost meanwhile, what was taken comes once more, and nothing is gone.
         if changed && !self.saving {
             self.saving = true;
             effects.push(Effect::Wait {
@@ -489,6 +495,41 @@ mod tests {
         assert!(core.timeout(Timer::Save, 0).is_empty());
         assert_eq!(count(&on_disk(&path)), [0, 3]);
         assert_eq!(on_disk(&path), core.inboxes());
+    }
+
+    #[test]
+    fn what_one_app_sent_or_set_for_another_away_is_on_disk_at_once() {
+        let path = store::scratch("added-for-away");
+        let mut core = Core::open(&path, &[], &[], Vec::new());
+        core.radio_up();
+        core.from_radio(vec![RESP_NO_MORE_MESSAGES]);
+        assert!(core.timeout(Timer::Save, 0).is_empty());
+        core.attach(Client::Page);
+
+        // A channel text the radio took from the page: the computer, away, gets a mirror.
+        let text = vec![
+            codes::CMD_SEND_CHANNEL_TXT_MSG,
+            0,
+            1,
+            1,
+            2,
+            3,
+            4,
+            b'h',
+            b'i',
+        ];
+        core.from_client(Client::Page, text, None);
+        let effects = core.from_radio(vec![codes::RESP_OK]);
+        assert_eq!(save_timers(&effects), 0);
+        let computer = &on_disk(&path)[Client::Computer.index()].frames;
+        assert_eq!(computer.len(), 1);
+        assert_eq!(computer[0][0], codes::PUSH_MIRROR);
+
+        // A read mark for it too.
+        let entry = vec![codes::PEER, codes::PEER_ENTRY, 2, b'r', b'm', 9, 9];
+        core.from_client(Client::Page, entry.clone(), None);
+        let computer = &on_disk(&path)[Client::Computer.index()].frames;
+        assert_eq!(computer.last(), Some(&entry));
     }
 
     #[test]

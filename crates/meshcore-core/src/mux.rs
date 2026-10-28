@@ -58,6 +58,8 @@ pub(crate) enum Event {
     Unanswered,
     /// What the inboxes keep changed, and is to be saved ([`crate::store`]).
     InboxesChanged,
+    /// A mirror or an entry was kept for a client, which has it nowhere else: saved at once.
+    Added,
 }
 
 /// Whose command it is.
@@ -558,7 +560,7 @@ impl Mux {
             }
         }
         if kept {
-            self.events.push(Event::InboxesChanged);
+            self.events.push(Event::Added);
         }
     }
 
@@ -587,7 +589,7 @@ impl Mux {
             }
         }
         if kept {
-            self.events.push(Event::InboxesChanged);
+            self.events.push(Event::Added);
         }
     }
 

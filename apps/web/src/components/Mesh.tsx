@@ -53,11 +53,13 @@ import { ToolPanel } from "./tools/ToolPanel.js";
 // MapLibre and its styles load with the map, not with the app.
 const MapView = lazy(() => import("./MapView.js"));
 
-type Kind = "all" | "yours" | "people" | "repeaters" | "rooms" | "sensors";
+type Kind = "all" | "favourites" | "yours" | "people" | "repeaters" | "rooms" | "sensors";
 
-const KINDS: { id: Kind; label: Key }[] = [
-  { id: "all", label: "mesh.filter.all" },
-  { id: "yours", label: "mesh.filter.yours" },
+// The first three say whose nodes, the rest what kind of node: the filter lays them out in those two rows.
+const KINDS: { id: Kind; label: Key; whose?: true }[] = [
+  { id: "all", label: "mesh.filter.all", whose: true },
+  { id: "favourites", label: "mesh.filter.favourites", whose: true },
+  { id: "yours", label: "mesh.filter.yours", whose: true },
   { id: "people", label: "mesh.filter.people" },
   { id: "repeaters", label: "mesh.filter.repeaters" },
   { id: "rooms", label: "mesh.filter.rooms" },
@@ -121,6 +123,8 @@ function matcher(state: SessionState, saved: readonly string[], kind: Kind, quer
     if (q && !(c.name || c.prefix).toLowerCase().includes(q) && !c.key.startsWith(q)) return false;
     if (!q && silentHidden(state, saved, c, hiding, now)) return false;
     switch (kind) {
+      case "favourites":
+        return isFavourite(c);
       case "yours":
         return isYours(state, saved, c);
       case "people":
@@ -229,9 +233,9 @@ function FilterSheetHost() {
   return (
     <Sheet open={open} onClose={onClose} title={t("mesh.filter.title")}>
       <Group title={t("mesh.filter.show")}>
-        <Block className="filter-grid">
+        <Block className="filter-grid kinds">
           {KINDS.map((k) => (
-            <button key={k.id} type="button" className={["chip", kind === k.id ? "on" : ""].join(" ")} aria-pressed={kind === k.id} onClick={() => setFilter({ kind: k.id })}>
+            <button key={k.id} type="button" className={["chip", k.whose ? "whose" : "", kind === k.id ? "on" : ""].join(" ")} aria-pressed={kind === k.id} onClick={() => setFilter({ kind: k.id })}>
               {t(k.label)}
             </button>
           ))}
@@ -381,7 +385,7 @@ function MeshListBody({ selected, onOpen, hideSearch = false, only }: { selected
         {all.length === 0 ? (
           <div className="empty muted">{t("mesh.list.empty")}</div>
         ) : rows.length === 0 ? (
-          <div className="empty muted">{kind === "yours" && !query ? t("mesh.list.emptyYours") : t("mesh.list.noMatch")}</div>
+          <div className="empty muted">{kind === "yours" && !query ? t("mesh.list.emptyYours") : kind === "favourites" && !query ? t("mesh.list.emptyFavourites") : t("mesh.list.noMatch")}</div>
         ) : (
           <>
             {only ? null : <MemoryStrip state={state} />}

@@ -494,6 +494,16 @@
 .line-block.filter-grid.pairs {
   grid-template-columns: repeat(2, 1fr);
 }
+/* Whose nodes three across, then what kind of node four across. */
+.line-block.filter-grid.kinds {
+  grid-template-columns: repeat(12, 1fr);
+}
+.filter-grid.kinds .chip {
+  grid-column: span 3;
+}
+.filter-grid.kinds .chip.whose {
+  grid-column: span 4;
+}
 .filter-grid .chip {
   height: var(--control-h);
   border-radius: var(--radius-lg);

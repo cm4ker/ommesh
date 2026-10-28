@@ -42,7 +42,7 @@ final class MeshRelay: NSObject {
     private static let tx = CBUUID(string: "6E400003-B5A3-F393-E0A9-E50E24DCCA9E")
     /// Where the inboxes were saved before the core kept a snapshot and a log of them.
     private static let inboxesKey = "meshnet.relay.inboxes"
-    /// The inboxes' snapshot and the log of what changed since, as the core writes them; left out of backups.
+    /// Where the core keeps the inboxes, in its database; left out of backups.
     private static let inboxesDir: URL = {
         var dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("relay", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -51,6 +51,8 @@ final class MeshRelay: NSObject {
         try? dir.setResourceValues(values)
         return dir
     }()
+    private static let databaseFile = inboxesDir.appendingPathComponent("inboxes.db")
+    /// The inboxes' snapshot and log, as the core had them written before its database.
     private static let snapshotFile = inboxesDir.appendingPathComponent("inboxes.snapshot")
     private static let logFile = inboxesDir.appendingPathComponent("inboxes.log")
     /// The page's notice settings, sounds included, and names for the core.
@@ -69,8 +71,6 @@ final class MeshRelay: NSObject {
     /// The page's writes waiting to hear they went, by the number the core knows them by.
     private var writes: [Int64: () -> Void] = [:]
     private var lastWrite: Int64 = 0
-    /// Writes the inboxes' files as the core says, in order and off the main thread.
-    private let disk = DispatchQueue(label: "dev.cm4ker.meshnet.relay.disk")
     /// Timers the core is waiting on, and the background time that lets them fire with the app out of sight.
     private var waiting = 0
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
@@ -115,17 +115,33 @@ final class MeshRelay: NSObject {
     //
     // They outlive the app: the radio's copy of a message is gone once the core has read it.
 
-    /// The core with the inboxes from its snapshot and log, or from where they were saved before.
+    /// The core with the inboxes in its database. A new database takes in the inboxes kept the
+    /// ways before it, a snapshot and log or the settings; once they are in it, they go.
     private static func loadCore() -> Radio {
-        if let snapshot = try? Data(contentsOf: snapshotFile) {
-            return Radio.restore(snapshot: snapshot, log: (try? Data(contentsOf: logFile)) ?? Data())
+        let files = FileManager.default
+        var snapshot = Data()
+        var log = Data()
+        var read = true
+        do {
+            if files.fileExists(atPath: snapshotFile.path) { snapshot = try Data(contentsOf: snapshotFile) }
+            if files.fileExists(atPath: logFile.path) { log = try Data(contentsOf: logFile) }
+        } catch {
+            // Left where they are, rather than gone unread.
+            read = false
+            NSLog("MeshRelay: the saved inboxes could not be read: %@", error.localizedDescription)
         }
         let saved = UserDefaults.standard.dictionary(forKey: inboxesKey) as? [String: [Data]] ?? [:]
         var inboxes: [Inbox] = []
         for (name, frames) in saved {
             if let client = MeshRelay.client(named: name) { inboxes.append(Inbox(client: client, frames: frames)) }
         }
-        return Radio(inboxes: inboxes)
+        let radio = Radio(database: databaseFile.path, snapshot: snapshot, log: log, inboxes: inboxes)
+        if radio.onDisk() && read {
+            try? files.removeItem(at: snapshotFile)
+            try? files.removeItem(at: logFile)
+            UserDefaults.standard.removeObject(forKey: inboxesKey)
+        }
+        return radio
     }
 
     /// A client's inbox as it was saved before the core: `page` and `computer`.
@@ -134,35 +150,6 @@ final class MeshRelay: NSObject {
         case "page": return .page
         case "computer": return .computer
         default: return nil
-        }
-    }
-
-    private func appendLog(_ bytes: Data) {
-        disk.async {
-            do {
-                guard let handle = try? FileHandle(forWritingTo: MeshRelay.logFile) else {
-                    try bytes.write(to: MeshRelay.logFile)
-                    return
-                }
-                defer { try? handle.close() }
-                try handle.seekToEnd()
-                try handle.write(contentsOf: bytes)
-            } catch {
-                NSLog("MeshRelay: the inboxes' log could not be written: %@", error.localizedDescription)
-            }
-        }
-    }
-
-    /// A new snapshot in place of the old one, and only then an empty log: the core passes over a log older than its snapshot.
-    private func writeSnapshot(_ bytes: Data) {
-        disk.async {
-            do {
-                try bytes.write(to: MeshRelay.snapshotFile, options: .atomic)
-                try Data().write(to: MeshRelay.logFile)
-                UserDefaults.standard.removeObject(forKey: MeshRelay.inboxesKey)
-            } catch {
-                NSLog("MeshRelay: the inboxes' snapshot could not be written: %@", error.localizedDescription)
-            }
         }
     }
 
@@ -179,10 +166,6 @@ final class MeshRelay: NSObject {
                 writes.removeValue(forKey: write)?()
             case let .wait(timer, millis):
                 wait(timer, millis: millis)
-            case let .inboxLog(bytes):
-                appendLog(bytes)
-            case let .inboxSnapshot(bytes):
-                writeSnapshot(bytes)
             case let .post(notice):
                 // A burst of news rings with its first notice only.
                 let sound = notice.silent ? nil : notice.sound

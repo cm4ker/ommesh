@@ -8,7 +8,7 @@
 //! - [`mux`]: one radio shared by several clients (the page, a computer
 //!   through the phone). The core reads the radio's message queue itself and
 //!   keeps every message for each client until it asks.
-//! - [`store`]: those messages on the phone's disk, so they outlive the app.
+//! - [`store`]: those messages in a database on the phone's disk, so they outlive the app.
 //! - [`watch`]: notices for what the page leaves unread while it sleeps.
 //! - [`survey`]: a coverage survey, asking who hears the radio as the phone moves.
 //! - [`frames`]: the few frames they read.
@@ -17,11 +17,15 @@
 //! frames and events in, carries out the [`Effect`]s each call returns, runs
 //! the timers they ask for and calls [`Core::timeout`] when one is due, all on
 //! one thread. So the rules can be checked with `cargo test`, and every shell
-//! runs the same ones.
+//! runs the same ones. The one thing the core does itself is write its
+//! database, inside the call: a message read off the radio has to be on disk
+//! before the radio is asked for the next, and the core would not know when a
+//! write it asked of the owner was done.
 
 pub mod codes;
 mod ffi;
 pub mod frames;
+mod legacy;
 pub mod mux;
 mod store;
 pub mod survey;
@@ -86,8 +90,10 @@ pub enum Timer {
     Save,
 }
 
-/// How long after a change the inboxes are saved: a burst of changes, as a page taking what
-/// waited for it, is saved once, and a message read off the radio is on disk this soon.
+/// How long after a change the inboxes are saved, unless it was a message read off the radio,
+/// which is saved at once: a burst of changes, as a page taking and saving what waited for it,
+/// is written once. Lost meanwhile, what a client took comes to it once more, and it sets
+/// aside what it has.
 pub const SAVE_MS: i64 = 2000;
 
 /// What the core asks its owner to do.
@@ -111,14 +117,6 @@ pub enum Effect {
         timer: Timer,
         millis: i64,
     },
-    /// Add these bytes at the end of the inboxes' log ([`store`]).
-    InboxLog {
-        bytes: Vec<u8>,
-    },
-    /// Put these bytes in place of the inboxes' snapshot, then empty their log ([`store`]).
-    InboxSnapshot {
-        bytes: Vec<u8>,
-    },
     /// Show this notice, in place of one out with its tag ([`notice_id`] of it).
     Post {
         notice: Notice,
@@ -135,7 +133,7 @@ pub enum Effect {
     },
 }
 
-/// A client's messages kept by the core, as saved and handed back at start.
+/// A client's messages kept by the core, as the owner kept them before the core's database.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct Inbox {
     pub client: Client,
@@ -149,30 +147,41 @@ pub struct Core {
     store: Store,
     /// Whether a save waits for its timer.
     saving: bool,
+    /// What went wrong opening the database, told with the first call's effects.
+    problems: Vec<String>,
 }
 
 impl Core {
-    /// With inboxes saved another way, as before [`store`], if any: the first save writes them
-    /// as the store keeps them.
-    pub fn new(inboxes: Vec<Inbox>) -> Self {
-        let store = Store::new(&inboxes);
-        Core::with(inboxes, store)
-    }
-
-    /// With the inboxes' snapshot and log as the owner kept them ([`store`]).
-    pub fn restore(snapshot: &[u8], log: &[u8]) -> Self {
-        let (store, inboxes) = Store::restore(snapshot, log);
-        Core::with(inboxes, store)
-    }
-
-    fn with(inboxes: Vec<Inbox>, store: Store) -> Self {
+    /// With the inboxes in the database at `path`, made there if new. A new one takes in the
+    /// inboxes kept before it: the snapshot and log the owner wrote for the core, or, with no
+    /// snapshot, `inboxes` from the owner's settings ([`store`]).
+    pub fn open(path: &str, snapshot: &[u8], log: &[u8], inboxes: Vec<Inbox>) -> Self {
+        let opened = Store::open(path, snapshot, log, inboxes);
         Core {
-            mux: Mux::new(inboxes.into_iter().map(|i| (i.client, i.frames)).collect()),
+            mux: Mux::new(
+                opened
+                    .inboxes
+                    .into_iter()
+                    .map(|i| (i.client, i.frames))
+                    .collect(),
+            ),
             watch: Watch::new(),
             survey: Survey::new(),
-            store,
+            store: opened.store,
             saving: false,
+            problems: opened.problems,
         }
+    }
+
+    /// With a database that lives as long as it does.
+    #[cfg(test)]
+    pub(crate) fn in_memory() -> Self {
+        Core::open(":memory:", &[], &[], Vec::new())
+    }
+
+    /// Whether the inboxes are on disk: only then may the ways they were kept before go.
+    pub fn on_disk(&self) -> bool {
+        self.store.on_disk()
     }
 
     pub fn inboxes(&self) -> Vec<Inbox> {
@@ -243,11 +252,31 @@ impl Core {
             Timer::Check { generation } => self.survey.check_timeout(generation),
             Timer::Save => {
                 self.saving = false;
-                let now = Client::ALL.map(|client| self.mux.kept_frames(client).collect());
-                return self.store.save(now).into_iter().collect();
+                return self.save().into_iter().collect();
             }
         }
         self.settle()
+    }
+
+    /// The inboxes written as they are now; what went wrong, if anything.
+    fn save(&mut self) -> Option<Effect> {
+        let now = Client::ALL.map(|client| self.mux.kept_frames(client).collect());
+        let error = self.store.save(now).err()?;
+        Some(Effect::Log {
+            line: format!("the inboxes could not be saved: {error}"),
+        })
+    }
+
+    /// Messages read off the radio written at once, at the end of every inbox as the mux keeps
+    /// them; the whole inboxes when the store cannot be sure of its database.
+    fn save_read(&mut self, read: &[Vec<u8>]) -> Option<Effect> {
+        if self.store.is_stale() {
+            return self.save();
+        }
+        let error = self.store.append(read).err()?;
+        Some(Effect::Log {
+            line: format!("messages read off the radio could not be saved: {error}"),
+        })
     }
 
     // The page and the app
@@ -316,13 +345,23 @@ impl Core {
 
     /// Everything the last call asked for: the mux's part, then the watch's and the survey's.
     fn settle(&mut self) -> Vec<Effect> {
-        let mut effects = Vec::new();
+        let mut effects: Vec<Effect> = self
+            .problems
+            .drain(..)
+            .map(|line| Effect::Log { line })
+            .collect();
+        // A message read off the radio is gone from it: on disk before the owner reads the next.
+        let mut read = Vec::new();
+        let mut changed = false;
         loop {
             let (out, events) = self.mux.take();
             effects.extend(out);
             for event in events {
                 match event {
-                    Event::Kept(frame) => self.watch.received(&frame),
+                    Event::Kept(frame) => {
+                        self.watch.received(&frame);
+                        read.push(frame);
+                    }
                     Event::Taken(Client::Page, frame) => self.watch.taken(&frame),
                     Event::Taken(..) => {}
                     // What the computer read is no news on the phone either.
@@ -335,14 +374,7 @@ impl Core {
                     Event::Asked(frame) => self.survey.asked(&frame),
                     Event::Answered(frame) => self.survey.answered(&frame),
                     Event::Unanswered => self.survey.unanswered(),
-                    Event::InboxesChanged if !self.saving => {
-                        self.saving = true;
-                        effects.push(Effect::Wait {
-                            timer: Timer::Save,
-                            millis: SAVE_MS,
-                        });
-                    }
-                    Event::InboxesChanged => {}
+                    Event::InboxesChanged => changed = true,
                 }
             }
             // A survey's ask goes through the mux, which may have more to say for it.
@@ -353,6 +385,17 @@ impl Core {
             for ask in asks {
                 self.mux.send_own(ask);
             }
+        }
+        if !read.is_empty() {
+            effects.extend(self.save_read(&read));
+        }
+        // Whatever else changed, as an inbox over its limit losing its oldest, is written in time.
+        if changed && !self.saving {
+            self.saving = true;
+            effects.push(Effect::Wait {
+                timer: Timer::Save,
+                millis: SAVE_MS,
+            });
         }
         effects.extend(self.watch.take());
         effects.extend(self.survey.take());
@@ -380,42 +423,90 @@ mod tests {
             .count()
     }
 
+    /// The inboxes as another hand opening the database finds them now.
+    fn on_disk(path: &str) -> Vec<Inbox> {
+        Core::open(path, &[], &[], Vec::new()).inboxes()
+    }
+
+    fn count(inboxes: &[Inbox]) -> [usize; Client::COUNT] {
+        Client::ALL.map(|client| inboxes[client.index()].frames.len())
+    }
+
     #[test]
-    fn messages_read_off_the_radio_are_saved_once_after_their_burst_and_read_back() {
-        let mut core = Core::restore(&[], &[]);
-        let mut effects = core.radio_up();
+    fn a_message_read_off_the_radio_is_on_disk_before_the_next_read() {
+        let path = store::scratch("read-off-radio");
+        let mut core = Core::open(&path, &[], &[], Vec::new());
+        assert!(core.on_disk());
+        core.radio_up();
         for n in 0..3 {
-            effects.extend(core.from_radio(vec![RESP_CONTACT_MSG_RECV_V3, n]));
+            let effects = core.from_radio(vec![RESP_CONTACT_MSG_RECV_V3, n]);
+            assert!(effects.iter().any(|e| matches!(e, Effect::ToRadio { frame } if frame[0] == codes::CMD_SYNC_NEXT_MESSAGE)));
+            assert_eq!(count(&on_disk(&path)), [n as usize + 1; 2]);
         }
-        effects.extend(core.from_radio(vec![RESP_NO_MORE_MESSAGES]));
-        assert_eq!(save_timers(&effects), 1, "one save for the burst");
+        core.from_radio(vec![RESP_NO_MORE_MESSAGES]);
+        assert_eq!(on_disk(&path), core.inboxes());
+    }
 
-        let (mut snapshot, mut log) = (Vec::new(), Vec::new());
-        for effect in core.timeout(Timer::Save, 0) {
-            match effect {
-                Effect::InboxSnapshot { bytes } => {
-                    snapshot = bytes;
-                    log.clear();
-                }
-                Effect::InboxLog { bytes } => log.extend(bytes),
-                other => panic!("not a save: {other:?}"),
-            }
+    #[test]
+    fn what_a_page_took_and_saved_leaves_the_disk_after_the_wait() {
+        let path = store::scratch("taken-and-saved");
+        let mut core = Core::open(&path, &[], &[], Vec::new());
+        core.radio_up();
+        for n in 0..3 {
+            core.from_radio(vec![RESP_CONTACT_MSG_RECV_V3, n]);
         }
-        assert!(!snapshot.is_empty(), "the first save is a snapshot");
+        core.from_radio(vec![RESP_NO_MORE_MESSAGES]);
+        assert!(
+            core.timeout(Timer::Save, 0).is_empty(),
+            "nothing more to write"
+        );
 
-        // Taken by the page, and the next save logs only that.
-        let effects = core.from_client(Client::Page, vec![codes::CMD_SYNC_NEXT_MESSAGE], None);
-        assert_eq!(save_timers(&effects), 1);
-        for effect in core.timeout(Timer::Save, 0) {
-            let Effect::InboxLog { bytes } = effect else {
-                panic!("{effect:?}")
-            };
-            log.extend(bytes);
+        let mut effects = core.attach(Client::Page);
+        effects.extend(core.from_client(
+            Client::Page,
+            vec![codes::PEER, codes::PEER_KEEP, 0],
+            None,
+        ));
+        for _ in 0..3 {
+            effects.extend(core.from_client(
+                Client::Page,
+                vec![codes::CMD_SYNC_NEXT_MESSAGE],
+                None,
+            ));
         }
+        effects.extend(core.from_client(
+            Client::Page,
+            vec![codes::PEER, codes::PEER_SAVED, 3, 0, 0, 0],
+            None,
+        ));
+        assert_eq!(save_timers(&effects), 1, "one save for all of it");
+        assert_eq!(
+            count(&on_disk(&path)),
+            [3, 3],
+            "kept until the wait is over"
+        );
 
-        let again = Core::restore(&snapshot, &log);
-        assert_eq!(again.inboxes(), core.inboxes());
-        assert_eq!(again.mux.inbox(Client::Page).len(), 2);
-        assert_eq!(again.mux.inbox(Client::Computer).len(), 3);
+        assert!(core.timeout(Timer::Save, 0).is_empty());
+        assert_eq!(count(&on_disk(&path)), [0, 3]);
+        assert_eq!(on_disk(&path), core.inboxes());
+    }
+
+    #[test]
+    fn a_problem_opening_the_database_is_told_with_the_first_effects() {
+        let path = store::scratch("problem");
+        std::fs::write(
+            &path,
+            b"not a database at all, and long enough to be read as one",
+        )
+        .unwrap();
+        let mut core = Core::open(&path, &[], &[], Vec::new());
+        let effects = core.radio_up();
+        assert!(
+            matches!(&effects[0], Effect::Log { line } if line.contains("could not be opened"))
+        );
+        assert!(!core
+            .radio_down()
+            .iter()
+            .any(|e| matches!(e, Effect::Log { .. })));
     }
 }

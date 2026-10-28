@@ -16,6 +16,10 @@ out=$here/ios/MeshcoreCore/build
 # rustup's cargo, which an ssh session's PATH may lack.
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 
+# The oldest iOS the app runs on (ios/MeshcoreCore/Package.swift). Without it the SQLite built
+# into the core is compiled for the SDK's own iOS and may not run on an older phone.
+export IPHONEOS_DEPLOYMENT_TARGET=15.0
+
 cd "$core"
 cargo build --release --locked --target aarch64-apple-ios
 cargo build --release --locked --target aarch64-apple-ios-sim

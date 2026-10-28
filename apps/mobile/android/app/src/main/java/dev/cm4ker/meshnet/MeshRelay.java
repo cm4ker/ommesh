@@ -46,7 +46,6 @@ import dev.cm4ker.meshnet.core.Radio;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -54,8 +53,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -98,9 +95,11 @@ final class MeshRelay {
     private static final UUID TX = UUID.fromString("6E400003-B5A3-F393-E0A9-E50E24DCCA9E");
     private static final UUID CCCD = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     private static final String PREFS = "meshnet.relay";
+    /** The core's database, where it keeps the inboxes itself. */
+    private static final String DATABASE_FILE = "inboxes.db";
     /** Where the inboxes were saved before the core kept a snapshot and a log of them. */
     private static final String INBOXES_KEY = "inboxes";
-    /** The inboxes' snapshot and the log of what changed since, as the core writes them. */
+    /** The inboxes' snapshot and log, as the core had them written before its database. */
     private static final String SNAPSHOT_FILE = "inboxes.snapshot";
     private static final String LOG_FILE = "inboxes.log";
     /** The page's notice settings, sounds included, and names for the core. */
@@ -233,8 +232,6 @@ final class MeshRelay {
     private int surveyPoints = 0;
     /** Hears where the phone is while a survey runs. */
     private LocationListenerCompat fixes;
-    /** Writes the inboxes' files as the core says, in order and off the main thread. */
-    private final ExecutorService disk = Executors.newSingleThreadExecutor();
 
     private MeshRelay(Context context) {
         this.context = context;
@@ -307,10 +304,6 @@ final class MeshRelay {
             } else if (effect instanceof Effect.Wait) {
                 Effect.Wait wait = (Effect.Wait) effect;
                 main.postDelayed(() -> run(core.timeout(wait.getTimer(), System.currentTimeMillis())), wait.getMillis());
-            } else if (effect instanceof Effect.InboxLog) {
-                appendLog(((Effect.InboxLog) effect).getBytes());
-            } else if (effect instanceof Effect.InboxSnapshot) {
-                writeSnapshot(((Effect.InboxSnapshot) effect).getBytes());
             } else if (effect instanceof Effect.Post) {
                 Notice notice = ((Effect.Post) effect).getNotice();
                 NoticesPlugin.show(context, notice.getId(), notice.getTag(), kind(notice), notice.getTitle(), notice.getBody(),
@@ -343,18 +336,32 @@ final class MeshRelay {
         return new File(context.getNoBackupFilesDir(), name);
     }
 
-    /** The core with the inboxes from its snapshot and log, or from where they were saved before. */
+    /**
+     * The core with the inboxes in its database. A new database takes in the inboxes kept the
+     * ways before it, a snapshot and log or the settings; once they are in it, they go.
+     */
     private Radio loadCore() {
         File snapshot = inboxFile(SNAPSHOT_FILE);
-        if (snapshot.exists()) {
-            try {
-                File log = inboxFile(LOG_FILE);
-                return Radio.Companion.restore(readFile(snapshot), log.exists() ? readFile(log) : new byte[0]);
-            } catch (IOException e) {
-                Log.w(TAG, "the saved inboxes could not be read", e);
-            }
+        File log = inboxFile(LOG_FILE);
+        byte[] snapshotBytes = new byte[0];
+        byte[] logBytes = new byte[0];
+        boolean read = true;
+        try {
+            if (snapshot.exists()) snapshotBytes = readFile(snapshot);
+            if (log.exists()) logBytes = readFile(log);
+        } catch (IOException e) {
+            // Left where they are, rather than gone unread.
+            read = false;
+            Log.w(TAG, "the saved inboxes could not be read", e);
         }
-        return new Radio(loadInboxes());
+        Radio radio = new Radio(inboxFile(DATABASE_FILE).getPath(), snapshotBytes, logBytes, loadInboxes());
+        if (radio.onDisk() && read) {
+            snapshot.delete();
+            log.delete();
+            inboxFile(SNAPSHOT_FILE + ".new").delete();
+            if (prefs().contains(INBOXES_KEY)) prefs().edit().remove(INBOXES_KEY).apply();
+        }
+        return radio;
     }
 
     private static byte[] readFile(File file) throws IOException {
@@ -364,34 +371,6 @@ final class MeshRelay {
             for (int n; (n = in.read(chunk)) > 0; ) bytes.write(chunk, 0, n);
             return bytes.toByteArray();
         }
-    }
-
-    private void appendLog(byte[] bytes) {
-        disk.execute(() -> {
-            try (FileOutputStream out = new FileOutputStream(inboxFile(LOG_FILE), true)) {
-                out.write(bytes);
-            } catch (IOException e) {
-                Log.w(TAG, "the inboxes' log could not be written", e);
-            }
-        });
-    }
-
-    /** A new snapshot in place of the old one, and only then an empty log: the core passes over a log older than its snapshot. */
-    private void writeSnapshot(byte[] bytes) {
-        disk.execute(() -> {
-            File next = inboxFile(SNAPSHOT_FILE + ".new");
-            try {
-                try (FileOutputStream out = new FileOutputStream(next)) {
-                    out.write(bytes);
-                    out.getFD().sync();
-                }
-                if (!next.renameTo(inboxFile(SNAPSHOT_FILE))) throw new IOException("the snapshot could not be put in place");
-                new FileOutputStream(inboxFile(LOG_FILE)).close();
-                if (prefs().contains(INBOXES_KEY)) prefs().edit().remove(INBOXES_KEY).apply();
-            } catch (IOException e) {
-                Log.w(TAG, "the inboxes' snapshot could not be written", e);
-            }
-        });
     }
 
     /** The inboxes as they were saved before the core kept a snapshot and a log of them. */

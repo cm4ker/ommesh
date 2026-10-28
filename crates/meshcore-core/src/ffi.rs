@@ -13,21 +13,24 @@ pub struct Radio {
 
 #[uniffi::export]
 impl Radio {
-    /// With the inboxes saved before the core kept a snapshot and log of them, if any; its
-    /// first save writes the snapshot.
+    /// With the inboxes in the database at `database`, made there if new. A new one takes in
+    /// the inboxes kept before it: the snapshot and log the core had written, or, with no
+    /// snapshot, `inboxes` from the owner's settings. Empty when there are none.
     #[uniffi::constructor]
-    pub fn new(inboxes: Vec<Inbox>) -> Arc<Self> {
+    pub fn new(
+        database: String,
+        snapshot: Vec<u8>,
+        log: Vec<u8>,
+        inboxes: Vec<Inbox>,
+    ) -> Arc<Self> {
         Arc::new(Radio {
-            core: Mutex::new(Core::new(inboxes)),
+            core: Mutex::new(Core::open(&database, &snapshot, &log, inboxes)),
         })
     }
 
-    /// With the inboxes' snapshot and log as the effects had them written.
-    #[uniffi::constructor]
-    pub fn restore(snapshot: Vec<u8>, log: Vec<u8>) -> Arc<Self> {
-        Arc::new(Radio {
-            core: Mutex::new(Core::restore(&snapshot, &log)),
-        })
+    /// Whether the inboxes are in the database: only then may the ways they were kept before go.
+    pub fn on_disk(&self) -> bool {
+        self.core().on_disk()
     }
 
     pub fn attach(&self, client: Client) -> Vec<Effect> {

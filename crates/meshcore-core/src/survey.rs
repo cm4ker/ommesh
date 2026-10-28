@@ -727,7 +727,7 @@ mod tests {
         /// The radio up, its queue read, and a survey started at time 0.
         fn new() -> Self {
             let mut rig = Rig {
-                core: Core::new(Vec::new()),
+                core: Core::in_memory(),
                 radio: vec![],
                 page: vec![],
                 listens: vec![],
@@ -1339,7 +1339,7 @@ mod tests {
 
     #[test]
     fn a_bad_start_is_said_and_starts_nothing() {
-        let mut core = Core::new(Vec::new());
+        let mut core = Core::in_memory();
         let effects = core.survey_start("{".into(), 0);
         assert!(matches!(effects.as_slice(), [Effect::Log { .. }]));
         assert_eq!(core.survey(true), None);

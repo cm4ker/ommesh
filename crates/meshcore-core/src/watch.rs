@@ -1171,7 +1171,7 @@ mod tests {
     impl Rig {
         fn new(config: WatchConfig) -> Self {
             let mut rig = Rig {
-                core: Core::new(Vec::new()),
+                core: Core::in_memory(),
                 grace: vec![],
                 quiet: vec![],
                 posted: vec![],

@@ -1210,6 +1210,13 @@ const RETRY_LADDER_MS = [0, 45_000, 120_000, 300_000, 720_000];
  */
 const DIRECT_LADDER_MS = [0, 0, 45_000, 120_000, 300_000, 720_000];
 
+/**
+ * How long after one of ours went (s) the other app sharing the radio may send
+ * the same text again as a retry of it. Its retry loop is done in under half an
+ * hour; the same words later on are a new message.
+ */
+const MIRRORED_RETRY_S = 60 * 60;
+
 /** How often messages with a retry plan are checked against their next send. */
 const RETRY_SWEEP_MS = 5 * 1000;
 
@@ -3993,13 +4000,23 @@ export class MeshSession {
     // A direct retry keeps its stamp. A channel retry carries a new one and
     // no attempt count, so it is known by being the same text as ours that
     // nobody was heard sending on: the one the other app was offered to send again.
+    // Only a recent one: a "Good morning" from yesterday would come to today,
+    // with yesterday's reactions on it.
     const known =
       this.state.messages.find((m) => same(m) && Math.abs(m.timestamp - timestamp) <= 2) ??
       this.state.messages.findLast(
-        (m) => same(m) && m.timestamp < timestamp && m.echoes.length === 0 && m.status !== "delivered" && m.status !== "sending",
+        (m) =>
+          same(m) &&
+          m.timestamp < timestamp &&
+          timestamp - m.timestamp <= MIRRORED_RETRY_S &&
+          m.echoes.length === 0 &&
+          m.status !== "delivered" &&
+          m.status !== "sending",
       );
     if (known) {
       const again = known.timestamp !== timestamp || attempt > known.attempt;
+      // A reaction to the copy that went before names its stamp, as after `retry`.
+      const stamps = known.timestamp === timestamp ? {} : { pastStamps: [...(known.pastStamps ?? []), known.timestamp] };
       if (late) {
         // Sent again while this app was away: moved to when it went, its outcome unknown here.
         if (again) {
@@ -4009,6 +4026,7 @@ export class MeshSession {
             error: null,
             ...(known.timestamp !== timestamp ? { sentAt: timestamp } : {}),
             ...(known.status === "delivered" ? {} : { status: "sent" as const }),
+            ...stamps,
           });
         }
         return;
@@ -4020,6 +4038,7 @@ export class MeshSession {
         ackTag: null,
         roundTripMs: null,
         ...(again ? { sentAt: Math.max(Math.floor(this.now() / 1000), timestamp) } : {}),
+        ...stamps,
       });
       sent(known.id, known.timestamp !== timestamp);
       return;

@@ -858,11 +858,37 @@ test("a channel message the other app sent through the relay is kept as ours", a
   assert.equal(all.length, 1);
   assert.equal(all[0]?.timestamp, 1_700_000_260);
   assert.equal(all[0]?.sentAt, 1_700_000_260);
+  assert.deepEqual(all[0]?.pastStamps, [1_700_000_200], "a reaction to the first copy still finds it");
   // A CLI command to a repeater is not a message in a chat.
   const cli = new ByteWriter().u8(Cmd.SendTxtMsg).u8(TxtType.CliData).u8(0).u32(1_700_000_300).bytes(BOB.subarray(0, 6)).string("ver").toBytes();
   radio.push(mirrorFrame(cli, new ByteWriter().u8(Resp.Sent).u8(0).u32(0).u32(2000).toBytes()));
   await tick();
   assert.equal(session.getState().messages.some((m) => m.text === "ver"), false);
+  await session.disconnect();
+});
+
+test("the same words the other app says on another day are a new message: yesterday's keeps its day and its reactions", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  const said = (at: number) => new ByteWriter().u8(Cmd.SendChannelTxtMsg).u8(TxtType.Plain).u8(0).u32(at).string("Доброе утро!").toBytes();
+  const yesterday = 1_700_000_000 - 86_400;
+  radio.push(mirrorFrame(said(yesterday), new Uint8Array([Resp.Ok])));
+  await tick();
+  const wave = encodeReaction({ target: await messageHash("Доброе утро!", yesterday), emoji: "👋", by: "Alice", stamp: yesterday + 60 });
+  radio.queue.push(channelDataFrame(0, REACTION_DATA_TYPE, wave));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(10);
+  radio.push(mirrorFrame(said(1_700_000_000), new Uint8Array([Resp.Ok])));
+  await tick();
+  const both = session.getState().messages.filter((m) => m.text === "Доброе утро!");
+  assert.deepEqual(
+    both.map((m) => [m.timestamp, (m.reactions ?? []).map((r) => r.emoji)]),
+    [
+      [yesterday, ["👋"]],
+      [1_700_000_000, []],
+    ],
+  );
   await session.disconnect();
 });
 

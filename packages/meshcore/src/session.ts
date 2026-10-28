@@ -1406,10 +1406,12 @@ export class MeshSession {
   private peerBacklog: { key: string; value: Uint8Array }[] = [];
   /**
    * Behind a phone's relay that keeps what it hands over until told it is saved (`peerKeep`):
-   * the link it was said on, how many messages were taken from the queue since, and how many
-   * of those the relay was told are saved.
+   * the link it was said on, how many messages were taken from the queue since, how many
+   * mirrors were told and are in the state, and how many of each the relay was told are saved.
    */
-  private keeping: { client: MeshCoreClient; taken: number; told: number } | null = null;
+  private keeping: { client: MeshCoreClient; taken: number; told: number; mirrors: number; mirrorsTold: number } | null = null;
+  /** The mirrors counted so far, each once what it brought is in the state, in the order they came. */
+  private mirrorCount: Promise<void> = Promise.resolve();
   /** Chats read here whose mark goes to the other app in a moment, so reading on goes as one. */
   private markTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** The mark each chat last had with the other app, either way, so the same one is not sent again. */
@@ -1538,7 +1540,7 @@ export class MeshSession {
   private startKeeping(version: number): void {
     const client = this.client;
     if (!client || !this.storage || version < KEEP_VERSION || this.keeping?.client === client) return;
-    this.keeping = { client, taken: 0, told: 0 };
+    this.keeping = { client, taken: 0, told: 0, mirrors: 0, mirrorsTold: 0 };
     client.tell(peerKeep()).catch((e: Error) => this.log("error", `telling the relay this app keeps: ${e.message}`));
   }
 
@@ -1615,13 +1617,15 @@ export class MeshSession {
     // What was taken from the relay by now is in this save: once it is written, the relay may let it go.
     const keeping = this.keeping;
     const taken = keeping?.taken ?? 0;
+    const mirrors = keeping?.mirrors ?? 0;
     const saving = this.saveChain.catch(() => undefined).then(() => storage.save(key, history));
     this.saveChain = saving;
     try {
       await saving;
-      if (keeping && this.keeping === keeping && taken > keeping.told) {
+      if (keeping && this.keeping === keeping && (taken > keeping.told || mirrors > keeping.mirrorsTold)) {
         keeping.told = taken;
-        keeping.client.tell(peerSaved(taken)).catch((e: Error) => this.log("error", `telling the relay what is saved: ${e.message}`));
+        keeping.mirrorsTold = mirrors;
+        keeping.client.tell(peerSaved(taken, mirrors)).catch((e: Error) => this.log("error", `telling the relay what is saved: ${e.message}`));
       }
     } catch (error) {
       this.log("error", `could not save: ${(error as Error).message}`);
@@ -3926,7 +3930,7 @@ export class MeshSession {
    * A reaction the other app put is ours here too: a channel datagram, or
    * console data to a person.
    */
-  private mirrored(command: Uint8Array, answer: Uint8Array): void {
+  private mirrored(command: Uint8Array, answer: Uint8Array): Promise<void> | undefined {
     try {
       const r = new ByteReader(command);
       const code = r.u8();
@@ -3940,8 +3944,7 @@ export class MeshSession {
         const reaction = decodeReaction(data);
         if (!reaction) return;
         const ours = { conversation: channelConversation(index), target: toHex(reaction.target), emoji: reaction.emoji, by: null, to: null, replaces: true };
-        void this.mirroredReaction(ours, late ? null : { index, data });
-        return;
+        return this.mirroredReaction(ours, late ? null : { index, data });
       }
       if (code !== Cmd.SendTxtMsg && code !== Cmd.SendChannelTxtMsg) return;
       const txtType = r.u8();
@@ -3952,7 +3955,7 @@ export class MeshSession {
         const reaction = person?.type === AdvType.Chat ? parseDirectReaction(r.restString()) : null;
         if (person && reaction) {
           const ours = { conversation: contactConversation(person.key), target: toHex(reaction.target), emoji: reaction.emoji, by: null, to: null, replaces: true };
-          void this.mirroredReaction(ours, null);
+          return this.mirroredReaction(ours, null);
         }
         return;
       }
@@ -5634,9 +5637,14 @@ export class MeshSession {
       case "msgWaiting":
         if (this.isReady) this.syncMessages().catch((e: Error) => this.log("error", e.message));
         return;
-      case "mirror":
-        this.mirrored(frame.command, frame.answer);
+      case "mirror": {
+        const keeping = this.keeping;
+        const done = this.mirrored(frame.command, frame.answer);
+        // The relay keeps each mirror until told it is saved: counted once what it brought is
+        // in the state, after the ones before it, so a save never claims one it does not hold.
+        if (keeping) this.mirrorCount = this.mirrorCount.then(() => done).catch(() => undefined).then(() => void keeping.mirrors++);
         return;
+      }
       case "peerHello":
         this.startKeeping(frame.version);
         if (this.state.peer !== frame.side) {

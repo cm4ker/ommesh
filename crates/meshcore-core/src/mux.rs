@@ -25,7 +25,9 @@
 //! ([`PEER_SAVED`]). Until then the mux keeps each message it handed over, and
 //! puts it back in front of the inbox when the app goes or connects again: a
 //! page that died before it saved, as a phone's may, gets it once more rather
-//! than never. The app sets aside a message it has already.
+//! than never. The app sets aside a message it has already. One that counts
+//! mirrors too ([`KEEP_MIRRORS`]) has them kept the same way: told to a link
+//! that has just dropped, a mirror would otherwise be gone.
 
 use std::collections::VecDeque;
 
@@ -90,10 +92,14 @@ pub(crate) struct Mux {
     inboxes: [Vec<Vec<u8>>; Client::COUNT],
     /// Whether each client tells when it has saved what it took ([`PEER_KEEP`]).
     keeping: [bool; Client::COUNT],
-    /// The messages each client took and has not yet said it saved, oldest first.
+    /// Whether it counts the mirrors it is told as well ([`KEEP_MIRRORS`]).
+    keeping_mirrors: [bool; Client::COUNT],
+    /// The messages and mirrors each client took and has not yet said it saved, oldest first.
     handed: [VecDeque<Vec<u8>>; Client::COUNT],
     /// How many messages each client has said it saved, or that went unsaved, since it said it keeps.
     saved: [u32; Client::COUNT],
+    /// The same for mirrors.
+    saved_mirrors: [u32; Client::COUNT],
     out: Vec<Effect>,
     events: Vec<Event>,
 }
@@ -117,8 +123,10 @@ impl Mux {
             drain_again: false,
             inboxes,
             keeping: [false; Client::COUNT],
+            keeping_mirrors: [false; Client::COUNT],
             handed: Default::default(),
             saved: [0; Client::COUNT],
+            saved_mirrors: [0; Client::COUNT],
             out: Vec::new(),
             events: Vec::new(),
         }
@@ -163,7 +171,7 @@ impl Mux {
 
     pub fn attach(&mut self, client: Client) {
         self.attached[client.index()] = true;
-        self.hand_back(client, false);
+        self.hand_back(client, false, false);
         // Messages kept while it was away.
         if !self.inbox(client).is_empty() {
             self.tell(client, vec![PUSH_MSG_WAITING]);
@@ -173,7 +181,7 @@ impl Mux {
     /// Its waiting commands are dropped; one in flight is still answered, to nobody.
     pub fn detach(&mut self, client: Client) {
         self.attached[client.index()] = false;
-        self.hand_back(client, false);
+        self.hand_back(client, false, false);
         let (dropped, kept): (VecDeque<Command>, VecDeque<Command>) =
             std::mem::take(&mut self.queue)
                 .into_iter()
@@ -194,10 +202,17 @@ impl Mux {
                 self.out.push(Effect::Written { write });
             }
             match frame.get(1) {
-                Some(&PEER_KEEP) => self.hand_back(client, true),
+                Some(&PEER_KEEP) => {
+                    let mirrors = frame.get(2).is_some_and(|flags| flags & KEEP_MIRRORS != 0);
+                    self.hand_back(client, true, mirrors);
+                }
                 Some(&PEER_SAVED) if frame.len() >= 6 => {
                     let n = u32::from_le_bytes([frame[2], frame[3], frame[4], frame[5]]);
-                    self.mark_saved(client, n);
+                    // An app that does not count mirrors says nothing of them.
+                    let m = frame
+                        .get(6..10)
+                        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+                    self.mark_saved(client, n, m);
                 }
                 _ => self.pass(client, frame),
             }
@@ -244,6 +259,9 @@ impl Mux {
             let frame = self.inboxes[client.index()].remove(0);
             changed = true;
             if is_push(frame[0]) {
+                if frame[0] == PUSH_MIRROR && self.keeping_mirrors[client.index()] {
+                    self.keep_handed(client, frame.clone());
+                }
                 pushes.push(frame);
             } else {
                 self.events.push(Event::Taken(client, frame.clone()));
@@ -263,36 +281,59 @@ impl Mux {
         self.tell(client, answer);
     }
 
-    /// A message handed to a client that tells when it saved it: kept until it does, up to the
-    /// inbox's limit, past which the oldest counts as gone.
+    /// A message or a mirror handed to a client that tells when it saved it: kept until it
+    /// does, up to the inbox's limit, past which the oldest counts as gone.
     fn keep_handed(&mut self, client: Client, frame: Vec<u8>) {
         let i = client.index();
         self.handed[i].push_back(frame);
         if self.handed[i].len() > INBOX_LIMIT {
-            self.handed[i].pop_front();
-            self.saved[i] = self.saved[i].wrapping_add(1);
+            if let Some(gone) = self.handed[i].pop_front() {
+                let count = if gone[0] == PUSH_MIRROR {
+                    &mut self.saved_mirrors[i]
+                } else {
+                    &mut self.saved[i]
+                };
+                *count = count.wrapping_add(1);
+            }
         }
     }
 
-    /// The client saved the first `n` messages it took since it said it keeps.
-    fn mark_saved(&mut self, client: Client, n: u32) {
+    /// The client saved the first `n` messages it took since it said it keeps, and the first
+    /// `m` mirrors it was told. Each kind is counted apart, so they go each from its own front.
+    fn mark_saved(&mut self, client: Client, n: u32, m: Option<u32>) {
         let i = client.index();
-        let mut changed = false;
-        while self.saved[i] < n && self.handed[i].pop_front().is_some() {
-            self.saved[i] += 1;
-            changed = true;
-        }
-        if changed {
+        let mut messages = n.saturating_sub(self.saved[i]);
+        let mut mirrors = m.map_or(0, |m| m.saturating_sub(self.saved_mirrors[i]));
+        let (mut took_messages, mut took_mirrors) = (0, 0);
+        self.handed[i].retain(|frame| {
+            let (left, took) = if frame[0] == PUSH_MIRROR {
+                (&mut mirrors, &mut took_mirrors)
+            } else {
+                (&mut messages, &mut took_messages)
+            };
+            if *left == 0 {
+                return true;
+            }
+            *left -= 1;
+            *took += 1;
+            false
+        });
+        self.saved[i] += took_messages;
+        self.saved_mirrors[i] += took_mirrors;
+        if took_messages + took_mirrors > 0 {
             self.events.push(Event::InboxesChanged);
         }
     }
 
     /// What a client took and did not say it saved goes back in front of its inbox, to be
-    /// taken again; the count starts afresh, with `keeping` for whether it is to tell again.
-    fn hand_back(&mut self, client: Client, keeping: bool) {
+    /// taken again; the count starts afresh, with `keeping` for whether it is to tell again
+    /// and `mirrors` for whether it counts mirrors too.
+    fn hand_back(&mut self, client: Client, keeping: bool, mirrors: bool) {
         let i = client.index();
         self.keeping[i] = keeping;
+        self.keeping_mirrors[i] = keeping && mirrors;
         self.saved[i] = 0;
+        self.saved_mirrors[i] = 0;
         if self.handed[i].is_empty() {
             return;
         }
@@ -506,6 +547,11 @@ impl Mux {
             }
             if self.is_attached(client) {
                 self.tell(client, frame.clone());
+                // Until it says it saved it: the link may drop with the mirror on it.
+                if self.keeping_mirrors[client.index()] {
+                    self.keep_handed(client, frame.clone());
+                    kept = true;
+                }
             } else {
                 self.add(frame.clone(), client);
                 kept = true;
@@ -1143,6 +1189,82 @@ mod tests {
         assert_eq!(rig.page, v(&[MESSAGE, OTHER, NO_MORE]));
         rig.client_says(Page, &saved(2));
         assert!(rig.mux.kept(Page).is_empty());
+    }
+
+    const KEEP_ALL: &[u8] = &[PEER, PEER_KEEP, KEEP_MIRRORS];
+
+    fn saved_both(n: u32, m: u32) -> Vec<u8> {
+        [&[PEER, PEER_SAVED][..], &n.to_le_bytes(), &m.to_le_bytes()].concat()
+    }
+
+    /// The page's channel text, answered: the computer is told it as a mirror.
+    fn page_sends(rig: &mut Rig, text: u8) -> Vec<u8> {
+        let command = [3, 0, 0, 1, 2, 3, 4, text];
+        rig.client_says(Page, &command).radio_says(OK);
+        [&[PUSH_MIRROR, command.len() as u8][..], &command, OK].concat()
+    }
+
+    #[test]
+    fn a_mirror_told_to_a_computer_that_went_before_it_saved_comes_again() {
+        let mut rig = Rig::new();
+        rig.attach(Page).attach(Computer).up().radio_says(NO_MORE);
+        rig.client_says(Computer, KEEP_ALL).clear();
+        let first = page_sends(&mut rig, 104);
+        let second = page_sends(&mut rig, 105);
+        assert_eq!(rig.computer, vec![first.clone(), second.clone()]);
+        assert_eq!(
+            rig.mux.kept(Computer),
+            vec![first.clone(), second.clone()],
+            "both kept until the computer says"
+        );
+        // It saved the first; then its link dropped with the second on it.
+        rig.client_says(Computer, &saved_both(0, 1));
+        assert_eq!(rig.mux.kept(Computer), vec![second.clone()]);
+        rig.mux.detach(Computer);
+        rig.attach(Computer).clear();
+        rig.client_says(Computer, KEEP_ALL)
+            .client_says(Computer, SYNC);
+        assert_eq!(
+            rig.computer,
+            vec![second.clone(), NO_MORE.to_vec()],
+            "the one not saved comes again, ahead of the next answer"
+        );
+        rig.client_says(Computer, &saved_both(0, 1));
+        assert!(rig.mux.kept(Computer).is_empty());
+    }
+
+    #[test]
+    fn messages_and_mirrors_are_let_go_each_by_their_own_count() {
+        let mut rig = Rig::new();
+        rig.attach(Page).attach(Computer).up().radio_says(NO_MORE);
+        rig.client_says(Computer, KEEP_ALL);
+        let mirror = page_sends(&mut rig, 104);
+        rig.radio_says(MESSAGE).radio_says(NO_MORE).clear();
+        rig.client_says(Computer, SYNC);
+        assert_eq!(
+            rig.mux.kept(Computer),
+            vec![mirror.clone(), MESSAGE.to_vec()]
+        );
+        rig.client_says(Computer, &saved_both(1, 0));
+        assert_eq!(
+            rig.mux.kept(Computer),
+            vec![mirror],
+            "the message saved, the mirror not yet"
+        );
+        rig.client_says(Computer, &saved_both(1, 1));
+        assert!(rig.mux.kept(Computer).is_empty());
+    }
+
+    #[test]
+    fn mirrors_are_not_kept_for_an_app_that_does_not_count_them() {
+        let mut rig = Rig::new();
+        rig.attach(Page).attach(Computer).up().radio_says(NO_MORE);
+        rig.client_says(Computer, KEEP).clear();
+        page_sends(&mut rig, 104);
+        assert_eq!(rig.computer.len(), 1, "told as before");
+        assert!(rig.mux.kept(Computer).is_empty(), "and not kept");
+        rig.client_says(Computer, &saved(0));
+        assert!(rig.mux.kept(Computer).is_empty());
     }
 
     #[test]

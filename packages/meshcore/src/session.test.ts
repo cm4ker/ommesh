@@ -1037,6 +1037,12 @@ test("behind a relay that keeps what it hands over, the app says what it has sav
   await tick(500);
   assert.deepEqual(session.getState().messages.map((m) => m.text), ["one", "two", "three"]);
   assert.deepEqual([...radio.told.at(-1)!], [...peerSaved(5)]);
+  // What the other app sent comes as a mirror: counted apart, once it is in the chats.
+  const said = new ByteWriter().u8(Cmd.SendChannelTxtMsg).u8(TxtType.Plain).u8(0).u32(1_700_000_200).string("from the computer").toBytes();
+  radio.push(mirrorFrame(said, new Uint8Array([Resp.Ok])));
+  await tick(500);
+  assert.ok(session.getState().messages.some((m) => m.text === "from the computer"));
+  assert.deepEqual([...radio.told.at(-1)!], [...peerSaved(5, 1)]);
   await session.disconnect();
 
   // An older relay is told nothing.

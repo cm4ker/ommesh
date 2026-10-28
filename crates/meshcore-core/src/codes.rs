@@ -116,12 +116,15 @@ pub const PEER_HELLO: u8 = 0;
 /// `0xf1, 1, key length, key, value`: one thing the app keeps alike with the other, the latest
 /// by its key standing for every one before it (`r:<conversation>` a read mark, `s:<name>` a setting).
 pub const PEER_ENTRY: u8 = 1;
-/// `0xf1, 2`: an app says it will tell when it has saved the messages it takes from its inbox
-/// ([`PEER_SAVED`]); until it does, the mux keeps each one it hands over, and hands it again
-/// should the app go first. Said again at each connect, it starts the count afresh.
+/// `0xf1, 2[, flags]`: an app says it will tell when it has saved the messages it takes from
+/// its inbox ([`PEER_SAVED`]); until it does, the mux keeps each one it hands over, and hands it
+/// again should the app go first. Said again at each connect, it starts the count afresh. With
+/// [`KEEP_MIRRORS`] in its flags it counts the mirrors it is told as well, and they are kept so too.
 pub const PEER_KEEP: u8 = 2;
-/// `0xf1, 3, n` (u32, little-endian): the app has saved the first `n` messages it took since
-/// it said [`PEER_KEEP`].
+/// In [`PEER_KEEP`]'s flags: the app counts mirrors apart from messages.
+pub const KEEP_MIRRORS: u8 = 1;
+/// `0xf1, 3, n[, m]` (u32s, little-endian): the app has saved the first `n` messages it took
+/// since it said [`PEER_KEEP`], and the first `m` mirrors it was told.
 pub const PEER_SAVED: u8 = 3;
 /// What the mux's hello says it can do: 2 takes [`PEER_KEEP`] and [`PEER_SAVED`].
 pub const PEER_VERSION: u8 = 2;

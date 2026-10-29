@@ -1,0 +1,85 @@
+{
+  "version": "0.11.0",
+  "date": "2026-10-29",
+  "items": [
+    {
+      "kind": "new",
+      "en": {
+        "title": "Ommesh on macOS and Linux",
+        "text": "A Mac takes one disk image for Apple silicon and Intel; Linux an AppImage or a .deb, for x64 and ARM64. They connect over Bluetooth, USB and Wi-Fi and update themselves."
+      },
+      "ru": {
+        "title": "Ommesh для macOS и Linux",
+        "text": "Для Mac — один образ диска и для Apple silicon, и для Intel; для Linux — AppImage или .deb, для x64 и ARM64. Подключаются по Bluetooth, USB и Wi-Fi и обновляются сами."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "radio/quiet",
+      "en": {
+        "title": "Do not disturb, and mute a chat for a while",
+        "text": "Quiet for an hour, till morning or every night; favourites still ring. Hold a chat and choose Mute to silence it alone for an hour, eight hours or two days."
+      },
+      "ru": {
+        "title": "«Не беспокоить» и чат без звука на время",
+        "text": "Тихо на час, до утра или каждую ночь, а избранные звучат. Удержите чат и выберите «Без уведомлений…», чтобы заглушить только его на час, восемь часов или два дня."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "mesh",
+      "en": {
+        "title": "Ping a node right beside its route",
+        "text": "On a node's page, the ⇄ button by the Route row pings it and shows the answer at once; hold it for the other ways. A route is now one of four: Automatic, Direct, My own way, Always flood."
+      },
+      "ru": {
+        "title": "Пинг узла прямо рядом с маршрутом",
+        "text": "На странице узла кнопка ⇄ у строки «Маршрут» пингует его и сразу показывает ответ; удержите её, чтобы выбрать способ. Маршрут теперь — один из четырёх, от «Автоматически» до «Свой путь»."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "chats",
+      "en": {
+        "title": "Share a message to another app",
+        "text": "Hold a message and choose Share to send it to a messenger, notes or anywhere else. On a phone, messages you picked go together, each with its name and time."
+      },
+      "ru": {
+        "title": "Сообщение — в другое приложение",
+        "text": "Удержите сообщение и выберите «Поделиться», чтобы отправить его в мессенджер, заметки или куда угодно. На телефоне можно поделиться несколькими сразу, с именами и временем."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "mesh",
+      "en": {
+        "title": "Hide silent nodes, or show only favourites",
+        "text": "Show and order › Hide nodes silent for a week, a month or three: they leave the list and the map until heard again. Favourites keeps only the nodes you starred."
+      },
+      "ru": {
+        "title": "Скрыть молчащих или оставить избранных",
+        "text": "«Показать и порядок › Скрывать молчащих» убирает со списка и с карты узлы, не слышные неделю, месяц или три, пока их снова не услышат. «Избранные» оставляют узлы со звёздочкой."
+      }
+    },
+    {
+      "kind": "fix",
+      "en": "A phone left in the background all day keeps the morning's messages.",
+      "ru": "Телефон, весь день пролежавший с Ommesh в фоне, больше не теряет утренние сообщения."
+    },
+    {
+      "kind": "fix",
+      "en": "A phone and a computer sharing a radio no longer lose or mix up messages.",
+      "ru": "Телефон и компьютер на одном радио больше не теряют и не путают сообщения."
+    },
+    {
+      "kind": "fix",
+      "en": "A new channel no longer shows the messages of a removed one.",
+      "ru": "Новый канал больше не показывает сообщения удалённого."
+    },
+    {
+      "kind": "fix",
+      "en": "A route set by hand is no longer dropped on its own.",
+      "ru": "Маршрут, заданный вручную, больше не сбрасывается сам."
+    }
+  ]
+}

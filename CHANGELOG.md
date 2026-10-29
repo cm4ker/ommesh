@@ -2,6 +2,11 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
+## Unreleased
+
+### Fixes
+- On an iPhone, with the keyboard up in a chat, messages no longer show over the strip at the top of the screen, the one that says a survey is running or the radio is reconnecting, nor over the phone's clock.
+
 ## 0.11.0 — 2026-10-29
 
 ### Chats

@@ -115,6 +115,17 @@
   z-index: 1;
   background-color: var(--bg);
 }
+/*
+ * What rises past the chat's top is cut off there. The head covers it inside
+ * the chat, but a strip over the screens (a survey running, the radio out of
+ * reach) sits above the head and under the screen's layer, and the messages
+ * showed over the strip and the phone's clock. Clip draws no scroll room;
+ * hidden stands in for it on the WebKit before 16.
+ */
+:root.keyboard-follows .screen.chat {
+  overflow: hidden;
+  overflow: clip;
+}
 :root.keyboard-follows .screen.chat > .chat-scroll {
   padding-top: calc(var(--space-3) + max(0px, calc(var(--chat-keyboard, 0px) - var(--chat-room))));
 }

@@ -2,7 +2,7 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
-## Unreleased
+## 0.11.0 — 2026-10-29
 
 ### Chats
 - Share a message to a messenger, notes or any other app: hold it and choose Share. On a phone, messages you picked can be shared together too, each with its name and time, as Copy gives them; a single message goes as its text alone.

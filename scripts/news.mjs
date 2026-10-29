@@ -25,8 +25,8 @@ export const LANGUAGES = ["en", "ru"];
 export const LIMITS = { news: 5, title: 60, text: 200, fix: 200, play: 500 };
 
 const WORDS = {
-  en: { news: "What's new", fixed: "Fixed", get: "Get it: Google Play, App Store, Windows and the Android APK" },
-  ru: { news: "Что нового", fixed: "Исправлено", get: "Обновиться: Google Play, App Store, Windows и APK для Android" },
+  en: { news: "What's new", fixed: "Fixed", get: "Get it: Google Play, App Store, Windows, macOS, Linux and the Android APK" },
+  ru: { news: "Что нового", fixed: "Исправлено", get: "Обновиться: Google Play, App Store, Windows, macOS, Linux и APK для Android" },
 };
 
 const STABLE = /^\d+\.\d+\.\d+$/;

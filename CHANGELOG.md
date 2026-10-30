@@ -5,7 +5,7 @@
 ## Unreleased
 
 ### Chats
-- Messages can have bold, italic, struck-through, monospace and hidden text, typed as in Telegram: `**bold**`, `__italic__`, `~~struck~~`, `` `mono` ``, `||hidden||`, and ``` around several lines. Select words and right-click for the menu, or press Ctrl+B, Ctrl+I, Ctrl+Shift+X, M or P; on an iPhone, the menu over selected text has Format. The marks go on the air as typed, so other MeshCore apps show them as they are. The chat list, notifications and quotes show the plain words, and hidden text opens with a tap.
+- Messages can have bold, italic, struck-through, monospace and hidden text, typed as in Telegram: `**bold**`, `__italic__`, `~~struck~~`, `` `mono` ``, `||hidden||`, and ``` around several lines. Select words and right-click for the menu, or press Ctrl+B, Ctrl+I, Ctrl+Shift+X, M or P; on a phone, the menu over selected text has them: under Format on an iPhone, under ⋮ on Android. The marks go on the air as typed, so other MeshCore apps show them as they are. The chat list, notifications and quotes show the plain words, and hidden text opens with a tap.
 
 ### Fixes
 - On an iPhone, with the keyboard up in a chat, messages no longer show over the strip at the top of the screen, the one that says a survey is running or the radio is reconnecting, nor over the phone's clock.

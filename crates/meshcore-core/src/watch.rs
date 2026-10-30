@@ -25,6 +25,7 @@ use std::collections::HashMap;
 use serde::Deserialize;
 
 use crate::codes::*;
+use crate::format::plain_text;
 use crate::frames::{
     hex, is_text_reaction, read_message, read_new_advert, split_channel_text, text_hash, ReadMark,
     Received,
@@ -1030,7 +1031,8 @@ fn tag_of(conversation: &str) -> String {
     format!("c:{conversation}")
 }
 
-/// A chat's notice: the one message, or how many and the latest few.
+/// A chat's notice: the one message, or how many and the latest few. Their formatting is left
+/// out and hidden text covered, as in the page's own notice.
 fn chat_notice(chat: &Chat, words: &Words) -> Notice {
     let title = &chat.title;
     let kind = if chat.direct {
@@ -1056,14 +1058,14 @@ fn chat_notice(chat: &Chat, words: &Words) -> Notice {
         } else {
             title.clone()
         };
-        return Notice::new(tag, heading, line.text.clone(), kind);
+        return Notice::new(tag, heading, plain_text(&line.text), kind);
     }
     let mentioned = lines.iter().any(|l| l.mention);
     let body = lines[lines.len().saturating_sub(LINES)..]
         .iter()
         .map(|l| match l.sender.as_deref() {
-            Some(s) if !s.is_empty() && s != title => format!("{s}: {}", l.text),
-            _ => l.text.clone(),
+            Some(s) if !s.is_empty() && s != title => format!("{s}: {}", plain_text(&l.text)),
+            _ => plain_text(&l.text),
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -1495,6 +1497,19 @@ mod tests {
         rig.note(effects);
         rig.arrives(direct(&ALICE[..12], 1, "hi")).grace_ends();
         assert!(rig.posted.is_empty());
+    }
+
+    #[test]
+    fn a_notice_keeps_hidden_text_hidden() {
+        let mut rig = Rig::new(config());
+        rig.arrives(direct(ALICE, 5, "Пароль от **узла**: ||сосна42||"))
+            .grace_ends();
+        assert_eq!(rig.posted.last().unwrap().body, "Пароль от узла: ▒▒▒");
+        rig.arrives(direct(ALICE, 6, "~~ещё~~ раз")).grace_ends();
+        assert_eq!(
+            rig.posted.last().unwrap().body,
+            "Пароль от узла: ▒▒▒\nещё раз"
+        );
     }
 
     #[test]

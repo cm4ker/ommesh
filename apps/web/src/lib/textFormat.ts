@@ -9,6 +9,9 @@
  * space on either inner edge, and its partner; anything else stays as typed.
  * Addresses, places and mentions come first: a marker inside one is part of it.
  * Nothing is formatted inside mono text.
+ *
+ * The phone's Rust core reads the markers the same way for the notices it raises while the page
+ * sleeps (`crates/meshcore-core/src/format.rs`): change both together.
  */
 
 import { MENTION } from "./composer.js";

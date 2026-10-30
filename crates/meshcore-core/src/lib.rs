@@ -24,6 +24,7 @@
 
 pub mod codes;
 mod ffi;
+mod format;
 pub mod frames;
 mod legacy;
 pub mod mux;

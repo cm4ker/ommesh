@@ -65,7 +65,7 @@ export function ReactStrip({ message }: { message: MessageRecord }) {
   };
   const show = (next: "all" | "who" | null) => {
     setOpen(next);
-    setMenuExpanded(next !== null);
+    setMenuExpanded(next !== null, next === "all");
   };
   if (open === "all") return <EmojiPicker mine={mine} onPick={choose} onFold={() => show(null)} />;
   return (

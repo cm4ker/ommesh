@@ -259,20 +259,34 @@
   padding: 0;
   overflow: hidden;
 }
-/* Every emoji (EmojiPicker.tsx): low, so the message and its chat stay in sight, and never more than the
-   room under the message risen (Menu.tsx); on a computer its full height once asked for. Without the grab
-   bar, which only a computer's has, the search field keeps its distance from the edge. */
+/* Every emoji (EmojiPicker.tsx): the band of groups stays at the top, and the search field scrolls away under
+   it with the emoji. A computer's popover is low, and its full height once asked for. */
 .emoji-picker {
-  height: min(268px, var(--hold-room, 100vh));
+  height: 268px;
   display: flex;
   flex-direction: column;
   transition: height 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.emoji-picker > .emoji-find:first-child {
-  margin-top: 10px;
-}
 .emoji-picker.big {
-  height: min(448px, var(--hold-room, 100vh));
+  height: min(448px, 100vh);
+}
+/* Under a held message the emoji grow by their own scrolling (Menu.tsx): the menu sizes the list and the room
+   over it, and the card is only the frame they scroll in, see-through over them until they reach its top. */
+.hold-menu.rising {
+  background: transparent;
+  box-shadow: none;
+}
+.hold-menu.rising .emoji-picker {
+  display: block;
+  height: auto;
+}
+.emoji-room {
+  height: var(--hold-gap, 0px);
+}
+.hold-menu.rising .emoji-card {
+  min-height: 100%;
+  border-radius: 18px 18px 0 0;
+  background: var(--elevated);
 }
 .emoji-picker .emoji-grab {
   flex: none;
@@ -294,12 +308,11 @@
 }
 /* The search field, with the moods in it while nothing is typed. */
 .emoji-find {
-  flex: none;
   height: calc(40px * var(--box-scale));
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0 10px 6px;
+  margin: 8px 2px 4px;
   padding: 0 6px 0 12px;
   border-radius: 20px;
   background: var(--hover);
@@ -375,14 +388,20 @@
   color: var(--text);
   cursor: pointer;
 }
-/* The groups, one icon each, and the fold back to the menu. */
+/* The groups, one icon each, and the fold back to the menu, over the emoji scrolling under them. */
 .emoji-band {
-  flex: none;
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 0 8px 6px;
+  padding: 4px 8px;
   border-bottom: 1px solid var(--border);
+  background: var(--elevated);
+}
+.hold-menu.rising .emoji-band {
+  border-radius: 18px 18px 0 0;
 }
 .emoji-tabs {
   flex: 1;
@@ -401,10 +420,9 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0 8px 8px;
 }
-.emoji-section:first-child {
-  padding-top: 4px;
+.emoji-body {
+  padding: 0 8px 8px;
 }
 .emoji-head {
   position: relative;

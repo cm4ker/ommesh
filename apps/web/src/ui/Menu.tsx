@@ -49,6 +49,8 @@ interface MenuState {
   head: ReactNode;
   /** The head has opened out, such as into every emoji: the items step aside and the menu widens. */
   expanded: boolean;
+  /** The head opened out grows by its own scrolling, as every emoji does under a held message (HoldMenu). */
+  rises: boolean;
 }
 
 let current: MenuState | null = null;
@@ -72,15 +74,16 @@ export function showMenu(
     minWidth: options.minWidth,
     head: options.head,
     expanded: false,
+    rises: false,
   };
   current.lift?.classList.add("held");
   emit();
 }
 
-/** Opens the head out over the whole menu, or folds it back. */
-export function setMenuExpanded(on: boolean): void {
-  if (!current || current.expanded === on) return;
-  current = { ...current, expanded: on };
+/** Opens the head out over the whole menu, or folds it back; with `rises`, the head grows as it scrolls. */
+export function setMenuExpanded(on: boolean, rises = false): void {
+  if (!current || (current.expanded === on && current.rises === (on && rises))) return;
+  current = { ...current, expanded: on, rises: on && rises };
   emit();
 }
 
@@ -98,6 +101,13 @@ function useMenuState(): MenuState | null {
     },
     () => current,
   );
+}
+
+/** Whether the menu open now is the card under a held message (HoldMenu), as MenuHost picks it, for a head laid out its own way there. */
+export function useHeldMenu(): boolean {
+  const menu = useMenuState();
+  const wide = useWide();
+  return !!menu?.lift && !(wide && menu.at);
 }
 
 function pick(item: MenuItem): void {
@@ -239,13 +249,9 @@ function Popover({ menu }: { menu: MenuState }) {
 const HOLD_GAP = 8;
 const HOLD_EDGE = 12;
 
-interface HoldPlace {
-  /** The message as it is on screen, risen included: left bright in the dimming. */
-  hole: { left: number; top: number; width: number; height: number };
-  left: number;
-  top: number;
-  /** Which side the menu lines up with: the message's own. */
-  right: boolean;
+/** Sets a style only when it changes: each write has the browser look the page over again. */
+function put(el: HTMLElement, name: string, value: string): void {
+  if (el.style.getPropertyValue(name) !== value) el.style.setProperty(name, value);
 }
 
 /**
@@ -253,11 +259,21 @@ interface HoldPlace {
  * message stays bright over the dimmed screen, risen a little, with its menu
  * right under it. Held near the foot of the screen, the message moves up to
  * make room, so the menu never covers it.
+ *
+ * A head that grows as it scrolls, as every emoji does, marks its scroller
+ * with `data-rise`, the height it opens at. The card is then only a frame from
+ * under the message risen as high as it goes, and the scroller has a room as
+ * tall as that rise above the head: pulled up, the head lifts the message with
+ * it until the message reaches the top of its list, and then the frame
+ * reaches down to the screen's foot. The browser's own scrolling, fling and
+ * all, moves the head, and the message and the frame follow it frame by frame.
  */
 function HoldMenu({ menu, lift }: { menu: MenuState; lift: HTMLElement }) {
   const card = useRef<HTMLDivElement>(null);
-  const [place, setPlace] = useState<HoldPlace | null>(null);
-  const radius = useRef(16);
+  const hole = useRef<HTMLDivElement>(null);
+  // Which side the menu lines up with, the message's own, once it is placed. Where exactly is written straight
+  // to the page on every frame below: through React it would land a frame behind the message.
+  const [side, setSide] = useState<"left" | "right" | null>(null);
   // The keyboard's height on an iPhone, while the menu's own field has it up (keyboard.ts).
   const keyboard = useRef(0);
   // The press that opened the menu ends over it, on the scrim or, with the message risen, on an item under the
@@ -270,15 +286,19 @@ function HoldMenu({ menu, lift }: { menu: MenuState; lift: HTMLElement }) {
     pressed.current = false;
     // The keyboard goes down, as for a sheet; the chat moves under the message as it does, and the menu follows.
     if (document.activeElement instanceof HTMLElement && document.activeElement.closest("input, textarea")) document.activeElement.blur();
-    radius.current = (parseFloat(getComputedStyle(lift).borderTopLeftRadius) || 16) + 1;
+    const radius = (parseFloat(getComputedStyle(lift).borderTopLeftRadius) || 16) + 1;
     // The home bar's strip at the foot, which the menu keeps clear of.
     const probe = document.createElement("div");
     probe.style.cssText = "position:fixed;visibility:hidden;height:var(--home-bar,0px)";
     document.body.append(probe);
     const foot = probe.offsetHeight;
     probe.remove();
-    let last = "";
-    let lastSpace = 0;
+    // The list the message scrolls in, under the chat's head, which the message rises no higher than.
+    let view = lift.parentElement;
+    while (view && !/auto|scroll/.test(getComputedStyle(view).overflowY)) view = view.parentElement;
+    let placed: "left" | "right" | null = null;
+    let lastScrolled = 0;
+    let pulled = false;
     let frame = 0;
     const stopKeyboard = card.current ? moveForKeyboard(card.current, (height) => (keyboard.current = height)) : () => undefined;
     const follow = () => {
@@ -290,29 +310,53 @@ function HoldMenu({ menu, lift }: { menu: MenuState; lift: HTMLElement }) {
         const height = box.height / (shift.d || 1);
         const top = box.top + box.height / 2 - shift.f - height / 2;
         const bottom = window.innerHeight - keyboard.current - foot - HOLD_EDGE;
-        // The most a menu that grows, as every emoji does, can take: under the message risen as high as it goes.
-        const space = Math.max(160, Math.floor(bottom - HOLD_EDGE - height - HOLD_GAP));
-        if (space !== lastSpace) {
-          lastSpace = space;
-          el.style.setProperty("--hold-room", `${space}px`);
+        // Up as far as the menu needs, but not so far that the top of a tall message leaves the list.
+        const most = Math.max(0, top - Math.max(HOLD_EDGE, (view?.getBoundingClientRect().top ?? 0) + HOLD_GAP));
+        const riser = el.querySelector<HTMLElement>("[data-rise]");
+        const scrolled = riser ? Math.max(0, riser.scrollTop) : 0;
+        let rise: number;
+        let at: number;
+        if (riser) {
+          // The frame's top, under the message risen as high as it goes; under a message too tall for the
+          // screen, the head still gets some room.
+          const highest = Math.min(top - most + height + HOLD_GAP, bottom - 160);
+          const low = Math.min(Number(riser.dataset["rise"]), bottom - highest);
+          // Where the head opens: right under the message, or as low as it fits with the message risen for it.
+          const open = Math.max(highest, Math.min(top + height + HOLD_GAP, bottom - low));
+          const gap = Math.round(open - highest);
+          put(el, "--hold-gap", `${gap}px`);
+          put(riser, "height", `${Math.round(Math.min(bottom, open + low + Math.max(0, scrolled - gap)) - highest)}px`);
+          rise = Math.min(most, top + height + HOLD_GAP - open + Math.min(scrolled, gap));
+          at = highest;
+        } else {
+          const room = bottom - (top + height + HOLD_GAP + el.offsetHeight);
+          rise = room >= 0 ? 0 : Math.min(-room, most);
+          at = Math.min(top - rise + height + HOLD_GAP, bottom - el.offsetHeight);
         }
-        const room = bottom - (top + height + HOLD_GAP + el.offsetHeight);
-        // Up as far as the menu needs, but not so far that the top of a tall message leaves the screen.
-        const rise = room >= 0 ? 0 : Math.min(-room, Math.max(0, top - HOLD_EDGE));
-        lift.style.setProperty("--lift-y", `${-rise}px`);
+        // Pulled by the scrolling, the message keeps to the head at once: eased, it would trail behind it.
+        const pull = riser !== null && scrolled !== lastScrolled;
+        lastScrolled = scrolled;
+        if (pull !== pulled) {
+          pulled = pull;
+          lift.style.setProperty("transition", pull ? "none" : "");
+        }
+        put(lift, "--lift-y", `${-rise}px`);
         const right = box.left + box.width / 2 > window.innerWidth / 2;
         const width = el.offsetWidth;
-        const left = Math.min(window.innerWidth - width - HOLD_GAP, Math.max(HOLD_GAP, right ? box.right - width : box.left));
-        const next: HoldPlace = {
-          hole: { left: Math.floor(box.left) - 1, top: Math.floor(box.top) - 1, width: Math.ceil(box.width) + 2, height: Math.ceil(box.height) + 2 },
-          left: Math.round(left),
-          top: Math.round(Math.min(top - rise + height + HOLD_GAP, bottom - el.offsetHeight)),
-          right,
-        };
-        const key = JSON.stringify(next);
-        if (key !== last) {
-          last = key;
-          setPlace(next);
+        put(el, "left", `${Math.round(Math.min(window.innerWidth - width - HOLD_GAP, Math.max(HOLD_GAP, right ? box.right - width : box.left)))}px`);
+        put(el, "top", `${Math.round(at)}px`);
+        // The message as it is on screen with the rise just given, left bright in the dimming.
+        const lit = lift.getBoundingClientRect();
+        if (hole.current) {
+          put(hole.current, "left", `${Math.floor(lit.left) - 1}px`);
+          put(hole.current, "top", `${Math.floor(lit.top) - 1}px`);
+          put(hole.current, "width", `${Math.ceil(lit.width) + 2}px`);
+          put(hole.current, "height", `${Math.ceil(lit.height) + 2}px`);
+          put(hole.current, "border-radius", `${radius}px`);
+        }
+        if (placed !== (right ? "right" : "left")) {
+          placed = right ? "right" : "left";
+          setSide(placed);
         }
       }
       frame = requestAnimationFrame(follow);
@@ -322,6 +366,7 @@ function HoldMenu({ menu, lift }: { menu: MenuState; lift: HTMLElement }) {
       cancelAnimationFrame(frame);
       stopKeyboard();
       lift.style.removeProperty("--lift-y");
+      lift.style.removeProperty("transition");
     };
   }, [lift]);
 
@@ -344,13 +389,12 @@ function HoldMenu({ menu, lift }: { menu: MenuState; lift: HTMLElement }) {
           if (fresh(e)) closeMenu();
         }}
       >
-        {place ? <div className="hold-hole" style={{ ...place.hole, borderRadius: radius.current }} /> : null}
+        <div ref={hole} className="hold-hole" hidden={side === null} />
       </div>
       <div
         ref={card}
-        className={["hold-menu", place ? "" : "unplaced", place?.right ? "right" : "", menu.expanded ? "expanded" : ""].join(" ")}
+        className={["hold-menu", side ? "" : "unplaced", side === "right" ? "right" : "", menu.expanded ? "expanded" : "", menu.expanded && menu.rises ? "rising" : ""].join(" ")}
         role="menu"
-        style={place ? { left: place.left, top: place.top } : undefined}
       >
         {menu.head ? (
           <>

@@ -66,13 +66,16 @@ export interface LookalikePrefs {
 export const ALL_SETS: Pick<LookalikePrefs, "on" | "near" | "cursive"> = { on: true, near: true, cursive: true };
 
 // A mention names someone as they call themselves: with its letters swapped, the apps that look for
-// it would no longer find them. MCO Advanced leaves mentions as typed too.
-const MENTION = /(@\[[^\]\n]{1,32}\])/;
+// it would no longer find them. MCO Advanced leaves mentions as typed too. A formula
+// (lib/textFormat.ts) is TeX, where a letter's script is part of what it says.
+const MENTION = /@\[[^\]\n]{1,32}\]/;
+const FORMULA = /\$\$(?!\$)[\s\S]+?\$\$/;
+const AS_TYPED = new RegExp(`(${MENTION.source}|${FORMULA.source})`);
 
 export function packLookalikes(text: string, prefs: Pick<LookalikePrefs, "on" | "near" | "cursive">): string {
   if (!prefs.on) return text;
   return text
-    .split(MENTION)
+    .split(AS_TYPED)
     .map((part, i) => (i % 2 === 1 ? part : swap(part, prefs)))
     .join("");
 }
@@ -93,9 +96,9 @@ export function looksDifferent(c: string): boolean {
 const BACK: Record<string, string> = {};
 for (const set of [CURSIVE, NEAR, EXACT]) for (const [cyrillic, latin] of Object.entries(set)) BACK[latin] = cyrillic;
 
-// Left as they are: a mention names someone as they call themselves, and an address has to lead
-// where it did.
-const KEEP = /@\[[^\]\n]{1,32}\]|(?:[Hh]ttps?:\/\/|[Ww]ww\.)\S+/g;
+// Left as they are: a mention names someone as they call themselves, an address has to lead
+// where it did, and a formula's x is an x.
+const KEEP = new RegExp(`${MENTION.source}|(?:[Hh]ttps?:\\/\\/|[Ww]ww\\.)\\S+|${FORMULA.source}`, "g");
 const WORD = /[\p{L}\p{N}]+/gu;
 const CYRILLIC = /\p{Script=Cyrillic}/u;
 const LATIN = /[A-Za-z]/;

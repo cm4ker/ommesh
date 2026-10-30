@@ -52,6 +52,19 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/*
+ * A formula (lib/formula.ts). One on a line of its own is centred, as TeX draws it, without TeX's
+ * wide margins, and a wide one scrolls sideways inside the bubble rather than widening it.
+ */
+.msg-formula.display {
+  display: block;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+}
+.msg-formula .katex-display {
+  margin: 0;
+}
 /* Hidden text: a bar of the faint colour until a tap opens it; nothing in it shows, is picked out or answers a tap. */
 .msg-spoiler {
   border-radius: 4px;

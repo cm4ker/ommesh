@@ -1,14 +1,16 @@
 /**
  * Text formatting the way Telegram types it: `**bold**`, `__italic__`,
- * `~~struck~~`, `` `mono` ``, `||hidden||` and a ``` block of lines. The
- * markers go on the air as typed, so another MeshCore app shows them as they
- * are; Ommesh hides them and draws the text they mark.
+ * `~~struck~~`, `` `mono` ``, `||hidden||` and a ``` block of lines, and a
+ * `$$formula$$` in TeX. The markers go on the air as typed, so another
+ * MeshCore app shows them as they are; Ommesh hides them and draws the text
+ * they mark.
  *
  * Only doubled markers count: a single `*` or `_` is too common in plain
  * writing, in numbers and in file names. A pair needs text right inside it, no
  * space on either inner edge, and its partner; anything else stays as typed.
  * Addresses, places and mentions come first: a marker inside one is part of it.
- * Nothing is formatted inside mono text.
+ * Nothing is formatted inside mono text or a formula. A formula may start and
+ * end with spaces, as TeX allows, but `$$$` is no marker: prices are written so.
  *
  * The phone's Rust core reads the markers the same way for the notices it raises while the page
  * sleeps (`crates/meshcore-core/src/format.rs`): change both together.
@@ -18,7 +20,7 @@ import { MENTION } from "./composer.js";
 import { PLACE_SOURCE } from "./place.js";
 import { LINK, linkOf } from "./webLinks.js";
 
-export type FormatKind = "bold" | "italic" | "strike" | "code" | "block" | "spoiler";
+export type FormatKind = "bold" | "italic" | "strike" | "code" | "block" | "spoiler" | "math";
 
 /** The markers, longest first where one starts another: a block's ``` before mono's `. */
 const MARKS: readonly { mark: string; kind: FormatKind }[] = [
@@ -28,10 +30,17 @@ const MARKS: readonly { mark: string; kind: FormatKind }[] = [
   { mark: "__", kind: "italic" },
   { mark: "~~", kind: "strike" },
   { mark: "||", kind: "spoiler" },
+  { mark: "$$", kind: "math" },
 ];
 
-/** What mono text and a block hold is the text as typed. */
-const LITERAL: ReadonlySet<FormatKind> = new Set(["code", "block"]);
+/** What mono text, a block and a formula hold is the text as typed. */
+const LITERAL: ReadonlySet<FormatKind> = new Set(["code", "block", "math"]);
+
+/** A block's and a formula's text may start and end with spaces and line breaks. */
+const LOOSE: ReadonlySet<FormatKind> = new Set(["block", "math"]);
+
+/** Whether the text holds anything that may be a marker. */
+const ANY_MARK = /\*\*|__|~~|\|\||`|\$\$/;
 
 export type FormatNode =
   | { kind: "text"; text: string }
@@ -79,26 +88,28 @@ function isSpace(ch: string | undefined): boolean {
 function firstSpan(text: string, from: number, to: number, guarded: [number, number][]): Span | null {
   const clear = (at: number, length: number) => !guarded.some(([a, b]) => a < at + length && at < b);
   let best: Span | null = null;
+  // Mono's single backtick is not one of a block's three, and a formula's $$ is not part of $$$.
+  const inRun = (kind: FormatKind, at: number, n: number) =>
+    (kind === "code" && (text[at - 1] === "`" || text[at + 1] === "`")) || (kind === "math" && (text[at - 1] === "$" || text[at + n] === "$"));
   for (const { mark, kind } of MARKS) {
     const n = mark.length;
     for (let i = text.indexOf(mark, from); i !== -1 && i + n <= to && (!best || i < best.start); i = text.indexOf(mark, i + 1)) {
-      // Mono's single backtick is not one of a block's three.
-      if (kind === "code" && (text[i - 1] === "`" || text[i + 1] === "`")) continue;
+      if (inRun(kind, i, n)) continue;
       if (!clear(i, n)) continue;
       const inner = i + n;
-      if (kind !== "block" && isSpace(text[inner])) continue;
+      if (!LOOSE.has(kind) && isSpace(text[inner])) continue;
       let close = -1;
       for (let j = text.indexOf(mark, inner + 1); j !== -1 && j + n <= to; j = text.indexOf(mark, j + 1)) {
-        if (kind === "code" && (text[j - 1] === "`" || text[j + 1] === "`")) continue;
+        if (inRun(kind, j, n)) continue;
         if (!clear(j, n)) continue;
-        if (kind !== "block" && isSpace(text[j - 1])) continue;
+        if (!LOOSE.has(kind) && isSpace(text[j - 1])) continue;
         close = j;
         break;
       }
       if (close === -1) continue;
       // Mono text stays on its line; a block holds more than its line breaks.
       if (kind === "code" && text.slice(inner, close).includes("\n")) continue;
-      if (kind === "block" && !text.slice(inner, close).trim()) continue;
+      if (LOOSE.has(kind) && !text.slice(inner, close).trim()) continue;
       best = { start: i, inner, close, end: close + n, kind };
       break;
     }
@@ -125,7 +136,7 @@ function parseRange(text: string, from: number, to: number, guarded: [number, nu
 
 /** The text as runs of plain text and of formatting, the markers left out. Plain text gives one text node. */
 export function parseFormat(text: string): FormatNode[] {
-  if (!/\*\*|__|~~|\|\||`/.test(text)) return [{ kind: "text", text }];
+  if (!ANY_MARK.test(text)) return [{ kind: "text", text }];
   return parseRange(text, 0, text.length, protectedRanges(text));
 }
 
@@ -138,6 +149,7 @@ function plainOf(nodes: FormatNode[]): string {
       if (node.kind === "text") return node.text;
       if (node.kind === "spoiler") return HIDDEN;
       const inner = plainOf(node.children);
+      if (node.kind === "math") return inner.trim();
       return node.kind === "block" ? inner.replace(/^\n/, "").replace(/\n$/, "") : inner;
     })
     .join("");
@@ -162,7 +174,7 @@ export function formatRuns(text: string): FormatRun[] {
   const push = (start: number, end: number, marker: boolean, kinds: readonly FormatKind[]) => {
     if (end > start) out.push({ start, end, marker, kinds });
   };
-  if (!/\*\*|__|~~|\|\||`/.test(text)) {
+  if (!ANY_MARK.test(text)) {
     push(0, text.length, false, []);
     return out;
   }

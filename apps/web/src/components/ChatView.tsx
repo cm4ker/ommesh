@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 import { AdvType, isConversationType, isDirect, KEYLESS_INDEX, parseConversation, TxtType, type MessageRecord, type SessionState } from "@meshnet/meshcore";
 import { useBackLayer } from "../lib/back.js";
 import { chatAccess } from "../lib/channels.js";
@@ -10,6 +10,7 @@ import { daysIn, messagesIn, shownIn, titleOf, type ConversationSummary, type Sh
 import { nameOfHash, relaysOf } from "../lib/echoes.js";
 import { getOpenAtUnread, takeUnread } from "../lib/firstUnread.js";
 import { useFloatingDay } from "../lib/floatingDay.js";
+import { formulaHtml, formulasReady, loadFormulas, onFormulas } from "../lib/formula.js";
 import { haptic } from "../lib/haptic.js";
 import { dayLabel, emojiOnly, fullDate, timeOfDay } from "../lib/format.js";
 import { useJumboEmoji } from "../lib/jumboEmoji.js";
@@ -872,30 +873,38 @@ function NoChannel({ keyless, onAbout, onDelete }: { keyless: boolean; onAbout: 
 }
 
 /**
- * A message's text, drawn bold, italic, struck, mono or hidden where its markers say so, the
- * markers left out; what lies between them as `linkedText` draws it.
+ * A message's text, drawn bold, italic, struck, mono or hidden, or as a formula, where its
+ * markers say so, the markers left out; what lies between them as `linkedText` draws it.
  */
 function richText(text: string, me: string | null, mark: string | undefined, onPlace?: (mark: string) => void, linkMark?: (href: string) => ReactNode): ReactNode {
   const nodes = parseFormat(text);
   const only = nodes[0];
   if (nodes.length === 1 && only?.kind === "text") return linkedText(only.text, me, mark, onPlace, linkMark);
-  const draw = (nodes: FormatNode[]): ReactNode[] =>
-    nodes.map((node, i) => {
+  const draw = (nodes: FormatNode[], top: boolean): ReactNode[] => {
+    // A block, and a formula alone on its line, stand on lines of their own: the line breaks typed round them are not drawn again.
+    const own = (j: number) => {
+      const node = nodes[j];
+      if (node?.kind === "block") return true;
+      if (!top || node?.kind !== "math") return false;
+      const before = nodes[j - 1];
+      const after = nodes[j + 1];
+      return (!before || (before.kind === "text" && before.text.endsWith("\n"))) && (!after || (after.kind === "text" && after.text.startsWith("\n")));
+    };
+    return nodes.map((node, i) => {
       if (node.kind === "text") {
-        // A block stands on lines of its own: the line breaks typed round its markers are not drawn again.
         let text = node.text;
-        if (nodes[i - 1]?.kind === "block") text = text.replace(/^\n/, "");
-        if (nodes[i + 1]?.kind === "block") text = text.replace(/\n$/, "");
+        if (own(i - 1)) text = text.replace(/^\n/, "");
+        if (own(i + 1)) text = text.replace(/\n$/, "");
         return <Fragment key={i}>{linkedText(text, me, mark, onPlace, linkMark)}</Fragment>;
       }
       const inner = node.children.map((child) => (child.kind === "text" ? child.text : "")).join("");
       switch (node.kind) {
         case "bold":
-          return <strong key={i}>{draw(node.children)}</strong>;
+          return <strong key={i}>{draw(node.children, false)}</strong>;
         case "italic":
-          return <em key={i}>{draw(node.children)}</em>;
+          return <em key={i}>{draw(node.children, false)}</em>;
         case "strike":
-          return <s key={i}>{draw(node.children)}</s>;
+          return <s key={i}>{draw(node.children, false)}</s>;
         case "code":
           return (
             <code key={i} className="msg-code">
@@ -909,10 +918,25 @@ function richText(text: string, me: string | null, mark: string | undefined, onP
             </code>
           );
         case "spoiler":
-          return <Spoiler key={i}>{draw(node.children)}</Spoiler>;
+          return <Spoiler key={i}>{draw(node.children, false)}</Spoiler>;
+        case "math":
+          return <Formula key={i} tex={inner} display={own(i)} mark={mark} />;
       }
     });
-  return draw(nodes);
+  };
+  return draw(nodes, true);
+}
+
+/** A formula as KaTeX draws it, or as typed while KaTeX is on its way and where it cannot read the TeX. */
+function Formula({ tex, display, mark }: { tex: string; display: boolean; mark: string | undefined }) {
+  const ready = useSyncExternalStore(onFormulas, formulasReady);
+  useEffect(() => {
+    if (!ready) loadFormulas();
+  }, [ready]);
+  const html = ready ? formulaHtml(tex, display) : null;
+  const className = display ? "msg-formula display" : "msg-formula";
+  if (html === null) return <span className={className}>{marked(`$$${tex}$$`, mark)}</span>;
+  return <span className={className} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 /**

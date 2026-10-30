@@ -1,11 +1,13 @@
 //! Text formatting as the page reads it (`apps/web/src/lib/textFormat.ts`): `**bold**`,
-//! `__italic__`, `~~struck~~`, `` `mono` ``, `||hidden||` and a ``` block of lines. A notice says
-//! the text without its markers and covers what is hidden, as the page's own notice does, so a
-//! password put under `||` does not show on a locked phone. Change both together.
+//! `__italic__`, `~~struck~~`, `` `mono` ``, `||hidden||`, a ``` block of lines and a
+//! `$$formula$$`. A notice says the text without its markers and covers what is hidden, as the
+//! page's own notice does, so a password put under `||` does not show on a locked phone. A formula
+//! reads as its TeX. Change both together.
 //!
 //! Only doubled markers count. A pair needs text right inside it, no space on either inner edge,
-//! and its partner. Mentions, places and web addresses come first: a marker inside one is part of
-//! it. Nothing is formatted inside mono text.
+//! and its partner; a block and a formula may start and end with spaces. Mentions, places and web
+//! addresses come first: a marker inside one is part of it. Nothing is formatted inside mono text
+//! or a formula, and `$$$` is no marker.
 
 /// What a hidden stretch reads as where it cannot be opened.
 const HIDDEN: &str = "▒▒▒";
@@ -18,16 +20,18 @@ enum Kind {
     Italic,
     Strike,
     Spoiler,
+    Math,
 }
 
 /// The markers, a block's ``` before mono's `.
-const MARKS: [(&str, Kind); 6] = [
+const MARKS: [(&str, Kind); 7] = [
     ("```", Kind::Block),
     ("`", Kind::Code),
     ("**", Kind::Bold),
     ("__", Kind::Italic),
     ("~~", Kind::Strike),
     ("||", Kind::Spoiler),
+    ("$$", Kind::Math),
 ];
 
 /// Where a pair of markers stands: the opening one at `start`, the text between `inner` and `close`.
@@ -41,7 +45,7 @@ struct Span {
 
 /// The text without its markers, a hidden stretch as ▒▒▒.
 pub fn plain_text(text: &str) -> String {
-    if !["**", "__", "~~", "||", "`"]
+    if !["**", "__", "~~", "||", "`", "$$"]
         .iter()
         .any(|m| text.contains(m))
     {
@@ -64,6 +68,10 @@ fn plain_range(t: &[char], from: usize, to: usize, guarded: &[(usize, usize)]) -
         match span.kind {
             Kind::Spoiler => out.push_str(HIDDEN),
             Kind::Code => out.extend(&t[span.inner..span.close]),
+            Kind::Math => {
+                let inner: String = t[span.inner..span.close].iter().collect();
+                out.push_str(inner.trim());
+            }
             Kind::Block => {
                 let inner: String = t[span.inner..span.close].iter().collect();
                 let inner = inner.strip_prefix('\n').unwrap_or(&inner);
@@ -88,9 +96,13 @@ fn is_space(ch: Option<&char>) -> bool {
 /// The pair that opens first in `t` between `from` and `to`.
 fn first_span(t: &[char], from: usize, to: usize, guarded: &[(usize, usize)]) -> Option<Span> {
     let clear = |at: usize, n: usize| !guarded.iter().any(|&(a, b)| a < at + n && at < b);
-    // Mono's single backtick is not one of a block's three.
-    let lone_tick =
-        |i: usize| i.checked_sub(1).map(|k| t[k]) != Some('`') && t.get(i + 1) != Some(&'`');
+    // Mono's single backtick is not one of a block's three, and a formula's $$ is not part of $$$.
+    let in_run = |kind: Kind, i: usize, n: usize| {
+        let around =
+            |ch: char| i.checked_sub(1).map(|k| t[k]) == Some(ch) || t.get(i + n) == Some(&ch);
+        (kind == Kind::Code && around('`')) || (kind == Kind::Math && around('$'))
+    };
+    let loose = |kind: Kind| kind == Kind::Block || kind == Kind::Math;
     let mut best: Option<Span> = None;
     for (mark, kind) in MARKS {
         let mark: Vec<char> = mark.chars().collect();
@@ -101,11 +113,11 @@ fn first_span(t: &[char], from: usize, to: usize, guarded: &[(usize, usize)]) ->
                 break;
             }
             next = find(t, &mark, i + 1);
-            if (kind == Kind::Code && !lone_tick(i)) || !clear(i, n) {
+            if in_run(kind, i, n) || !clear(i, n) {
                 continue;
             }
             let inner = i + n;
-            if kind != Kind::Block && is_space(t.get(inner)) {
+            if !loose(kind) && is_space(t.get(inner)) {
                 continue;
             }
             let mut close = None;
@@ -115,10 +127,10 @@ fn first_span(t: &[char], from: usize, to: usize, guarded: &[(usize, usize)]) ->
                     break;
                 }
                 after = find(t, &mark, j + 1);
-                if (kind == Kind::Code && !lone_tick(j)) || !clear(j, n) {
+                if in_run(kind, j, n) || !clear(j, n) {
                     continue;
                 }
-                if kind != Kind::Block && is_space(t.get(j - 1)) {
+                if !loose(kind) && is_space(t.get(j - 1)) {
                     continue;
                 }
                 close = Some(j);
@@ -129,7 +141,7 @@ fn first_span(t: &[char], from: usize, to: usize, guarded: &[(usize, usize)]) ->
             if kind == Kind::Code && t[inner..close].contains(&'\n') {
                 continue;
             }
-            if kind == Kind::Block && t[inner..close].iter().all(|c| c.is_whitespace()) {
+            if loose(kind) && t[inner..close].iter().all(|c| c.is_whitespace()) {
                 continue;
             }
             best = Some(Span {
@@ -348,6 +360,19 @@ mod tests {
             "жирный и курсив, Еду"
         );
         assert_eq!(plain_text("`**как есть**`"), "**как есть**");
+    }
+
+    #[test]
+    fn a_formula_reads_as_its_tex_and_prices_stay() {
+        assert_eq!(
+            plain_text("Энергия $$ E=mc^2 $$, ясно"),
+            "Энергия E=mc^2, ясно"
+        );
+        assert_eq!(plain_text(r"$$\frac{a}{**b**}$$"), r"\frac{a}{**b**}");
+        assert_eq!(plain_text("**$$x$$**"), "x");
+        for text in ["$5 и $10", "Кафе $$$, бар $$", "$$ $$", "$$$x$$$"] {
+            assert_eq!(plain_text(text), text);
+        }
     }
 
     #[test]

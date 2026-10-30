@@ -27,6 +27,15 @@ test("a block holds its lines as typed", () => {
   assert.equal(parsed("```\n\n```"), "```\n\n```");
 });
 
+test("a formula holds its TeX as typed, spaces and all, but prices stay text", () => {
+  assert.equal(parsed("Энергия $$E=mc^2$$, ясно"), "Энергия math(E=mc^2), ясно");
+  assert.equal(parsed("$$ \\frac{a}{**b**} $$"), "math( \\frac{a}{**b**} )");
+  assert.equal(parsed("Итог:\n$$\n\\sum_{i=1}^n i\n$$"), "Итог:\nmath(\n\\sum_{i=1}^n i\n)");
+  assert.equal(parsed("**$$x$$**"), "bold(math(x))");
+  for (const text of ["$5 и $10", "Кафе $$$, бар $$", "$$ $$", "$$$x$$$"]) assert.equal(parsed(text), text, text);
+  assert.equal(plainText("Энергия $$ E=mc^2 $$"), "Энергия E=mc^2");
+});
+
 test("single markers, spaces inside and markers without a partner stay as typed", () => {
   for (const text of ["*привет* всем _так_", "2*3*4 = 24, node_v2_final.txt ^_^", "** жирный **", "**без пары", "****", "`a\nb`"]) {
     assert.equal(parsed(text), text, text);

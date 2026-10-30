@@ -41,7 +41,7 @@ export interface Reply {
 const share = (n: number, ceiling: number) => `${(Math.min(n, ceiling) / ceiling) * 100}%`;
 
 /** How the layer under the field marks formatted text; bold and italic it cannot show (composer.css). */
-const FORMAT_CLASS: Partial<Record<FormatKind, string>> = { strike: "fs", code: "fc", block: "fc", spoiler: "fh" };
+const FORMAT_CLASS: Partial<Record<FormatKind, string>> = { strike: "fs", code: "fc", block: "fc", spoiler: "fh", math: "fc" };
 
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 

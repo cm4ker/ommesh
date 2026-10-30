@@ -26,6 +26,20 @@ const oldWebViewWords: Plugin = {
 };
 
 /**
+ * KaTeX's stylesheet offers each of its fonts as woff2, woff and ttf, and the build would carry
+ * all three, 1 MB, into every app. Every web view the client runs in reads woff2, so the other
+ * two are cut before Vite gathers the files the stylesheet names.
+ */
+const katexWoff2Only: Plugin = {
+  name: "katex-woff2-only",
+  enforce: "pre",
+  transform(code, id) {
+    if (!/[\\/]katex[\\/]dist[\\/]katex(\.min)?\.css$/.test(id.split("?")[0]!)) return;
+    return code.replace(/,\s*url\([^)]*\.(?:woff|ttf)\) format\("(?:woff|truetype)"\)/g, "");
+  },
+};
+
+/**
  * `base: "./"` because the same build is opened three ways — from a web
  * server, from `tauri://localhost`, and from `capacitor://localhost` — and a
  * root-relative asset path is only right for the first.
@@ -35,7 +49,7 @@ const oldWebViewWords: Plugin = {
  * config's `devUrl` names.
  */
 export default defineConfig({
-  plugins: [react(), oldWebViewWords],
+  plugins: [react(), oldWebViewWords, katexWoff2Only],
   base: "./",
   clearScreen: false,
   define: {

@@ -57,3 +57,8 @@ test("a 3 is read as З only where a word could start with it", () => {
 test("mentions and addresses stay as they came", () => {
   assert.equal(asCyrillic("@[Kocтя] cмompu https://example.com/nomom"), "@[Kocтя] смотри https://example.com/nomom");
 });
+
+test("a formula keeps its letters both ways", () => {
+  assert.equal(packLookalikes(String.raw`Энергия $$E=\text{тс}^2$$`, ALL_SETS), String.raw`Энepгuя $$E=\text{тс}^2$$`);
+  assert.equal(asCyrillic("Энергия $$E=mc^2$$ и $$x_{1,2}$$"), "Энергия $$E=mc^2$$ и $$x_{1,2}$$");
+});

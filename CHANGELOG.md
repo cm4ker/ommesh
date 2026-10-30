@@ -8,6 +8,9 @@
 - Formulas in messages: put TeX between `$$`, as in `$$E=mc^2$$` or `$$\frac{a}{b}$$`, and Ommesh draws it as a formula. One on a line of its own is drawn large and centred. The formula goes on the air as typed, so other MeshCore apps show the TeX; the chat list and notifications show it without the `$$`. What it is drawn with comes only the first time a chat shows a formula, so the app starts no slower.
 - Messages can have bold, italic, struck-through, monospace and hidden text, typed as in Telegram: `**bold**`, `__italic__`, `~~struck~~`, `` `mono` ``, `||hidden||`, and ``` around several lines. Select words and right-click for the menu, or press Ctrl+B, Ctrl+I, Ctrl+Shift+X, M or P; on a phone, the menu over selected text has them: under Format on an iPhone, under ⋮ on Android. The marks go on the air as typed, so other MeshCore apps show them as they are. The chat list, notifications and quotes show the plain words, and hidden text opens with a tap.
 
+### Phones
+- On an iPhone Duo the app fills the inner screen. Opened, it is laid out as on a tablet held sideways: the list on one side of the fold, the chat or the map on the other, and nothing in the crease. Turned upright it shows the phone's layout, and closed it is the phone app as before.
+
 ### Fixes
 - On an iPhone, with the keyboard up in a chat, messages no longer show over the strip at the top of the screen, the one that says a survey is running or the radio is reconnecting, nor over the phone's clock.
 

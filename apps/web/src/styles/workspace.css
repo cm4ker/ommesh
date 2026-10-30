@@ -21,6 +21,17 @@
 .app.wide > .panel {
   padding-top: var(--safe-top);
 }
+/*
+ * A phone opened like a book (lib/fold.ts): the list ends where the fold begins, and what was
+ * picked in it starts where the fold ends, the fold and the margins around it left bare between
+ * them like a book's spine.
+ */
+:root.on-fold .app.wide {
+  --pane-width: calc(var(--fold-start) - var(--rail-width));
+}
+:root.on-fold .app.wide > .content {
+  padding-left: calc(var(--fold-end) - var(--fold-start));
+}
 /* The system's buttons or gesture line lie over the bottom: a list in a side column scrolls clear of them. */
 .app.wide .pane .list,
 .app.wide .panel .list {

@@ -11,11 +11,35 @@ class MeshViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(MeshRelayPlugin())
         bridge?.registerPluginInstance(ShareInPlugin())
         bridge?.registerPluginInstance(FormatMenuPlugin())
+        bridge?.registerPluginInstance(FoldPlugin())
         MeshWatch.installSounds()
+        if #available(iOS 27.1, *), let webView {
+            // Opening or closing the phone moves the fold, and does not always lay the view out again.
+            webView.addInteraction(UIHingeInteraction { [weak self] _, _ in self?.measureFold() })
+        }
     }
 
     override func webView(with frame: CGRect, configuration: WKWebViewConfiguration) -> WKWebView {
         MeshWebView(frame: frame, configuration: configuration)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        measureFold()
+    }
+
+    private var foldAgain: DispatchWorkItem?
+
+    /// The fold can be reported a moment after the layout that brought it, so it is read again then.
+    private func measureFold() {
+        guard let webView else { return }
+        FoldPlugin.measure(webView)
+        foldAgain?.cancel()
+        let again = DispatchWorkItem { [weak webView] in
+            if let webView { FoldPlugin.measure(webView) }
+        }
+        foldAgain = again
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: again)
     }
 }
 
@@ -100,5 +124,56 @@ final class FormatMenuPlugin: CAPPlugin, CAPBridgedPlugin {
 
     static func pick(_ choice: String) {
         current?.notifyListeners("pick", data: ["choice": choice])
+    }
+}
+
+/// Where the fold of a phone that opens like a book (iPhone Duo) lies across the page, for the web
+/// client's `lib/fold.ts`: `window.Capacitor.Plugins.Fold`.
+///
+/// - `get()`: `{ fold: { start, end } }`, the fold's span across the page in points with the
+///   margins the system keeps around it, while one runs down the screen; `{}` otherwise.
+/// - Event: `change` with the same, whenever that moves.
+@objc(FoldPlugin)
+final class FoldPlugin: CAPPlugin, CAPBridgedPlugin {
+    let identifier = "FoldPlugin"
+    let jsName = "Fold"
+    let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "get", returnType: CAPPluginReturnPromise),
+    ]
+
+    /// The fold now. Read and written on the main thread.
+    private static var fold: (start: CGFloat, end: CGFloat)?
+    private static weak var current: FoldPlugin?
+
+    override func load() {
+        Self.current = self
+    }
+
+    @objc func get(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            call.resolve(Self.data)
+        }
+    }
+
+    private static var data: [String: Any] {
+        guard let fold else { return [:] }
+        return ["fold": ["start": fold.start, "end": fold.end]]
+    }
+
+    /// Reads the fold off the page's view, and tells the page when it has moved.
+    static func measure(_ view: UIView) {
+        var now: (start: CGFloat, end: CGFloat)?
+        if #available(iOS 27.1, *) {
+            // Inactive ones too: opened flat, the fold is reported as inactive, and the list should
+            // not jump away from it as the phone goes from half open to flat. Only a fold that runs
+            // down the screen splits the layout; one across it, on the phone opened and turned, does not.
+            let regions = view.reservedRegions(kind: .division, options: .includeInactive)
+            if let region = regions.first(where: { $0.frame.height > $0.frame.width }) {
+                now = (region.frame.minX, region.frame.maxX)
+            }
+        }
+        if now?.start == fold?.start && now?.end == fold?.end { return }
+        fold = now
+        current?.notifyListeners("change", data: data)
     }
 }

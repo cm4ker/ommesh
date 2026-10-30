@@ -5,6 +5,7 @@ import { warmBackdrop } from "./components/ChatBackdrop.js";
 import { goBack } from "./lib/back.js";
 import { followKeyboard, watchKeyboard } from "./lib/keyboard.js";
 import { autoConnect, connectWith, disconnect, getLink } from "./lib/link.js";
+import { watchFold } from "./lib/fold.js";
 import { linkBook, startLinks } from "./lib/links.js";
 import { registerNews } from "./lib/news.js";
 import { getPing } from "./lib/ping.js";
@@ -65,6 +66,8 @@ if (isCapacitor()) {
 // straight back.
 if (nativePlatform() === "ios") {
   followKeyboard();
+  // An iPhone Duo opened: the list ends at its fold.
+  watchFold();
   window.addEventListener("scroll", () => {
     if (window.scrollY !== 0) window.scrollTo(0, 0);
   }, { passive: true });

@@ -1,10 +1,11 @@
 /**
- * Formatting in the menu an iPhone shows over selected text. The page cannot add to that menu, so
+ * Formatting in the menu a phone shows over selected text. The page cannot add to that menu, so
  * while the composer has the focus it hands the app the items (`FormatMenuPlugin` in
- * MeshViewController.swift), and a choice comes back to the composer as from its own menu. Not
- * from when text is selected: a long press builds the menu as it selects the word, before the
- * page hears of it, so the app itself tells selected text from a bare caret. On iOS before 16, on
- * Android and in a browser nothing is offered: the keys still work.
+ * MeshViewController.swift on iOS and in FormatMenuPlugin.java on Android), and a choice comes
+ * back to the composer as from its own menu. Not from when text is selected: a long press brings
+ * the menu up as it selects the word, before the page hears of it. iOS itself tells selected text
+ * from a bare caret; Android is told, and redraws the menu. On iOS before 16 and in a browser
+ * nothing is offered: the keys still work.
  */
 
 import { t } from "../i18n/index.js";
@@ -13,14 +14,18 @@ import { FORMAT_CHOICES, type FormatChoice } from "./textFormat.js";
 
 interface FormatMenuPlugin {
   set(options: { title?: string; items?: { choice: FormatChoice; title: string }[] }): Promise<void>;
+  select(options: { selected: boolean }): Promise<void>;
   addListener(event: "pick", listener: (data: { choice: FormatChoice }) => void): Promise<unknown>;
 }
 
 /** Whether this shell has the menu to offer formatting in. */
-export const nativeFormatMenu = isCapacitor() && nativePlatform() === "ios";
+export const nativeFormatMenu = isCapacitor() && (nativePlatform() === "ios" || nativePlatform() === "android");
+/** Whether the app has to be told when text is selected. */
+const toldSelection = nativeFormatMenu && nativePlatform() === "android";
 
 let picked: ((choice: FormatChoice) => void) | null = null;
 let offered = false;
+let selected = false;
 // Kept in a box: a promise resolved with the plugin's proxy itself would ask it for `then` and hang.
 let plugin: Promise<{ it: FormatMenuPlugin } | null> | null = null;
 
@@ -43,6 +48,14 @@ export function offerFormatMenu(pick: ((choice: FormatChoice) => void) | null): 
   picked = pick;
   if (!nativeFormatMenu || offered === (pick !== null)) return;
   offered = pick !== null;
+  if (!offered) selected = false;
   const options = offered ? { title: t("chats.format.menu"), items: FORMAT_CHOICES.map((choice) => ({ choice, title: t(`chats.format.${choice}`) })) } : {};
   void load().then((box) => box?.it.set(options).catch(() => undefined));
+}
+
+/** Tells the app whether the composer has text selected, where it asks; only when that changes, as a finger moves the selection many times a second. */
+export function noteFormatSelection(now: boolean): void {
+  if (!toldSelection || !offered || selected === now) return;
+  selected = now;
+  void load().then((box) => box?.it.select({ selected: now }).catch(() => undefined));
 }

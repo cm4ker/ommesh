@@ -23,7 +23,7 @@ import { touchFirst } from "../lib/platform.js";
 import { usePress } from "../lib/press.js";
 import { session, useSession } from "../lib/session.js";
 import { FORMAT_CHOICES, formatAround, formatKey, formatRuns, keysOf, plainText, toggleFormat, type FormatChoice, type FormatKind } from "../lib/textFormat.js";
-import { offerFormatMenu } from "../lib/formatMenu.js";
+import { noteFormatSelection, offerFormatMenu } from "../lib/formatMenu.js";
 import { toast } from "../lib/toast.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
@@ -160,7 +160,7 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
     el.setSelectionRange(next.start, next.end);
   };
 
-  // The iPhone's own menu over selected text offers the formatting too (lib/formatMenu.ts), for as long as the field has the focus.
+  // The phone's own menu over selected text offers the formatting too (lib/formatMenu.ts), for as long as the field has the focus.
   const formatNow = useRef(format);
   formatNow.current = format;
   useEffect(() => () => offerFormatMenu(null), []);
@@ -569,15 +569,19 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
               enterKeyHint={touch ? "enter" : "send"}
               autoCapitalize="sentences"
               onChange={(e) => setText(e.target.value)}
-              onSelect={watchCaret}
+              onSelect={(e) => {
+                watchCaret();
+                noteFormatSelection(e.currentTarget.selectionStart !== e.currentTarget.selectionEnd);
+              }}
               onKeyDown={onKey}
               onContextMenu={formatMenu}
               onScroll={(e) => {
                 if (mirror.current) mirror.current.scrollTop = e.currentTarget.scrollTop;
               }}
-              onFocus={() => {
+              onFocus={(e) => {
                 setFocused(true);
                 offerFormatMenu((choice) => formatNow.current(choice));
+                noteFormatSelection(e.currentTarget.selectionStart !== e.currentTarget.selectionEnd);
                 // Typing folds the place into a bar above the text: on a phone the keyboard takes the map's room.
                 if (place?.open) updatePlace(radio, conversation, { open: false });
               }}

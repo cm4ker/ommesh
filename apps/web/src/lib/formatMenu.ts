@@ -1,8 +1,10 @@
 /**
  * Formatting in the menu an iPhone shows over selected text. The page cannot add to that menu, so
- * while the composer has text selected it hands the app the items (`FormatMenuPlugin` in
- * MeshViewController.swift), and a choice comes back to the composer as from its own menu. On
- * iOS before 16, on Android and in a browser nothing is offered: the keys still work.
+ * while the composer has the focus it hands the app the items (`FormatMenuPlugin` in
+ * MeshViewController.swift), and a choice comes back to the composer as from its own menu. Not
+ * from when text is selected: a long press builds the menu as it selects the word, before the
+ * page hears of it, so the app itself tells selected text from a bare caret. On iOS before 16, on
+ * Android and in a browser nothing is offered: the keys still work.
  */
 
 import { t } from "../i18n/index.js";
@@ -35,7 +37,7 @@ function load(): Promise<{ it: FormatMenuPlugin } | null> {
 
 /**
  * Offers formatting in the selection menu while `pick` is given, and takes it away with null.
- * Told only when that changes, as the selection moves under a finger many times a second.
+ * The app is told only when that changes.
  */
 export function offerFormatMenu(pick: ((choice: FormatChoice) => void) | null): void {
   picked = pick;

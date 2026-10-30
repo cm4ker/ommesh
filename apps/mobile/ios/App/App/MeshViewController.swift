@@ -25,7 +25,7 @@ final class MeshWebView: WKWebView {
     override func buildMenu(with builder: UIMenuBuilder) {
         super.buildMenu(with: builder)
         guard #available(iOS 16.0, *) else { return }
-        guard builder.system == .context, let offer = FormatMenuPlugin.offer else { return }
+        guard builder.system == .context, let offer = FormatMenuPlugin.offer, hasSelectedText else { return }
         let actions = offer.items.map { item in
             UIAction(title: item.title) { _ in FormatMenuPlugin.pick(item.choice) }
         }
@@ -37,13 +37,29 @@ final class MeshWebView: WKWebView {
             builder.insertChild(menu, atEndOfMenu: .root)
         }
     }
+
+    /// Whether text is selected rather than a bare caret, asked of the view with the focus as the
+    /// menu asks it about Copy. The page offers the formatting for as long as the composer has the
+    /// focus: it hears of a long press's word only after this menu is built.
+    private var hasSelectedText: Bool {
+        (Self.focused(in: self) ?? self).canPerformAction(#selector(UIResponderStandardEditActions.copy(_:)), withSender: nil)
+    }
+
+    private static func focused(in view: UIView) -> UIView? {
+        if view.isFirstResponder { return view }
+        for sub in view.subviews {
+            if let found = focused(in: sub) { return found }
+        }
+        return nil
+    }
 }
 
 /// Formatting in the menu over selected text, for the web client's `lib/formatMenu.ts`:
 /// `window.Capacitor.Plugins.FormatMenu`.
 ///
-/// - `set({ title, items })`: while the composer has text selected, the submenu's title and its
-///   items, `[{ choice, title }]`, in the reader's language; `set({})` takes it away.
+/// - `set({ title, items })`: while the composer has the focus, the submenu's title and its
+///   items, `[{ choice, title }]`, in the reader's language; `set({})` takes it away. The
+///   submenu shows only over selected text.
 /// - Event: `pick` with `{ choice }` when one is chosen.
 @objc(FormatMenuPlugin)
 final class FormatMenuPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -58,7 +74,7 @@ final class FormatMenuPlugin: CAPPlugin, CAPBridgedPlugin {
         let title: String
     }
 
-    /// What the menu offers now, or nil while nothing selected may be formatted. Read on the main thread.
+    /// What the menu offers now, or nil while the composer does not have the focus. Read on the main thread.
     static var offer: (title: String, items: [Item])?
     private static weak var current: FormatMenuPlugin?
 

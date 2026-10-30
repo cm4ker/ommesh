@@ -23,7 +23,7 @@ import { touchFirst } from "../lib/platform.js";
 import { usePress } from "../lib/press.js";
 import { session, useSession } from "../lib/session.js";
 import { FORMAT_CHOICES, formatAround, formatKey, formatRuns, keysOf, plainText, toggleFormat, type FormatChoice, type FormatKind } from "../lib/textFormat.js";
-import { nativeFormatMenu, offerFormatMenu } from "../lib/formatMenu.js";
+import { offerFormatMenu } from "../lib/formatMenu.js";
 import { toast } from "../lib/toast.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
@@ -160,13 +160,9 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
     el.setSelectionRange(next.start, next.end);
   };
 
-  // The iPhone's own menu over selected text offers the formatting too (lib/formatMenu.ts), for as long as some is selected here.
+  // The iPhone's own menu over selected text offers the formatting too (lib/formatMenu.ts), for as long as the field has the focus.
   const formatNow = useRef(format);
   formatNow.current = format;
-  const noteSelection = () => {
-    const el = field.current;
-    offerFormatMenu(el && document.activeElement === el && el.selectionStart !== el.selectionEnd ? (choice) => formatNow.current(choice) : null);
-  };
   useEffect(() => () => offerFormatMenu(null), []);
 
   /** Cut or copy from the menu: the selection it was opened on, picked again, then as the keys would. */
@@ -573,10 +569,7 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
               enterKeyHint={touch ? "enter" : "send"}
               autoCapitalize="sentences"
               onChange={(e) => setText(e.target.value)}
-              onSelect={() => {
-                watchCaret();
-                if (nativeFormatMenu) noteSelection();
-              }}
+              onSelect={watchCaret}
               onKeyDown={onKey}
               onContextMenu={formatMenu}
               onScroll={(e) => {
@@ -584,6 +577,7 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
               }}
               onFocus={() => {
                 setFocused(true);
+                offerFormatMenu((choice) => formatNow.current(choice));
                 // Typing folds the place into a bar above the text: on a phone the keyboard takes the map's room.
                 if (place?.open) updatePlace(radio, conversation, { open: false });
               }}

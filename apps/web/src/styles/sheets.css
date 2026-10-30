@@ -677,6 +677,14 @@
 .popover .danger .popover-icon {
   color: var(--danger);
 }
+/* The keys that do the same, at the item's right edge. */
+.popover-keys {
+  flex: none;
+  padding-left: var(--space-3);
+  color: var(--text-faint);
+  font: inherit;
+  font-size: var(--text-xs);
+}
 
 /* A sheet that opens at half the screen and is pulled up to all of it (PullSheet.tsx): a node's profile
    on a phone. Under the other sheets and menus, which open from it. */

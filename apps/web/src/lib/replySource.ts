@@ -15,6 +15,7 @@
 import { TxtType, type MessageRecord } from "@meshnet/meshcore";
 import { quoteSource, translit } from "./composer.js";
 import { fold } from "./messageSearch.js";
+import { plainText } from "./textFormat.js";
 
 export interface ReplyHead {
   /** Whom the reply answers: the name in its mention. */
@@ -91,7 +92,7 @@ export function sourceOf(messages: readonly MessageRecord[], reply: MessageRecor
  * sent transliterated, as MCO Advanced can send one.
  */
 function forms(m: MessageRecord): string[] {
-  const text = quoteSource(m.text);
+  const text = quoteSource(plainText(m.text));
   const latin = translit(text);
   return latin === text ? [fold(text)] : [fold(text), fold(latin)];
 }

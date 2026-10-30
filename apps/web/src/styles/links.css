@@ -30,6 +30,51 @@
 .msg-quote {
   color: var(--accent);
 }
+/*
+ * Formatting in a message (lib/textFormat.ts). Mono text takes a shade of the text's own colour,
+ * so it reads on every theme's bubbles; a block of it stands on lines of its own.
+ */
+.msg-code,
+.msg-block {
+  border-radius: 4px;
+  background: color-mix(in oklab, currentColor 13%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+.msg-code {
+  padding: 0 3px;
+}
+.msg-block {
+  display: block;
+  margin: 3px 0;
+  padding: 5px 8px;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Hidden text: a bar of the faint colour until a tap opens it; nothing in it shows, is picked out or answers a tap. */
+.msg-spoiler {
+  border-radius: 4px;
+  background: var(--text-faint);
+  color: transparent;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.msg-spoiler:not(.open) * {
+  color: transparent;
+  background: none;
+  text-decoration: none;
+  pointer-events: none;
+}
+.msg-spoiler.open {
+  background: color-mix(in oklab, currentColor 10%, transparent);
+  color: inherit;
+  cursor: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
 /* A web address. No callout on a long press: that is the message's menu. */
 .msg-link {
   color: var(--accent);

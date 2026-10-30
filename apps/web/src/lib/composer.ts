@@ -12,6 +12,7 @@
 
 import { CHANNEL_TEXT_LEN, DIRECT_TEXT_LEN, ROOM_TEXT_LEN } from "@meshnet/meshcore";
 import { textWithPlaces } from "./place.js";
+import type { FormatKind, FormatRun } from "./textFormat.js";
 
 const encoder = new TextEncoder();
 const bytes = (text: string) => encoder.encode(text).length;
@@ -144,6 +145,31 @@ export function segments(text: string, pack: (text: string) => string, budget: n
     if (last && last.mention === mention && last.over === over && last.swapped === marked) last.text += c;
     else out.push({ text: c, mention, over, swapped: marked });
     at += c.length;
+  }
+  return out;
+}
+
+/** A run under the field cut again where formatting starts and stops: a marker, or text and what formats it. */
+export interface FormattedSegment extends Segment {
+  marker: boolean;
+  kinds: readonly FormatKind[];
+}
+
+/** The runs cut at the edges of `runs` (textFormat's `formatRuns` of the same text). */
+export function withFormat(segs: readonly Segment[], runs: readonly FormatRun[]): FormattedSegment[] {
+  const out: FormattedSegment[] = [];
+  let at = 0;
+  let r = 0;
+  for (const seg of segs) {
+    const end = at + seg.text.length;
+    for (let from = at; from < end; ) {
+      while (r < runs.length && runs[r]!.end <= from) r++;
+      const run = runs[r];
+      const to = run ? Math.min(end, run.end) : end;
+      out.push({ ...seg, text: seg.text.slice(from - at, to - at), marker: run?.marker ?? false, kinds: run?.kinds ?? [] });
+      from = to;
+    }
+    at = end;
   }
   return out;
 }

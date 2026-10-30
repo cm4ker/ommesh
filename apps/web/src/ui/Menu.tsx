@@ -31,6 +31,8 @@ export interface MenuItem {
   toggle?: boolean | undefined;
   /** Starts a group of its own, set apart from the items above it. */
   group?: boolean | undefined;
+  /** The keys that do the same, shown beside it where a mouse opened the menu. */
+  shortcut?: string | undefined;
 }
 
 interface MenuState {
@@ -223,6 +225,7 @@ function Popover({ menu }: { menu: MenuState }) {
               {item.label}
               {menu.hints && item.hint ? <small>{item.hint}</small> : null}
             </span>
+            {item.shortcut ? <kbd className="popover-keys">{item.shortcut}</kbd> : null}
             <Trailing item={item} />
           </button>
         </Fragment>

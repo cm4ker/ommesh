@@ -9,6 +9,7 @@ import { useDraft } from "../lib/drafts.js";
 import { jumpTo } from "../lib/jump.js";
 import { shownText } from "../lib/lookalikes.js";
 import { findMessages, fold, snippet } from "../lib/messageSearch.js";
+import { plainText } from "../lib/textFormat.js";
 import { openConversation, openRadioPage, setStack } from "../lib/nav.js";
 import { getNoticePrefs, ownLevel, setChatLevel, useNoticePrefs } from "../lib/noticePrefs.js";
 import { FOREVER, HOUR, quietLonger, quietOff, useQuiet } from "../lib/quiet.js";
@@ -377,7 +378,7 @@ function FoundRow({ message, row, query }: { message: MessageRecord; row: Conver
           <span className="row-bottom">
             <span className="row-sub muted">
               {who ? `${who} ` : ""}
-              {marked(snippet(shownText(message.text), query), query)}
+              {marked(snippet(plainText(shownText(message.text)), query), query)}
             </span>
           </span>
         </span>

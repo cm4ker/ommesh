@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { AdvType, parseConversation } from "@meshnet/meshcore";
 import { onAsk, takeAsk } from "../lib/chatAsk.js";
-import { costOf, blockEdges, ceilingOf, hasCyrillic, headerBytes, mentionOf, mentionQuery, pathBytes, quoteOf, segments, splitParts, translit } from "../lib/composer.js";
+import { costOf, blockEdges, ceilingOf, hasCyrillic, headerBytes, mentionOf, mentionQuery, pathBytes, quoteOf, segments, withFormat, splitParts, translit } from "../lib/composer.js";
 import { messagesIn } from "../lib/conversations.js";
 import { getDraft, setDraft } from "../lib/drafts.js";
 import { rememberRough, setPlace, updatePlace, usePlace } from "../lib/placeDraft.js";
@@ -22,6 +22,8 @@ import { ALL_SETS, looksDifferent, packLookalikes, useLookalikePrefs } from "../
 import { touchFirst } from "../lib/platform.js";
 import { usePress } from "../lib/press.js";
 import { session, useSession } from "../lib/session.js";
+import { FORMAT_CHOICES, formatAround, formatKey, formatRuns, keysOf, plainText, toggleFormat, type FormatChoice, type FormatKind } from "../lib/textFormat.js";
+import { nativeFormatMenu, offerFormatMenu } from "../lib/formatMenu.js";
 import { toast } from "../lib/toast.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
@@ -37,6 +39,11 @@ export interface Reply {
 }
 
 const share = (n: number, ceiling: number) => `${(Math.min(n, ceiling) / ceiling) * 100}%`;
+
+/** How the layer under the field marks formatted text; bold and italic it cannot show (composer.css). */
+const FORMAT_CLASS: Partial<Record<FormatKind, string>> = { strike: "fs", code: "fc", block: "fc", spoiler: "fh" };
+
+const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
 export function Composer({ conversation, title, reply, onReplyDone, onSent }: { conversation: string; title: string; reply: Reply | null; onReplyDone: () => void; onSent: () => void }) {
   const state = useSession();
@@ -133,6 +140,78 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
     }
   };
 
+  /**
+   * The selection put in markers, or taken out of them, as one edit Undo can take back, with the
+   * same words selected after. `range` is the selection the menu was opened on.
+   */
+  const format = (choice: FormatChoice, range?: readonly [number, number]) => {
+    const el = field.current;
+    if (!el) return;
+    const [start, end] = range ?? [el.selectionStart, el.selectionEnd];
+    const was = el.value;
+    const next = toggleFormat(was, start, end, choice);
+    if (!next) return;
+    // Only the stretch that changes is typed over.
+    let a = 0;
+    while (a < was.length && a < next.text.length && was[a] === next.text[a]) a++;
+    let b = 0;
+    while (b < was.length - a && b < next.text.length - a && was[was.length - 1 - b] === next.text[next.text.length - 1 - b]) b++;
+    replace(a, was.length - b, next.text.slice(a, next.text.length - b));
+    el.setSelectionRange(next.start, next.end);
+  };
+
+  // The iPhone's own menu over selected text offers the formatting too (lib/formatMenu.ts), for as long as some is selected here.
+  const formatNow = useRef(format);
+  formatNow.current = format;
+  const noteSelection = () => {
+    const el = field.current;
+    offerFormatMenu(el && document.activeElement === el && el.selectionStart !== el.selectionEnd ? (choice) => formatNow.current(choice) : null);
+  };
+  useEffect(() => () => offerFormatMenu(null), []);
+
+  /** Cut or copy from the menu: the selection it was opened on, picked again, then as the keys would. */
+  const clip = (kind: "cut" | "copy", [start, end]: readonly [number, number]) => {
+    const el = field.current;
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.setSelectionRange(start, end);
+    if (document.execCommand(kind)) return;
+    void navigator.clipboard?.writeText(el.value.slice(start, end));
+    if (kind === "cut") replace(start, end, "");
+  };
+
+  /** A browser may refuse to read the clipboard for a page; the keys always can. */
+  const paste = async ([start, end]: readonly [number, number]) => {
+    try {
+      const got = await navigator.clipboard.readText();
+      replace(start, end, got);
+    } catch {
+      toast(t("chats.format.pasteKeys", { keys: MAC ? "⌘V" : "Ctrl+V" }));
+    }
+  };
+
+  /** What a right click on selected text offers: the field's own edits, then the formatting, with its keys. */
+  const formatMenu = (e: MouseEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget;
+    // A finger's hold keeps the system's menu, as does a click with nothing selected.
+    if (touch || el.selectionStart === el.selectionEnd) return;
+    e.preventDefault();
+    const range = [el.selectionStart, el.selectionEnd] as const;
+    const items: MenuItem[] = [
+      { label: t("chats.format.cut"), shortcut: MAC ? "⌘X" : "Ctrl+X", onSelect: () => clip("cut", range) },
+      { label: t("chats.format.copy"), shortcut: MAC ? "⌘C" : "Ctrl+C", onSelect: () => clip("copy", range) },
+      { label: t("chats.format.paste"), shortcut: MAC ? "⌘V" : "Ctrl+V", onSelect: () => void paste(range) },
+      ...FORMAT_CHOICES.map((choice, i) => ({
+        label: t(`chats.format.${choice}`),
+        shortcut: keysOf(choice, MAC),
+        group: i === 0,
+        checked: formatAround(el.value, range[0], range[1], choice) || undefined,
+        onSelect: () => format(choice, range),
+      })),
+    ];
+    showMenu(items, { at: { x: e.clientX, y: e.clientY } });
+  };
+
   // With a real keyboard, a chat opened is a chat to write in: the caret waits in the field, so
   // what is typed next goes there without a click on it first. A field that already has the focus
   // keeps it: the chat's own search, opened with it, or the list's, stepped through with Alt+arrows.
@@ -151,8 +230,9 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
     if (!reply || !el) return;
     // Their later messages here, for the quote to run on until it tells this one from them.
     const at = messages.findIndex((m) => m.id === reply.id);
-    const later = at < 0 ? [] : messages.slice(at + 1).filter((m) => m.direction === "in" && m.sender === reply.name).map((m) => m.text);
-    const said = quoteOf(reply.text, later);
+    const later = at < 0 ? [] : messages.slice(at + 1).filter((m) => m.direction === "in" && m.sender === reply.name).map((m) => plainText(m.text));
+    // Quoted without its markers: the bytes go to its words, and another app reads them plain.
+    const said = quoteOf(plainText(reply.text), later);
     const line = said ? `>${said}\n` : "";
     const was = quoted.current && el.value.startsWith(quoted.current) ? quoted.current.length : 0;
     quoted.current = line;
@@ -337,6 +417,12 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
       dropReply(true);
       return;
     }
+    const choice = formatKey(e);
+    if (choice) {
+      e.preventDefault();
+      format(choice);
+      return;
+    }
     // A sent message cannot be edited on a mesh; the last one comes back to be corrected and sent again.
     if (e.key === "ArrowUp" && text === "") {
       const last = [...messages].reverse().find((m) => m.direction === "out");
@@ -471,8 +557,8 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
         <div className="compose-row">
           <div className="compose-field">
             <div className="compose-mirror" ref={mirror} aria-hidden="true">
-              {segments(text, pack, cost.budget, cursive ? looksDifferent : undefined).map((s, i) => (
-                <span key={i} className={[s.mention ? "men" : "", s.over ? "ovr" : "", s.swapped ? "swp" : ""].join(" ").trim() || undefined}>
+              {withFormat(segments(text, pack, cost.budget, cursive ? looksDifferent : undefined), formatRuns(text)).map((s, i) => (
+                <span key={i} className={[s.mention ? "men" : "", s.over ? "ovr" : "", s.swapped ? "swp" : "", s.marker ? "fmk" : "", ...s.kinds.map((k) => FORMAT_CLASS[k] ?? "")].join(" ").trim() || undefined}>
                   {s.text}
                 </span>
               ))}
@@ -487,8 +573,12 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
               enterKeyHint={touch ? "enter" : "send"}
               autoCapitalize="sentences"
               onChange={(e) => setText(e.target.value)}
-              onSelect={watchCaret}
+              onSelect={() => {
+                watchCaret();
+                if (nativeFormatMenu) noteSelection();
+              }}
               onKeyDown={onKey}
+              onContextMenu={formatMenu}
               onScroll={(e) => {
                 if (mirror.current) mirror.current.scrollTop = e.currentTarget.scrollTop;
               }}
@@ -500,6 +590,7 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
               onBlur={() => {
                 setFocused(false);
                 setPick(null);
+                offerFormatMenu(null);
               }}
             />
           </div>

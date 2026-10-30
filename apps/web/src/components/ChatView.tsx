@@ -17,6 +17,7 @@ import { usePreviewMode } from "../lib/linkPreview.js";
 import { linkAllowed } from "../lib/linkPreviewParse.js";
 import { moveForKeyboard } from "../lib/keyboard.js";
 import { onJump, takeJump, type Jump } from "../lib/jump.js";
+import { parseFormat, plainText, type FormatNode } from "../lib/textFormat.js";
 import { useWide } from "../lib/layout.js";
 import { shownText, useShownText } from "../lib/lookalikes.js";
 import { copiedText, toggled } from "../lib/messagePick.js";
@@ -871,12 +872,84 @@ function NoChannel({ keyless, onAbout, onDelete }: { keyless: boolean; onAbout: 
 }
 
 /**
- * A message's text, with mentions, positions and web addresses picked out; a mention of this radio
+ * A message's text, drawn bold, italic, struck, mono or hidden where its markers say so, the
+ * markers left out; what lies between them as `linkedText` draws it.
+ */
+function richText(text: string, me: string | null, mark: string | undefined, onPlace?: (mark: string) => void, linkMark?: (href: string) => ReactNode): ReactNode {
+  const nodes = parseFormat(text);
+  const only = nodes[0];
+  if (nodes.length === 1 && only?.kind === "text") return linkedText(only.text, me, mark, onPlace, linkMark);
+  const draw = (nodes: FormatNode[]): ReactNode[] =>
+    nodes.map((node, i) => {
+      if (node.kind === "text") {
+        // A block stands on lines of its own: the line breaks typed round its markers are not drawn again.
+        let text = node.text;
+        if (nodes[i - 1]?.kind === "block") text = text.replace(/^\n/, "");
+        if (nodes[i + 1]?.kind === "block") text = text.replace(/\n$/, "");
+        return <Fragment key={i}>{linkedText(text, me, mark, onPlace, linkMark)}</Fragment>;
+      }
+      const inner = node.children.map((child) => (child.kind === "text" ? child.text : "")).join("");
+      switch (node.kind) {
+        case "bold":
+          return <strong key={i}>{draw(node.children)}</strong>;
+        case "italic":
+          return <em key={i}>{draw(node.children)}</em>;
+        case "strike":
+          return <s key={i}>{draw(node.children)}</s>;
+        case "code":
+          return (
+            <code key={i} className="msg-code">
+              {marked(inner, mark)}
+            </code>
+          );
+        case "block":
+          return (
+            <code key={i} className="msg-block">
+              {marked(inner.replace(/^\n/, "").replace(/\n$/, ""), mark)}
+            </code>
+          );
+        case "spoiler":
+          return <Spoiler key={i}>{draw(node.children)}</Spoiler>;
+      }
+    });
+  return draw(nodes);
+}
+
+/**
+ * Hidden text, as `||this||` marks it: covered until tapped, and then open for as long as the
+ * bubble is on screen. The tap opens it alone, not the message's details.
+ */
+function Spoiler({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  if (open) return <span className="msg-spoiler open">{children}</span>;
+  const show = (e: React.SyntheticEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setOpen(true);
+  };
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      className="msg-spoiler"
+      aria-label={t("chats.format.hiddenShow")}
+      onClick={show}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") show(e);
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+/**
+ * Plain text with mentions, positions and web addresses picked out; a mention of this radio
  * stands out more, and an address opens in the browser. Searched, the words found are marked in
  * the text between them and in the addresses. With previews on, `linkMark` draws what follows a
  * link that may have one.
  */
-function richText(text: string, me: string | null, mark: string | undefined, onPlace?: (mark: string) => void, linkMark?: (href: string) => ReactNode): ReactNode {
+function linkedText(text: string, me: string | null, mark: string | undefined, onPlace?: (mark: string) => void, linkMark?: (href: string) => ReactNode): ReactNode {
   const pattern = new RegExp(`${MENTION.source}|(${PLACE_SOURCE})|(${LINK.source})`, "gi");
   const out: ReactNode[] = [];
   let at = 0;
@@ -1176,7 +1249,8 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
  */
 function ReplyHeadText({ head, me, mark, onTap }: { head: ReplyHead; me: string | null; mark: string | undefined; onTap: (() => void) | undefined }) {
   const mention = <span className={head.name === me ? "mention me" : "mention"}>@{head.name}</span>;
-  const quote = head.quote !== null ? <span className="msg-quote">&gt;{marked(head.quote, mark)}</span> : null;
+  // Quoted with its markers by an app that kept them, it reads as the plain words it quotes.
+  const quote = head.quote !== null ? <span className="msg-quote">&gt;{marked(plainText(head.quote), mark)}</span> : null;
   // After a mention alone, what follows it is the reply's own; after a quote, the reply starts on the next line.
   const inner = quote ? (
     <>

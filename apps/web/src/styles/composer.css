@@ -100,6 +100,25 @@
   border-radius: 2px;
   background: color-mix(in oklab, var(--danger) 30%, transparent);
 }
+/*
+ * Formatting: its markers, struck text, mono and hidden text. The letters over it are the field's,
+ * so bold and italic cannot show here without moving the caret off them.
+ */
+.compose-mirror .fmk {
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--text-faint) 30%, transparent);
+}
+.compose-mirror .fs {
+  text-decoration: line-through var(--text-muted);
+}
+.compose-mirror .fc {
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--text) 10%, transparent);
+}
+.compose-mirror .fh {
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--text-faint) 45%, transparent);
+}
 /* The text over it is the field's, so the line is drawn in a colour of its own. */
 .compose-mirror .swp {
   text-decoration: underline var(--accent);

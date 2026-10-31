@@ -53,13 +53,27 @@ export function setRecentReactions(emoji: readonly string[]): void {
   writeSetting(RECENT_KEY, recent);
 }
 
+/**
+ * How far ours on a channel went: still waiting to hear a repeater send it
+ * on, heard sent on so many times, or sent on by none within the window.
+ */
+export type Carried = "waiting" | "unheard" | number;
+
+/** Where ours stands; null for others', and where nothing is watched. */
+export function carried(reaction: MessageReaction): Carried | null {
+  if (reaction.by !== null) return null;
+  if (reaction.unheard) return "unheard";
+  if (reaction.relays === undefined) return null;
+  return reaction.relays === 0 ? "waiting" : reaction.relays;
+}
+
 /** One emoji on a message: how many put it there, whether we did, and who did, ours first. */
 export interface ReactionGroup {
   emoji: string;
   count: number;
   mine: boolean;
-  /** Ours, and no repeater was heard sending it on: a tap sends it again. */
-  unheard: boolean;
+  /** Ours: how far it went. Unheard, a tap sends it again. */
+  carried: Carried | null;
   /** The names of the others; ours is `mine`. */
   names: string[];
 }
@@ -69,25 +83,26 @@ export function groupReactions(reactions: readonly MessageReaction[] | undefined
   const groups = new Map<string, ReactionGroup>();
   for (const r of reactions ?? []) {
     let group = groups.get(r.emoji);
-    if (!group) groups.set(r.emoji, (group = { emoji: r.emoji, count: 0, mine: false, unheard: false, names: [] }));
+    if (!group) groups.set(r.emoji, (group = { emoji: r.emoji, count: 0, mine: false, carried: null, names: [] }));
     group.count++;
     if (r.by === null) {
       group.mine = true;
-      group.unheard = !!r.unheard;
+      group.carried = carried(r);
     } else if (!group.names.includes(r.by)) group.names.push(r.by);
   }
   return [...groups.values()];
 }
 
-/** One emoji someone put on a message; `name` null is ours. */
+/** One emoji someone put on a message; `name` null is ours, with how far it went. */
 export interface Reactor {
   emoji: string;
   name: string | null;
+  carried: Carried | null;
 }
 
 /** Who put what on a message, one line each: ours first, then the others as they came. */
 export function reactors(reactions: readonly MessageReaction[] | undefined): Reactor[] {
-  const all = (reactions ?? []).map((r) => ({ emoji: r.emoji, name: r.by }));
+  const all = (reactions ?? []).map((r) => ({ emoji: r.emoji, name: r.by, carried: carried(r) }));
   return [...all.filter((r) => r.name === null), ...all.filter((r) => r.name !== null)];
 }
 

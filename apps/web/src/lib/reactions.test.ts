@@ -7,13 +7,13 @@ import { groupReactions, MOODS, noteReaction, ownReaction, RADIO_REACTIONS, reac
 test("who put what on a message lists ours first, then the others as they came", () => {
   const reactions = [
     { emoji: "👍", by: "Alice", at: 1 },
-    { emoji: "❤️", by: null, at: 2 },
+    { emoji: "❤️", by: null, at: 2, relays: 3 },
     { emoji: "👍", by: "Kolya", at: 3 },
   ];
   assert.deepEqual(reactors(reactions), [
-    { emoji: "❤️", name: null },
-    { emoji: "👍", name: "Alice" },
-    { emoji: "👍", name: "Kolya" },
+    { emoji: "❤️", name: null, carried: 3 },
+    { emoji: "👍", name: "Alice", carried: null },
+    { emoji: "👍", name: "Kolya", carried: null },
   ]);
   assert.deepEqual(reactors(undefined), []);
 });
@@ -43,10 +43,15 @@ test("reactions gather by emoji in the order they came, ours marked", () => {
     { emoji: "👍", by: "Dan", at: 4 },
   ];
   assert.deepEqual(groupReactions(reactions), [
-    { emoji: "👍", count: 3, mine: true, unheard: false, names: ["Bob", "Dan"] },
-    { emoji: "😂", count: 1, mine: false, unheard: false, names: ["Carol"] },
+    { emoji: "👍", count: 3, mine: true, carried: null, names: ["Bob", "Dan"] },
+    { emoji: "😂", count: 1, mine: false, carried: null, names: ["Carol"] },
   ]);
-  assert.equal(groupReactions([{ emoji: "🔥", by: null, at: 1, unheard: true }])[0]?.unheard, true);
+  // Ours on a channel: waiting for a repeater, sent on, or sent on by none.
+  const ours = (r: { relays?: number; unheard?: boolean }) => groupReactions([{ emoji: "🔥", by: null, at: 1, ...r }])[0]?.carried;
+  assert.equal(ours({ relays: 0 }), "waiting");
+  assert.equal(ours({ relays: 2 }), 2);
+  assert.equal(ours({ relays: 0, unheard: true }), "unheard");
+  assert.equal(ours({ unheard: true }), "unheard");
   assert.equal(ownReaction(reactions), "👍");
   assert.equal(ownReaction(reactions.filter((r) => r.by !== null)), null);
   assert.deepEqual(groupReactions(undefined), []);

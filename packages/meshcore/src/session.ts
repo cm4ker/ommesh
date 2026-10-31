@@ -202,6 +202,12 @@ export interface MessageReaction {
    * so nobody may have it. Sending it again takes this back.
    */
   unheard?: boolean;
+  /**
+   * Ours on a channel, watched for repeaters: how many copies were heard sent
+   * on, zero while it waits for the first. Absent where nothing is watched:
+   * others', ours in a direct chat, and ours put before this was kept.
+   */
+  relays?: number;
 }
 
 /** A reaction heard, on its way to the message it names. */
@@ -1396,8 +1402,8 @@ export class MeshSession {
   private pendingReactions: PendingReaction[] = [];
   /** Messages' hashes, by id and stamp: a reaction is matched by working them out. */
   private hashes = new Map<string, string>();
-  /** Our reactions' packets as a repeater would send them on, hex, to the message they are on. */
-  private reactionWatch = new Map<string, { id: string; at: number }>();
+  /** Our reactions' packets as a repeater would send them on, hex, to the message and emoji, and the paths heard so far. */
+  private reactionWatch = new Map<string, { id: string; emoji: string; at: number; paths: string[] }>();
   /** Our reactions waiting to hear a repeater send them on, by message id. */
   private reactionTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private peerListeners = new Set<(key: string, value: Uint8Array) => void>();
@@ -3214,11 +3220,12 @@ export class MeshSession {
     const self = this.state.self;
     if (!self) throw new Error("not connected");
     const hash = await messageHash(message.text, message.timestamp);
+    let watched = false;
     if (target.kind === "channel") {
       const stamp = Math.max(Math.floor(this.now() / 1000), this.reactionStamp + 1);
       this.reactionStamp = stamp;
       const data = encodeReaction({ target: hash, emoji: emoji ?? "", by: self.name, stamp });
-      if (emoji) await this.watchReaction(id, target.index, data);
+      if (emoji) watched = await this.watchReaction(id, target.index, emoji, data);
       else this.stopReactionWatch(id);
       await this.inChannelRegion(client, target.index, () => client.sendChannelData(target.index, REACTION_DATA_TYPE, data));
     } else if (target.kind === "contact") {
@@ -3229,33 +3236,37 @@ export class MeshSession {
     } else {
       return;
     }
-    this.putReaction(id, emoji ?? "", null, true);
+    this.putReaction(id, emoji ?? "", null, true, watched);
   }
 
   /**
    * Works out the packet our reaction makes, as for a message (`watchEchoes`),
    * and gives a repeater the same window to be heard sending it on. Nothing
    * goes again by itself: ours goes faded, and a tap sends it once more.
+   * Whether it is watched: a channel with no key here is not.
    */
-  private async watchReaction(id: string, channelIndex: number, data: Uint8Array): Promise<void> {
+  private async watchReaction(id: string, channelIndex: number, emoji: string, data: Uint8Array): Promise<boolean> {
     const secret = this.channelSecret(channelIndex);
-    if (!secret) return;
+    if (!secret) return false;
     try {
       const payload = await groupDataPayload(secret, REACTION_DATA_TYPE, data);
       const now = this.now();
       for (const [key, watch] of this.reactionWatch) if (now - watch.at > ECHO_WINDOW_MS) this.reactionWatch.delete(key);
-      this.reactionWatch.set(toHex(payload), { id, at: now });
+      this.reactionWatch.set(toHex(payload), { id, emoji, at: now, paths: [] });
     } catch (error) {
       this.log("echo", `cannot work out the reaction's packet: ${(error as Error).message}`);
-      return;
+      return false;
     }
+    // Ours already on the message, sent again or put by the other app, waits from now.
+    this.patchOurReaction(id, emoji, { relays: 0, unheard: false });
     this.stopReactionWatch(id);
     const timer = setTimeout(() => {
       this.reactionTimers.delete(id);
-      this.markOurReaction(id, true);
+      if (!this.ourReaction(id)?.relays) this.patchOurReaction(id, emoji, { unheard: true });
     }, SILENCE_MS);
     (timer as { unref?: () => void }).unref?.();
     this.reactionTimers.set(id, timer);
+    return true;
   }
 
   private stopReactionWatch(id: string): void {
@@ -3264,25 +3275,36 @@ export class MeshSession {
     this.reactionTimers.delete(id);
   }
 
-  /** A repeater sent one of our reactions on: it is out there. */
-  private reactionHeard(hex: string): void {
+  /**
+   * A repeater sent one of our reactions on: it is out there. Each way it came
+   * back by counts once, as for a message (`addEcho`); a copy of an emoji we
+   * have since swapped for another says nothing of the new one.
+   */
+  private reactionHeard(hex: string, path: string[]): void {
     const watch = this.reactionWatch.get(hex);
     if (!watch) return;
+    const key = path.join(",");
+    if (watch.paths.includes(key)) return;
+    watch.paths.push(key);
+    const ours = this.ourReaction(watch.id);
+    if (ours?.emoji !== watch.emoji) return;
     this.stopReactionWatch(watch.id);
-    this.markOurReaction(watch.id, false);
+    this.patchOurReaction(watch.id, watch.emoji, { relays: (ours.relays ?? 0) + 1, unheard: false });
   }
 
-  private markOurReaction(id: string, unheard: boolean): void {
+  private ourReaction(id: string): MessageReaction | undefined {
+    return this.state.messages.find((m) => m.id === id)?.reactions?.find((r) => r.by === null);
+  }
+
+  /** Changes ours on a message, while it is still this emoji; `unheard: false` takes the mark off. */
+  private patchOurReaction(id: string, emoji: string, patch: { relays?: number; unheard?: boolean }): void {
     const message = this.state.messages.find((m) => m.id === id);
     const ours = message?.reactions?.find((r) => r.by === null);
-    if (!message || !ours || !!ours.unheard === unheard) return;
-    this.patchMessage(id, {
-      reactions: message.reactions!.map((r) => {
-        if (r.by !== null) return r;
-        const { unheard: _, ...rest } = r;
-        return unheard ? { ...rest, unheard } : rest;
-      }),
-    });
+    if (!message || !ours || ours.emoji !== emoji) return;
+    const { unheard, ...rest } = { ...ours, ...patch };
+    const next: MessageReaction = unheard ? { ...rest, unheard } : rest;
+    if (next.relays === ours.relays && next.unheard === ours.unheard) return;
+    this.patchMessage(id, { reactions: message.reactions!.map((r) => (r === ours ? next : r)) });
   }
 
   /**
@@ -3309,7 +3331,7 @@ export class MeshSession {
   private async mirroredReaction(reaction: IncomingReaction, sent: { index: number; data: Uint8Array } | null): Promise<void> {
     const id = await this.takeReaction(reaction);
     if (!id) return;
-    if (sent && reaction.emoji) await this.watchReaction(id, sent.index, sent.data);
+    if (sent && reaction.emoji) await this.watchReaction(id, sent.index, reaction.emoji, sent.data);
     else this.stopReactionWatch(id);
   }
 
@@ -3351,14 +3373,17 @@ export class MeshSession {
     }
   }
 
-  /** `replaces`: the sender's other emoji on the message go. An empty emoji only takes theirs back. */
-  private putReaction(id: string, emoji: string, by: string | null, replaces: boolean): void {
+  /**
+   * `replaces`: the sender's other emoji on the message go. An empty emoji only
+   * takes theirs back. `watched`: ours waits to hear a repeater send it on.
+   */
+  private putReaction(id: string, emoji: string, by: string | null, replaces: boolean, watched = false): void {
     const message = this.state.messages.find((m) => m.id === id);
     if (!message) return;
     let reactions = message.reactions ?? [];
     if (replaces) reactions = reactions.filter((r) => r.by !== by);
     else if (reactions.some((r) => r.by === by && r.emoji === emoji)) return;
-    if (emoji) reactions = [...reactions, { emoji, by, at: this.now() }];
+    if (emoji) reactions = [...reactions, { emoji, by, at: this.now(), ...(watched ? { relays: 0 } : {}) }];
     this.patchMessage(id, { reactions });
   }
 
@@ -3743,7 +3768,7 @@ export class MeshSession {
       if (now - (this.state.contacts[key]?.lastHeardAt ?? 0) >= ADVERT_HEARD_GAP_MS) this.heardFrom(key, now);
     }
     // A datagram is only looked at for our reactions coming back: ours is never heard from us, so a copy has relays in it.
-    if (packet?.flood && packet.payloadType === PayloadType.GroupData && packet.path.length > 0) this.reactionHeard(toHex(packet.payload));
+    if (packet?.flood && packet.payloadType === PayloadType.GroupData && packet.path.length > 0) this.reactionHeard(toHex(packet.payload), packet.path);
     if (!packet || !packet.flood || (packet.payloadType !== PayloadType.GroupText && packet.payloadType !== PayloadType.TxtMsg)) return;
     const now = this.now();
     const hex = toHex(packet.payload);

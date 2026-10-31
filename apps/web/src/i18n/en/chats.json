@@ -157,6 +157,12 @@
   "react.taller": "Show more",
   "react.shorter": "Show less",
   "react.unheard": "No repeater was heard sending it on. Tap to send it again",
+  "react.waiting": "Waiting to hear a repeater send it on",
+  "react.notRelayed": "No repeater was heard sending it on",
+  "react.relayed": {
+    "one": "Heard sent on {count} time",
+    "other": "Heard sent on {count} times"
+  },
   "react.count": {
     "one": "{count} reaction",
     "other": "{count} reactions"

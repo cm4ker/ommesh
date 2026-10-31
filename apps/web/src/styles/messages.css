@@ -297,6 +297,20 @@ button.react-chip {
   background: var(--accent);
   color: var(--accent-contrast);
 }
+/* Ours, gone out, and no repeater heard sending it on yet: an outline, filled once one is. */
+.react-chip.mine.waiting {
+  padding: 0 7px 0 5px;
+  border: 1.5px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .react-chip.mine {
+    transition:
+      background-color 0.3s,
+      color 0.3s;
+  }
+}
 /* Ours, and no repeater was heard sending it on: dashed and faint, with the arrow that sends it again. */
 .react-chip.mine.unheard {
   padding: 0 7px 0 5px;

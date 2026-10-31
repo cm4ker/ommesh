@@ -243,6 +243,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Under our name: how far ours went. */
+.react-person small {
+  display: block;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+}
 .react-person-emoji {
   flex: none;
   font-size: calc(22px * var(--text-scale));

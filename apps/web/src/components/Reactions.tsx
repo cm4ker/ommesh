@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import type { MessageRecord } from "@meshnet/meshcore";
 import { emojiName, useEmojiData } from "../lib/emojiData.js";
 import { haptic } from "../lib/haptic.js";
-import { groupReactions, noteReaction, ownReaction, reactors, stripReactions, type ReactionGroup, type Reactor } from "../lib/reactions.js";
+import { groupReactions, noteReaction, ownReaction, reactors, stripReactions, type Carried, type ReactionGroup, type Reactor } from "../lib/reactions.js";
 import { session } from "../lib/session.js";
 import { toast } from "../lib/toast.js";
 import { closeMenu, setMenuExpanded } from "../ui/Menu.js";
@@ -21,6 +21,13 @@ function react(message: MessageRecord, emoji: string | null): void {
 /** Who put an emoji on: us first, then the others by name. */
 export function whoReacted(group: ReactionGroup): string {
   return [...(group.mine ? [t("chats.details.you")] : []), ...group.names].join(", ");
+}
+
+/** How far ours went, in words. */
+function carriedText(carried: Carried): string {
+  if (carried === "waiting") return t("chats.react.waiting");
+  if (carried === "unheard") return t("chats.react.notRelayed");
+  return t("chats.react.relayed", { count: carried });
 }
 
 /** Everyone who put an emoji on a message, in words: "You, Alice and Kolya". */
@@ -107,7 +114,10 @@ export function ReactStrip({ message }: { message: MessageRecord }) {
             {people.map((p, i) => (
               <li key={i}>
                 <Avatar name={p.name ?? session.getState().self?.name ?? ""} size={32} />
-                <span className="react-person">{p.name ?? t("chats.details.you")}</span>
+                <span className="react-person">
+                  {p.name ?? t("chats.details.you")}
+                  {p.carried !== null ? <small>{carriedText(p.carried)}</small> : null}
+                </span>
                 <span className="react-person-emoji">{p.emoji}</span>
               </li>
             ))}
@@ -141,6 +151,7 @@ function Peek({ group, at }: { group: ReactionGroup; at: DOMRect }) {
       </span>
       <span className="react-peek-name">{name ? `${name} · ${group.count}` : t("chats.react.count", { count: group.count })}</span>
       <span className="react-peek-who">{whoReacted(group)}</span>
+      {group.carried !== null ? <span className="react-peek-who">{carriedText(group.carried)}</span> : null}
     </div>,
     document.body,
   );
@@ -207,11 +218,12 @@ export function Reactions({ message, live }: { message: MessageRecord; live: boo
           <>
             <span className="react-emoji">{g.emoji}</span>
             <span>{g.count}</span>
-            {g.unheard ? <RefreshIcon size={12} strokeWidth={2.6} /> : null}
+            {g.carried === "unheard" ? <RefreshIcon size={12} strokeWidth={2.6} /> : null}
           </>
         );
-        const className = ["react-chip", g.mine ? "mine" : "", g.unheard ? "unheard" : ""].join(" ");
-        const title = g.unheard ? `${whoReacted(g)}\n${t("chats.react.unheard")}` : whoReacted(g);
+        // Ours outlined while it waits for a repeater, filled once one sends it on, dashed if none did.
+        const className = ["react-chip", g.mine ? "mine" : "", g.carried === "waiting" || g.carried === "unheard" ? g.carried : ""].join(" ");
+        const title = g.carried === null ? whoReacted(g) : `${whoReacted(g)}\n${g.carried === "unheard" ? t("chats.react.unheard") : carriedText(g.carried)}`;
         return live ? (
           <button
             key={g.emoji}
@@ -223,7 +235,7 @@ export function Reactions({ message, live }: { message: MessageRecord; live: boo
             onClick={(e) => {
               e.stopPropagation();
               // Ours that nobody sent on goes again; ours that went out is taken back.
-              react(message, g.mine && !g.unheard ? null : g.emoji);
+              react(message, g.mine && g.carried !== "unheard" ? null : g.emoji);
             }}
             // Enter on the chip is the chip's, not the bubble's.
             onKeyDown={(e) => e.stopPropagation()}

@@ -3097,24 +3097,33 @@ test("our reaction no repeater sends on goes faded after the window; one heard, 
   await settle();
   const [alice, bob] = ["Alice", "Bob"].map((name) => session.getState().messages.find((m) => m.sender === name)!.id) as [string, string];
   const ours = (id: string) => session.getState().messages.find((m) => m.id === id)!.reactions?.find((r) => r.by === null);
-  const echo = async () => {
+  const echo = async (hashes = [0x79]) => {
     const frame = radio.sent.filter((f) => f[0] === Cmd.SendChannelData).at(-1)!;
     const secret = fromHex(session.getState().channels[0]!.secret);
-    return heardPacket(6, [0x79], await groupDataPayload(secret, REACTION_DATA_TYPE, frame.subarray(5)));
+    return heardPacket(6, hashes, await groupDataPayload(secret, REACTION_DATA_TYPE, frame.subarray(5)));
   };
 
   await session.react(alice, "👍");
   const aliceEcho = await echo();
+  assert.equal(ours(alice)?.relays, 0, "it waits for a repeater");
   await session.react(bob, "🔥");
-  radio.push(await echo());
+  const bobEcho = await echo();
+  radio.push(bobEcho);
   await settle();
+  assert.equal(ours(bob)?.relays, 1);
+  // The same copy heard twice counts once; another way back counts again.
+  radio.push(bobEcho);
+  radio.push(await echo([0x79, 0x22]));
+  await settle();
+  assert.equal(ours(bob)?.relays, 2);
   t.mock.timers.tick(20_000);
   assert.equal(ours(alice)?.unheard, true);
   assert.equal(ours(bob)?.unheard, undefined, "a repeater sent it on");
 
-  // Sent again, it goes with a new stamp: another packet, lit while it waits.
+  // Sent again, it goes with a new stamp: another packet, waiting afresh.
   await session.react(alice, "👍");
   assert.equal(ours(alice)?.unheard, undefined);
+  assert.equal(ours(alice)?.relays, 0);
   const frames = radio.sent.filter((f) => f[0] === Cmd.SendChannelData);
   assert.notDeepEqual([...frames.at(-1)!], [...frames[0]!]);
   // A late copy of the first try still says it is out there.
@@ -3238,6 +3247,7 @@ test("a reaction the other app put through the relay is ours here, in a channel 
   };
   await put("👍");
   assert.deepEqual(reactionsOf(session, id), [["👍", null]]);
+  assert.equal(session.getState().messages.find((m) => m.id === id)?.reactions?.[0]?.relays, 0, "put just now, it waits for a repeater as if put here");
   await put("❤️");
   assert.deepEqual(reactionsOf(session, id), [["❤️", null]]);
   await put("");

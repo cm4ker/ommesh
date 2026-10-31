@@ -1086,7 +1086,8 @@ class DemoRadio extends BaseTransport {
           return [new Uint8Array([Resp.Ok])];
         }
         const type = frame[3]! | (frame[4]! << 8);
-        void groupDataPayload(fromHex(CHANNELS[index] ?? CHANNELS[0]!), type, data).then((payload) => this.later(700, this.heard(6, [0x03], payload)));
+        // A couple of seconds pass before the first repeater is heard, so the chip's outline shows a while.
+        void groupDataPayload(fromHex(CHANNELS[index] ?? CHANNELS[0]!), type, data).then((payload) => this.later(2000, this.heard(6, [0x03], payload)));
         return [new Uint8Array([Resp.Ok])];
       }
       case Cmd.GetChannel: {

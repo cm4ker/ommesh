@@ -6,6 +6,7 @@
 
 import { PUSH_THRESHOLD_BYTES, thresholdBytes, type LppReading, type PushableType, type PushThreshold } from "@meshnet/meshcore";
 import { locale, t, type Key } from "../i18n/index.js";
+import { F_PER_C, getUnits, MMHG_PER_HPA, type Units } from "./units.js";
 
 /** The thresholds offered per kind of reading, the default second, and the unit they are said in. */
 const STEPS: Partial<Record<PushableType, { values: number[]; unit: Key | null }>> = {
@@ -50,14 +51,29 @@ export function pushTargets(readings: LppReading[]): PushTarget[] {
   return found.sort((a, b) => rank(a) - rank(b) || a.channel - b.channel);
 }
 
-export function thresholdSteps(type: PushableType): number[] {
-  return STEPS[type]?.values ?? [];
+/**
+ * The steps a kind of reading is offered in, in the reader's unit (#108), and how many of that
+ * unit make one of the sensor's: a change of 1 hPa is 0.75 mm Hg, of 1 °C is 1.8 °F.
+ */
+function shownSteps(type: PushableType, units: Units): { values: number[]; unit: Key | null; per: number } {
+  if (type === "barometer" && units.pressure === "mmhg") return { values: [0.5, 1, 2, 5], unit: "node.unit.mmHg", per: MMHG_PER_HPA };
+  if (type === "temperature" && units.temperature === "f") return { values: [0.5, 1, 2, 5], unit: "node.unit.fahrenheit", per: F_PER_C };
+  return { values: STEPS[type]?.values ?? [], unit: STEPS[type]?.unit ?? null, per: 1 };
 }
 
-/** "0.5 °C", in the reader's number format. */
-export function deltaLabel(type: PushableType, value: number): string {
-  const unit = STEPS[type]?.unit;
-  const n = value.toLocaleString(locale(), { maximumFractionDigits: 2 });
+/** The thresholds offered for a kind of reading, in the sensor's own unit. */
+export function thresholdSteps(type: PushableType, units: Units = getUnits()): number[] {
+  const { values, per } = shownSteps(type, units);
+  // A step in another unit goes to the sensor to a tenth, as it keeps both (0.1 °C, 0.1 hPa).
+  return per === 1 ? values : values.map((v) => Math.round((v / per) * 10) / 10);
+}
+
+/** "0.5 °C", in the reader's unit and number format; a step offered in it reads as it was offered. */
+export function deltaLabel(type: PushableType, value: number, units: Units = getUnits()): string {
+  const { values, unit, per } = shownSteps(type, units);
+  const at = thresholdSteps(type, units).indexOf(value);
+  const shown = at >= 0 ? values[at]! : value * per;
+  const n = shown.toLocaleString(locale(), { maximumFractionDigits: per === 1 ? 2 : 1 });
   return unit ? `${n} ${t(unit)}` : n;
 }
 

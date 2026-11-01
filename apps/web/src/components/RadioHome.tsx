@@ -15,6 +15,7 @@ import { PULL_TRIGGER, usePull } from "../lib/pull.js";
 import { resync, STEP_COUNT, stepLabel, useResync } from "../lib/resync.js";
 import { summaryOf, useNoticePrefs } from "../lib/noticePrefs.js";
 import { useQuiet } from "../lib/quiet.js";
+import { useUnits } from "../lib/units.js";
 import { quietStatus } from "./QuietPage.js";
 import { session, useSelector, useSession } from "../lib/session.js";
 import { act } from "../lib/toast.js";
@@ -62,6 +63,7 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
   const mv = ownBatteryMv(state);
   const low = mv !== null && lowCharge(mv, cell);
   const own = state.telemetry["self"];
+  const units = useUnits();
   const gps = useFollowStatus(self?.key).gps;
   const row = (page: RadioPage, icon: React.ReactNode, value?: string) => (
     <LinkRow key={page} icon={icon} label={radioTitle(page)} value={value} tone={page === "power" ? "danger" : undefined} selected={selected === page} onClick={() => openRadioPage(page)} />
@@ -194,7 +196,7 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
         <Group title={t("radio.home.thisRadio")}>
           {row("name", <PersonIcon size={17} />, self?.name)}
           {row("frequency", <RadioIcon size={17} />, self ? t("radio.home.presetPower", { preset: presetName(self), tx: self.txPower }) : undefined)}
-          {row("readings", <GaugeIcon size={17} />, [mv === null ? null : cell === "none" ? battery(mv) : `${batteryPercent(mv, cell)}%`, own ? readingsSummary(own.readings) : null].filter(Boolean).join(" · ") || undefined)}
+          {row("readings", <GaugeIcon size={17} />, [mv === null ? null : cell === "none" ? battery(mv) : `${batteryPercent(mv, cell)}%`, own ? readingsSummary(own.readings, units) : null].filter(Boolean).join(" · ") || undefined)}
           {row("contacts", <UsersIcon size={17} />, contactsValue)}
           {row("privacy", <ShieldIcon size={17} />, self ? (placeOpen(self, gps) ? t("radio.privacy.placeShown") : t("radio.privacy.placeHidden")) : undefined)}
           {row("advanced", <SlidersIcon size={17} />)}

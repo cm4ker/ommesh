@@ -53,6 +53,7 @@ import { WifiPage } from "./WifiPage.js";
 import { regionLabel, RegionSheet } from "./RegionSheet.js";
 import { ScreenHead, type Chrome } from "./ScreenHead.js";
 import { UpdateButton } from "./Updates.js";
+import { setPressureUnit, setTemperatureUnit, useUnits, type PressureUnit, type TemperatureUnit } from "../lib/units.js";
 import { useDesktopUpdateInfo } from "../lib/updates.js";
 import { PeoplePage, PeopleRow, ReportRow } from "./People.js";
 import { PrivacyButton } from "./Privacy.js";
@@ -1046,16 +1047,30 @@ function MessagesPage() {
   );
 }
 
-/** Each language in its own words, so a reader lost in a foreign one still finds theirs. */
+/**
+ * Each language in its own words, so a reader lost in a foreign one still finds theirs; then the
+ * units the air is read in, which follow the language until picked (#108).
+ */
 function LanguageGroup() {
   const preference = useSyncExternalStore(subscribeLanguage, getLanguagePreference);
+  const units = useUnits();
   const options = [
     { value: "system", label: t("common.systemLanguage", { language: languageName(systemLanguage()) }) },
     ...languages().map((code) => ({ value: code, label: languageName(code) })),
   ];
+  const pressures: { value: PressureUnit; label: string }[] = [
+    { value: "hpa", label: t("node.unit.hectopascal") },
+    { value: "mmhg", label: t("node.unit.mmHg") },
+  ];
+  const temperatures: { value: TemperatureUnit; label: string }[] = [
+    { value: "c", label: t("node.unit.celsius") },
+    { value: "f", label: t("node.unit.fahrenheit") },
+  ];
   return (
     <Group>
       <SelectRow label={t("common.language")} value={preference} options={options} onChange={(v) => void setLanguagePreference(v)} />
+      <SelectRow label={t("radio.appearance.pressure")} value={units.pressure} options={pressures} onChange={setPressureUnit} />
+      <SelectRow label={t("radio.appearance.temperature")} value={units.temperature} options={temperatures} onChange={setTemperatureUnit} />
     </Group>
   );
 }

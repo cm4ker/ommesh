@@ -149,6 +149,8 @@ export const SETTINGS: readonly Setting[] = [
 
   { page: "appearance" },
   { page: "appearance", label: "common.language", words: "radio.search.words.language" },
+  { page: "appearance", label: "radio.appearance.pressure", words: "radio.search.words.pressure" },
+  { page: "appearance", label: "radio.appearance.temperature", words: "radio.search.words.temperature" },
   { page: "appearance", group: "radio.appearance.theme", words: "radio.search.words.theme" },
   { page: "appearance", group: "radio.appearance.textSize", words: "radio.search.words.textSize" },
   { page: "appearance", label: "radio.appearance.largeEmoji", words: "radio.search.words.emoji" },

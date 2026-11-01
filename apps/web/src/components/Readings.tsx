@@ -3,6 +3,7 @@ import { locale, t, type Key } from "../i18n/index.js";
 import { batteryTypeLabel } from "../lib/batteryType.js";
 import { batteryPercent, powerWatts, type BatteryType } from "../lib/format.js";
 import { bearingDeg, compass, distanceKm, formatDistance, hasPosition } from "../lib/geo.js";
+import { getUnits, pressureIn, pressureUnitKey, temperatureIn, temperatureUnitKey, useUnits, type Units } from "../lib/units.js";
 import { Block, InfoRow } from "../ui/List.js";
 import { Sparkline } from "./node/Sparkline.js";
 
@@ -89,6 +90,7 @@ export function Readings({
   /** The node's day of voltages and currents, by channel and type, as the session keeps it. */
   history?: Record<string, ReadingSample[]> | undefined;
 }) {
+  const units = useUnits();
   if (readings.length === 0) return <InfoRow label={t("radio.readings.none")}>—</InfoRow>;
   const channels = new Map<number, LppReading[]>();
   for (const r of readings) {
@@ -109,7 +111,7 @@ export function Readings({
             </div>
           ) : null}
           <div className="reading-tiles">
-            {tilesOf(channel, list, { cell, from, onMap, onCopy, history }).map((tile) => (
+            {tilesOf(channel, list, { cell, from, onMap, onCopy, history, units }).map((tile) => (
               <div key={tile.id} className={["reading-tile", tile.wide ? "wide" : ""].join(" ")}>
                 <span className="reading-label">{tile.label}</span>
                 <span className="reading-value">
@@ -145,6 +147,7 @@ function tilesOf(
     onMap: (() => void) | undefined;
     onCopy: ((text: string) => void) | undefined;
     history: Record<string, ReadingSample[]> | undefined;
+    units: Units;
   },
 ): Tile[] {
   const tiles: Tile[] = [];
@@ -173,7 +176,7 @@ function tilesOf(
       return;
     }
     if (channel === SELF_CHANNEL && r.type === "temperature") {
-      tiles.push({ id, label: t("radio.readings.board"), value: num(r.celsius, 1, 0), unit: t("node.unit.celsius"), sub: t("radio.readings.boardHint") });
+      tiles.push({ id, label: t("radio.readings.board"), ...temperatureParts(r.celsius, how.units), sub: t("radio.readings.boardHint") });
       return;
     }
     if (r.type === "gps") {
@@ -182,7 +185,7 @@ function tilesOf(
     }
     // The session keeps the first of each type on a channel, the one a supply is made of.
     const kept = (r.type === "voltage" || r.type === "current") && list.find((x) => x.type === r.type) === r;
-    tiles.push({ id, label: t(LABELS[r.type]), ...parts(r), line: kept ? dayLine(how.history?.[`${channel}:${r.type}`], r.type) : undefined });
+    tiles.push({ id, label: t(LABELS[r.type]), ...parts(r, how.units), line: kept ? dayLine(how.history?.[`${channel}:${r.type}`], r.type) : undefined });
   });
   return tiles;
 }
@@ -248,8 +251,13 @@ function powerParts(watts: number): { value: string; unit: string } {
   return Math.abs(watts) < 1 ? { value: String(Math.round(watts * 1000)), unit: t("node.unit.milliwatt") } : { value: num(watts, 2), unit: t("node.unit.watt") };
 }
 
+/** A temperature a sensor sent in °C, in the reader's unit (#108). */
+function temperatureParts(celsius: number, units: Units): { value: string; unit: string } {
+  return { value: num(temperatureIn(celsius, units.temperature), 1, 0), unit: t(temperatureUnitKey(units.temperature)) };
+}
+
 /** A reading's number and its unit apart, for a tile; what has no unit of its own reads whole. */
-function parts(r: LppReading): { value: string; unit?: string } {
+function parts(r: LppReading, units: Units): { value: string; unit?: string } {
   switch (r.type) {
     case "voltage":
       return { value: num(r.volts, 2), unit: t("node.unit.volt") };
@@ -258,11 +266,11 @@ function parts(r: LppReading): { value: string; unit?: string } {
     case "power":
       return powerParts(powerWatts(r, [r]));
     case "temperature":
-      return { value: num(r.celsius, 1, 0), unit: t("node.unit.celsius") };
+      return temperatureParts(r.celsius, units);
     case "humidity":
       return { value: num(r.percent, 1, 0), unit: t("node.unit.percent") };
     case "barometer":
-      return { value: num(r.hpa, 1), unit: t("node.unit.hectopascal") };
+      return { value: num(pressureIn(r.hpa, units.pressure), 1), unit: t(pressureUnitKey(units.pressure)) };
     case "luminosity":
       return { value: String(r.lux), unit: t("node.unit.lux") };
     case "percentage":
@@ -296,7 +304,7 @@ function parts(r: LppReading): { value: string; unit?: string } {
 }
 
 /** The readings in a line, for the value of a row that opens them: the power a sensor draws, else the air, else the board. */
-export function readingsSummary(readings: LppReading[]): string | undefined {
+export function readingsSummary(readings: LppReading[], units: Units = getUnits()): string | undefined {
   const byChannel = (channel: number) => readings.filter((r) => r.channel === channel);
   const outside = [...new Set(readings.map((r) => r.channel))].filter((c) => c !== SELF_CHANNEL).sort((a, b) => a - b);
   const bits: string[] = [];
@@ -309,12 +317,16 @@ export function readingsSummary(readings: LppReading[]): string | undefined {
       const p = powerParts(powerWatts({ channel, watts: 0 }, list));
       bits.push(`${p.value} ${p.unit}`);
     } else if (temp?.type === "temperature") {
-      bits.push(`${num(temp.celsius, 1, 0)} ${t("node.unit.celsius")}`);
+      const p = temperatureParts(temp.celsius, units);
+      bits.push(`${p.value} ${p.unit}`);
     }
   }
   if (bits.length === 0) {
     const board = byChannel(SELF_CHANNEL).find((r) => r.type === "temperature");
-    if (board?.type === "temperature") bits.push(`${num(board.celsius, 1, 0)} ${t("node.unit.celsius")}`);
+    if (board?.type === "temperature") {
+      const p = temperatureParts(board.celsius, units);
+      bits.push(`${p.value} ${p.unit}`);
+    }
   }
   return bits.length ? bits.slice(0, 2).join(" · ") : undefined;
 }

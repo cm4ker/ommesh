@@ -4,6 +4,7 @@ import { errorText } from "../../i18n/errors.js";
 import { t, type Key } from "../../i18n/index.js";
 import { ago, powerSummary } from "../../lib/format.js";
 import { session, useSession } from "../../lib/session.js";
+import { F_PER_C, MMHG_PER_HPA, useUnits, type Units } from "../../lib/units.js";
 import { Button } from "../../ui/Button.js";
 import { Section } from "../../ui/Field.js";
 import { RefreshIcon } from "../Icons.js";
@@ -14,20 +15,38 @@ const WINDOWS: { secs: number; label: Key }[] = [
   { secs: 7 * 86_400, label: "node.history.week" },
 ];
 
+interface Scale {
+  lo: number;
+  hi: number;
+  unit: Key;
+  digits: number;
+  show?: (value: number) => number;
+}
+
 /**
  * A scale that fits the usual range of each kind of reading, in the unit shown; a value outside
- * it widens it. `per` turns the node's unit into the one shown: amperes and watts read as mA and mW.
+ * it widens it. `show` turns the node's unit into the one shown: amperes and watts read as mA and mW.
  */
-const SCALES: Record<string, { lo: number; hi: number; unit: Key; digits: number; per?: number }> = {
+const SCALES: Record<string, Scale> = {
   temperature: { lo: -20, hi: 40, unit: "node.unit.celsius", digits: 1 },
   humidity: { lo: 0, hi: 100, unit: "node.unit.percent", digits: 0 },
   barometer: { lo: 950, hi: 1050, unit: "node.unit.hectopascal", digits: 1 },
   voltage: { lo: 3, hi: 4.3, unit: "node.unit.volt", digits: 2 },
-  current: { lo: 0, hi: 1000, unit: "node.unit.milliampere", digits: 0, per: 1000 },
-  power: { lo: 0, hi: 5000, unit: "node.unit.milliwatt", digits: 0, per: 1000 },
+  current: { lo: 0, hi: 1000, unit: "node.unit.milliampere", digits: 0, show: (a) => a * 1000 },
+  power: { lo: 0, hi: 5000, unit: "node.unit.milliwatt", digits: 0, show: (w) => w * 1000 },
   luminosity: { lo: 0, hi: 1000, unit: "node.unit.lux", digits: 0 },
   percentage: { lo: 0, hi: 100, unit: "node.unit.percent", digits: 0 },
 };
+
+/** The air's scales in the other units a reader may pick (#108): the same ranges, rounded. */
+const FAHRENHEIT: Scale = { lo: -4, hi: 104, unit: "node.unit.fahrenheit", digits: 1, show: (c) => c * F_PER_C + 32 };
+const MMHG: Scale = { lo: 710, hi: 790, unit: "node.unit.mmHg", digits: 1, show: (hpa) => hpa * MMHG_PER_HPA };
+
+function scaleOf(kind: string, units: Units): Scale | undefined {
+  if (kind === "temperature" && units.temperature === "f") return FAHRENHEIT;
+  if (kind === "barometer" && units.pressure === "mmhg") return MMHG;
+  return SCALES[kind];
+}
 
 /** What each kind of reading is called. */
 const KINDS: Record<Exclude<LppReading["type"], "unknown">, Key> = {
@@ -124,10 +143,9 @@ export function History({ contact }: { contact: ContactRecord }) {
 
 function RangeRow({ summary: raw }: { summary: SeriesSummary }) {
   const kind = lppTypeName(raw.lppType);
-  const known = SCALES[kind];
-  const per = known?.per ?? 1;
+  const known = scaleOf(kind, useUnits());
   // Rounded off the float dust of the multiplication (0.029 A is 29.000000000000004 mA).
-  const shown = (v: number) => Number((v * per).toFixed(6));
+  const shown = (v: number) => Number((known?.show?.(v) ?? v).toFixed(6));
   const summary = { ...raw, min: shown(raw.min), max: shown(raw.max), avg: shown(raw.avg) };
   const scale = known ?? { lo: summary.min, hi: summary.max, digits: 2 };
   const unit = known ? t(known.unit) : "";

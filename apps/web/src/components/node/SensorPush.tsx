@@ -6,6 +6,7 @@ import { isAdmin } from "../../lib/nodes.js";
 import { defaultThresholds, deltaLabel, fits, pushTargets, thresholdSteps, withThreshold, type PushTarget } from "../../lib/sensorPush.js";
 import { session, useSession } from "../../lib/session.js";
 import { toast } from "../../lib/toast.js";
+import { useUnits } from "../../lib/units.js";
 import { Group, LinkRow, SelectRow, SwitchRow } from "../../ui/List.js";
 import { readingName } from "../Readings.js";
 import { t } from "../../i18n/index.js";
@@ -68,6 +69,11 @@ export function PushRows({ contact, online }: { contact: ContactRecord; online: 
   );
 }
 
+/** The steps offered, and the one the sensor keeps when it is none of them: set by another app, or in the other unit. */
+function stepsWith(steps: number[], kept: number | undefined): number[] {
+  return kept === undefined || steps.includes(kept) ? steps : [...steps, kept].sort((a, b) => a - b);
+}
+
 /**
  * Which readings the sensor sends on and how far each must move first. A change is one ask of the
  * sensor; taking the last one off stops it sending, as the switch does.
@@ -80,6 +86,7 @@ export function PushPage({ contact }: { contact: ContactRecord }) {
   const online = state.status === "ready";
   const [busy, setBusy] = useState(false);
   const admin = isAdmin(state.logins[key]);
+  const units = useUnits();
 
   // The readings it has, and any chosen before that its last telemetry left out.
   const targets: PushTarget[] = pushTargets(state.telemetry[key]?.readings ?? []);
@@ -117,7 +124,7 @@ export function PushPage({ contact }: { contact: ContactRecord }) {
               key={`${x.channel}:${x.type}`}
               label={label}
               value={kept ? String(kept.delta) : "off"}
-              options={[{ value: "off", label: t("node.push.off") }, ...thresholdSteps(x.type).map((v) => ({ value: String(v), label: deltaLabel(x.type, v) }))]}
+              options={[{ value: "off", label: t("node.push.off") }, ...stepsWith(thresholdSteps(x.type, units), kept?.delta).map((v) => ({ value: String(v), label: deltaLabel(x.type, v, units) }))]}
               disabled={!online || busy || (!kept && !fits(chosen, x))}
               onChange={(v) => void change(x, v)}
             />

@@ -20,6 +20,10 @@ import { isCapacitor, nativePlatform } from "./platform.js";
  *
  * A screen that has said it moves for the keyboard itself (`moveForKeyboard`)
  * gets the height instead, while the field is in it, and the app keeps its size.
+ *
+ * Either way `keyboard-open` on the document says the keyboard is up, here and
+ * on Android (`watchKeyboard`), for the rules that give it room
+ * (styles/sideways.css).
  */
 export function followKeyboard(): void {
   const root = document.documentElement;
@@ -35,6 +39,7 @@ export function followKeyboard(): void {
     // Set only when it changes: a new value restyles the whole page.
     if (shrink !== shrunk) root.style.setProperty("--keyboard", `${shrink}px`);
     shrunk = shrink;
+    root.classList.toggle("keyboard-open", height > 0);
   };
   const shown = (event: Event) => set(typing() ? ((event as Event & { keyboardHeight?: number }).keyboardHeight ?? 0) : 0);
   // The plugin's window events carry the height on the event itself.
@@ -86,7 +91,10 @@ export function moveForKeyboard(el: HTMLElement, move: (height: number) => void)
 export function watchKeyboard(): void {
   const root = document.documentElement;
   root.classList.add("keyboard-heard");
-  const up = (on: boolean) => root.classList.toggle("keyboard-up", on);
+  const up = (on: boolean) => {
+    root.classList.toggle("keyboard-up", on);
+    root.classList.toggle("keyboard-open", on);
+  };
   window.addEventListener("keyboardWillShow", () => up(true));
   window.addEventListener("keyboardDidShow", () => up(true));
   window.addEventListener("keyboardWillHide", () => up(false));

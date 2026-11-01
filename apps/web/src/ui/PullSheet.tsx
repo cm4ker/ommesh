@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useSideways } from "../lib/layout.js";
 
 /** How much of the screen the sheet takes when it opens; pulled up, it takes all but the notch. */
 export const PULL_HALF = 0.56;
@@ -55,7 +56,12 @@ export function PullSheet({ open, onClose, children, label, seeThrough = false, 
 
   // The layer's height, and the sheet's when pulled all the way up.
   const [space, setSpace] = useState({ height: 0, full: 0 });
-  const [detent, setDetent] = useState<Detent>("half");
+  const [detent, setDetentState] = useState<Detent>("half");
+  // A phone held sideways has the sheet as a column on the right, beside the map: all the way up, pulled down
+  // only to close it (styles/sideways.css).
+  const sideways = useSideways();
+  const setDetent = (d: Detent) => setDetentState(sideways ? "full" : d);
+  if (sideways && detent !== "full") setDetentState("full");
   // Opened afresh, it starts at half. Closed because a page went over it (`covered`), it comes back as high as it
   // was when that page is left. A new node in an open sheet stays where the sheet is, scrolled to the top.
   const resume = useRef<{ id: string | undefined; detent: Detent } | null>(null);
@@ -95,8 +101,8 @@ export function PullSheet({ open, onClose, children, label, seeThrough = false, 
   const heights: Record<Detent, number> = { half: Math.min(space.full, Math.round(space.height * PULL_HALF)), full: space.full };
   const at = detent;
 
-  const live = useRef({ heights, at, full: space.full, setDetent });
-  live.current = { heights, at, full: space.full, setDetent };
+  const live = useRef({ heights, at, full: space.full, setDetent, sideways });
+  live.current = { heights, at, full: space.full, setDetent, sideways };
 
   const place = (h: number) => {
     const el = box.current;
@@ -206,6 +212,7 @@ export function PullSheet({ open, onClose, children, label, seeThrough = false, 
         close.current();
         return;
       }
+      if (live.current.sideways) target = "full";
       place(heights[target]);
       setDetent(target);
     };

@@ -226,6 +226,8 @@ export interface MapProps {
   coverBottom?: number | undefined;
   /** Pixels at the top under a phone's notch or status bar. */
   coverTop?: number | undefined;
+  /** Pixels at the right covered by a sheet in a column, on a phone held sideways. */
+  coverRight?: number | undefined;
   /** A phone zooms with two fingers; a desktop has buttons too. */
   zoomButtons?: boolean | undefined;
   /** Lines over the nodes, and numbers on the relays of a route being changed. */
@@ -396,7 +398,7 @@ function groupingWanted(): boolean {
 /** Where the map was left, so coming back to it, from a profile or another section, finds it there, turned as it was. */
 let lastView: { center: [number, number]; zoom: number; bearing: number } | null = null;
 
-export default function MapView({ selected, onSelect, onGroup, filter, coverBottom = 0, coverTop = 0, zoomButtons = false, overlay = EMPTY_OVERLAY, onLeg, onHold, onHandleDrop, onHears, hearsOn = false, onHearsHold, fit = null, phone = null, putHere = null, onLocate, dots = null, pickedDot = null, onDot, follow = null, recording = false, top = null }: MapProps) {
+export default function MapView({ selected, onSelect, onGroup, filter, coverBottom = 0, coverTop = 0, coverRight = 0, zoomButtons = false, overlay = EMPTY_OVERLAY, onLeg, onHold, onHandleDrop, onHears, hearsOn = false, onHearsHold, fit = null, phone = null, putHere = null, onLocate, dots = null, pickedDot = null, onDot, follow = null, recording = false, top = null }: MapProps) {
   const state = useSession();
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibre | null>(null);
@@ -435,17 +437,17 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
   const self = useMemo(() => (selfLat !== null && selfLon !== null ? { lat: selfLat, lon: selfLon } : null), [selfLat, selfLon]);
   const selfName = state.self?.name ?? t("mesh.map.thisRadio");
   // Read when the map moves rather than when it renders: the sheet over it moves often and should not redraw it.
-  const cover = useRef({ top: coverTop, bottom: coverBottom });
-  cover.current = { top: coverTop, bottom: coverBottom };
+  const cover = useRef({ top: coverTop, bottom: coverBottom, right: coverRight });
+  cover.current = { top: coverTop, bottom: coverBottom, right: coverRight };
   const topped = useRef(false);
   topped.current = top !== null;
   /** A fit keeps clear of the controls, the credit, and what lies over the map. */
-  const padding = () => ({ top: 56 + cover.current.top + (topped.current ? TOP_PX : 0), bottom: 40 + cover.current.bottom, left: 40, right: 64 });
+  const padding = () => ({ top: 56 + cover.current.top + (topped.current ? TOP_PX : 0), bottom: 40 + cover.current.bottom, left: 40, right: 64 + cover.current.right });
   const size = () => ({ x: box.current?.clientWidth ?? 0, y: box.current?.clientHeight ?? 0 });
   /** A point in the middle of what is left uncovered, not of the whole map. */
   const centerOn = (at: LatLon, z: number, animate = true) => {
-    const { top, bottom } = cover.current;
-    map.current?.easeTo({ center: [at.lon, at.lat], zoom: z, offset: [0, (top - bottom) / 2], ...(animate ? {} : { duration: 0 }) });
+    const { top, bottom, right } = cover.current;
+    map.current?.easeTo({ center: [at.lon, at.lat], zoom: z, offset: [-right / 2, (top - bottom) / 2], ...(animate ? {} : { duration: 0 }) });
   };
   /** Several points in view, the map left turned as it is unless a bearing is given. */
   const fitPoints = (points: [number, number][], maxZoom: number, animate = true, bearing?: number) => {
@@ -1004,8 +1006,8 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
     if (!m || !c) return;
     m.resize();
     const { x: width, y: height } = size();
-    const { top, bottom } = cover.current;
-    const clear = { left: 40, right: width - 64, top: top + 56, bottom: height - bottom - 40 };
+    const { top, bottom, right } = cover.current;
+    const clear = { left: 40, right: width - 64 - right, top: top + 56, bottom: height - bottom - 40 };
     if (clear.right <= clear.left || clear.bottom <= clear.top) {
       unseenPick.current = key;
       return;

@@ -1,9 +1,7 @@
 package dev.cm4ker.meshnet;
 
-import android.annotation.SuppressLint;
 import android.app.ActivityManager;
 import android.content.ComponentCallbacks2;
-import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Point;
@@ -22,6 +20,8 @@ import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebView;
 import androidx.activity.OnBackPressedCallback;
 import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.WebViewListener;
 
@@ -55,8 +55,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(FormatMenuPlugin.class);
         super.onCreate(savedInstanceState);
 
-        holdOrientation();
         drawUnderBars();
+        fitBarsToTurn();
 
         // The page draws its text at the system's size itself (SystemTextPlugin); the WebView scaling
         // it as well would apply the setting twice.
@@ -103,11 +103,11 @@ public class MainActivity extends BridgeActivity {
         });
     }
 
-    // A phone unfolded into a tablet, or folded back, turns again or stays upright from then on.
+    // Turned, or unfolded into a tablet and folded back, the window stays as it is (configChanges) and the bars follow.
     @Override
     public void onConfigurationChanged(Configuration config) {
         super.onConfigurationChanged(config);
-        holdOrientation();
+        fitBarsToTurn();
     }
 
     // The radio core announces what arrives while the page is out of sight and asleep; in front, the page does.
@@ -199,17 +199,20 @@ public class MainActivity extends BridgeActivity {
     }
 
     /**
-     * A phone stays upright: turned sideways, the Mesh sheet took most of its screen. A tablet turns
-     * every way, and held sideways it has room for the page's desktop layout, the list and the chat
-     * side by side (layout.ts). A tablet is Android's own large screen, 600 dp or more on its shorter
-     * side, and its whole display is measured rather than the window, so a split screen or a
-     * computer's window does not make it a phone. Android 16 already turns a large screen whatever
-     * an app asks; this does the same on the ones before it.
+     * The app turns as the phone's own rotation setting says. A phone held sideways has a few rows of
+     * height, and more than half of them go to the keyboard: the status bar goes away meanwhile, as in
+     * a video player, and a swipe from the top shows it for a moment. The page lays itself out for a
+     * phone on its side (layout.ts). A tablet keeps its status bar: held sideways it has the height,
+     * and the page's desktop layout. A tablet is Android's own large screen, 600 dp or more on its
+     * shorter side, and its whole display is measured rather than the window, so a split screen or
+     * a computer's window does not make it a phone.
      */
-    @SuppressLint("SourceLockedOrientationActivity") // Only a phone is held upright.
-    private void holdOrientation() {
-        int wanted = largeScreen() ? ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
-        if (getRequestedOrientation() != wanted) setRequestedOrientation(wanted);
+    private void fitBarsToTurn() {
+        boolean sideways = !largeScreen() && getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
+        WindowInsetsControllerCompat bars = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+        bars.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+        if (sideways) bars.hide(WindowInsetsCompat.Type.statusBars());
+        else bars.show(WindowInsetsCompat.Type.statusBars());
     }
 
     @SuppressWarnings("deprecation") // getRealSize is how the display is measured before Android 11.

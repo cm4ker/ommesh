@@ -1,0 +1,133 @@
+/* ---- a phone held sideways (lib/layout.ts) ---- */
+
+/*
+ * Turned on its side a phone has a few rows of height and room to spare
+ * across, and the keyboard takes more than half of what height there is. The
+ * phone's layout stays, one screen at a time, but every line of height goes
+ * to what is read: the tabs stand down the left edge, where the camera's
+ * cutout is, the heads take one line, and the Mesh list and a node's profile
+ * open as a column on the right, beside the map. The status bar is hidden
+ * sideways (MainActivity), so the insets at the top are 0 there.
+ */
+:root.sideways {
+  /* SIDE_PANEL in lib/layout.ts, which the map keeps clear of. */
+  --side-panel: 340px;
+}
+
+:root.sideways .app.narrow {
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "tabs screen"
+    "tabs bar";
+}
+:root.sideways .app.narrow > .content {
+  grid-area: screen;
+}
+:root.sideways .app.narrow > .tabbar {
+  grid-area: tabs;
+}
+:root.sideways .app.narrow > .chat-pick-bar {
+  grid-area: bar;
+}
+:root.sideways :is(.app.narrow > .tabbar, .content > .under-tabs) {
+  grid-auto-flow: row;
+  grid-auto-rows: calc(56px * var(--box-scale));
+  align-content: center;
+  width: calc(var(--rail-width) + var(--safe-left));
+  height: auto;
+  padding: var(--safe-top) var(--space-1) var(--home-bar) calc(var(--space-1) + var(--safe-left));
+  border-top: 0;
+  border-right: 1px solid var(--border);
+}
+/* Beside the keyboard rather than under it, the tabs stay. */
+:root.sideways.keyboard-up .app.narrow > .tabbar {
+  display: grid;
+}
+/* The tabs take the cutout's side; a screen without them keeps clear of it itself. */
+:root.sideways .app.narrow:not(.detail) > .content {
+  padding-left: 0;
+}
+/* The tabs of the screen under a conversation, and that screen beside them, as a swipe back uncovers it. */
+:root.sideways .content > .under-tabs {
+  top: 0;
+  right: auto;
+}
+:root.sideways .app.detail:has(> .content > .under-tabs) .layer[data-layer="under"] {
+  padding-left: calc(var(--rail-width) + var(--safe-left));
+}
+
+/* One line for a head, the chats' search field on the title's line (ChatList). */
+:root.sideways :is(.list-head, .screen-head) {
+  min-height: calc(44px + var(--safe-top));
+}
+:root.sideways .list-head h1 {
+  font-size: var(--text-xl);
+}
+:root.sideways .list-head > .search {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+/*
+ * While the keyboard is up a chat has a few lines between it and the head:
+ * the head becomes a small pill over the messages, Back and the name, and the
+ * lines go to the messages.
+ */
+:root.sideways.keyboard-open .screen.chat > .screen-head:not(.chat-find-head, .chat-pick-head) {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 3;
+  max-width: 60%;
+  min-height: 0;
+  height: calc(32px * var(--box-scale));
+  padding: 0 var(--space-3) 0 0;
+  gap: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--elevated);
+  box-shadow: 0 2px 8px rgb(var(--shadow-rgb) / 0.2);
+}
+:root.sideways.keyboard-open .screen.chat > .screen-head:not(.chat-find-head, .chat-pick-head) :is(.chat-who:not(.screen-name), .chat-route, .screen-title ~ .icon-button) {
+  display: none;
+}
+
+/* The Mesh list: a column on the right, the map beside it (Mesh.tsx). */
+:root.sideways .mesh-phone .map-view {
+  right: var(--side-panel);
+}
+:root.sideways .mesh-sheet {
+  top: 0;
+  left: auto;
+  width: var(--side-panel);
+  border-radius: 0;
+  border-left: 1px solid var(--border);
+  box-shadow: none;
+  transition: none;
+}
+:root.sideways .mesh-sheet-head {
+  padding-top: calc(var(--mesh-top) + var(--space-2));
+  cursor: auto;
+}
+:root.sideways .mesh-sheet-head > .sheet-grab {
+  display: none;
+}
+
+/* A node's profile: the same column, over the Mesh list or beside a map of its own (PullSheet.tsx). */
+:root.sideways .pull-layer.see-through {
+  left: calc(var(--rail-width) + var(--safe-left));
+  bottom: var(--home-bar);
+}
+:root.sideways .pull-sheet {
+  left: auto;
+  width: calc(var(--side-panel) + var(--safe-right));
+  height: calc(100% - var(--safe-top));
+  padding-right: var(--safe-right);
+  border-radius: 0;
+  border-left: 1px solid var(--border);
+  box-shadow: -6px 0 24px rgb(var(--shadow-rgb) / 0.22);
+}
+:root.sideways .pull-backdrop .map-controls {
+  right: calc(var(--side-panel) + var(--safe-right) + var(--space-3));
+}

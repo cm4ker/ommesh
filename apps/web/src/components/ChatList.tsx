@@ -7,6 +7,7 @@ import { ago, clockAhead } from "../lib/format.js";
 import { summarize, type ConversationSummary } from "../lib/conversations.js";
 import { useDraft } from "../lib/drafts.js";
 import { jumpTo } from "../lib/jump.js";
+import { useSideways } from "../lib/layout.js";
 import { shownText } from "../lib/lookalikes.js";
 import { findMessages, fold, snippet } from "../lib/messageSearch.js";
 import { plainText } from "../lib/textFormat.js";
@@ -53,6 +54,7 @@ export function ChatList({ selected }: { selected: string | null }) {
   };
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<ConversationSummary | null>(null);
+  const sideways = useSideways();
   const order = useChatOrder();
   const radio = state.self?.key ?? "";
   const pins = radioPins(usePinStore()[radio], state.channels);
@@ -79,30 +81,36 @@ export function ChatList({ selected }: { selected: string | null }) {
     return <ChatRow key={row.id} row={row} radio={radio} selected={selected === row.id} pinned={pinned} onPin={() => pin(row, !pinned)} onDelete={() => setDeleting(row)} />;
   };
 
+  const field = (
+    <SearchField
+      value={query}
+      onValue={setQuery}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && query) {
+          e.preventDefault();
+          setQuery("");
+        }
+      }}
+      placeholder={t("chats.list.find")}
+      aria-label={t("chats.list.findLabel")}
+      enterKeyHint="search"
+      data-find
+    />
+  );
+
   return (
     <div className="list-pane">
       <header className="list-head">
         <h1>{t("chats.list.title")}</h1>
+        {/* A phone held sideways has a few rows of height: the field joins the title's line. */}
+        {sideways ? field : null}
         <QuietChip />
         <RadioTag />
         <IconButton label={t("chats.newChat.title")} onClick={() => setAdding(true)}>
           <PlusIcon size={20} />
         </IconButton>
       </header>
-      <SearchField
-        value={query}
-        onValue={setQuery}
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && query) {
-            e.preventDefault();
-            setQuery("");
-          }
-        }}
-        placeholder={t("chats.list.find")}
-        aria-label={t("chats.list.findLabel")}
-        enterKeyHint="search"
-        data-find
-      />
+      {sideways ? null : field}
       <SharedStrip />
       <TwoAppsStrip />
       <NewsStrip />

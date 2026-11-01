@@ -1,7 +1,8 @@
 /**
  * Everyone the radio hears, on the map and in a list, in one place. On a
  * phone the list rides in a sheet over the map, pulled up to read it and
- * down to see the map; on a desktop it is the column beside the map.
+ * down to see the map; on a desktop, and on a phone held sideways, it is the
+ * column beside the map.
  */
 
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -12,6 +13,7 @@ import { useBatteryTypes } from "../lib/batteryType.js";
 import { ago, batteryPercent, lowCharge, steadyMv, type BatteryType } from "../lib/format.js";
 import { bearingDeg, compass, destination, distanceKm, formatDistance, formatLatLon, hasPosition } from "../lib/geo.js";
 import { useHears } from "../lib/hears.js";
+import { SIDE_PANEL, useSideways } from "../lib/layout.js";
 import { legId, useLegVerdicts } from "../lib/legVerdicts.js";
 import type { LinkRadio } from "../lib/los.js";
 import { useDiscovery } from "../lib/discovery.js";
@@ -785,7 +787,7 @@ function usePhoneOnMap(state: SessionState, active: boolean, surveying: boolean)
 }
 
 /** The map with the filter applied, the focus and the tool drawn, and taps handed up or to the tool. */
-export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zoomButtons, active = true, show = null }: { selected: string | null; onSelect: (key: string | null) => void; onGroup: (keys: string[]) => void; coverTop?: number | undefined; coverBottom?: number | undefined; zoomButtons?: boolean | undefined; active?: boolean | undefined; show?: { id: string; points: [number, number][] } | null | undefined }) {
+export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, coverRight, zoomButtons, active = true, show = null }: { selected: string | null; onSelect: (key: string | null) => void; onGroup: (keys: string[]) => void; coverTop?: number | undefined; coverBottom?: number | undefined; coverRight?: number | undefined; zoomButtons?: boolean | undefined; active?: boolean | undefined; show?: { id: string; points: [number, number][] } | null | undefined }) {
   const state = useSession();
   const surveys = useSurveys();
   const surveying = surveys.run !== null;
@@ -913,7 +915,7 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, zo
   const top = surveying && (!tool || (tool.kind === "survey" && tool.view === "run")) ? <SurveyBadge /> : null;
   return (
     <Suspense fallback={<div className="empty muted">{t("mesh.map.loading")}</div>}>
-      <MapView selected={selected} onSelect={pick} onGroup={onGroup} filter={test} coverTop={coverTop} coverBottom={coverBottom} zoomButtons={zoomButtons} overlay={overlay} onLeg={leg} onHold={openSpotMenu} onHandleDrop={drop} onHears={onHears} hearsOn={hearsOpen} onHearsHold={onHearsHold} fit={fit} phone={phone} putHere={putHere} onLocate={onLocate} dots={dots} pickedDot={tool?.kind === "survey" ? tool.point : null} onDot={onDot} follow={follow} recording={surveying} top={top} />
+      <MapView selected={selected} onSelect={pick} onGroup={onGroup} filter={test} coverTop={coverTop} coverBottom={coverBottom} coverRight={coverRight} zoomButtons={zoomButtons} overlay={overlay} onLeg={leg} onHold={openSpotMenu} onHandleDrop={drop} onHears={onHears} hearsOn={hearsOpen} onHearsHold={onHearsHold} fit={fit} phone={phone} putHere={putHere} onLocate={onLocate} dots={dots} pickedDot={tool?.kind === "survey" ? tool.point : null} onDot={onDot} follow={follow} recording={surveying} top={top} />
     </Suspense>
   );
 }
@@ -990,6 +992,8 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
   // so there is one sheet at a time, and comes back at half, with the node still ringed on the map.
   const over = nav.stacks.mesh.length === 1 ? nav.stacks.mesh[0]! : null;
   const profileOver = over?.kind === "profile";
+  // Held sideways, the list is a column on the right, beside the map rather than over it, and is not pulled.
+  const sideways = useSideways();
   const setDetent = (d: Detent) => {
     lastDetent = d;
     setDetentState(d);
@@ -998,7 +1002,7 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
   // Back puts away what covers the map: the list of nodes at one spot, or the list pulled all the way up.
   const mapped = Object.values(state.contacts).some((c) => hasPosition(c.lat, c.lon));
   useBackLayer(!hidden && group !== null, () => setGroup(null));
-  useBackLayer(!hidden && !profileOver && listed && mapped && detent === "full", () => setDetent("half"));
+  useBackLayer(!hidden && !sideways && !profileOver && listed && mapped && detent === "full", () => setDetent("half"));
   useBackLayer(!hidden && tool !== null, closeTool);
   // Nodes picked to be removed: Back lets them go, and so does leaving the list for a profile, a tool or another tab.
   const picking = useNodePick() !== null && listed;
@@ -1084,8 +1088,8 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
   const profileShow = useProfileShow(state, over?.kind === "profile" ? over.key : null);
 
   // What the handlers read, so the listeners on the list are set once.
-  const live = useRef({ detent, heights, setDetent });
-  live.current = { detent, heights, setDetent };
+  const live = useRef({ detent, heights, setDetent, sideways });
+  live.current = { detent, heights, setDetent, sideways };
 
   const motion = useMemo(() => {
     let drag: { from: number; h: number; now: number; moved: boolean; trail: { y: number; t: number }[] } | null = null;
@@ -1160,7 +1164,7 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
     };
     const down = (e: TouchEvent) => {
       const t = e.touches[0];
-      start = e.touches.length === 1 && t ? { x: t.clientX, y: t.clientY } : null;
+      start = e.touches.length === 1 && t && !live.current.sideways ? { x: t.clientX, y: t.clientY } : null;
       if (e.touches.length > 1 && dragging) {
         dragging = false;
         motion.release(false);
@@ -1219,7 +1223,7 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
   };
 
   return (
-    <div className="mesh-phone" ref={box} hidden={hidden} data-detent={detent}>
+    <div className="mesh-phone" ref={box} hidden={hidden} data-detent={sideways ? undefined : detent}>
       <div className="mesh-inset" ref={inset} aria-hidden="true" />
       {/* Not before the sheet is measured, so the map's first view is fitted to the part left uncovered. */}
       {space.height ? (
@@ -1232,17 +1236,22 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
             if (detent !== "half") setDetent("half");
           }}
           coverTop={space.top}
-          coverBottom={profileOver ? pullSheetCover(box.current?.getBoundingClientRect().bottom ?? window.innerHeight) : heights[detent]}
+          coverBottom={sideways ? 0 : profileOver ? pullSheetCover(box.current?.getBoundingClientRect().bottom ?? window.innerHeight) : heights[detent]}
           show={profileShow}
           active={!hidden}
         />
       ) : null}
-      <div ref={sheet} className="mesh-sheet" style={{ height: full, transform: `translate3d(0, ${profileOver ? full + 48 : full - heights[detent]}px, 0)` }} {...(profileOver ? { inert: true, "aria-hidden": true } : {})}>
+      <div
+        ref={sheet}
+        className="mesh-sheet"
+        style={sideways ? undefined : { height: full, transform: `translate3d(0, ${profileOver ? full + 48 : full - heights[detent]}px, 0)` }}
+        {...(profileOver ? { inert: true, "aria-hidden": true } : {})}
+      >
         <div
           ref={head}
           className="mesh-sheet-head"
           onPointerDown={(e) => {
-            if (e.button !== 0) return;
+            if (e.button !== 0 || sideways) return;
             press.current = null;
             if ((e.target as HTMLElement).closest("input, button, label")) {
               // At the lowest position the search field and the filter button fill nearly all of the sheet that
@@ -1287,7 +1296,7 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
           {picking ? <MeshPickHead wide={false} /> : null}
           {listed ? (
             <div className="mesh-sheet-tools">
-              <MeshSearchInline onFocus={() => detent !== "full" && setDetent("full")} />
+              <MeshSearchInline onFocus={() => !sideways && detent !== "full" && setDetent("full")} />
               <FilterButton />
             </div>
           ) : null}
@@ -1301,7 +1310,7 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
             <MeshListBodyNoSearch selected={focus} onOpen={pick} />
           )}
           {/* The part of the sheet below the screen's edge, so the end of the list can be scrolled into view. */}
-          <div aria-hidden="true" style={{ height: full - heights[detent] }} />
+          <div aria-hidden="true" style={{ height: sideways ? 0 : full - heights[detent] }} />
         </div>
       </div>
       <FilterSheetHost />
@@ -1335,6 +1344,8 @@ export function ProfileMap({ contactKey, onPick }: { contactKey: string; onPick:
     return () => resize.disconnect();
   }, []);
   const show = useProfileShow(state, contactKey);
+  // Held sideways, the profile is a column on the right of the map rather than a sheet over its foot.
+  const sideways = useSideways();
   return (
     <div className="mesh-phone" ref={box}>
       <div className="mesh-inset" ref={inset} aria-hidden="true" />
@@ -1346,7 +1357,8 @@ export function ProfileMap({ contactKey, onPick }: { contactKey: string; onPick:
           }}
           onGroup={() => undefined}
           coverTop={space.top}
-          coverBottom={pullSheetCover(space.bottom)}
+          coverBottom={sideways ? 0 : pullSheetCover(space.bottom)}
+          coverRight={sideways ? SIDE_PANEL : 0}
           show={show}
         />
       ) : null}

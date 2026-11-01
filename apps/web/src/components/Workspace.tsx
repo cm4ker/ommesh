@@ -4,7 +4,7 @@ import { chatsInOrder, getChatOrder } from "../lib/chatOrder.js";
 import { getPins } from "../lib/chatPins.js";
 import { summarize, totalUnread } from "../lib/conversations.js";
 import { pairLink, reconnectNow, useLink } from "../lib/link.js";
-import { useWide } from "../lib/layout.js";
+import { useSideways, useWide } from "../lib/layout.js";
 import { back, focusOnMap, getNav, goSection, openConversation, setStack, shownConversation, swapProfile, topOf, useNav, type Nav, type Screen, type Section } from "../lib/nav.js";
 import { hasPosition } from "../lib/geo.js";
 import { setSettingsFind } from "../lib/settingsSearch.js";
@@ -218,13 +218,22 @@ function Phone() {
   const underTabs = !tabs && (screens.length < 2 || screens[screens.length - 2]!.kind !== "chat");
   // Nodes picked in the Mesh list: their Remove takes the tabs' place, as a chat's picked messages take the field's.
   const picking = useNodePick() !== null && nav.section === "mesh" && shown === null;
-  // The keyboard comes up over the tabs, rather than lifting them (styles/base.css). Marked on the
-  // document, where the app's height is set, by a class rather than a value every box would inherit.
+  // Held sideways, the tabs stand down the left edge and the sheets open on the right (styles/sideways.css).
+  // Marked on the document, as the sheets are drawn outside the app.
+  const sideways = useSideways();
   useLayoutEffect(() => {
     const root = document.documentElement;
-    root.classList.toggle("tabs-shown", tabs);
+    root.classList.toggle("sideways", sideways);
+    return () => root.classList.remove("sideways");
+  }, [sideways]);
+  // The keyboard comes up over the tabs at the foot, rather than lifting them (styles/base.css). Marked on the
+  // document, where the app's height is set, by a class rather than a value every box would inherit.
+  const tabsBelow = tabs && !sideways;
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("tabs-shown", tabsBelow);
     return () => root.classList.remove("tabs-shown");
-  }, [tabs]);
+  }, [tabsBelow]);
   const tabbar = (className: string) => (
     <nav className={className} aria-label={t("connect.tabs.label")} {...(className === "tabbar" ? {} : { inert: true, "aria-hidden": true })}>
       {SECTIONS.map((s) => (

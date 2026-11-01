@@ -11,6 +11,7 @@
 - Your reaction in a channel shows whether it went further, as a message does. While it waits for a repeater it is only an outline; once a repeater is heard sending it on, it fills. Hold the message and open the list of reactions, or hold your reaction, to see how many times it was sent on. As before, one nobody sent on within 20 seconds is dashed, and a tap sends it again.
 
 ### Phones
+- A phone can be turned on its side, if its own rotation is on, to type on the wider keyboard, lying down too. Sideways the tabs stand down the left edge, every head takes one line and the status bar hides. With the keyboard up a chat keeps only a small pill with Back and the name, and the lines go to the messages. The Mesh list and a node's profile open as a column beside the map.
 - On an iPhone Duo the app fills the inner screen. Opened, it is laid out as on a tablet held sideways: the list on one side of the fold, the chat or the map on the other, and nothing in the crease. Turned upright it shows the phone's layout, and closed it is the phone app as before.
 
 ### Fixes

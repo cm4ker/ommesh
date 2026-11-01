@@ -10,6 +10,9 @@
 - On a phone, every emoji under a held message opens two rows taller and grows as you scroll: it rises up the screen with the message, then reaches down to the foot of the screen, and scrolled back to the top it is as low as before, with room for the keyboard. The band of groups stays at the top and the search field scrolls away with the emoji, as in Telegram, so more emoji show at once. On a computer it grows by its bar, as before.
 - Your reaction in a channel shows whether it went further, as a message does. While it waits for a repeater it is only an outline; once a repeater is heard sending it on, it fills. Hold the message and open the list of reactions, or hold your reaction, to see how many times it was sent on. As before, one nobody sent on within 20 seconds is dashed, and a tap sends it again.
 
+### Mesh and the map
+- A sensor's pressure can read in millimetres of mercury and its temperature in degrees Fahrenheit: Settings › Appearance › Pressure and Temperature. The choice covers the readings, their history and the steps a sensor sends changes by. Until you pick, the app in Russian shows pressure in mm Hg, as weather forecasts do, and a phone or computer set to the United States shows °F; the rest show hPa and °C as before.
+
 ### Phones
 - A phone can be turned on its side, if its own rotation is on, to type on the wider keyboard, lying down too. Sideways the tabs stand down the left edge, every head takes one line and the status bar hides. With the keyboard up a chat keeps only a small pill with Back and the name, and the lines go to the messages. The Mesh list and a node's profile open as a column beside the map.
 - On an iPhone Duo the app fills the inner screen. Opened, it is laid out as on a tablet held sideways: the list on one side of the fold, the chat or the map on the other, and nothing in the crease. Turned upright it shows the phone's layout, and closed it is the phone app as before.

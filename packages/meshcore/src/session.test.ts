@@ -1671,6 +1671,20 @@ test("a node the radio adds as it hears it is announced once its contact is read
   assert.equal(session.getState().contacts["c0".repeat(32)]?.unsaved, undefined);
 });
 
+test("a kept node that advertises a new name is shown by it", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  assert.equal(session.getState().contacts[bobKey()]?.name, "Bob");
+  // The repeater was renamed with `set name` and sent an advert: the radio took the new name into
+  // its contact and says only whose advert it heard.
+  radio.contacts = [contactFrame(BOB, "Bob 🔌", 20)];
+  radio.push(new ByteWriter().u8(Push.Advert).bytes(BOB).toBytes());
+  await tick(600);
+  assert.equal(session.getState().contacts[bobKey()]?.name, "Bob 🔌");
+  await session.disconnect();
+});
+
 test("with no contacts stored, the radio's list is no news, even when an advert asks for it before the connect does", async () => {
   // The queue's first read answers late, as a long queue does over Bluetooth: the read an advert
   // asks for half a second in goes ahead of the connect's own.

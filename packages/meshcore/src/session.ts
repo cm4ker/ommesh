@@ -5707,18 +5707,17 @@ export class MeshSession {
         const key = toHex(frame.publicKey);
         const contact = this.state.contacts[key];
         // Only a contact the radio holds is announced this way: one it did not keep before has been added now.
-        if (contact?.unsaved) {
-          this.queueContactsRefresh();
-        } else if (contact) {
+        if (contact && !contact.unsaved) {
           this.set({
             contacts: {
               ...this.state.contacts,
               [key]: { ...contact, lastHeardAt: this.now(), lastAdvert: Math.floor(this.now() / 1000) },
             },
           });
-        } else {
-          this.queueContactsRefresh();
         }
+        // The radio has taken the advert's name, place and kind into its contact and says only whose
+        // it heard: a renamed or moved node is read back, with any other heard in the same half second.
+        this.queueContactsRefresh();
         return;
       }
       case "newAdvert": {

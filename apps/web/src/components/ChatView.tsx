@@ -1182,6 +1182,15 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
 
   const relayTitle = relays.length && contacts ?t("chats.chat.relayedBy", { count: relays.length, names: relays.map((r) => nameOfHash(r.hash, contacts) ?? r.hash).join(", ") }) : undefined;
 
+  const meta = (
+    <span className="msg-meta">
+      {tech ? <span className="msg-tech">{tech} ·</span> : null}
+      <span>{timeOfDay(at)}</span>
+      {/* A red bubble carries its state in the strip below; a tick beside it would say the opposite. */}
+      {out && !bad ? <Status message={message} trying={trying} /> : null}
+    </span>
+  );
+
   return (
     <div className={["msg", out ? "out" : "in", lead ? "lead" : "", faded ? "msg-faded" : "", selecting ? "selecting" : "", picked ? "picked" : ""].join(" ")} data-reply={onReply ? message.id : undefined}>
       <span className="msg-reply-cue" aria-hidden="true">
@@ -1235,18 +1244,14 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
           )}
           {previews && !placed && !jumbo ? <LinkCards text={message.text} message={message.id} /> : null}
           {message.reactions?.length ? (
-            <>
-              {/* The emoji start a line of their own, and the time floats in at its end. */}
-              <span className="msg-break" />
+            // The emoji start a line of their own, and the time sits at the end of their last row.
+            <span className="msg-foot">
               <Reactions message={message} live={reactable && !selecting} />
-            </>
-          ) : null}
-          <span className="msg-meta">
-            {tech ? <span className="msg-tech">{tech} ·</span> : null}
-            <span>{timeOfDay(at)}</span>
-            {/* A red bubble carries its state in the strip below; a tick beside it would say the opposite. */}
-            {out && !bad ? <Status message={message} trying={trying} /> : null}
-          </span>
+              {meta}
+            </span>
+          ) : (
+            meta
+          )}
           {bad ? <Unrelayed message={message} busy={busy} onRetry={() => void retry()} onKeepTrying={() => void keepTrying()} /> : null}
         </div>
         {retryable && !bad && !trying ? (

@@ -260,17 +260,25 @@
 .msg-meta .ok {
   color: var(--accent);
 }
-.msg-break {
-  display: block;
+/* Under a message with emoji on it: the emoji, and the time at the end of their last row. A row of its own,
+   not the float: Safari drops a float after the emoji to a line of its own once the text fills the bubble. */
+.msg-foot {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px 10px;
+  margin-top: 5px;
+  white-space: normal;
+}
+.msg-foot .msg-meta {
+  float: none;
+  margin: 0 0 0 auto;
 }
 /* The emoji on a message, under its text: each with its count, ours lit. */
 .msg-reacts {
-  display: inline-flex;
+  display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 5px;
-  vertical-align: bottom;
-  white-space: normal;
+  min-width: 0;
 }
 .react-chip {
   display: inline-flex;
@@ -371,9 +379,6 @@ button.react-chip {
     opacity: 0;
     transform: scale(0.4);
   }
-}
-.jumbo .msg-break {
-  display: none;
 }
 /* Who put what on a message, in its details. */
 .details-reacts {

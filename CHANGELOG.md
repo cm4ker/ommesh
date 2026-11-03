@@ -20,6 +20,7 @@
 ### Fixes
 - A repeater you rename in its settings shows its new name as soon as its advert reaches your radio. Before, Ommesh kept the old name until it connected to the radio again, so the change looked lost, though the repeater had taken it. A node's new place on the map came late in the same way.
 - On an iPhone, with the keyboard up in a chat, messages no longer show over the strip at the top of the screen, the one that says a survey is running or the radio is reconnecting, nor over the phone's clock.
+- On an iPhone and a Mac, a message with reactions shows its time beside them, at the end of their row, instead of on a line of its own under them.
 
 ## 0.11.0 — 2026-10-29
 

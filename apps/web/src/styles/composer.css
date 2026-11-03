@@ -21,13 +21,6 @@
   :root.keyboard-up .compose.focus {
     padding-bottom: var(--space-2);
   }
-  /* A touch screen's fields are at least 16 px (see the end of this file), and the layer under this one must match. */
-  .compose-field textarea,
-  .compose-field input,
-  .compose-mirror {
-    font-size: max(16px, var(--text-base));
-    line-height: calc(22px * var(--text-scale));
-  }
 }
 .compose-box {
   --r: 16px;
@@ -83,6 +76,16 @@
   overflow-wrap: break-word;
   word-break: normal;
   tab-size: 4;
+}
+/* A touch screen's fields are at least 16 px (touch.css), and the layer under this one must match.
+   It comes after the rule above, which would otherwise win and leave the marks 14 px under 16 px text. */
+@media (pointer: coarse) {
+  .compose-field textarea,
+  .compose-field input,
+  .compose-mirror {
+    font-size: max(16px, var(--text-base));
+    line-height: calc(22px * var(--text-scale));
+  }
 }
 .compose-mirror {
   position: absolute;

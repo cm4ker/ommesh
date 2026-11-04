@@ -514,7 +514,7 @@
   "power.resetBody": "Every contact, channel and setting on the radio is erased, and its identity with them: it becomes a new node with a new key. This cannot be undone.",
   "power.resetConfirm": "Erase everything",
   "power.forgetTitle": "Delete the history?",
-  "power.forgetBody": "Every message this device has kept for this radio is deleted. The radio itself is untouched.",
+  "power.forgetBody": "Every message and reading this device has kept for this radio is deleted. The radio itself is untouched.",
   "power.forgotten": "History deleted",
   "power.off": "Turn the radio off",
   "power.offTitle": "Turn the radio off?",

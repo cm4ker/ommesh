@@ -1430,6 +1430,8 @@ function PowerPage() {
           const self = session.getState().self;
           if (self) await storage.forget(self.key);
           for (const conv of new Set(session.getState().messages.map((m) => m.conversation))) session.deleteConversation(conv);
+          // The readings too: left in memory, the next save would have written them back.
+          session.clearAllReadings();
           setAsk(null);
           toast(t("radio.power.forgotten"));
         }}

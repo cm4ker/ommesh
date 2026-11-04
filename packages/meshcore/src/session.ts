@@ -300,8 +300,8 @@ export interface NodeStatus {
 }
 
 /**
- * One status answer, kept for the trend lines. A reading is left out when its line was started
- * again after the answer (`restartLine`).
+ * One status answer, kept for the trend lines. A reading is left out when the answer's battery
+ * read nothing, or when its line was started again after the answer (`restartLine`).
  */
 export interface StatusSample {
   at: number;
@@ -1297,6 +1297,33 @@ function stripped(sample: StatusSample, field: "batteryMv" | "noiseFloor"): Stat
   return copy.batteryMv === undefined && copy.noiseFloor === undefined ? null : copy;
 }
 
+/**
+ * Stored readings as a history is read back. Samples past their window go: a series was trimmed
+ * only as the node's next reading came, so the lines of a node that went quiet stayed for ever.
+ * So do battery readings of nothing, kept before they were left out. A status list stays even
+ * when it is empty, as it says the node is one of the reader's own.
+ */
+function freshReadings(persisted: PersistedState | null, now: number): Pick<SessionState, "statusHistory" | "batteryHistory" | "readingHistory"> {
+  const statusHistory: Record<string, StatusSample[]> = {};
+  for (const [key, list] of Object.entries(persisted?.statusHistory ?? {}))
+    statusHistory[key] = list.filter((s) => now - s.at < HISTORY_MS).flatMap((s) => (s.batteryMv === undefined || s.batteryMv > 0 ? [s] : (stripped(s, "batteryMv") ?? [])));
+  const batteryHistory: Record<string, BatterySample[]> = {};
+  for (const [key, list] of Object.entries(persisted?.batteryHistory ?? {})) {
+    const kept = list.filter((s) => now - s.at < HISTORY_MS && s.mv > 0);
+    if (kept.length) batteryHistory[key] = kept;
+  }
+  const readingHistory: Record<string, Record<string, ReadingSample[]>> = {};
+  for (const [key, record] of Object.entries(persisted?.readingHistory ?? {})) {
+    const series: Record<string, ReadingSample[]> = {};
+    for (const [id, list] of Object.entries(record)) {
+      const kept = list.filter((s) => now - s.at < READINGS_MS);
+      if (kept.length) series[id] = kept;
+    }
+    if (Object.keys(series).length) readingHistory[key] = series;
+  }
+  return { statusHistory, batteryHistory, readingHistory };
+}
+
 /** The last this many console lines a node are kept. */
 const CONSOLE_LIMIT = 200;
 
@@ -1869,9 +1896,7 @@ export class MeshSession {
       })),
       unread: persisted?.unread ?? {},
       logins: persisted?.logins ?? {},
-      statusHistory: persisted?.statusHistory ?? {},
-      batteryHistory: persisted?.batteryHistory ?? {},
-      readingHistory: persisted?.readingHistory ?? {},
+      ...freshReadings(persisted, now),
       routing: persisted?.routing ?? EMPTY.routing,
       consoles: restoredConsoles(persisted?.consoles),
       channelRegions: persisted?.channelRegions ?? {},
@@ -5484,6 +5509,15 @@ export class MeshSession {
     this.set(patch);
   }
 
+  /** Drops the readings of every node and of this radio on this device; a node of the reader's own stays so by its empty status list. */
+  clearAllReadings(): void {
+    this.set({
+      batteryHistory: {},
+      readingHistory: {},
+      statusHistory: Object.fromEntries(Object.keys(this.state.statusHistory).map((key) => [key, []])),
+    });
+  }
+
   clearConsole(key: string): void {
     const consoles = { ...this.state.consoles };
     delete consoles[key];
@@ -5713,6 +5747,8 @@ export class MeshSession {
    * next, and the latest alone would draw that wander as the battery's line.
    */
   private noteBattery(key: string, mv: number): Partial<SessionState> {
+    // A reading of nothing is a divider not read, not a flat battery, and would pull the week's low down to it.
+    if (!(mv > 0)) return {};
     const at = this.now();
     const kept = (this.state.batteryHistory[key] ?? []).filter((s) => at - s.at < HISTORY_MS);
     const last = kept.at(-1);
@@ -5756,7 +5792,9 @@ export class MeshSession {
     const patch: Partial<SessionState> = { statuses: { ...this.state.statuses, [key]: { stats, raw: toHex(raw), at } } };
     if (stats) {
       const kept = (this.state.statusHistory[key] ?? []).filter((s) => at - s.at < HISTORY_MS);
-      const history = [...kept, { at, batteryMv: stats.batteryMv, noiseFloor: stats.noiseFloor }].slice(-HISTORY_LIMIT);
+      // A battery that read nothing stays out of its line, as in noteBattery; the noise still goes in.
+      const sample: StatusSample = stats.batteryMv > 0 ? { at, batteryMv: stats.batteryMv, noiseFloor: stats.noiseFloor } : { at, noiseFloor: stats.noiseFloor };
+      const history = [...kept, sample].slice(-HISTORY_LIMIT);
       patch.statusHistory = { ...this.state.statusHistory, [key]: history };
     }
     this.set(patch);

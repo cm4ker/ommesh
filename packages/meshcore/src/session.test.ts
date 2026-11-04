@@ -2088,6 +2088,43 @@ test("clearing a node's readings keeps the latest of each line, and the node sta
   session.restoreReadings(bob!);
   assert.equal(session.getState().batteryHistory[bobKey()]!.length, 3);
   assert.deepEqual(session.getState().readingHistory[bobKey()]!["4:current"]!.map((s) => s.value), [0.119, 0.24, 0.035]);
+
+  // Every node's readings go with the history on this device; a status list stays, empty.
+  session.clearAllReadings();
+  assert.deepEqual(session.getState().batteryHistory, {});
+  assert.deepEqual(session.getState().readingHistory, {});
+  assert.deepEqual(session.getState().statusHistory, { [HILL_KEY]: [] });
+});
+
+test("a battery that reads nothing stays out of its line; a status answer keeps its noise", async () => {
+  const { radio, session } = await nodeSession();
+  radio.push(new ByteWriter().u8(Push.TelemetryResponse).u8(0).bytes(BOB.subarray(0, 6)).bytes(new Uint8Array([1, 0x74, 0, 0])).toBytes());
+  radio.push(hillStatus(0, -110));
+  await tick();
+  assert.equal(session.getState().batteryHistory[bobKey()], undefined);
+  assert.deepEqual(session.getState().statusHistory[HILL_KEY], [{ at: 1_700_000_000_000, noiseFloor: -110 }]);
+});
+
+test("readings past their window, and batteries that read nothing, go as the history is read back", async () => {
+  const now = 1_700_000_000_000;
+  const day = 24 * 3600 * 1000;
+  const storage = new MemoryStorage();
+  await storage.save(toHex(SELF), {
+    contacts: {},
+    contactsCursor: 0,
+    channels: [],
+    messages: [],
+    unread: {},
+    statusHistory: { [HILL_KEY]: [{ at: now - 8 * day, batteryMv: 4100, noiseFloor: -110 }], [ROOM_KEY]: [{ at: now - day, batteryMv: 0, noiseFloor: -100 }] },
+    batteryHistory: { [bobKey()]: [{ at: now - 8 * day, mv: 4100 }, { at: now - day, mv: 0 }, { at: now - day + 1, mv: 4000 }], gone: [{ at: now - 9 * day, mv: 3900 }] },
+    readingHistory: { [bobKey()]: { "4:voltage": [{ at: now - 2 * day, value: 3.3 }], "4:current": [{ at: now - 3600_000, value: 0.1 }] }, gone: { "4:voltage": [{ at: now - 2 * day, value: 3.3 }] } },
+  });
+  const session = new MeshSession({ storage, now: () => now });
+  await session.connect(new ScriptedRadio());
+  const state = session.getState();
+  assert.deepEqual(state.statusHistory, { [HILL_KEY]: [], [ROOM_KEY]: [{ at: now - day, noiseFloor: -100 }] });
+  assert.deepEqual(state.batteryHistory, { [bobKey()]: [{ at: now - day + 1, mv: 4000 }] });
+  assert.deepEqual(state.readingHistory, { [bobKey()]: { "4:current": [{ at: now - 3600_000, value: 0.1 }] } });
 });
 
 test("a room's status tail is its post counts, not receive air time", async () => {

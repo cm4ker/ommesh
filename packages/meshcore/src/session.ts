@@ -299,11 +299,14 @@ export interface NodeStatus {
   at: number;
 }
 
-/** One status answer, kept for the trend lines. */
+/**
+ * One status answer, kept for the trend lines. A reading is left out when its line was started
+ * again after the answer (`restartLine`).
+ */
 export interface StatusSample {
   at: number;
-  batteryMv: number;
-  noiseFloor: number;
+  batteryMv?: number;
+  noiseFloor?: number;
 }
 
 export interface NeighbourRecord {
@@ -729,6 +732,17 @@ export interface BatterySample {
 export interface ReadingSample {
   at: number;
   value: number;
+}
+
+/** One of a node's lines kept on this device: its battery, a repeater's noise, or a channel's voltage or current ("2:voltage"). */
+export type ReadingLine = "battery" | "noise" | `${number}:voltage` | `${number}:current`;
+
+/** What `restartLine` or `clearReadings` took from a node's readings, the lists as they were, for `restoreReadings`. */
+export interface KeptReadings {
+  key: string;
+  battery?: BatterySample[];
+  status?: StatusSample[];
+  readings?: Record<string, ReadingSample[]>;
 }
 
 /** What the radio says about itself: its battery and how long it has been up. */
@@ -1274,6 +1288,13 @@ const READINGS_MS = 24 * 3600 * 1000;
 function spaced<T extends { at: number }>(kept: T[], sample: T): T[] {
   const last = kept.at(-1);
   return last && sample.at - last.at < SAMPLE_SPACING_MS ? [...kept.slice(0, -1), { ...sample, at: last.at }] : [...kept, sample];
+}
+
+/** A status sample without one of its readings; null when it has none left. */
+function stripped(sample: StatusSample, field: "batteryMv" | "noiseFloor"): StatusSample | null {
+  const copy = { ...sample };
+  delete copy[field];
+  return copy.batteryMv === undefined && copy.noiseFloor === undefined ? null : copy;
 }
 
 /** The last this many console lines a node are kept. */
@@ -5375,6 +5396,92 @@ export class MeshSession {
       consoles: without(this.state.consoles),
       series: without(this.state.series),
     });
+  }
+
+  /**
+   * Starts one of a node's lines again from its latest reading, on this device only, as after a
+   * new battery went in: the rest of the line goes. A status answer carries the battery and the
+   * noise both, so the answers before lose only this line's reading. Returns what was there, for
+   * `restoreReadings`, or null when the line held no more than its latest reading.
+   */
+  restartLine(key: string, line: ReadingLine): KeptReadings | null {
+    const s = this.state;
+    const kept: KeptReadings = { key };
+    const patch: Partial<SessionState> = {};
+    if (line === "battery") {
+      const battery = s.batteryHistory[key];
+      if (battery && battery.length > 1) {
+        kept.battery = battery;
+        patch.batteryHistory = { ...s.batteryHistory, [key]: battery.slice(-1) };
+      }
+    }
+    if (line === "battery" || line === "noise") {
+      const field = line === "battery" ? "batteryMv" : "noiseFloor";
+      const status = s.statusHistory[key] ?? [];
+      const last = status.findLastIndex((x) => x[field] !== undefined);
+      if (status.some((x, i) => i !== last && x[field] !== undefined)) {
+        kept.status = status;
+        patch.statusHistory = { ...s.statusHistory, [key]: status.flatMap((x, i) => (i === last || x[field] === undefined ? [x] : (stripped(x, field) ?? []))) };
+      }
+    } else {
+      const record = s.readingHistory[key];
+      const series = record?.[line];
+      if (record && series && series.length > 1) {
+        kept.readings = { [line]: series };
+        patch.readingHistory = { ...s.readingHistory, [key]: { ...record, [line]: series.slice(-1) } };
+      }
+    }
+    if (!kept.battery && !kept.status && !kept.readings) return null;
+    this.set(patch);
+    return kept;
+  }
+
+  /**
+   * Starts every line of a node again from its latest reading, on this device only. The node stays
+   * as it was otherwise, one of the reader's own among them. Returns what was there, for
+   * `restoreReadings`, or null when there was nothing past the latest readings.
+   */
+  clearReadings(key: string): KeptReadings | null {
+    const s = this.state;
+    const kept: KeptReadings = { key };
+    const patch: Partial<SessionState> = {};
+    const battery = s.batteryHistory[key];
+    if (battery && battery.length > 1) {
+      kept.battery = battery;
+      patch.batteryHistory = { ...s.batteryHistory, [key]: battery.slice(-1) };
+    }
+    const status = s.statusHistory[key];
+    if (status && status.length > 1) {
+      kept.status = status;
+      patch.statusHistory = { ...s.statusHistory, [key]: status.slice(-1) };
+    }
+    const record = s.readingHistory[key];
+    const long = Object.entries(record ?? {}).filter(([, series]) => series.length > 1);
+    if (record && long.length) {
+      kept.readings = Object.fromEntries(long);
+      patch.readingHistory = { ...s.readingHistory, [key]: { ...record, ...Object.fromEntries(long.map(([id, series]) => [id, series.slice(-1)])) } };
+    }
+    if (!kept.battery && !kept.status && !kept.readings) return null;
+    this.set(patch);
+    return kept;
+  }
+
+  /** Puts back what `restartLine` or `clearReadings` took, followed by whatever came in since. */
+  restoreReadings(kept: KeptReadings): void {
+    const s = this.state;
+    const rejoin = <T extends { at: number }>(was: T[], now: T[] | undefined): T[] => {
+      const end = was.at(-1)?.at ?? -Infinity;
+      return [...was, ...(now ?? []).filter((x) => x.at > end)];
+    };
+    const patch: Partial<SessionState> = {};
+    if (kept.battery) patch.batteryHistory = { ...s.batteryHistory, [kept.key]: rejoin(kept.battery, s.batteryHistory[kept.key]) };
+    if (kept.status) patch.statusHistory = { ...s.statusHistory, [kept.key]: rejoin(kept.status, s.statusHistory[kept.key]) };
+    if (kept.readings) {
+      const record = { ...s.readingHistory[kept.key] };
+      for (const [id, was] of Object.entries(kept.readings)) record[id] = rejoin(was, record[id]);
+      patch.readingHistory = { ...s.readingHistory, [kept.key]: record };
+    }
+    this.set(patch);
   }
 
   clearConsole(key: string): void {

@@ -139,6 +139,18 @@ export function Profile({ contactKey, chrome, sheet = false }: { contactKey: str
       if (contact.type === AdvType.Repeater) items.push({ label: owner ? t("mesh.profile.askOwnerAgain") : t("mesh.profile.askOwner"), icon: <AirIcon size={17} />, air: true, disabled: !online, onSelect: () => void act(() => session.requestOwnerInfo(key)) });
       items.push({ label: t("mesh.profile.rebootName", { name }), icon: <PowerIcon size={17} />, danger: true, disabled: !online, onSelect: () => setAsk("reboot") });
     }
+    // Every line of the node starts again from its latest reading, on this device only, with the way back in the note.
+    const lines = [state.batteryHistory[key], state.statusHistory[key], ...Object.values(state.readingHistory[key] ?? {})];
+    if (lines.some((line) => (line?.length ?? 0) > 1))
+      items.push({
+        label: t("mesh.profile.clearReadings"),
+        hint: t("mesh.profile.clearReadingsHint"),
+        icon: <ChartIcon size={17} />,
+        onSelect: () => {
+          const kept = session.clearReadings(key);
+          if (kept) toast(t("mesh.profile.readingsCleared"), "", { label: t("common.undo"), run: () => session.restoreReadings(kept) });
+        },
+      });
     if (node && managed) items.push({ label: t("mesh.profile.forgetNode"), icon: <CloseIcon size={17} />, danger: true, onSelect: () => setAsk("forget") });
     items.push({ label: contact.unsaved ? t("mesh.profile.removeFromList") : t("mesh.profile.removeContact"), icon: <TrashIcon size={17} />, danger: true, disabled: !online && !contact.unsaved, onSelect: () => setAsk("remove") });
     showMenu(items, { title: name });

@@ -2023,6 +2023,73 @@ test("a power monitor's voltage and current join the node's day, and a day old o
   ]);
 });
 
+/** A repeater's status answer from Hill, with its battery and noise as given. */
+function hillStatus(mv: number, noise: number): Uint8Array {
+  const body = statusBody(new ByteWriter().u32(90).u32(7).toBytes());
+  const view = new DataView(body.buffer, body.byteOffset, body.byteLength);
+  view.setUint16(0, mv, true);
+  view.setInt16(4, noise, true);
+  return new ByteWriter().u8(Push.StatusResponse).u8(0).bytes(HILL.subarray(0, 6)).bytes(body).toBytes();
+}
+
+test("a line starts again from its latest reading, and undone it is whole with what came since", async () => {
+  const start = 1_700_000_000_000;
+  const step = 15 * 60 * 1000;
+  let now = start;
+  const { radio, session } = await nodeSession({ now: () => now });
+  for (const [mv, noise] of [[4100, -110], [4000, -112], [3900, -108]] as const) {
+    radio.push(hillStatus(mv, noise));
+    await tick();
+    now += step;
+  }
+  // A status answer carries both lines: the battery's start takes only the battery out of the ones before.
+  const kept = session.restartLine(HILL_KEY, "battery");
+  assert.deepEqual(session.getState().statusHistory[HILL_KEY], [
+    { at: start, noiseFloor: -110 },
+    { at: start + step, noiseFloor: -112 },
+    { at: start + 2 * step, batteryMv: 3900, noiseFloor: -108 },
+  ]);
+  radio.push(hillStatus(4150, -111));
+  await tick();
+  session.restoreReadings(kept!);
+  assert.deepEqual(session.getState().statusHistory[HILL_KEY]!.map((s) => s.batteryMv), [4100, 4000, 3900, 4150]);
+
+  session.restartLine(HILL_KEY, "noise");
+  assert.deepEqual(session.getState().statusHistory[HILL_KEY]!.map((s) => s.noiseFloor), [undefined, undefined, undefined, -111]);
+  assert.deepEqual(session.getState().statusHistory[HILL_KEY]!.map((s) => s.batteryMv), [4100, 4000, 3900, 4150]);
+  // A line with nothing but its latest reading has nothing to start again.
+  assert.equal(session.restartLine(HILL_KEY, "noise"), null);
+});
+
+test("clearing a node's readings keeps the latest of each line, and the node stays one of the reader's own", async () => {
+  const start = 1_700_000_000_000;
+  let now = start;
+  const { radio, session } = await nodeSession({ now: () => now });
+  const telemetry = (centivolts: number, milliamps: number) =>
+    new ByteWriter()
+      .u8(Push.TelemetryResponse)
+      .u8(0)
+      .bytes(BOB.subarray(0, 6))
+      .bytes(new Uint8Array([1, 0x74, centivolts >> 8, centivolts & 0xff, 4, 0x74, 0x01, 0x52, 4, 0x75, milliamps >> 8, milliamps & 0xff]))
+      .toBytes();
+  for (const [centivolts, milliamps] of [[415, 119], [410, 240], [405, 35]] as const) {
+    radio.push(telemetry(centivolts, milliamps));
+    radio.push(hillStatus(centivolts * 10, -110));
+    await tick();
+    now += 15 * 60 * 1000;
+  }
+  const bob = session.clearReadings(bobKey());
+  assert.deepEqual(session.getState().batteryHistory[bobKey()], [{ at: start + 30 * 60 * 1000, mv: 4050 }]);
+  assert.deepEqual(session.getState().readingHistory[bobKey()]!["4:current"], [{ at: start + 30 * 60 * 1000, value: 0.035 }]);
+  assert.equal(session.getState().readingHistory[bobKey()]!["4:voltage"]!.length, 1);
+  session.clearReadings(HILL_KEY);
+  assert.deepEqual(session.getState().statusHistory[HILL_KEY], [{ at: start + 30 * 60 * 1000, batteryMv: 4050, noiseFloor: -110 }]);
+
+  session.restoreReadings(bob!);
+  assert.equal(session.getState().batteryHistory[bobKey()]!.length, 3);
+  assert.deepEqual(session.getState().readingHistory[bobKey()]!["4:current"]!.map((s) => s.value), [0.119, 0.24, 0.035]);
+});
+
 test("a room's status tail is its post counts, not receive air time", async () => {
   const { radio, session } = await nodeSession();
   const status = session.requestStatus(ROOM_KEY);

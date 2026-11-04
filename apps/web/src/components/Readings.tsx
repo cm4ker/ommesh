@@ -1,10 +1,14 @@
-import type { LppReading, ReadingSample } from "@meshnet/meshcore";
+import { useRef } from "react";
+import type { LppReading, ReadingLine, ReadingSample } from "@meshnet/meshcore";
 import { locale, t, type Key } from "../i18n/index.js";
 import { batteryTypeLabel } from "../lib/batteryType.js";
 import { batteryPercent, powerWatts, type BatteryType } from "../lib/format.js";
 import { bearingDeg, compass, distanceKm, formatDistance, hasPosition } from "../lib/geo.js";
+import { usePress } from "../lib/press.js";
 import { getUnits, pressureIn, pressureUnitKey, temperatureIn, temperatureUnitKey, useUnits, type Units } from "../lib/units.js";
 import { Block, InfoRow } from "../ui/List.js";
+import { showMenu } from "../ui/Menu.js";
+import { RefreshIcon } from "./Icons.js";
 import { Sparkline } from "./node/Sparkline.js";
 
 /** What each kind of reading measures. */
@@ -56,6 +60,54 @@ interface Tile {
   sub?: React.ReactNode;
   wide?: boolean | undefined;
   line?: { values: number[]; times: number[]; unit: string; digits: number } | undefined;
+  /** The line the session keeps it by, which a hold starts again. */
+  kept?: ReadingLine | undefined;
+}
+
+/** What a line can be of. */
+export type LineKind = "battery" | "noise" | "voltage" | "current";
+
+const LINE_ONLY: Record<LineKind, Key> = {
+  battery: "node.readings.only.battery",
+  noise: "node.readings.only.noise",
+  voltage: "node.readings.only.voltage",
+  current: "node.readings.only.current",
+};
+
+/**
+ * A tile whose line can start again: held, or clicked with the right button, it lifts over the
+ * dimmed screen with the one thing to do under it. Without a `kind` the tile is left as it is.
+ */
+export function useLineHold(kind: LineKind | null, run: () => void) {
+  const tile = useRef<HTMLElement | null>(null);
+  const press = usePress((at) =>
+    showMenu([{ label: t("node.readings.restartLine"), hint: kind ? t(LINE_ONLY[kind]) : undefined, icon: <RefreshIcon size={17} />, onSelect: run }], { at, lift: tile.current, hints: true }),
+  );
+  return kind
+    ? {
+        ref: (el: HTMLElement | null) => {
+          tile.current = el;
+        },
+        ...press,
+      }
+    : {};
+}
+
+/** A tile of `Readings`, its line held to start again when `onRestart` is given. */
+function ReadingTile({ tile, onRestart }: { tile: Tile; onRestart: ((line: ReadingLine) => void) | undefined }) {
+  const kept = tile.line && onRestart ? tile.kept : undefined;
+  const hold = useLineHold(kept ? (kept.endsWith(":current") ? "current" : "voltage") : null, () => kept && onRestart?.(kept));
+  return (
+    <div className={["reading-tile", tile.wide ? "wide" : ""].join(" ")} {...hold}>
+      <span className="reading-label">{tile.label}</span>
+      <span className="reading-value">
+        {tile.value}
+        {tile.unit ? <small>{tile.unit}</small> : null}
+      </span>
+      {tile.line ? <Sparkline {...tile.line} day /> : null}
+      {tile.sub ? <span className="reading-sub">{tile.sub}</span> : null}
+    </div>
+  );
 }
 
 /**
@@ -72,6 +124,7 @@ export function Readings({
   onMap,
   onCopy,
   history,
+  onRestart,
   skipBattery = false,
   titled: alwaysTitled = false,
 }: {
@@ -89,6 +142,8 @@ export function Readings({
   onCopy?: ((text: string) => void) | undefined;
   /** The node's day of voltages and currents, by channel and type, as the session keeps it. */
   history?: Record<string, ReadingSample[]> | undefined;
+  /** A day's line started again from its latest reading, the tile held for it. */
+  onRestart?: ((line: ReadingLine) => void) | undefined;
 }) {
   const units = useUnits();
   if (readings.length === 0) return <InfoRow label={t("radio.readings.none")}>—</InfoRow>;
@@ -112,15 +167,7 @@ export function Readings({
           ) : null}
           <div className="reading-tiles">
             {tilesOf(channel, list, { cell, from, onMap, onCopy, history, units }).map((tile) => (
-              <div key={tile.id} className={["reading-tile", tile.wide ? "wide" : ""].join(" ")}>
-                <span className="reading-label">{tile.label}</span>
-                <span className="reading-value">
-                  {tile.value}
-                  {tile.unit ? <small>{tile.unit}</small> : null}
-                </span>
-                {tile.line ? <Sparkline {...tile.line} day /> : null}
-                {tile.sub ? <span className="reading-sub">{tile.sub}</span> : null}
-              </div>
+              <ReadingTile key={tile.id} tile={tile} onRestart={onRestart} />
             ))}
           </div>
         </div>
@@ -185,7 +232,7 @@ function tilesOf(
     }
     // The session keeps the first of each type on a channel, the one a supply is made of.
     const kept = (r.type === "voltage" || r.type === "current") && list.find((x) => x.type === r.type) === r;
-    tiles.push({ id, label: t(LABELS[r.type]), ...parts(r, how.units), line: kept ? dayLine(how.history?.[`${channel}:${r.type}`], r.type) : undefined });
+    tiles.push({ id, label: t(LABELS[r.type]), ...parts(r, how.units), line: kept ? dayLine(how.history?.[`${channel}:${r.type}`], r.type) : undefined, kept: kept ? `${channel}:${r.type}` : undefined });
   });
   return tiles;
 }

@@ -1,6 +1,6 @@
 /** Small formatters shared by the views. */
 
-import { lppTypeName, type LppReading, type SeriesSummary, type SessionState } from "@meshnet/meshcore";
+import { lppTypeName, type BatterySample, type LppReading, type SeriesSummary, type SessionState, type StatusSample } from "@meshnet/meshcore";
 import { locale, t } from "../i18n/index.js";
 
 /*
@@ -213,6 +213,11 @@ export function steadyMv(samples: readonly { at: number; mv: number; n?: number 
     count += s.n ?? 1;
   }
   return count > 0 ? Math.round(sum / count) : latest;
+}
+
+/** The battery's readings among a node's status answers, its line; an answer whose battery is left out has none. */
+export function statusBattery(history: readonly StatusSample[] | undefined): BatterySample[] {
+  return (history ?? []).flatMap((s) => (s.batteryMv !== undefined ? [{ at: s.at, mv: s.batteryMv }] : []));
 }
 
 /** This radio's battery, mV, steadied over its last readings; none before one is read. */

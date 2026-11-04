@@ -10,7 +10,7 @@ import { AdvertLocPolicy, AdvType, isFavourite, type ContactRecord, type Session
 import { t, type Key } from "../i18n/index.js";
 import { useBackLayer } from "../lib/back.js";
 import { useBatteryTypes } from "../lib/batteryType.js";
-import { ago, batteryPercent, lowCharge, steadyMv, type BatteryType } from "../lib/format.js";
+import { ago, batteryPercent, lowCharge, statusBattery, steadyMv, type BatteryType } from "../lib/format.js";
 import { bearingDeg, compass, destination, distanceKm, formatDistance, formatLatLon, hasPosition } from "../lib/geo.js";
 import { useHears } from "../lib/hears.js";
 import { SIDE_PANEL, useSideways } from "../lib/layout.js";
@@ -145,9 +145,9 @@ function matcher(state: SessionState, saved: readonly string[], kind: Kind, quer
 
 /** A node's battery by its status answers, steadied over the last half hour of them as its readings show it. */
 function statusMv(history: SessionState["statusHistory"][string] | undefined): number | null {
-  const last = history?.at(-1);
-  if (!last) return null;
-  return last.batteryMv > 0 ? steadyMv(history!.map((s) => ({ at: s.at, mv: s.batteryMv })), last.batteryMv) : last.batteryMv;
+  const samples = statusBattery(history);
+  const last = samples.at(-1);
+  return last ? steadyMv(samples, last.mv) : null;
 }
 
 /** A node of yours in trouble: its last statuses say its battery is low, by the cell picked for it. */

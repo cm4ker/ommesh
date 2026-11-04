@@ -16,8 +16,10 @@ import {
   type SessionState,
 } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
+import { MENTION } from "./composer.js";
 import { shownText } from "./lookalikes.js";
 import { textWithPlaces } from "./place.js";
+import { replyHead } from "./replySource.js";
 import { plainText } from "./textFormat.js";
 
 export interface ConversationSummary {
@@ -36,8 +38,12 @@ export interface ConversationSummary {
 function preview(message: MessageRecord, kind: ConversationSummary["kind"]): string {
   // A console command this radio did not run is said as such, not as a message.
   if (message.txtType === TxtType.CliCommand) return t("chats.refused.preview", { command: message.text });
+  // A reply is what it says: the start of the message it answers stays in the chat. A mention reads as the name.
+  const said = shownText(message.text);
+  const head = replyHead(said);
+  const own = head?.quote != null && said.length > head.length ? said.slice(head.length) : said;
   // A place is a word here: the row has no room for its map. Formatting is left out, hidden text covered.
-  const text = textWithPlaces(plainText(shownText(message.text)));
+  const text = textWithPlaces(plainText(own.replace(MENTION, "@$1")));
   if (message.direction === "out") return t("chats.conversation.you", { text });
   // A room's posts carry their author the way a channel's messages do.
   if ((kind === "channel" || message.txtType === TxtType.SignedPlain) && message.sender) return `${message.sender}: ${text}`;

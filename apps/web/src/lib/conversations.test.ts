@@ -125,6 +125,13 @@ test("an outgoing message previews as yours", () => {
   assert.equal(rows[0]?.preview, "You: hello");
 });
 
+test("a reply previews as what it says, and a mention as the name", () => {
+  const reply = message("ch:0", "@[Оля] >Во сколько выходим?\nВ 7:30 от станции", 1000, "in", "Миша");
+  assert.equal(summarize(state([reply]))[0]?.preview, "Миша: В 7:30 от станции");
+  const named = message("ch:0", "@[Оля] возьми горелку", 1000, "in", "Миша");
+  assert.equal(summarize(state([named]))[0]?.preview, "Миша: @Оля возьми горелку");
+});
+
 test("a sender the radio did not name gets a row of its own", () => {
   const rows = summarize(state([message("p:aabbccddeeff", "?", 1000)]));
   assert.equal(rows[0]?.kind, "prefix");

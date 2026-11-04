@@ -26,6 +26,9 @@
 - On a phone, the highlight under a mention you type in the message field sits under its name again, instead of drifting to the left of it.
 - A chat that ends with a reply shows the reply's own words in the chat list, instead of the mention and quote it starts with; a mention there reads as @Name.
 - On a phone, holding a node in the Mesh list picks that node alone. Before, the row that moved under your finger as picking began was often picked too.
+- A battery that read 0 V no longer goes into its line, where it showed as a drop to nothing and made the week's low 0.00 V. Such readings kept before are dropped.
+- The lines of a node that stopped reporting go once they are a week old, or a day for voltage and current, instead of being kept for ever.
+- Delete the history on this device deletes the readings kept for this radio too, not only the messages.
 
 ## 0.11.0 — 2026-10-29
 

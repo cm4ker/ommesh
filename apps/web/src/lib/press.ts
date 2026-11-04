@@ -15,6 +15,27 @@ const HOLD_MS = 480;
 const SLOP_PX = 8;
 
 /**
+ * The click that ends a long press is not a tap, wherever it lands. What the press opened can
+ * move the rows (picking in the Mesh list swaps its head), and the finger is then over another
+ * row, whose own click would pick it too. The next press or key, if no click comes, ends the wait.
+ */
+function swallowClick() {
+  const stop = (e: Event) => {
+    e.preventDefault();
+    e.stopPropagation();
+    done();
+  };
+  const done = () => {
+    document.removeEventListener("click", stop, true);
+    document.removeEventListener("pointerdown", done, true);
+    document.removeEventListener("keydown", done, true);
+  };
+  document.addEventListener("click", stop, true);
+  document.addEventListener("pointerdown", done, true);
+  document.addEventListener("keydown", done, true);
+}
+
+/**
  * `onHolding` hears when a finger starts to hold and when it lets go, moves
  * off or holds long enough, for a mark that fills while it holds. With
  * `mouse`, the left mouse button held is timed as a finger is.
@@ -40,6 +61,7 @@ export function usePress(onMenu: (at: MenuAt) => void, onHolding?: (holding: boo
       timer.current = setTimeout(() => {
         timer.current = null;
         fired.current = true;
+        swallowClick();
         onHolding?.(false);
         haptic();
         onMenu(mouse ? at : null);
@@ -59,14 +81,8 @@ export function usePress(onMenu: (at: MenuAt) => void, onHolding?: (holding: boo
       if (fired.current) return;
       fired.current = true;
       const touch = (e.nativeEvent as unknown as { pointerType?: string }).pointerType === "touch";
+      if (touch) swallowClick();
       onMenu(touch ? null : { x: e.clientX, y: e.clientY });
-    },
-    // The click that ends a long press is not a tap.
-    onClickCapture: (e: MouseEvent) => {
-      if (!fired.current) return;
-      fired.current = false;
-      e.preventDefault();
-      e.stopPropagation();
     },
   };
 }

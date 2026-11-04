@@ -23,6 +23,7 @@
 - On an iPhone, with the keyboard up in a chat, messages no longer show over the strip at the top of the screen, the one that says a survey is running or the radio is reconnecting, nor over the phone's clock.
 - On an iPhone and a Mac, a message with reactions shows its time beside them, at the end of their row, instead of on a line of its own under them.
 - On a phone, the highlight under a mention you type in the message field sits under its name again, instead of drifting to the left of it.
+- A chat that ends with a reply shows the reply's own words in the chat list, instead of the mention and quote it starts with; a mention there reads as @Name.
 
 ## 0.11.0 — 2026-10-29
 

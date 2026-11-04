@@ -24,6 +24,7 @@
 - On an iPhone and a Mac, a message with reactions shows its time beside them, at the end of their row, instead of on a line of its own under them.
 - On a phone, the highlight under a mention you type in the message field sits under its name again, instead of drifting to the left of it.
 - A chat that ends with a reply shows the reply's own words in the chat list, instead of the mention and quote it starts with; a mention there reads as @Name.
+- On a phone, holding a node in the Mesh list picks that node alone. Before, the row that moved under your finger as picking began was often picked too.
 
 ## 0.11.0 — 2026-10-29
 

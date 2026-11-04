@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
-import { AdvType, parseConversation } from "@meshnet/meshcore";
+import { AdvType, parseConversation, type MessageRecord } from "@meshnet/meshcore";
 import { onAsk, takeAsk } from "../lib/chatAsk.js";
 import { costOf, blockEdges, ceilingOf, hasCyrillic, headerBytes, mentionOf, mentionQuery, pathBytes, quoteOf, segments, withFormat, splitParts, translit } from "../lib/composer.js";
 import { messagesIn } from "../lib/conversations.js";
@@ -36,6 +36,8 @@ export interface Reply {
   id: string;
   name: string;
   text: string;
+  /** One of this radio's own messages, answered under its name. */
+  mine: boolean;
 }
 
 const share = (n: number, ceiling: number) => `${(Math.min(n, ceiling) / ceiling) * 100}%`;
@@ -224,9 +226,10 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   useLayoutEffect(() => {
     const el = field.current;
     if (!reply || !el) return;
-    // Their later messages here, for the quote to run on until it tells this one from them.
+    // Their later messages here, or ours for one of ours, for the quote to run on until it tells this one from them.
     const at = messages.findIndex((m) => m.id === reply.id);
-    const later = at < 0 ? [] : messages.slice(at + 1).filter((m) => m.direction === "in" && m.sender === reply.name).map((m) => plainText(m.text));
+    const theirs = (m: MessageRecord) => (reply.mine ? m.direction === "out" : m.direction === "in" && m.sender === reply.name);
+    const later = at < 0 ? [] : messages.slice(at + 1).filter(theirs).map((m) => plainText(m.text));
     // Quoted without its markers: the bytes go to its words, and another app reads them plain.
     const said = quoteOf(plainText(reply.text), later);
     const line = said ? `>${said}\n` : "";

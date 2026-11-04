@@ -125,9 +125,12 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   // The message being answered, kept in sight while the keyboard comes up for the answer.
   const answering = useRef<string | null>(null);
   const answer = useCallback((message: MessageRecord) => {
-    if (!message.sender) return;
+    // One of ours is answered under this radio's name, the one the others read it by.
+    const mine = message.direction === "out";
+    const name = mine ? session.getState().self?.name : message.sender;
+    if (!name) return;
     answering.current = message.id;
-    setReply({ id: message.id, name: message.sender, text: message.text });
+    setReply({ id: message.id, name, text: message.text, mine });
   }, []);
   // Who wrote it: the profile, when the radio knows one node by that name; else a choice.
   const who = useCallback(
@@ -557,7 +560,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   };
   const one = pickedIds.length === 1 ? byId.get(pickedIds[0]!) : undefined;
   const replyPicked =
-    one && many && one.direction === "in" && one.sender
+    one && many && (one.direction === "out" ? state.self?.name : one.sender)
       ? () => {
           answer(one);
           setChosen([]);
@@ -748,7 +751,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
                   avatar={voice ? (last && m.sender ? "show" : "gap") : null}
                   me={me}
                   peer={title}
-                  onReply={voice && m.sender ? answer : undefined}
+                  onReply={(voice && m.sender) || (many && m.direction === "out" && me) ? answer : undefined}
                   onSource={toSource}
                   onWho={voice ? who : undefined}
                   contacts={m.direction === "out" ? state.contacts : undefined}

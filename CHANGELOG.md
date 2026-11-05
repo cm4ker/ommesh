@@ -29,6 +29,7 @@
 - A battery that read 0 V no longer goes into its line, where it showed as a drop to nothing and made the week's low 0.00 V. Such readings kept before are dropped.
 - The lines of a node that stopped reporting go once they are a week old, or a day for voltage and current, instead of being kept for ever.
 - Delete the history on this device deletes the readings kept for this radio too, not only the messages.
+- On Android, the keyboard no longer drops the moment you tap a password field, such as the one for signing in to a repeater, when the phone's password manager (Yandex's, for one) offers to fill it. Ommesh keeps the passwords you ask it to remember itself, so password managers no longer offer to fill or save its fields.
 
 ## 0.11.0 — 2026-10-29
 

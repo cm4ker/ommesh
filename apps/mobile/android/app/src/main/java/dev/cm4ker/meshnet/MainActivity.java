@@ -30,8 +30,12 @@ public class MainActivity extends BridgeActivity {
     private static long pageRestored = 0;
     /** How often a page out of sight looks at the phone's free memory. */
     private static final long MEMORY_CHECK_MS = 30_000;
+    /** The name `Context.AUTOFILL_MANAGER_SERVICE` has, which the SDK keeps from apps. */
+    private static final String AUTOFILL = "autofill";
 
     private boolean outOfSight = false;
+    /** True while the bridge lays out the page's WebView (setContentView). */
+    private boolean makingPage = false;
     private final Handler memoryChecks = new Handler(Looper.getMainLooper());
     private final Runnable memoryCheck = new Runnable() {
         @Override
@@ -101,6 +105,31 @@ public class MainActivity extends BridgeActivity {
                 setEnabled(true);
             }
         });
+    }
+
+    // The bridge makes the page's WebView here, in its onCreate.
+    @Override
+    public void setContentView(int layoutResID) {
+        makingPage = true;
+        try {
+            super.setContentView(layoutResID);
+        } finally {
+            makingPage = false;
+        }
+    }
+
+    /**
+     * The page's WebView is told there is no autofill service. It hands every field to the phone's
+     * service, and one that answers with a list under the field, as Yandex's does under a sign-in
+     * password ("Выбрать вручную", #110), takes the window's focus: the keyboard goes down at once
+     * while the caret stays in the field. A native field keeps its keyboard; a WebView's does not.
+     * The page keeps the passwords it is asked to keep itself (secrets.ts). The WebView asks for
+     * the service once, as it is made, so the activity keeps its own.
+     */
+    @Override
+    public Object getSystemService(String name) {
+        if (makingPage && AUTOFILL.equals(name)) return null;
+        return super.getSystemService(name);
     }
 
     // Turned, or unfolded into a tablet and folded back, the window stays as it is (configChanges) and the bars follow.

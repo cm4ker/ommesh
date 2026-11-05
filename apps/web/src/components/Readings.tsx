@@ -1,14 +1,13 @@
-import { useRef } from "react";
+import { useState } from "react";
 import type { LppReading, ReadingLine, ReadingSample } from "@meshnet/meshcore";
 import { locale, t, type Key } from "../i18n/index.js";
 import { batteryTypeLabel } from "../lib/batteryType.js";
 import { batteryPercent, powerWatts, type BatteryType } from "../lib/format.js";
 import { bearingDeg, compass, distanceKm, formatDistance, hasPosition } from "../lib/geo.js";
-import { usePress } from "../lib/press.js";
 import { getUnits, pressureIn, pressureUnitKey, temperatureIn, temperatureUnitKey, useUnits, type Units } from "../lib/units.js";
-import { Block, InfoRow } from "../ui/List.js";
-import { showMenu } from "../ui/Menu.js";
-import { RefreshIcon } from "./Icons.js";
+import { ActionRow, Block, Group, InfoRow } from "../ui/List.js";
+import { Sheet } from "../ui/Sheet.js";
+import { TrashIcon } from "./Icons.js";
 import { Sparkline } from "./node/Sparkline.js";
 
 /** What each kind of reading measures. */
@@ -60,45 +59,45 @@ interface Tile {
   sub?: React.ReactNode;
   wide?: boolean | undefined;
   line?: { values: number[]; times: number[]; unit: string; digits: number } | undefined;
-  /** The line the session keeps it by, which a hold starts again. */
+  /** The line the session keeps it by, which its sheet clears. */
   kept?: ReadingLine | undefined;
 }
 
-/** What a line can be of. */
-export type LineKind = "battery" | "noise" | "voltage" | "current";
-
-const LINE_ONLY: Record<LineKind, Key> = {
-  battery: "node.readings.only.battery",
-  noise: "node.readings.only.noise",
-  voltage: "node.readings.only.voltage",
-  current: "node.readings.only.current",
-};
-
 /**
- * A tile whose line can start again: held, or clicked with the right button, it lifts over the
- * dimmed screen with the one thing to do under it. Without a `kind` the tile is left as it is.
+ * A line's history cleared, on this device only, below whatever else its tile's sheet holds. The
+ * latest reading stays as the first point of the next line. `day` is a day's line, not a week's.
  */
-export function useLineHold(kind: LineKind | null, run: () => void) {
-  const tile = useRef<HTMLElement | null>(null);
-  const press = usePress((at) =>
-    showMenu([{ label: t("node.readings.restartLine"), hint: kind ? t(LINE_ONLY[kind]) : undefined, icon: <RefreshIcon size={17} />, onSelect: run }], { at, lift: tile.current, hints: true }),
+export function ClearLineGroup({ count, day = false, onClear }: { count: number; day?: boolean | undefined; onClear: () => void }) {
+  return (
+    <Group>
+      <ActionRow label={t("node.readings.clearLine")} hint={t(day ? "node.readings.clearLineDay" : "node.readings.clearLineWeek", { count })} icon={<TrashIcon size={17} />} onClick={onClear} />
+    </Group>
   );
-  return kind
-    ? {
-        ref: (el: HTMLElement | null) => {
-          tile.current = el;
-        },
-        ...press,
-      }
-    : {};
 }
 
-/** A tile of `Readings`, its line held to start again when `onRestart` is given. */
-function ReadingTile({ tile, onRestart }: { tile: Tile; onRestart: ((line: ReadingLine) => void) | undefined }) {
-  const kept = tile.line && onRestart ? tile.kept : undefined;
-  const hold = useLineHold(kept ? (kept.endsWith(":current") ? "current" : "voltage") : null, () => kept && onRestart?.(kept));
+/** The sheet of a tile whose line is all it has to offer: the line cleared, and the sheet closed. */
+export function LineSheet({ open, onClose, title, count, day, onClear }: { open: boolean; onClose: () => void; title: string; count: number; day?: boolean | undefined; onClear: () => void }) {
   return (
-    <div className={["reading-tile", tile.wide ? "wide" : ""].join(" ")} {...hold}>
+    <Sheet open={open} onClose={onClose} title={title}>
+      <ClearLineGroup
+        count={count}
+        day={day}
+        onClear={() => {
+          onClose();
+          onClear();
+        }}
+      />
+    </Sheet>
+  );
+}
+
+/** A tile of `Readings`; with `onClear` given, one with a line opens a sheet that clears it. */
+function ReadingTile({ tile, name, onClear }: { tile: Tile; name: string | undefined; onClear: ((line: ReadingLine) => void) | undefined }) {
+  const [open, setOpen] = useState(false);
+  const kept = tile.line && onClear ? tile.kept : undefined;
+  const className = ["reading-tile", tile.wide ? "wide" : "", kept ? "tap" : ""].join(" ");
+  const body = (
+    <>
       <span className="reading-label">{tile.label}</span>
       <span className="reading-value">
         {tile.value}
@@ -106,7 +105,16 @@ function ReadingTile({ tile, onRestart }: { tile: Tile; onRestart: ((line: Readi
       </span>
       {tile.line ? <Sparkline {...tile.line} day /> : null}
       {tile.sub ? <span className="reading-sub">{tile.sub}</span> : null}
-    </div>
+    </>
+  );
+  if (!kept) return <div className={className}>{body}</div>;
+  return (
+    <>
+      <button type="button" className={className} onClick={() => setOpen(true)}>
+        {body}
+      </button>
+      <LineSheet open={open} onClose={() => setOpen(false)} title={name ? t("node.readings.lineTitle", { what: tile.label, name }) : tile.label} count={tile.line!.values.length} day onClear={() => onClear!(kept)} />
+    </>
   );
 }
 
@@ -124,7 +132,8 @@ export function Readings({
   onMap,
   onCopy,
   history,
-  onRestart,
+  name,
+  onClear,
   skipBattery = false,
   titled: alwaysTitled = false,
 }: {
@@ -142,8 +151,10 @@ export function Readings({
   onCopy?: ((text: string) => void) | undefined;
   /** The node's day of voltages and currents, by channel and type, as the session keeps it. */
   history?: Record<string, ReadingSample[]> | undefined;
-  /** A day's line started again from its latest reading, the tile held for it. */
-  onRestart?: ((line: ReadingLine) => void) | undefined;
+  /** The node's name, for the title of a line's sheet. */
+  name?: string | undefined;
+  /** A day's line cleared down to its latest reading, from the sheet its tile opens. */
+  onClear?: ((line: ReadingLine) => void) | undefined;
 }) {
   const units = useUnits();
   if (readings.length === 0) return <InfoRow label={t("radio.readings.none")}>—</InfoRow>;
@@ -167,7 +178,7 @@ export function Readings({
           ) : null}
           <div className="reading-tiles">
             {tilesOf(channel, list, { cell, from, onMap, onCopy, history, units }).map((tile) => (
-              <ReadingTile key={tile.id} tile={tile} onRestart={onRestart} />
+              <ReadingTile key={tile.id} tile={tile} name={name} onClear={onClear} />
             ))}
           </div>
         </div>

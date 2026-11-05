@@ -34,18 +34,9 @@
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-lg);
   background: color-mix(in oklab, var(--text) 5%, transparent);
-  transition:
-    transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
-    box-shadow 0.2s ease;
 }
 .reading-tile.wide {
   grid-column: 1 / -1;
-}
-/* A tile held to start its line again rises a little, lit, as a held message does (Menu.tsx). */
-.reading-tile.held {
-  transform: translateY(var(--lift-y, 0px)) scale(1.02);
-  background: var(--panel);
-  box-shadow: 0 6px 24px rgb(var(--shadow-rgb) / 0.28);
 }
 .reading-label {
   display: flex;
@@ -91,7 +82,7 @@
   color: var(--accent);
   font-size: inherit;
 }
-/* The battery's tile opens the cell it is counted by. */
+/* A tile with a sheet behind it opens it: the battery its cell, a line its history to clear. */
 button.reading-tile.tap {
   border: 0;
   color: inherit;

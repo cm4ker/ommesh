@@ -13,7 +13,7 @@ import { ActionRow, ChoiceRow, Group, InfoRow, LinkRow } from "../ui/List.js";
 import { PushRows } from "./node/SensorPush.js";
 import { Sheet } from "../ui/Sheet.js";
 import { AlertIcon } from "./Icons.js";
-import { numberText, Readings, useLineHold, type LineKind } from "./Readings.js";
+import { ClearLineGroup, LineSheet, numberText, Readings } from "./Readings.js";
 import { Sparkline } from "./node/Sparkline.js";
 
 /** A week's fall this large says the battery is going down, and the week reads as from → to. */
@@ -21,18 +21,24 @@ const FALLING_MV = 50;
 /** How often the readings page asks this radio again while it is open. */
 const OWN_EVERY_MS = 30_000;
 
-const RESTARTED: Record<LineKind, Key> = {
-  battery: "node.readings.restarted.battery",
-  noise: "node.readings.restarted.noise",
-  voltage: "node.readings.restarted.voltage",
-  current: "node.readings.restarted.current",
+/** What a line can be of, as its toast names it. */
+type LineKind = "battery" | "noise" | "voltage" | "current";
+
+const CLEARED: Record<LineKind, Key> = {
+  battery: "node.readings.cleared.battery",
+  noise: "node.readings.cleared.noise",
+  voltage: "node.readings.cleared.voltage",
+  current: "node.readings.cleared.current",
 };
 
-/** One of a node's lines started again from its latest reading, with the way back in the note it leaves. */
-function restartLine(key: string, line: ReadingLine): void {
+/**
+ * One of a node's lines cleared down to its latest reading, with the way back in the note it
+ * leaves. `kind` names it when the line says otherwise: a battery line of a node with none is volts.
+ */
+function clearLine(key: string, line: ReadingLine, kind?: LineKind): void {
   const kept = session.restartLine(key, line);
-  const kind: LineKind = line === "battery" || line === "noise" ? line : line.endsWith(":current") ? "current" : "voltage";
-  if (kept) toast(t(RESTARTED[kind]), "", { label: t("common.undo"), run: () => session.restoreReadings(kept) });
+  const named: LineKind = kind ?? (line === "battery" || line === "noise" ? line : line.endsWith(":current") ? "current" : "voltage");
+  if (kept) toast(t(CLEARED[named]), "", { label: t("common.undo"), run: () => session.restoreReadings(kept) });
 }
 
 interface Tile {
@@ -45,12 +51,14 @@ interface Tile {
   low?: boolean | undefined;
   line?: { values: number[]; times: number[]; unit: string; digits: number } | undefined;
   onClick?: (() => void) | undefined;
-  /** Its line started again, the tile held for it: what it is a line of, and the start. */
-  restart?: { kind: LineKind; run: () => void } | undefined;
+  /** Its line cleared, from the sheet a tile with nothing else to open opens. */
+  clear?: (() => void) | undefined;
 }
 
-function TileView({ tile }: { tile: Tile }) {
-  const hold = useLineHold(tile.restart && tile.line && tile.line.values.length > 1 ? tile.restart.kind : null, () => tile.restart?.run());
+function TileView({ tile, name }: { tile: Tile; name: string }) {
+  const [open, setOpen] = useState(false);
+  const clear = tile.line && tile.line.values.length > 1 ? tile.clear : undefined;
+  const onClick = tile.onClick ?? (clear ? () => setOpen(true) : undefined);
   const body = (
     <>
       <span className="reading-label">{tile.label}</span>
@@ -63,14 +71,14 @@ function TileView({ tile }: { tile: Tile }) {
       {tile.sub ? <span className="reading-sub">{tile.sub}</span> : null}
     </>
   );
-  return tile.onClick ? (
-    <button type="button" className="reading-tile tap" onClick={tile.onClick} {...hold}>
-      {body}
-    </button>
-  ) : (
-    <div className="reading-tile" {...hold}>
-      {body}
-    </div>
+  if (!onClick) return <div className="reading-tile">{body}</div>;
+  return (
+    <>
+      <button type="button" className="reading-tile tap" onClick={onClick}>
+        {body}
+      </button>
+      {clear && !tile.onClick ? <LineSheet open={open} onClose={() => setOpen(false)} title={t("node.readings.lineTitle", { what: tile.label, name })} count={tile.line!.values.length} onClear={clear} /> : null}
+    </>
   );
 }
 
@@ -81,10 +89,10 @@ function volts(mv: number): string {
 /**
  * The battery, as a charge by the cell someone picked for this node, or "≈" by Li-ion when
  * nobody did; this radio's own reads without "≈". `mv` is steadied over the last half hour. A low charge colours the number, judged by
- * the same cell. A week of answers draws its line, and a tap picks the cell; held, the line
- * starts again. A node with no battery shows its volts alone.
+ * the same cell. A week of answers draws its line, and a tap opens the cell, with the line to
+ * clear below it. A node with no battery shows its volts alone.
  */
-function batteryTile(mv: number, history: BatterySample[], chosen: ReturnType<typeof useChosenBatteryType>, own: boolean, onClick: () => void, restart: () => void): Tile {
+function batteryTile(mv: number, history: BatterySample[], chosen: ReturnType<typeof useChosenBatteryType>, own: boolean, onClick: () => void): Tile {
   const first = history[0];
   const last = history.at(-1);
   const falling = !!first && !!last && history.length > 1 && first.mv - last.mv >= FALLING_MV;
@@ -109,7 +117,6 @@ function batteryTile(mv: number, history: BatterySample[], chosen: ReturnType<ty
       sub: [batteryTypeLabel("none"), weekText].filter(Boolean).join(" · "),
       line,
       onClick,
-      restart: { kind: "voltage", run: restart },
     };
   }
   const type = chosen ?? "liion";
@@ -124,12 +131,14 @@ function batteryTile(mv: number, history: BatterySample[], chosen: ReturnType<ty
     low: lowCharge(mv, type),
     line,
     onClick,
-    restart: { kind: "battery", run: restart },
   };
 }
 
-/** Picking the cell a node runs on, with the charge each one makes of the volts it reported. */
-function BatterySheet({ open, onClose, nodeKey, name, mv }: { open: boolean; onClose: () => void; nodeKey: string; name: string; mv: number }) {
+/**
+ * Picking the cell a node runs on, with the charge each one makes of the volts it reported; below,
+ * its battery line cleared, once there is a line. `lineKey` is the line's in the session, "self" for this radio.
+ */
+function BatterySheet({ open, onClose, nodeKey, lineKey, name, mv, count }: { open: boolean; onClose: () => void; nodeKey: string; lineKey: string; name: string; mv: number; count: number }) {
   const chosen = useChosenBatteryType(nodeKey);
   return (
     <Sheet open={open} onClose={onClose} title={t("node.readings.typeTitle", { name })}>
@@ -149,6 +158,15 @@ function BatterySheet({ open, onClose, nodeKey, name, mv }: { open: boolean; onC
           />
         ))}
       </Group>
+      {count > 1 ? (
+        <ClearLineGroup
+          count={count}
+          onClear={() => {
+            onClose();
+            clearLine(lineKey, "battery", chosen === "none" ? "voltage" : "battery");
+          }}
+        />
+      ) : null}
     </Sheet>
   );
 }
@@ -159,7 +177,7 @@ function selfVolts(readings: LppReading[] | undefined): number | null {
   return r?.type === "voltage" ? Math.round(r.volts * 1000) : null;
 }
 
-function airTiles(stats: NodeStats, noise: { values: number[]; times: number[] }, room: boolean, restartNoise: () => void): Tile[] {
+function airTiles(stats: NodeStats, noise: { values: number[]; times: number[] }, room: boolean, clearNoise: () => void): Tile[] {
   const tiles: Tile[] = [
     {
       id: "noise",
@@ -168,7 +186,7 @@ function airTiles(stats: NodeStats, noise: { values: number[]; times: number[] }
       unit: t("node.unit.dbm"),
       sub: t("node.readings.quieter"),
       line: { ...noise, unit: t("node.unit.dbm"), digits: 0 },
-      restart: { kind: "noise", run: restartNoise },
+      clear: clearNoise,
     },
   ];
   if (room) {
@@ -227,7 +245,7 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
   const battery = fromStatus && fromTelemetry ? (fromStatus.at >= fromTelemetry.at ? fromStatus : fromTelemetry) : (fromStatus ?? fromTelemetry);
   // Steadied over the answers of the kind that brought it, which are the ones kept with it.
   const mv = battery ? steadyMv(battery === fromTelemetry ? (state.batteryHistory[key] ?? []) : statusSamples, battery.mv) : null;
-  const batteryTiles: Tile[] = mv !== null ? [batteryTile(mv, history, chosen, false, () => setPicking(true), () => restartLine(key, "battery"))] : [];
+  const batteryTiles: Tile[] = mv !== null ? [batteryTile(mv, history, chosen, false, () => setPicking(true))] : [];
 
   const ask = (what: "status" | "telemetry", request: () => Promise<unknown>) => async () => {
     setBusy(what);
@@ -243,14 +261,14 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
   };
   const askTelemetry = ask("telemetry", () => session.requestTelemetry(key));
   const askStatus = ask("status", () => session.requestStatus(key));
-  const sheet = mv !== null ? <BatterySheet open={picking} onClose={() => setPicking(false)} nodeKey={key} name={name} mv={mv} /> : null;
+  const sheet = mv !== null ? <BatterySheet open={picking} onClose={() => setPicking(false)} nodeKey={key} lineKey={key} name={name} mv={mv} count={history.length} /> : null;
 
   if (!statusNode)
     return (
       <>
         <Group title={telemetry ? t("node.readings.titleAgo", { time: ago(telemetry.at) }) : t("node.readings.title")} note={silentAt !== null && (telemetry?.at ?? 0) < silentAt ? t("mesh.profile.readingsSilent") : contact.type === AdvType.Sensor ? (contact.name ? t("node.status.alerts", { name: contact.name }) : t("node.status.alertsUnnamed")) : undefined}>
-          <TileGrid tiles={batteryTiles} />
-          {telemetry ? <Readings readings={telemetry.readings} history={state.readingHistory[key]} onRestart={(line) => restartLine(key, line)} skipBattery titled from={state.self} onMap={() => showOnMap(key, true)} /> : null}
+          <TileGrid tiles={batteryTiles} name={name} />
+          {telemetry ? <Readings readings={telemetry.readings} history={state.readingHistory[key]} name={name} onClear={(line) => clearLine(key, line)} skipBattery titled from={state.self} onMap={() => showOnMap(key, true)} /> : null}
           {contact.type === AdvType.Sensor && login?.ok ? <LinkRow label={t("node.page.history")} value={t("node.readings.historyHint")} onClick={() => openNodePage(key, "history")} /> : null}
           {/* A sensor on 1.18 sends by itself; only a radio on 1.18 hands up what it sends. */}
           {contact.type === AdvType.Sensor && login?.ok && (state.device?.firmwareVerCode ?? 0) >= 14 ? <PushRows contact={contact} online={online} /> : null}
@@ -266,12 +284,12 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
   return (
     <>
       <Group title={sensorsAt ? t("node.readings.sensorsAgo", { time: ago(sensorsAt) }) : t("node.readings.sensors")}>
-        <TileGrid tiles={batteryTiles} />
-        {telemetry ? <Readings readings={telemetry.readings} history={state.readingHistory[key]} onRestart={(line) => restartLine(key, line)} skipBattery titled from={state.self} onMap={() => showOnMap(key, true)} /> : null}
+        <TileGrid tiles={batteryTiles} name={name} />
+        {telemetry ? <Readings readings={telemetry.readings} history={state.readingHistory[key]} name={name} onClear={(line) => clearLine(key, line)} skipBattery titled from={state.self} onMap={() => showOnMap(key, true)} /> : null}
         <ActionRow label={telemetry ? t("node.readings.refresh") : t("node.readings.ask")} hint={t("node.readings.sensorsHint")} air busy={busy === "telemetry"} disabled={!online || busy !== null} onClick={askTelemetry} />
       </Group>
       <Group title={status ? t("node.readings.statsAgo", { time: ago(status.at) }) : t("node.readings.stats")}>
-        {stats ? <TileGrid tiles={airTiles(stats, { values: noise.map((s) => s.dbm), times: noise.map((s) => s.at) }, contact.type === AdvType.Room, () => restartLine(key, "noise"))} /> : null}
+        {stats ? <TileGrid tiles={airTiles(stats, { values: noise.map((s) => s.dbm), times: noise.map((s) => s.at) }, contact.type === AdvType.Room, () => clearLine(key, "noise"))} name={name} /> : null}
         {status && !stats ? <InfoRow label={t("node.readings.answer")}>{t("node.status.unreadBytes", { count: status.raw.length / 2 })}</InfoRow> : null}
         {stats ? <PacketsAndSignal stats={stats} /> : null}
         <ActionRow label={status ? t("node.readings.refresh") : t("node.readings.ask")} hint={t("node.readings.statsHint")} air busy={busy === "status"} disabled={!online || busy !== null} onClick={askStatus} />
@@ -281,13 +299,13 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
   );
 }
 
-function TileGrid({ tiles }: { tiles: Tile[] }) {
+function TileGrid({ tiles, name }: { tiles: Tile[]; name: string }) {
   if (tiles.length === 0) return null;
   return (
     <div className="line-block readings">
       <div className="reading-tiles">
         {tiles.map((tile) => (
-          <TileView key={tile.id} tile={tile} />
+          <TileView key={tile.id} tile={tile} name={name} />
         ))}
       </div>
     </div>
@@ -328,7 +346,7 @@ export function OwnReadings() {
   // Both the battery question and the radio's own telemetry are kept in its week.
   const mv = latest !== null && latest > 0 ? steadyMv(state.batteryHistory["self"] ?? [], latest) : latest;
   const tiles: Tile[] = [];
-  if (mv !== null && mv > 0) tiles.push(batteryTile(mv, state.batteryHistory["self"] ?? [], chosen, true, () => setPicking(true), () => restartLine("self", "battery")));
+  if (mv !== null && mv > 0) tiles.push(batteryTile(mv, state.batteryHistory["self"] ?? [], chosen, true, () => setPicking(true)));
   if (radio) tiles.push({ id: "noise", label: t("node.readings.noise"), value: String(radio.noiseFloor), unit: t("node.unit.dbm"), sub: t("node.readings.quieter") });
   if (radio && core) {
     tiles.push({
@@ -346,8 +364,8 @@ export function OwnReadings() {
   return (
     <>
       <Group title={at ? t("node.readings.titleAgo", { time: ago(at) }) : t("node.readings.title")} note={t("radio.sensors.read", { time: agoPhrase(at || null) })}>
-        <TileGrid tiles={tiles} />
-        {telemetry ? <Readings readings={telemetry.readings} history={state.readingHistory["self"]} onRestart={(line) => restartLine("self", line)} skipBattery titled onCopy={(text) => void navigator.clipboard?.writeText(text).then(() => toast(t("common.copied")))} /> : null}
+        <TileGrid tiles={tiles} name={self.name} />
+        {telemetry ? <Readings readings={telemetry.readings} history={state.readingHistory["self"]} name={self.name} onClear={(line) => clearLine("self", line)} skipBattery titled onCopy={(text) => void navigator.clipboard?.writeText(text).then(() => toast(t("common.copied")))} /> : null}
         <ActionRow label={t("node.readings.refresh")} disabled={!online} onClick={() => void act(() => Promise.all([session.refreshBattery(), session.requestTelemetry(), session.radioStats().then(setRadio), session.coreStats().then(setCore)]))} />
       </Group>
       <Group>
@@ -362,7 +380,7 @@ export function OwnReadings() {
           onClick={() => push({ kind: "radio", page: "privacy" })}
         />
       </Group>
-      {mv !== null ? <BatterySheet open={picking} onClose={() => setPicking(false)} nodeKey={self.key} name={self.name} mv={mv} /> : null}
+      {mv !== null ? <BatterySheet open={picking} onClose={() => setPicking(false)} nodeKey={self.key} lineKey="self" name={self.name} mv={mv} count={(state.batteryHistory["self"] ?? []).length} /> : null}
     </>
   );
 }

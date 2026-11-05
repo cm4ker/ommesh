@@ -13,7 +13,7 @@
 
 ### Mesh and the map
 - A sensor's pressure can read in millimetres of mercury and its temperature in degrees Fahrenheit: Settings › Appearance › Pressure and Temperature. The choice covers the readings, their history and the steps a sensor sends changes by. Until you pick, the app in Russian shows pressure in mm Hg, as weather forecasts do, and a phone or computer set to the United States shows °F; the rest show hPa and °C as before.
-- Start a reading's line again, after a new battery went in, say: hold the battery, noise, voltage or current tile on a node's page, or on your own radio's under Settings › Readings, and choose Start the line again. Only that line goes, on this device, and its latest reading stays as its first point. More › Clear the readings on a node's page starts all of its lines again at once. Both can be undone right after.
+- Clear a reading's history, after a new battery went in, say: tap the battery, noise, voltage or current tile on a node's page, or on your own radio's under Settings › Readings, and choose Clear the reading history (for the battery it is below the cell types). Only that line goes, on this device, and its latest reading stays as its first point. More › Clear all of the node's readings on a node's page clears all of its lines at once. Both can be undone right after.
 
 ### Phones
 - A phone can be turned on its side, if its own rotation is on, to type on the wider keyboard, lying down too. Sideways the tabs stand down the left edge, every head takes one line and the status bar hides. With the keyboard up a chat keeps only a small pill with Back and the name, and the lines go to the messages. The Mesh list and a node's profile open as a column beside the map.

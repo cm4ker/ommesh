@@ -1,0 +1,86 @@
+{
+  "version": "0.12.0",
+  "date": "2026-11-06",
+  "items": [
+    {
+      "kind": "new",
+      "show": "chats",
+      "en": {
+        "title": "Bold, italic, hidden text and formulas",
+        "text": "Type **bold**, __italic__, ~~struck~~, `mono` or ||hidden|| as in Telegram, or select words and use the menu. TeX between $$, as in $$E=mc^2$$, is drawn as a formula."
+      },
+      "ru": {
+        "title": "Жирный, курсив, скрытый текст и формулы",
+        "text": "Набирайте **жирный**, __курсив__, ~~зачёркнутый~~, `моно` или ||скрытый|| как в Telegram или выделите слова и выберите в меню. TeX между $$, например $$E=mc^2$$, рисуется формулой."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "chats",
+      "en": {
+        "title": "Type with the phone on its side",
+        "text": "With the phone's rotation on, turn it sideways to type on the wider keyboard, lying down too. The tabs stand down the left edge, and a chat gives its lines to the messages."
+      },
+      "ru": {
+        "title": "Печатать, повернув телефон на бок",
+        "text": "Если в телефоне включён автоповорот, поверните его на бок и печатайте на широкой клавиатуре, хоть лёжа. Вкладки встают полосой слева, а чат отдаёт место сообщениям."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "chats",
+      "en": {
+        "title": "See if your reaction went further",
+        "text": "Your reaction in a channel is an outline until a repeater is heard sending it on, and then it fills. You can also reply to your own message in a channel or a room."
+      },
+      "ru": {
+        "title": "Видно, ушла ли ваша реакция дальше",
+        "text": "Реакция в канале видна обводкой, пока не слышно, что ретранслятор передал её дальше, а потом заливается цветом. А ещё можно ответить на своё сообщение в канале или комнате."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "radio/appearance",
+      "en": {
+        "title": "Read pressure in mm Hg, temperature in °F",
+        "text": "Settings › Appearance › Pressure and Temperature. Until you pick, the app in Russian shows mm Hg, as weather forecasts do, and a phone or computer set to the United States shows °F."
+      },
+      "ru": {
+        "title": "Давление в мм рт. ст. и температура в °F",
+        "text": "Настройки › Оформление › «Давление» и «Температура». Пока ничего не выбрано, на русском давление в мм рт. ст., как в прогнозах погоды, а с регионом США температура в °F."
+      }
+    },
+    {
+      "kind": "new",
+      "show": "radio/readings",
+      "en": {
+        "title": "Clear a reading's history",
+        "text": "Tap the battery, noise, voltage or current tile on a node's page or under Settings › Readings, and choose Clear the reading history. More › Clear all of the node's readings takes every line."
+      },
+      "ru": {
+        "title": "Историю показаний можно очистить",
+        "text": "Нажмите плитку батареи, шума, напряжения или тока на странице узла или в Настройки › Показания и выберите «Очистить историю показаний». «Ещё» › «Очистить все показания узла» очищает все линии."
+      }
+    },
+    {
+      "kind": "fix",
+      "en": "A renamed repeater shows its new name with its next advert.",
+      "ru": "Переименованный репитер получает новое имя с первым же своим анонсом."
+    },
+    {
+      "kind": "fix",
+      "en": "On Android, the keyboard stays up in a password field.",
+      "ru": "На Android клавиатура больше не прячется в поле пароля."
+    },
+    {
+      "kind": "fix",
+      "en": "On an iPhone, messages no longer cover the top strip while the keyboard is up.",
+      "ru": "На iPhone с открытой клавиатурой сообщения больше не наезжают на полосу вверху."
+    },
+    {
+      "kind": "fix",
+      "en": "A battery reading of 0 V no longer drops its line to nothing.",
+      "ru": "Показание батареи 0 В больше не роняет её линию до нуля."
+    }
+  ]
+}

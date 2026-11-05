@@ -2,7 +2,7 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
-## Unreleased
+## 0.12.0 — 2026-11-06
 
 ### Chats
 - Formulas in messages: put TeX between `$$`, as in `$$E=mc^2$$` or `$$\frac{a}{b}$$`, and Ommesh draws it as a formula. One on a line of its own is drawn large and centred. The formula goes on the air as typed, so other MeshCore apps show the TeX; the chat list and notifications show it without the `$$`. What it is drawn with comes only the first time a chat shows a formula, so the app starts no slower.

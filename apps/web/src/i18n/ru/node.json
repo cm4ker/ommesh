@@ -23,6 +23,7 @@
   "readings.answer": "Статус",
   "readings.typeTitle": "Батарея · {name}",
   "readings.typeNow": "Сейчас",
+  "readings.typeMean": "Заряд считается по среднему за полчаса, {volts}",
   "readings.typeNote": "Хранится на этом устройстве, у каждого узла свой. Пока тип не выбран, проценты считаются как для Li-ion и пишутся со знаком «≈».",
   "readings.historyHint": "мин · среднее · макс",
   "readings.lineTitle": "{what} · {name}",

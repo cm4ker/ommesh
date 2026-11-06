@@ -137,13 +137,19 @@ function batteryTile(mv: number, history: BatterySample[], chosen: ReturnType<ty
 /**
  * Picking the cell a node runs on, with the charge each one makes of the volts it reported; below,
  * its battery line cleared, once there is a line. `lineKey` is the line's in the session, "self" for this radio.
+ * "Now" is the last reading as the radio took it, `latest`, not the half-hour mean `mv` the charge is
+ * counted from: whoever tunes a board's divider against a meter needs the very reading it gave (#111).
  */
-function BatterySheet({ open, onClose, nodeKey, lineKey, name, mv, count }: { open: boolean; onClose: () => void; nodeKey: string; lineKey: string; name: string; mv: number; count: number }) {
+function BatterySheet({ open, onClose, nodeKey, lineKey, name, mv, latest, count }: { open: boolean; onClose: () => void; nodeKey: string; lineKey: string; name: string; mv: number; latest: number; count: number }) {
   const chosen = useChosenBatteryType(nodeKey);
+  const now = volts(latest);
+  const mean = volts(mv);
   return (
     <Sheet open={open} onClose={onClose} title={t("node.readings.typeTitle", { name })}>
       <Group note={t("node.readings.typeNote")}>
-        <InfoRow label={t("node.readings.typeNow")}>{volts(mv)}</InfoRow>
+        <InfoRow label={t("node.readings.typeNow")} hint={mean !== now ? t("node.readings.typeMean", { volts: mean }) : undefined}>
+          {now}
+        </InfoRow>
         {BATTERY_TYPES.map((b) => (
           <ChoiceRow
             key={b.value}
@@ -261,7 +267,7 @@ export function NodeReadings({ contact }: { contact: ContactRecord }) {
   };
   const askTelemetry = ask("telemetry", () => session.requestTelemetry(key));
   const askStatus = ask("status", () => session.requestStatus(key));
-  const sheet = mv !== null ? <BatterySheet open={picking} onClose={() => setPicking(false)} nodeKey={key} lineKey={key} name={name} mv={mv} count={history.length} /> : null;
+  const sheet = battery && mv !== null ? <BatterySheet open={picking} onClose={() => setPicking(false)} nodeKey={key} lineKey={key} name={name} mv={mv} latest={battery.mv} count={history.length} /> : null;
 
   if (!statusNode)
     return (
@@ -380,7 +386,7 @@ export function OwnReadings() {
           onClick={() => push({ kind: "radio", page: "privacy" })}
         />
       </Group>
-      {mv !== null ? <BatterySheet open={picking} onClose={() => setPicking(false)} nodeKey={self.key} lineKey="self" name={self.name} mv={mv} count={(state.batteryHistory["self"] ?? []).length} /> : null}
+      {latest !== null && mv !== null ? <BatterySheet open={picking} onClose={() => setPicking(false)} nodeKey={self.key} lineKey="self" name={self.name} mv={mv} latest={latest} count={(state.batteryHistory["self"] ?? []).length} /> : null}
     </>
   );
 }

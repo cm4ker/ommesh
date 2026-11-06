@@ -23,6 +23,7 @@
   "readings.answer": "Status",
   "readings.typeTitle": "Battery · {name}",
   "readings.typeNow": "Now",
+  "readings.typeMean": "The charge is counted from the half-hour mean, {volts}",
   "readings.typeNote": "Kept on this device, for each node its own. Until a type is picked, the charge is counted as Li-ion and said with “≈”.",
   "readings.historyHint": "low · mean · high",
   "readings.lineTitle": "{what} · {name}",

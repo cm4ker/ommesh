@@ -2,6 +2,11 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
+## Unreleased
+
+### Mesh and the map
+- Now, at the top of the battery's sheet (tap the battery tile), is the radio's last reading as it took it, no longer the mean of the last half hour, so a board's `adc.multiplier` can be tuned against a meter. When the two differ, the mean the charge is counted from is written under it.
+
 ## 0.12.0 — 2026-11-06
 
 ### Chats

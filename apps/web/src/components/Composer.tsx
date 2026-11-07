@@ -20,6 +20,7 @@ import { raiseKeyboard } from "../lib/keyboard.js";
 import { utf8Length } from "../lib/format.js";
 import { ALL_SETS, looksDifferent, packLookalikes, useLookalikePrefs } from "../lib/lookalikes.js";
 import { touchFirst } from "../lib/platform.js";
+import { findNames, mentionable } from "../lib/writers.js";
 import { usePress } from "../lib/press.js";
 import { session, useSession } from "../lib/session.js";
 import { FORMAT_CHOICES, formatAround, formatKey, formatRuns, keysOf, plainText, toggleFormat, type FormatChoice, type FormatKind } from "../lib/textFormat.js";
@@ -96,21 +97,10 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   const shownBudget = cost.budget + lineBytes;
 
   const messages = useMemo(() => messagesIn(state, conversation), [state, conversation]);
-  // Who can be named: whoever has written in this channel or room, the latest first.
+  // Who can be named: whoever has written in this channel or room, then the people among the contacts.
   const many = target.kind === "channel" || contact?.type === AdvType.Room;
-  const people = useMemo(() => {
-    if (!many) return [];
-    const seen = new Set<string>([self?.name ?? ""]);
-    const out: string[] = [];
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i]!;
-      if (m.direction !== "in" || !m.sender || seen.has(m.sender)) continue;
-      seen.add(m.sender);
-      out.push(m.sender);
-    }
-    return out;
-  }, [many, messages, self?.name]);
-  const matches = pick ? people.filter((n) => n.toLowerCase().includes(pick.query.toLowerCase())).slice(0, 6) : [];
+  const people = useMemo(() => (many ? mentionable(messages, Object.values(state.contacts), self?.name ?? "") : []), [many, messages, state.contacts, self?.name]);
+  const matches = pick ? findNames(people, pick.query).slice(0, 6) : [];
 
   useEffect(() => setDraft(radio, conversation, text.slice(head.length)), [radio, conversation, text, head]);
   // The more letters are swapped for one message; another chat, or an empty field, starts afresh.

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { MessageRecord } from "@meshnet/meshcore";
-import { findWriters, writersIn } from "./writers.js";
+import { AdvType, ContactFlag, type ContactRecord, type MessageRecord } from "@meshnet/meshcore";
+import { findNames, findWriters, mentionable, writersIn } from "./writers.js";
 
 let seq = 0;
 function message(sender: string | null, receivedAt: number, direction: "in" | "out" = "in", hops: number | null = null): MessageRecord {
@@ -27,6 +27,11 @@ function message(sender: string | null, receivedAt: number, direction: "in" | "o
     route: null,
     retryPlan: null,
   };
+}
+
+function contact(name: string, lastHeardAt: number | null, type: number = AdvType.Chat, flags = 0): ContactRecord {
+  const key = String(seq++).padStart(64, "0");
+  return { key, prefix: key.slice(0, 12), type, flags, outPathLen: 0xff, outPath: "", name, lastAdvert: 0, lat: 0, lon: 0, lastMod: 0, lastHeardAt, pathSince: null };
 }
 
 test("one row per name, counted, the latest to write first", () => {
@@ -76,4 +81,24 @@ test("found by name, case and lookalike letters aside", () => {
     findWriters(writers, "Bоb").map((w) => w.name),
     ["Bob (bike)"],
   );
+});
+
+test("those who wrote are offered first, then people among the contacts, favourites ahead", () => {
+  const messages = [message("Kite", 1_000), message("Me", 2_000, "out"), message("Ridge", 3_000)];
+  const contacts = [
+    contact("Owl", 9_000),
+    contact("Kite", 8_000),
+    contact("Hill repeater", 7_000, AdvType.Repeater),
+    contact("Lynx", 1_000, AdvType.Chat, ContactFlag.Favourite),
+    contact("Me", 6_000),
+    contact("Moth", null),
+  ];
+  assert.deepEqual(mentionable(messages, contacts, "Me"), ["Ridge", "Kite", "Lynx", "Owl", "Moth"]);
+});
+
+test("a name is found by what is typed after @, lookalike letters aside", () => {
+  const names = ["Kolya ⛺", "Марина", "Bob (bike)"];
+  assert.deepEqual(findNames(names, "kol"), ["Kolya ⛺"]);
+  assert.deepEqual(findNames(names, ""), names);
+  assert.deepEqual(findNames(names, "Bоb"), ["Bob (bike)"]);
 });

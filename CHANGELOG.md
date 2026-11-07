@@ -4,6 +4,9 @@
 
 ## Unreleased
 
+### Chats
+- Typing @ in a channel or a room now lists the people among your contacts too, after those who have written there, so you can mention someone who has not written yet. Favourites come first. Pick a name and it goes into the message as `@[Name]`.
+
 ### Mesh and the map
 - Now, at the top of the battery's sheet (tap the battery tile), is the radio's last reading as it took it, no longer the mean of the last half hour, so a board's `adc.multiplier` can be tuned against a meter. When the two differ, the mean the charge is counted from is written under it.
 

@@ -3662,6 +3662,32 @@ test("a repeater heard while the radio's memory is full is not added, and says w
   await session.disconnect();
 });
 
+test("a person added by a key someone sent goes on the radio with no route and no advert stamp", async () => {
+  const radio = new ScriptedRadio();
+  const session = new MeshSession();
+  await session.connect(radio);
+  const key = "4523c9e1a07b5f2d8e61b0c4a9d3f7e21c8b6a5d0e9f4c3b2a1d7e6f5c4b3a29";
+  await session.addByKey({ key, type: 1, name: "Sokol" });
+  const added = radio.sent.find((f) => f[0] === Cmd.AddUpdateContact)!;
+  const view = new DataView(added.buffer, added.byteOffset);
+  assert.equal(toHex(added.subarray(1, 33)), key);
+  assert.equal(added[33], 1);
+  // No route: the first message floods. No stamp: the node's own advert overwrites the name.
+  assert.equal(added[35], 0xff);
+  assert.equal(fromUtf8(added.subarray(100, 132)).replace(/\0+$/, ""), "Sokol");
+  assert.equal(view.getUint32(132, true), 0);
+  const contact = session.getState().contacts[key]!;
+  assert.equal(contact.pathSince, null);
+  assert.equal(contact.lastHeardAt, null);
+
+  // Added again, it is left as it is.
+  await session.addByKey({ key, type: 1, name: "Other" });
+  assert.equal(radio.sent.filter((f) => f[0] === Cmd.AddUpdateContact).length, 1);
+  await assert.rejects(session.addByKey({ key: session.getState().self!.key, type: 1, name: "" }), /own key/);
+  await assert.rejects(session.addByKey({ key: key.slice(0, 32), type: 1, name: "" }), /64 hex/);
+  await session.disconnect();
+});
+
 test("a route written by hand goes to the radio and outlives the time limit on learned routes", async () => {
   let now = 1_700_000_000_000;
   const radio = new ScriptedRadio();

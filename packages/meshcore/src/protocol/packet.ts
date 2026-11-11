@@ -4,7 +4,7 @@
  * a header byte, four bytes of transport codes when the route has them, the
  * `path_len` byte, the path, and the payload to the end.
  */
-import { pathByteLength, pathHashCount, toHex } from "./bytes.js";
+import { ByteReader, pathByteLength, pathHashCount, toHex } from "./bytes.js";
 import { MAX_PATH_SIZE } from "./codes.js";
 
 /** The low two bits of the header. */
@@ -76,4 +76,39 @@ export function parseRawPacket(raw: Uint8Array): RawPacket | null {
     path,
     payload: raw.subarray(i),
   };
+}
+
+/** What an advert says of its node, as `AdvertDataParser` in the firmware reads it. The signature is not checked. */
+export interface Advert {
+  key: string;
+  /** The node's own clock, seconds. */
+  timestamp: number;
+  type: number;
+  name: string;
+  /** Degrees; null when the advert carries no place. */
+  lat: number | null;
+  lon: number | null;
+}
+
+/**
+ * An advert's payload: the key, a timestamp, the signature, then a flags byte
+ * whose low four bits are the kind and whose high ones say which of place,
+ * two feature words and name follow. Null when it is cut short.
+ */
+export function parseAdvert(payload: Uint8Array): Advert | null {
+  if (payload.length < 32 + 4 + 64 + 1) return null;
+  const r = new ByteReader(payload);
+  const key = toHex(r.take(32));
+  const timestamp = r.u32();
+  r.skip(64);
+  const flags = r.u8();
+  try {
+    const place = flags & 0x10 ? { lat: r.i32() / 1e6, lon: r.i32() / 1e6 } : null;
+    if (flags & 0x20) r.skip(2);
+    if (flags & 0x40) r.skip(2);
+    const name = flags & 0x80 ? r.restString().replace(/\0+$/, "") : "";
+    return { key, timestamp, type: flags & 0x0f, name, lat: place?.lat ?? null, lon: place?.lon ?? null };
+  } catch {
+    return null;
+  }
 }

@@ -36,7 +36,7 @@ import { routeWords } from "../lib/routes.js";
 import { triesPhrase } from "../lib/sendTries.js";
 import { sendersOf } from "../lib/senders.js";
 import { session, useSession } from "../lib/session.js";
-import { toast } from "../lib/toast.js";
+import { act, toast } from "../lib/toast.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { Confirm } from "../ui/Dialog.js";
 import { SearchField } from "../ui/Field.js";
@@ -747,7 +747,13 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
         }}
       >
         <div className={["chat-inner", arrived ? "arrive" : ""].join(" ")} ref={inner}>
-          {all.length === 0 ? <div className="empty muted">{target.kind === "channel" ? t("chats.chat.emptyChannel") : t("chats.chat.empty")}</div> : null}
+          {all.length === 0 ? (
+            contact && !contact.unsaved && contact.type === AdvType.Chat && contact.lastAdvert === 0 && contact.lastHeardAt === null ? (
+              <ByKeyNote name={title} />
+            ) : (
+              <div className="empty muted">{target.kind === "channel" ? t("chats.chat.emptyChannel") : t("chats.chat.empty")}</div>
+            )
+          ) : null}
           {drawnAt === 0 && stripsAfter.has(null) ? <HiddenStrip run={stripsAfter.get(null)!} open={unfolded.has(stripsAfter.get(null)!.id)} onToggle={toggleRun} /> : null}
           {drawn.map((m, i) => {
             const prev = drawn[i - 1];
@@ -897,6 +903,31 @@ function NoChannel({ keyless, onAbout, onDelete }: { keyless: boolean; onAbout: 
           <TrashIcon size={14} /> {t("chats.row.deleteChat")}
         </Button>
       )}
+    </div>
+  );
+}
+
+/**
+ * The empty chat of a person added by the key they sent and never heard. Their
+ * radio drops a message from a key it does not hold, so a reply comes only once
+ * it holds ours: an advert across the mesh brings it, or the key sent another way.
+ */
+function ByKeyNote({ name }: { name: string }) {
+  const state = useSession();
+  const self = state.self;
+  return (
+    <div className="empty muted">
+      <div className="stack">
+        <p>{t("chats.chat.byKeyNote", { name })}</p>
+        <div className="row-actions wrap">
+          <Button size="sm" disabled={state.status !== "ready"} onClick={() => void act(() => session.sendAdvert(true), t("radio.home.floodSent"))}>
+            <WavesIcon size={14} /> {t("chats.chat.byKeyAdvert")}
+          </Button>
+          <Button size="sm" disabled={!self} onClick={() => void navigator.clipboard?.writeText(self!.key).then(() => toast(t("common.copied")))}>
+            <CopyIcon size={14} /> {t("chats.chat.byKeyMine")}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -2493,6 +2493,43 @@ export class MeshSession {
     this.log("contact", `${reply.key.slice(0, 12)} added by its key, as it answered who hears this radio`);
   }
 
+  /**
+   * Adds a node by a key someone sent: typed in, or read off a link or a card.
+   * Nothing heard on the air vouches for it, so it is written with the kind,
+   * name and place it came with, no route and no advert stamp: the node's own
+   * first advert then overwrites them, and the first message floods. One taken
+   * off the radio, or heard but not kept, goes back as it was known.
+   */
+  async addByKey(node: { key: string; type: number; name: string; lat?: number | null | undefined; lon?: number | null | undefined }): Promise<void> {
+    if (!/^[0-9a-f]{64}$/.test(node.key)) throw new Error("A node's key is 64 hex digits.");
+    if (node.key === this.state.self?.key) throw new Error("This is this radio's own key.");
+    const known = this.state.contacts[node.key];
+    if (this.state.removed[node.key] || known?.unsaved) return this.restoreContact(node.key);
+    if (known) return;
+    const record: ContactRecord = {
+      key: node.key,
+      prefix: node.key.slice(0, 12),
+      type: node.type,
+      flags: 0,
+      outPathLen: OUT_PATH_UNKNOWN,
+      outPath: "",
+      name: node.name,
+      lastAdvert: 0,
+      lat: node.lat ?? 0,
+      lon: node.lon ?? 0,
+      lastMod: 0,
+      lastHeardAt: null,
+      pathSince: null,
+    };
+    try {
+      await this.writeContact(record);
+    } catch (error) {
+      if (error instanceof MeshCoreError && error.code === ErrCode.TableFull) throw new Error("The radio's memory is full. Remove a few contacts first.");
+      throw error;
+    }
+    this.log("contact", `${node.name || record.prefix} added by its key`);
+  }
+
   /** Drops these from the removed contacts for good, before their 90 days are up: they can no longer be put back. */
   forgetRemoved(keys: readonly string[]): void {
     if (!keys.some((k) => this.state.removed[k])) return;

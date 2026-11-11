@@ -1,40 +1,53 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { channelConversation, contactConversation, fromHex, isConversationType, isFavourite } from "@meshnet/meshcore";
 import { freeChannelIndex, hashtagName, hashtagSecret, parseSecret, randomSecret } from "../lib/channels.js";
-import { openConversation } from "../lib/nav.js";
+import { utf8Length } from "../lib/format.js";
+import { openConversation, openProfile } from "../lib/nav.js";
 import { heardAt, kindLabel } from "../lib/nodes.js";
+import { readPasted } from "../lib/pastedKey.js";
 import { routeWords } from "../lib/routes.js";
 import { session, useSession } from "../lib/session.js";
+import { toast } from "../lib/toast.js";
 import { Button } from "../ui/Button.js";
 import { SearchField } from "../ui/Field.js";
 import { Group, LinkRow } from "../ui/List.js";
 import { Sheet } from "../ui/Sheet.js";
 import { Avatar } from "./Avatar.js";
-import { HashIcon, KeyIcon, PersonIcon, PlusIcon } from "./Icons.js";
+import { HashIcon, LockIcon, PersonAddIcon, PersonIcon, PlusIcon, TextIcon } from "./Icons.js";
 import { errorText } from "../i18n/errors.js";
 import { t } from "../i18n/index.js";
 
-type Step = "menu" | "people" | "public" | "create" | "join";
+type Step = "menu" | "people" | "key" | "public" | "create" | "join";
 
-/** Four ways to start talking: to someone the radio has heard, on a public channel known by name, on one someone shared, or on a new one. */
+/**
+ * Ways to start talking, a person's and a channel's apart: someone the radio
+ * has heard, or someone by the key they sent; a public channel known by name,
+ * a private one someone shared, or a new one. Both "by key" rows ask for a
+ * key, so each sits under its own heading, and a channel's key pasted for a
+ * person is passed on to the channel's form.
+ */
 export function NewChat({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [step, setStep] = useState<Step>("menu");
   const [query, setQuery] = useState("");
+  const [shared, setShared] = useState<{ secret: string; name: string } | null>(null);
   useEffect(() => {
     if (!open) return;
     setStep("menu");
     setQuery("");
+    setShared(null);
   }, [open]);
   const title =
     step === "people"
       ? t("chats.newChat.people")
-      : step === "public"
-        ? t("chats.newChat.public")
-        : step === "create"
-          ? t("chats.newChat.create")
-          : step === "join"
-            ? t("chats.newChat.private")
-            : t("chats.newChat.title");
+      : step === "key"
+        ? t("chats.newChat.byKeyTitle")
+        : step === "public"
+          ? t("chats.newChat.public")
+          : step === "create"
+            ? t("chats.newChat.create")
+            : step === "join"
+              ? t("chats.newChat.private")
+              : t("chats.newChat.title");
   return (
     <Sheet
       open={open}
@@ -43,18 +56,31 @@ export function NewChat({ open, onClose }: { open: boolean; onClose: () => void 
       find={step === "people" ? <SearchField value={query} onValue={setQuery} placeholder={t("chats.list.find")} aria-label={t("chats.newChat.findLabel")} autoFocus /> : undefined}
     >
       {step === "menu" ? (
-        <Group>
-          <LinkRow icon={<PersonIcon size={18} />} label={t("chats.newChat.people")} hint={t("chats.newChat.peopleHint")} onClick={() => setStep("people")} />
-          <LinkRow icon={<HashIcon size={18} />} label={t("chats.newChat.public")} hint={t("chats.newChat.publicHint")} onClick={() => setStep("public")} />
-          <LinkRow icon={<KeyIcon size={18} />} label={t("chats.newChat.private")} hint={t("chats.newChat.privateHint")} onClick={() => setStep("join")} />
-          <LinkRow icon={<PlusIcon size={18} />} label={t("chats.newChat.create")} hint={t("chats.newChat.createHint")} onClick={() => setStep("create")} />
-        </Group>
+        <>
+          <Group title={t("chats.newChat.person")}>
+            <LinkRow icon={<PersonIcon size={18} />} label={t("chats.newChat.heard")} hint={t("chats.newChat.peopleHint")} onClick={() => setStep("people")} />
+            <LinkRow icon={<PersonAddIcon size={18} />} label={t("chats.newChat.byKey")} hint={t("chats.newChat.byKeyHint")} onClick={() => setStep("key")} />
+          </Group>
+          <Group title={t("chats.newChat.channel")}>
+            <LinkRow icon={<HashIcon size={18} />} label={t("chats.newChat.publicShort")} hint={t("chats.newChat.publicHint")} onClick={() => setStep("public")} />
+            <LinkRow icon={<LockIcon size={18} />} label={t("chats.newChat.privateShort")} hint={t("chats.newChat.privateHint")} onClick={() => setStep("join")} />
+            <LinkRow icon={<PlusIcon size={18} />} label={t("chats.newChat.createShort")} hint={t("chats.newChat.createHint")} onClick={() => setStep("create")} />
+          </Group>
+        </>
       ) : step === "people" ? (
         <People query={query} onDone={onClose} />
+      ) : step === "key" ? (
+        <KeyForm
+          onDone={onClose}
+          onChannel={(secret, name) => {
+            setShared({ secret, name });
+            setStep("join");
+          }}
+        />
       ) : step === "public" ? (
         <PublicChannelForm onDone={onClose} />
       ) : (
-        <ChannelForm join={step === "join"} onDone={onClose} />
+        <ChannelForm join={step === "join"} shared={step === "join" ? shared : null} onDone={onClose} />
       )}
     </Sheet>
   );
@@ -93,6 +119,134 @@ function People({ query, onDone }: { query: string; onDone: () => void }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** The radio keeps a contact's name in 32 bytes, the last of them its end. */
+const NAME_BYTES = 31;
+
+/**
+ * Someone the radio has not heard, by the key they sent, bare or in a link.
+ * The name the link carries, or the one typed, stands until their own advert
+ * comes. A key that is someone already on the radio just opens their chat.
+ */
+function KeyForm({ onDone, onChannel }: { onDone: () => void; onChannel: (secret: string, name: string) => void }) {
+  const state = useSession();
+  const [text, setText] = useState("");
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pasted = readPasted(text);
+  const node = pasted?.kind === "node" ? pasted : null;
+  const own = !!node && node.key === state.self?.key;
+  const held = node ? state.contacts[node.key] : undefined;
+  const known = held && !held.unsaved ? held : undefined;
+  const long = utf8Length(name.trim()) > NAME_BYTES;
+  const fault =
+    pasted?.kind === "unknown" ? t("chats.newChat.keyUnknown") : pasted?.kind === "private" ? t("chats.newChat.keyPrivate") : own ? t("chats.newChat.keyOwn") : null;
+
+  const take = (value: string) => {
+    setText(value);
+    setError(null);
+    const read = readPasted(value);
+    setName(read?.kind === "node" ? read.name : "");
+  };
+
+  const paste = async () => {
+    try {
+      take((await navigator.clipboard.readText()).trim());
+    } catch {
+      toast(t("radio.key.pasteFailed"), "error");
+    }
+  };
+
+  const open = (key: string, type: number) => {
+    if (isConversationType(type)) openConversation(contactConversation(key));
+    else openProfile(key);
+    onDone();
+  };
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!node || own || long) return;
+    if (known) return open(known.key, known.type);
+    setBusy(true);
+    setError(null);
+    try {
+      await session.addByKey({ key: node.key, type: node.type, name: name.trim(), lat: node.lat, lon: node.lon });
+      open(node.key, held?.type ?? node.type);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="stack sheet-form" onSubmit={submit}>
+      <div className="field">
+        <div className="key-paste-head">
+          <label className="field-label" htmlFor="new-chat-key">
+            {t("chats.newChat.keyOrLink")}
+          </label>
+          {typeof navigator.clipboard?.readText === "function" ? (
+            <Button size="sm" onClick={() => void paste()}>
+              <TextIcon size={15} />
+              {t("radio.key.pasteButton")}
+            </Button>
+          ) : null}
+        </div>
+        <textarea
+          id="new-chat-key"
+          className={["input", "mono", "key-paste", fault ? "bad" : ""].join(" ")}
+          rows={3}
+          value={text}
+          placeholder={t("chats.newChat.keyPlaceholder")}
+          spellCheck={false}
+          autoCapitalize="off"
+          autoComplete="off"
+          autoCorrect="off"
+          aria-invalid={fault ? true : undefined}
+          onChange={(e) => take(e.target.value)}
+          autoFocus
+        />
+        <span className={["field-hint", fault ? "danger" : ""].join(" ")}>{fault ?? (pasted?.kind === "channel" ? t("chats.newChat.keyChannel") : t("chats.newChat.keyHint"))}</span>
+      </div>
+      {pasted?.kind === "channel" ? (
+        <div className="row-actions">
+          <Button onClick={() => onChannel(pasted.secret, pasted.name)}>
+            <LockIcon size={16} />
+            {t("chats.newChat.joinChannel")}
+          </Button>
+        </div>
+      ) : null}
+      {node && !own ? (
+        <>
+          <div className="key-whose">
+            <Avatar name={known?.name || name.trim() || node.key} type={known?.type ?? node.type} size={36} />
+            <span>
+              <b>{known?.name || name.trim() || known?.prefix || node.key.slice(0, 12)}</b>
+              <small>
+                {kindLabel(known?.type ?? node.type)} · {known ? routeWords(known).text : t("chats.newChat.notHeard")}
+              </small>
+            </span>
+          </div>
+          {known ? null : (
+            <label className="field">
+              <span className="field-label">{t("chats.newChat.nameIt")}</span>
+              <input className="input" value={name} onChange={(e) => setName(e.target.value)} aria-invalid={long ? true : undefined} autoCapitalize="words" />
+              <span className={["field-hint", long ? "danger" : ""].join(" ")}>{long ? t("chats.newChat.nameTooLong", { max: NAME_BYTES }) : t("chats.newChat.nameHint")}</span>
+            </label>
+          )}
+        </>
+      ) : null}
+      {error ? <p className="connect-error">{error}</p> : null}
+      {node && !own ? (
+        <Button variant="primary" size="lg" type="submit" busy={busy} disabled={long || (!known && state.status !== "ready")}>
+          {known ? (isConversationType(known.type) ? t("chats.newChat.openChat") : t("common.open")) : isConversationType(node.type) ? t("chats.newChat.addAndWrite") : t("chats.newChat.add")}
+        </Button>
+      ) : null}
+    </form>
   );
 }
 
@@ -169,10 +323,10 @@ function PublicChannelForm({ onDone }: { onDone: () => void }) {
   );
 }
 
-function ChannelForm({ join, onDone }: { join: boolean; onDone: () => void }) {
+function ChannelForm({ join, shared, onDone }: { join: boolean; shared: { secret: string; name: string } | null; onDone: () => void }) {
   const state = useSession();
-  const [name, setName] = useState("");
-  const [key, setKey] = useState(() => (join ? "" : randomSecret()));
+  const [name, setName] = useState(shared?.name ?? "");
+  const [key, setKey] = useState(() => shared?.secret ?? (join ? "" : randomSecret()));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const secret = parseSecret(key);

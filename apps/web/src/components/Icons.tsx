@@ -74,6 +74,8 @@ export const RepeaterIcon = icon(REPEATER_GLYPH);
 export const RoomIcon = icon(ROOM_GLYPH);
 export const SensorIcon = icon(SENSOR_GLYPH);
 export const PersonIcon = icon('<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/>');
+/** Someone new, added by hand. */
+export const PersonAddIcon = icon('<circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3.1-7 7-7s7 3 7 7"/><path d="M19 8v6M16 11h6"/>');
 export const SignalIcon = icon('<path d="M4 18v-3M9 18v-7M14 18V7M19 18V4"/>');
 /** A ping: out to a node and back. Not waves, which stand for sending into the air. */
 export const PingIcon = icon('<path d="M4 8h15"/><path d="M15 4l4 4-4 4"/><path d="M20 16H5"/><path d="M9 12l-4 4 4 4"/>');

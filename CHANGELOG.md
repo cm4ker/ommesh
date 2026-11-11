@@ -5,6 +5,7 @@
 ## Unreleased
 
 ### Chats
+- Add someone by the key they sent you, before your radio has heard them: New chat › By key. Paste a public key, or a meshcore:// link from the MeshCore app, which brings the name too, name them if you like, and Add and write opens the chat. Their own advert replaces the name once it comes. Their radio reads your messages only if it has you, so the empty chat offers an advert across the mesh and your key to send them. New chat now keeps a person's two ways under Person and a channel's three under Channel, and a channel's key pasted under By key leads on to joining it.
 - Typing @ in a channel or a room now lists the people among your contacts too, after those who have written there, so you can mention someone who has not written yet. Favourites come first. Pick a name and it goes into the message as `@[Name]`.
 - Block someone who floods a channel or a room: hold their message and choose Block. Their messages fold under a dashed strip that a tap opens, and they count for no unread, ring no notification (a mention of you included) and leave the chat's line in the list as it was. A channel message carries only its writer's name, so on channels the name is blocked, for anyone who signs with it; in a room the author's key is, under whatever name. Who wrote in a channel offers it too, and Settings › Messages and routes › Blocked lists them, each with Unblock. Two apps sharing a radio keep the same list.
 

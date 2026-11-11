@@ -59,6 +59,7 @@ const PAGES: Partial<Record<RadioPage, { title: Key; parent?: RadioPage; when?: 
   quiet: { title: "radio.titles.quiet", parent: "notifications" },
   sound: { title: "radio.titles.sound", parent: "notifications" },
   messages: { title: "radio.titles.messages" },
+  blocked: { title: "radio.titles.blocked", parent: "messages" },
   backup: { title: "radio.titles.backup" },
   history: { title: "radio.titles.history", parent: "backup" },
   appearance: { title: "radio.titles.appearance" },
@@ -134,6 +135,7 @@ export const SETTINGS: readonly Setting[] = [
 
   { page: "messages" },
   { page: "messages", label: "radio.messages.openAtUnread", words: "radio.search.words.unread" },
+  { page: "blocked", words: "radio.search.words.blocked" },
   { page: "messages", label: "radio.messages.lookalikes", words: "radio.search.words.lookalikes" },
   { page: "messages", label: "radio.messages.readCyrillic", words: "radio.search.words.readCyrillic" },
   { page: "messages", label: "radio.messages.sendTries", words: "radio.search.words.sendTries" },

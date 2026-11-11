@@ -1445,6 +1445,8 @@ export class MeshSession {
    */
   private contactsKnown: string | null = null;
   private focused: string | null = null;
+  /** Messages the reader keeps out of sight, from a sender they blocked (`setHidden`). */
+  private hidden: (message: MessageRecord) => boolean = () => false;
   private ackTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Reactions to messages not here yet: a mesh does not keep order, and the message may come next. */
   private pendingReactions: PendingReaction[] = [];
@@ -1559,6 +1561,27 @@ export class MeshSession {
   onReceived(listener: (message: MessageRecord) => void): () => void {
     this.receivedListeners.add(listener);
     return () => this.receivedListeners.delete(listener);
+  }
+
+  /**
+   * Which messages the reader keeps out of sight (a sender blocked). They count
+   * toward no chat's unread, and the read marks told to the other app and taken
+   * from it pass over them. One hidden now leaves its chat's unread; one shown
+   * again counts as read, so unblocking never brings a pile of old messages back
+   * as new. The state changes either way, for what is drawn from it to look again.
+   */
+  setHidden(hidden: ((message: MessageRecord) => boolean) | null): void {
+    const next = hidden ?? (() => false);
+    const unread: Record<string, number> = {};
+    for (const [conversation, count] of Object.entries(this.state.unread)) {
+      if (count <= 0) continue;
+      const left = this.counted(conversation)
+        .slice(-count)
+        .filter((m) => !next(m)).length;
+      if (left) unread[conversation] = left;
+    }
+    this.hidden = next;
+    this.set({ unread });
   }
 
   /** Every packet the radio receives, as it hands them up; kept out of the state, which would change with each. */
@@ -3124,7 +3147,7 @@ export class MeshSession {
       return;
     }
     const unread =
-      this.focused === message.conversation
+      this.focused === message.conversation || this.hidden(message)
         ? this.state.unread
         : { ...this.state.unread, [message.conversation]: (this.state.unread[message.conversation] ?? 0) + 1 };
     this.set({ messages: [...this.state.messages, message], unread });
@@ -3159,9 +3182,9 @@ export class MeshSession {
   // changes nothing, and reading on in one app never makes a chat in the other
   // unread again.
 
-  /** A chat's messages that count toward its unread: the ones that came in, but a console command this radio refused. */
+  /** A chat's messages that count toward its unread: the ones that came in, but a console command this radio refused and one kept out of sight. */
   private counted(conversation: string): MessageRecord[] {
-    return this.state.messages.filter((m) => m.conversation === conversation && m.direction === "in" && m.txtType !== TxtType.CliCommand);
+    return this.state.messages.filter((m) => m.conversation === conversation && m.direction === "in" && m.txtType !== TxtType.CliCommand && !this.hidden(m));
   }
 
   /** The newest message of a chat read here; null when none is. */

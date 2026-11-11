@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { channelConversation, contactConversation, isConversationType, KEYLESS_INDEX, type ContactRecord } from "@meshnet/meshcore";
+import { getBlocks, nameKey, toggleBlock, useBlocks } from "../lib/blocked.js";
 import { askChat } from "../lib/chatAsk.js";
 import { messagesIn } from "../lib/conversations.js";
 import { nameOfHash, spreadOf } from "../lib/echoes.js";
@@ -14,7 +15,7 @@ import { Group } from "../ui/List.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
 import { copyName } from "./HeroName.js";
-import { AtIcon, ChatIcon, CopyIcon, PersonIcon, SearchIcon } from "./Icons.js";
+import { AtIcon, BlockIcon, ChatIcon, CopyIcon, PersonIcon, SearchIcon } from "./Icons.js";
 import { Gone, ScreenHead, type Chrome } from "./ScreenHead.js";
 import { t } from "../i18n/index.js";
 
@@ -25,6 +26,8 @@ export function ChannelWriters({ index, chrome }: { index: number; chrome: Chrom
   const conversation = channelConversation(index);
   const messages = useMemo(() => messagesIn(state, conversation), [state, conversation]);
   const writers = useMemo(() => writersIn(messages), [messages]);
+  // A blocked name stays in the list, where it wrote; its line says its messages are hidden.
+  const blocks = useBlocks();
   const [query, setQuery] = useState("");
   const shown = findWriters(writers, query);
   const now = Date.now();
@@ -55,6 +58,7 @@ export function ChannelWriters({ index, chrome }: { index: number; chrome: Chrom
                   <span>{w.name}</span>
                   <small>
                     {w.mine ? `${t("chats.writers.you")} · ` : ""}
+                    {!w.mine && `n:${nameKey(w.name)}` in blocks ? `${t("chats.writers.blocked")} · ` : ""}
                     {agoPhrase(w.lastAt, now)} · {t("chats.writers.messages", { count: w.count })}
                   </small>
                 </span>
@@ -108,7 +112,12 @@ function writerMenu(w: Writer, conversation: string): void {
       },
     },
     { label: t("common.copyName"), icon: <CopyIcon size={17} />, onSelect: () => copyName(w.name) },
-    {
+  );
+  // A blocked name's messages are folded away in the chat, where a search would not find them.
+  const block = `n:${nameKey(w.name)}`;
+  const blocked = block in getBlocks();
+  if (!blocked) {
+    items.push({
       label: t("chats.writers.theirs"),
       hint: t("chats.writers.messages", { count: w.count }),
       icon: <SearchIcon size={17} />,
@@ -116,7 +125,12 @@ function writerMenu(w: Writer, conversation: string): void {
         askChat({ conversation, kind: "from", name: w.name });
         openConversation(conversation);
       },
-    },
+    });
+  }
+  items.push(
+    blocked
+      ? { label: t("chats.blocked.unblock", { name: w.name }), icon: <BlockIcon size={17} />, group: true, onSelect: () => toggleBlock(block, w.name) }
+      : { label: t("chats.blocked.block", { name: w.name }), hint: t("chats.blocked.byName"), icon: <BlockIcon size={17} />, danger: true, group: true, onSelect: () => toggleBlock(block, w.name) },
   );
   const way = wayOf(w, contacts);
   showMenu(items, { title: way ? `${w.name} · ${way}` : w.name });

@@ -10,6 +10,7 @@ import { canOpenAnother, openAnother } from "../lib/instance.js";
 import { disconnect, useLink } from "../lib/link.js";
 import { setLookalikePrefs, useLookalikePrefs } from "../lib/lookalikes.js";
 import { setOpenAtUnread, useOpenAtUnread } from "../lib/firstUnread.js";
+import { useBlocks } from "../lib/blocked.js";
 import { setJumboEmoji, useJumboEmoji } from "../lib/jumboEmoji.js";
 import { setPreviewMode, usePreviewMode, type PreviewMode } from "../lib/linkPreview.js";
 import { BACKGROUND_NAMES, BACKGROUNDS, setBackground, setBackgroundScale, setBackgroundStrength, useBackgroundPrefs } from "../lib/chatBackground.js";
@@ -40,6 +41,7 @@ import { Avatar, SenderName } from "./Avatar.js";
 import { ChatBackdrop } from "./ChatBackdrop.js";
 import { AlertIcon, BluetoothIcon, CopyIcon, PictureIcon, WifiIcon } from "./Icons.js";
 import { ContactsPage, RemovedPage } from "./ContactsPages.js";
+import { BlockedPage } from "./BlockedPage.js";
 import { Console } from "./node/Console.js";
 import { LogView } from "./LogView.js";
 import { AirView } from "./AirView.js";
@@ -69,6 +71,7 @@ type Self = NonNullable<SessionState["self"]>;
 /** Pages opened from another page rather than from the Radio list: the list keeps the parent picked. */
 export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = {
   removed: "contacts",
+  blocked: "messages",
   quiet: "notifications",
   sound: "notifications",
   soundDirect: "notifications",
@@ -113,6 +116,7 @@ export const RADIO_TITLES: Record<RadioPage, Key> = {
   soundChats: "radio.notifications.chats",
   soundNodes: "radio.notifications.nodes",
   messages: "radio.titles.messages",
+  blocked: "radio.titles.blocked",
   history: "radio.titles.history",
   backup: "radio.titles.backup",
   restore: "radio.titles.restore",
@@ -306,6 +310,8 @@ function PageBody({ page }: { page: RadioPage }) {
       return <KindSoundPage kind="nodes" />;
     case "messages":
       return <MessagesPage />;
+    case "blocked":
+      return <BlockedPage />;
     case "history":
       return self ? <HistoryPage self={self} /> : <Offline />;
     case "backup":
@@ -986,6 +992,7 @@ function MessagesPage() {
   const lookalikes = useLookalikePrefs();
   const openAtUnread = useOpenAtUnread();
   const sendTries = useSendTries();
+  const blocked = Object.keys(useBlocks()).length;
   return (
     <>
       <Group>
@@ -995,6 +1002,7 @@ function MessagesPage() {
           checked={openAtUnread}
           onChange={setOpenAtUnread}
         />
+        <LinkRow label={t("radio.messages.blocked")} value={blocked || undefined} onClick={() => push({ kind: "radio", page: "blocked" })} />
       </Group>
       <Group>
         <SwitchRow

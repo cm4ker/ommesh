@@ -596,6 +596,32 @@ test("connecting queries the radio, reads its contacts and channels, and drains 
   assert.ok(radio.sent.some((f) => f[0] === Cmd.SetDeviceTime));
 });
 
+test("a hidden message counts toward no unread; hiding drops it from the count, showing again leaves it read", async () => {
+  const radio = new ScriptedRadio();
+  radio.queue.push(channelFrame(0, "Alice: one"), channelFrame(0, "Spam: buy"), channelFrame(0, "Alice: two"));
+  const session = new MeshSession({ now: () => 1_700_000_100_000 });
+  await session.connect(radio);
+  const ch = channelConversation(0);
+  assert.equal(session.getState().unread[ch], 3);
+  const fromSpam = (m: MessageRecord) => m.sender === "Spam";
+  session.setHidden(fromSpam);
+  assert.equal(session.getState().unread[ch], 2);
+  radio.queue.push(channelFrame(0, "Spam: buy now"));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(10);
+  assert.equal(session.getState().messages.length, 4);
+  assert.equal(session.getState().unread[ch], 2, "a new one from them is not counted");
+  session.setHidden(null);
+  assert.equal(session.getState().unread[ch], 2, "shown again, theirs count as read");
+  session.setHidden(fromSpam);
+  session.markRead(ch);
+  radio.queue.push(channelFrame(0, "Spam: last"));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(10);
+  assert.deepEqual(session.getState().unread, {});
+  await session.disconnect();
+});
+
 test("a resync asks for everything again in order on the same link, and counts what is new", async () => {
   const radio = new ScriptedRadio();
   const session = new MeshSession({ now: () => 1_700_000_000_000 });

@@ -129,8 +129,42 @@ pub struct WatchConfig {
     pub chat_sound: HashMap<String, Option<String>>,
     pub contacts: Vec<Contact>,
     pub channels: Vec<Channel>,
+    /// Senders the reader blocked (gh #114): never announced.
+    pub blocked: Blocked,
     /// What the notices say, in the page's language.
     pub words: Words,
+}
+
+/// Senders the reader blocked (the page's `blocked.ts`). A channel message carries only a name,
+/// so on channels a name is blocked, as `name_key` matches it; a room signs each post with its
+/// author's key prefix, so there an author is blocked by it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct Blocked {
+    /// Names as `name_key` gives them.
+    pub names: Vec<String>,
+    /// Room authors' key prefixes, in hex.
+    pub keys: Vec<String>,
+}
+
+/// A name as blocks match it, as `nameKey` in the page's `blocked.ts` does: trimmed, in small
+/// letters, with a Cyrillic letter drawn just like a Latin one read as the Latin.
+pub fn name_key(name: &str) -> String {
+    name.trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| match c {
+            'а' => 'a',
+            'е' | 'ё' => 'e',
+            'о' => 'o',
+            'р' => 'p',
+            'с' => 'c',
+            'х' => 'x',
+            'і' => 'i',
+            'у' => 'y',
+            c => c,
+        })
+        .collect()
 }
 
 impl Default for WatchConfig {
@@ -148,6 +182,7 @@ impl Default for WatchConfig {
             chat_sound: HashMap::new(),
             contacts: Vec::new(),
             channels: Vec::new(),
+            blocked: Blocked::default(),
             words: Words::default(),
         }
     }
@@ -865,6 +900,12 @@ impl Watch {
                 let contact = find(&prefix);
                 // A room relays its members' posts signed with the author's key prefix.
                 let signer = signer.map(|s| hex(&s));
+                if signer
+                    .as_ref()
+                    .is_some_and(|s| self.config.blocked.keys.contains(s))
+                {
+                    return None; // its author is blocked: kept out of sight, and so out of the notices
+                }
                 let sender = match &signer {
                     Some(s) => Some(
                         find(s)
@@ -910,6 +951,9 @@ impl Watch {
                 // MeshCore One sends a reaction as text; the page puts it on its message, not in the chat.
                 if sender.is_some() && is_text_reaction(text) {
                     return None;
+                }
+                if sender.is_some_and(|s| self.config.blocked.names.contains(&name_key(s))) {
+                    return None; // a name blocked on channels
                 }
                 let channel = self.config.channels.iter().find(|c| c.index == index);
                 // A slot the page does not list is empty: the message came without a key, and the
@@ -1595,6 +1639,25 @@ mod tests {
         rig.arrives(room_post([0xde, 0xad, 0xbe, 0xef], "again"))
             .grace_ends();
         assert_eq!(rig.posted[1].body, "Bob: posted\ndeadbeef: again");
+    }
+
+    #[test]
+    fn a_blocked_name_or_room_author_is_never_announced() {
+        let mut config = config();
+        config.chats = ChatLevel::Mentions;
+        config.blocked = Blocked {
+            names: vec![name_key(" ЭхоБот ")],
+            keys: vec!["deadbeef".into()],
+        };
+        let mut rig = Rig::new(config);
+        // Letter case and a Latin twin aside, the name is the one blocked; a mention does not ring through.
+        rig.arrives(channel(0, "эxобот: @[Node-21] ping"))
+            .arrives(room_post([0xde, 0xad, 0xbe, 0xef], "@[Node-21] spam"))
+            .grace_ends();
+        assert!(rig.posted.is_empty());
+        rig.arrives(channel(0, "Eve: @[Node-21] hi")).grace_ends();
+        assert_eq!(rig.posted.len(), 1, "others still ring");
+        assert_eq!(name_key("Ёлка "), "eлкa");
     }
 
     #[test]

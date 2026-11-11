@@ -33,6 +33,7 @@
  */
 
 import { AdvType, type MessageRecord, type SessionState } from "@meshnet/meshcore";
+import { isHidden } from "./blocked.js";
 import { conversationAccess, type ChannelAccess } from "./channels.js";
 import { titleOf } from "./conversations.js";
 import { shownText } from "./lookalikes.js";
@@ -91,11 +92,11 @@ export function conversationTag(conversation: string): string {
   return `c:${conversation}`;
 }
 
-/** The unread messages of a conversation, oldest first: the last ones in, as many as are unread. */
+/** The unread messages of a conversation, oldest first: the last ones in, as many as are unread. A blocked sender's count for none. */
 function unreadIn(state: SessionState, conversation: string): MessageRecord[] {
   const count = state.unread[conversation] ?? 0;
   if (count === 0) return [];
-  return state.messages.filter((m) => m.conversation === conversation && m.direction === "in").slice(-count);
+  return state.messages.filter((m) => m.conversation === conversation && m.direction === "in" && !isHidden(m)).slice(-count);
 }
 
 /** One message on its own: who said it, and where. */

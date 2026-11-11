@@ -1,6 +1,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 import { AdvType, isConversationType, isDirect, KEYLESS_INDEX, parseConversation, TxtType, type MessageRecord, type SessionState } from "@meshnet/meshcore";
 import { useBackLayer } from "../lib/back.js";
+import { blockIdOf, inSight, isHidden, reactionHidden, toggleBlock, useBlocks, type HiddenRun } from "../lib/blocked.js";
 import { chatAccess } from "../lib/channels.js";
 import { onAsk, takeAsk } from "../lib/chatAsk.js";
 import { MENTION, quoteHeadLength } from "../lib/composer.js";
@@ -50,6 +51,7 @@ import { LinkCards, LinkMark } from "./LinkPreview.js";
 import { Reactions, ReactStrip } from "./Reactions.js";
 import {
   AlertIcon,
+  BlockIcon,
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
@@ -99,7 +101,25 @@ const STILL = 150;
 
 export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversation: string; chrome: Chrome; infoOpen?: boolean | undefined; onInfo?: () => void }) {
   const state = useSession();
-  const messages = useMemo(() => messagesIn(state, conversation), [state, conversation]);
+  const all = useMemo(() => messagesIn(state, conversation), [state, conversation]);
+  // A blocked sender's messages are folded under strips (#114); the chat works with the rest, as
+  // if theirs were not there, and with those of a strip opened, shown faded.
+  const blocks = useBlocks();
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
+  const sight = useMemo(() => inSight(all, isHidden, unfolded), [all, blocks, unfolded]);
+  const messages = sight.messages;
+  const stripsAfter = useMemo(() => new Map(sight.runs.map((r) => [r.after, r])), [sight.runs]);
+  const toggleRun = useCallback((id: string) => {
+    setUnfolded((was) => {
+      const next = new Set(was);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }, []);
+  const blockOrNot = useCallback((message: MessageRecord) => {
+    const id = blockIdOf(message);
+    if (id && message.sender) toggleBlock(id, message.sender);
+  }, []);
   const shown = useMemo(() => shownIn(messages), [messages]);
   const title = titleOf(state, conversation);
   const target = parseConversation(conversation);
@@ -170,7 +190,8 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   // those that come while they read further up. Each drops off once it has been in sight.
   const unseen = useRef<string[]>(unread?.ids ?? []);
   const known = useRef<Set<string> | null>(null);
-  known.current ??= new Set(messages.map((m) => m.id));
+  // Every message, folded or not: a strip opened brings back none as new.
+  known.current ??= new Set(all.map((m) => m.id));
   const [below, setBelow] = useState(0);
   const [away, setAway] = useState(false);
   // The replies the reader went up from to the message each answers (#32), the latest last. The button
@@ -217,13 +238,13 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     } else if (stuck.current) {
       el.scrollTop = el.scrollHeight;
     }
-    const added = messages.filter((m) => !known.current!.has(m.id));
+    const added = all.filter((m) => !known.current!.has(m.id));
     for (const m of added) {
       known.current!.add(m.id);
-      if (m.direction === "in") unseen.current.push(m.id);
+      if (m.direction === "in" && !isHidden(m)) unseen.current.push(m.id);
     }
     measure();
-  }, [messages.length, conversation]);
+  }, [all.length, messages.length, conversation]);
   // The keyboard coming up shrinks the list from below; the last message stays in sight. Read
   // further up, the list keeps its lower edge instead, so what sat just above the field stays
   // there. Either way, never so far that the message being answered goes off the top.
@@ -726,7 +747,8 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
         }}
       >
         <div className={["chat-inner", arrived ? "arrive" : ""].join(" ")} ref={inner}>
-          {messages.length === 0 ? <div className="empty muted">{target.kind === "channel" ? t("chats.chat.emptyChannel") : t("chats.chat.empty")}</div> : null}
+          {all.length === 0 ? <div className="empty muted">{target.kind === "channel" ? t("chats.chat.emptyChannel") : t("chats.chat.empty")}</div> : null}
+          {drawnAt === 0 && stripsAfter.has(null) ? <HiddenStrip run={stripsAfter.get(null)!} open={unfolded.has(stripsAfter.get(null)!.id)} onToggle={toggleRun} /> : null}
           {drawn.map((m, i) => {
             const prev = drawn[i - 1];
             const next = drawn[i + 1];
@@ -736,6 +758,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
             const first = !prev || !sameRun(prev, m, shown) || opens;
             const last = !next || !sameRun(m, next, shown) || next.id === unread?.first;
             const voice = many && m.direction === "in";
+            const strip = stripsAfter.get(m.id);
             return (
               <div key={m.id} data-id={m.id}>
                 {newDay ? <div className="day">{dayLabel(at.at)}</div> : null}
@@ -757,13 +780,16 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
                   contacts={m.direction === "out" ? state.contacts : undefined}
                   mark={finding ? (matched.has(m.id) ? findQuery : undefined) : found?.id === m.id ? found.query : undefined}
                   current={m.id === current}
-                  faded={finding && findFrom !== null && !matched.has(m.id)}
+                  faded={(finding && findFrom !== null && !matched.has(m.id)) || sight.shown.has(m.id)}
                   flash={m.id === flashing}
                   selecting={selecting}
                   picked={pickedSet.has(m.id)}
                   onPick={pick}
+                  onBlock={voice && blockIdOf(m) ? blockOrNot : undefined}
+                  blocked={sight.shown.has(m.id)}
                 />
                 )}
+                {strip ? <HiddenStrip run={strip} open={unfolded.has(strip.id)} onToggle={toggleRun} /> : null}
               </div>
             );
           })}
@@ -1096,14 +1122,21 @@ interface MessageProps {
   picked: boolean;
   /** Picks the message or lets it go. */
   onPick: (id: string) => void;
+  /** In a channel or a room, one heard: blocks its sender, or unblocks them for one shown from under a strip. */
+  onBlock: ((message: MessageRecord) => void) | undefined;
+  /** A blocked sender's, shown from under its strip. */
+  blocked: boolean;
 }
 
 /**
  * One bubble. Memoised: a message arriving, or an echo of one, changes one record, and the
  * other bubbles of a long conversation have nothing new to draw.
  */
-const Message = memo(function Message({ message, at, lead, showSender, avatar, me, peer, onReply: replyTo, onSource, onWho, contacts, mark, current, faded, flash, selecting, picked, onPick }: MessageProps) {
+const Message = memo(function Message({ message, at, lead, showSender, avatar, me, peer, onReply: replyTo, onSource, onWho, contacts, mark, current, faded, flash, selecting, picked, onPick, onBlock, blocked }: MessageProps) {
   const out = message.direction === "out";
+  // The emoji a name blocked on the channel put on it are left off.
+  useBlocks();
+  const reactions = message.conversation.startsWith("ch:") ? message.reactions?.filter((r) => !reactionHidden(r.by)) : message.reactions;
   const [busy, setBusy] = useState(false);
   const bubble = useRef<HTMLDivElement>(null);
   const large = useJumboEmoji();
@@ -1172,6 +1205,19 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
       message.status === "queued" ? { label: t("chats.message.dontSend"), icon: <TrashIcon size={17} />, danger: true, onSelect: () => session.discardQueued(message.id) } : null,
       retryable || looping ? { label: t("common.delete"), icon: <TrashIcon size={17} />, danger: true, onSelect: () => session.discardFailed(message.id) } : null,
       { label: t("chats.message.travelled"), icon: <NodesIcon size={17} />, onSelect: () => openMessage(message.conversation, message.id) },
+      // A channel message carries a name and no key, so a name is blocked there, whoever writes under it; a room's post carries its author's key.
+      onBlock && message.sender
+        ? blocked
+          ? { label: t("chats.blocked.unblock", { name: message.sender }), icon: <BlockIcon size={17} />, group: true, onSelect: () => onBlock(message) }
+          : {
+              label: t("chats.blocked.block", { name: message.sender }),
+              hint: message.conversation.startsWith("ch:") ? t("chats.blocked.byName") : t("chats.blocked.byKey"),
+              icon: <BlockIcon size={17} />,
+              danger: true,
+              group: true,
+              onSelect: () => onBlock(message),
+            }
+        : null,
     ];
     showMenu(
       items.filter((x): x is MenuItem => x !== null),
@@ -1246,10 +1292,10 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
             </span>
           )}
           {previews && !placed && !jumbo ? <LinkCards text={message.text} message={message.id} /> : null}
-          {message.reactions?.length ? (
+          {reactions?.length ? (
             // The emoji start a line of their own, and the time sits at the end of their last row.
             <span className="msg-foot">
-              <Reactions message={message} live={reactable && !selecting} />
+              <Reactions message={message} reactions={reactions} live={reactable && !selecting} />
               {meta}
             </span>
           ) : (
@@ -1650,6 +1696,17 @@ function useReveal(scroller: React.RefObject<HTMLDivElement | null>, inner: Reac
       el.removeEventListener("touchcancel", up);
     };
   }, [scroller, inner]);
+}
+
+/** Where a blocked sender's messages are folded away (#114): a tap shows them, faded, and another folds them again. */
+function HiddenStrip({ run, open, onToggle }: { run: HiddenRun; open: boolean; onToggle: (id: string) => void }) {
+  const names = run.names.join(", ");
+  return (
+    <button type="button" className="hidden-strip" aria-expanded={open} onClick={() => onToggle(run.id)}>
+      <BlockIcon size={14} />
+      <span>{open ? t("chats.blocked.fold", { names }) : t("chats.blocked.strip", { names, count: run.count })}</span>
+    </button>
+  );
 }
 
 /**

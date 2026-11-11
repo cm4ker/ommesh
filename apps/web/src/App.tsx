@@ -10,6 +10,7 @@ import { useLink } from "./lib/link.js";
 import { t, useLanguage, type Key } from "./i18n/index.js";
 import { errorText } from "./i18n/errors.js";
 import { ALL_CHATS, createAnnouncer } from "./lib/announce.js";
+import { isHidden } from "./lib/blocked.js";
 import { getNoticePrefs, messageWanted, nodeWanted, subscribeNoticePrefs } from "./lib/noticePrefs.js";
 import { noteUnread } from "./lib/firstUnread.js";
 import { quietAt, ringsThrough, startQuiet } from "./lib/quiet.js";
@@ -80,7 +81,8 @@ export function App() {
   useEffect(() => {
     const announcer = createAnnouncer({
       state: () => session.getState(),
-      wanted: (message) => messageWanted(getNoticePrefs(), session.getState(), message),
+      // A blocked sender rings nothing, not even with a mention.
+      wanted: (message) => !isHidden(message) && messageWanted(getNoticePrefs(), session.getState(), message),
       loud: (message) => {
         const { quiet } = getNoticePrefs();
         return !quietAt(quiet, Date.now()) || ringsThrough(quiet, session.getState(), message);

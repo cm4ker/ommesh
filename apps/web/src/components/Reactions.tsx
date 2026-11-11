@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
-import type { MessageRecord } from "@meshnet/meshcore";
+import type { MessageReaction, MessageRecord } from "@meshnet/meshcore";
 import { emojiName, useEmojiData } from "../lib/emojiData.js";
 import { haptic } from "../lib/haptic.js";
 import { groupReactions, noteReaction, ownReaction, reactors, stripReactions, type Carried, type ReactionGroup, type Reactor } from "../lib/reactions.js";
@@ -162,8 +162,9 @@ function Peek({ group, at }: { group: ReactionGroup; at: DOMRect }) {
  * tap puts the same one on, or takes ours back; `live` is false while
  * messages are being picked, or where nothing can be sent.
  */
-export function Reactions({ message, live }: { message: MessageRecord; live: boolean }) {
-  const groups = groupReactions(message.reactions);
+/** A message's emoji; `reactions` when some are left off (a blocked sender's). */
+export function Reactions({ message, reactions = message.reactions, live }: { message: MessageRecord; reactions?: MessageReaction[] | undefined; live: boolean }) {
+  const groups = groupReactions(reactions);
   const [peek, setPeek] = useState<{ group: ReactionGroup; at: DOMRect } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The emoji showed large: the click that ends the hold is no tap.

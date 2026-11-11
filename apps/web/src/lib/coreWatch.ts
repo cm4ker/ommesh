@@ -11,6 +11,7 @@
 
 import { isFavourite, type SessionState } from "@meshnet/meshcore";
 import { forms, language, pluralTable, subscribeLanguage, t, template } from "../i18n/index.js";
+import { blocksForCore, subscribeBlocks } from "./blocked.js";
 import { signalFile } from "./chime.js";
 import { getNoticePrefs, subscribeNoticePrefs } from "./noticePrefs.js";
 import { tellChannels } from "./notify.js";
@@ -91,6 +92,7 @@ export function coreConfig(state: SessionState, now = Date.now()): string {
     chatSound: Object.fromEntries(Object.entries(prefs.chatSound).map(([conversation, signal]) => [conversation, signalFile(signal)])),
     contacts: Object.values(state.contacts).map((c) => ({ key: c.key, name: c.name, type: c.type, favourite: isFavourite(c) })),
     channels: state.channels.map((c) => ({ index: c.index, name: c.name })),
+    blocked: blocksForCore(),
     words: words(),
   });
 }
@@ -122,10 +124,12 @@ export function startCoreWatch(state: () => SessionState, subscribe: (listener: 
   tell(true);
   const stopSession = subscribe(() => tell(false));
   const stopPrefs = subscribeNoticePrefs(() => tell(true));
+  const stopBlocks = subscribeBlocks(() => tell(true));
   const stopLanguage = subscribeLanguage(() => tell(true));
   return () => {
     stopSession();
     stopPrefs();
+    stopBlocks();
     stopLanguage();
   };
 }

@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { isFavourite, parseConversation, TxtType, type MessageRecord } from "@meshnet/meshcore";
+import { isHidden } from "../lib/blocked.js";
 import { chatAccess } from "../lib/channels.js";
 import { CHAT_ORDERS, changed, chatGroups, chatsInOrder, getChatOrder, setChatOrder, useChatOrder } from "../lib/chatOrder.js";
 import { pinnedAt, radioPins, setPinned, usePinStore } from "../lib/chatPins.js";
@@ -69,7 +70,8 @@ export function ChatList({ selected }: { selected: string | null }) {
   const q = fold(query.trim());
   const byId = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
   const chatsFound = q ? chatsInOrder(rows.filter((r) => fold(r.title).includes(q)), order, pins) : [];
-  const found = useMemo(() => findMessages(state.messages, query).filter((m) => byId.has(m.conversation)), [state.messages, query, byId]);
+  // A blocked sender's are not found: they are not to be read (blocked.ts).
+  const found = useMemo(() => findMessages(state.messages, query).filter((m) => byId.has(m.conversation) && !isHidden(m)), [state.messages, query, byId]);
   const groups = chatGroups(rows, order, pins);
   const unread = rows.filter((r) => r.unread > 0).length;
   const pin = (row: ConversationSummary, on: boolean) => {

@@ -16,6 +16,7 @@ import {
   type SessionState,
 } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
+import { isHidden } from "./blocked.js";
 import { MENTION } from "./composer.js";
 import { shownText } from "./lookalikes.js";
 import { textWithPlaces } from "./place.js";
@@ -50,12 +51,16 @@ function preview(message: MessageRecord, kind: ConversationSummary["kind"]): str
   return text;
 }
 
-export function summarize(state: SessionState): ConversationSummary[] {
-  // The one at the bottom of the chat, so the row says what the chat ends with.
-  const last = new Map<string, MessageRecord>();
+export function summarize(state: SessionState, hidden: (m: MessageRecord) => boolean = isHidden): ConversationSummary[] {
+  // The one at the bottom of the chat, so the row says what the chat ends with. A blocked sender's
+  // are left out, so their posts neither show on the row nor bring the chat up the list; a chat of
+  // theirs alone stays, with nothing on its row.
+  const last = new Map<string, MessageRecord | null>();
   for (const m of state.messages) {
     const prior = last.get(m.conversation);
-    if (!prior || placedAt(m) >= placedAt(prior)) last.set(m.conversation, m);
+    if (hidden(m)) {
+      if (prior === undefined) last.set(m.conversation, null);
+    } else if (!prior || placedAt(m) >= placedAt(prior)) last.set(m.conversation, m);
   }
 
   const rows: ConversationSummary[] = [];
@@ -86,8 +91,8 @@ export function summarize(state: SessionState): ConversationSummary[] {
         id,
         kind: "channel",
         title: channelTitle(target.index),
-        preview: preview(m, "channel"),
-        lastAt: placedAt(m),
+        preview: m ? preview(m, "channel") : null,
+        lastAt: m ? placedAt(m) : 0,
         unread: state.unread[id] ?? 0,
         contact: null,
         channel: null,
@@ -98,8 +103,8 @@ export function summarize(state: SessionState): ConversationSummary[] {
         id,
         kind: "contact",
         title: contact?.name || target.key.slice(0, 12),
-        preview: preview(m, "contact"),
-        lastAt: placedAt(m),
+        preview: m ? preview(m, "contact") : null,
+        lastAt: m ? placedAt(m) : 0,
         unread: state.unread[id] ?? 0,
         contact,
         channel: null,
@@ -109,8 +114,8 @@ export function summarize(state: SessionState): ConversationSummary[] {
         id,
         kind: "prefix",
         title: t("chats.conversation.unknown", { prefix: target.prefix }),
-        preview: preview(m, "prefix"),
-        lastAt: placedAt(m),
+        preview: m ? preview(m, "prefix") : null,
+        lastAt: m ? placedAt(m) : 0,
         unread: state.unread[id] ?? 0,
         contact: null,
         channel: null,

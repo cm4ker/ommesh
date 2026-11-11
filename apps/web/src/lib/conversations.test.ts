@@ -132,6 +132,27 @@ test("a reply previews as what it says, and a mention as the name", () => {
   assert.equal(summarize(state([named]))[0]?.preview, "Миша: @Оля возьми горелку");
 });
 
+test("a blocked sender's messages neither show on the row nor bring the chat up", () => {
+  const spam = (m: MessageRecord) => m.sender === "Spam";
+  const rows = summarize(
+    state([
+      message("ch:1", "hi", 2000, "in", "Alice"),
+      message(`c:${BOB}`, "yo", 3000),
+      message("ch:1", "buy now", 4000, "in", "Spam"),
+      message("ch:0", "buy", 5000, "in", "Spam"),
+    ]),
+    spam,
+  );
+  assert.deepEqual(
+    rows.map((r) => [r.title, r.preview]),
+    [
+      ["Bob", "yo"],
+      ["Friends", "Alice: hi"],
+      ["Public", null],
+    ],
+  );
+});
+
 test("a sender the radio did not name gets a row of its own", () => {
   const rows = summarize(state([message("p:aabbccddeeff", "?", 1000)]));
   assert.equal(rows[0]?.kind, "prefix");

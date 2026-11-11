@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { AdvType, parseConversation, type MessageRecord } from "@meshnet/meshcore";
+import { isHidden } from "../lib/blocked.js";
 import { onAsk, takeAsk } from "../lib/chatAsk.js";
 import { costOf, blockEdges, ceilingOf, hasCyrillic, headerBytes, mentionOf, mentionQuery, pathBytes, quoteOf, segments, withFormat, splitParts, translit } from "../lib/composer.js";
 import { messagesIn } from "../lib/conversations.js";
@@ -97,9 +98,12 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   const shownBudget = cost.budget + lineBytes;
 
   const messages = useMemo(() => messagesIn(state, conversation), [state, conversation]);
-  // Who can be named: whoever has written in this channel or room, then the people among the contacts.
+  // Who can be named: whoever has written in this channel or room, but a sender blocked, then the people among the contacts.
   const many = target.kind === "channel" || contact?.type === AdvType.Room;
-  const people = useMemo(() => (many ? mentionable(messages, Object.values(state.contacts), self?.name ?? "") : []), [many, messages, state.contacts, self?.name]);
+  const people = useMemo(
+    () => (many ? mentionable(messages.filter((m) => !isHidden(m)), Object.values(state.contacts), self?.name ?? "") : []),
+    [many, messages, state.contacts, self?.name],
+  );
   const matches = pick ? findNames(people, pick.query).slice(0, 6) : [];
 
   useEffect(() => setDraft(radio, conversation, text.slice(head.length)), [radio, conversation, text, head]);

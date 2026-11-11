@@ -17,6 +17,7 @@ import { findTheme } from "../theme/themes.js";
 import { getPreference, setPreference } from "../theme/store.js";
 import { setAntennaHeight, antennaHeights } from "./antennas.js";
 import { BATTERY_TYPES, batteryTypes, setBatteryType } from "./batteryType.js";
+import { getBlocks, setBlock, type Block } from "./blocked.js";
 import { BACKGROUNDS, backgroundPrefs, setBackground, setBackgroundScale, setBackgroundStrength, setChatBackground, type Background } from "./chatBackground.js";
 import { CHAT_ORDERS, getChatOrder, setChatOrder, type ChatOrderPrefs } from "./chatOrder.js";
 import { getPins, setPin, type Pin } from "./chatPins.js";
@@ -240,6 +241,13 @@ sync.shareEach<Pin>({
   valid: (value): value is Pin => isObject(value) && typeof value["at"] === "number" && (value["name"] === undefined || typeof value["name"] === "string"),
   untouched: (pin) => pin.at === 0,
   scope: () => radio()?.key ?? "",
+});
+// The senders blocked (#114): the read marks the two apps tell each other pass over their messages, so they must agree.
+sync.shareEach<Block>({
+  key: "blocked",
+  entries: getBlocks,
+  write: setBlock,
+  valid: (value): value is Block => isObject(value) && typeof value["name"] === "string" && value["name"].length <= 64 && typeof value["at"] === "number",
 });
 sync.shareEach({ key: "battery", entries: batteryTypes, write: setBatteryType, valid: oneOf(BATTERY_TYPES.map((b) => b.value)) });
 sync.shareEach<number>({ key: "antenna", entries: antennaHeights, write: setAntennaHeight, valid: inRange(0, 1000) });

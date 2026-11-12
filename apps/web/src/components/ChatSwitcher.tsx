@@ -22,7 +22,8 @@ interface Open {
  * The desktop's Ctrl+Tab, as in Telegram's desktop app (#80): held Ctrl and a
  * Tab put up the recent chats in a row, the one on screen first and the one
  * before it ringed, so a quick Ctrl+Tab goes back and forth between two
- * chats. Each Tab more rings the next, Shift+Tab the one before, and letting
+ * chats. Each Tab more rings the next, Shift+Tab the one before, the left and
+ * right arrows step the same way, and letting
  * go of Ctrl opens the ringed one; Escape, or leaving the window, puts the row
  * away. A browser keeps Ctrl+Tab for its own tabs, so there it never comes.
  */
@@ -42,6 +43,14 @@ export function ChatSwitcher() {
         e.preventDefault();
         e.stopPropagation();
         set(null);
+        return;
+      }
+      // The arrows walk the row while it is up; the message field under it must not take them for its caret.
+      if (now && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+        e.preventDefault();
+        e.stopPropagation();
+        const n = now.ids.length;
+        set({ ...now, at: (now.at + (e.key === "ArrowLeft" ? n - 1 : 1)) % n });
         return;
       }
       if (e.key !== "Tab" || !e.ctrlKey || e.altKey || e.metaKey) return;

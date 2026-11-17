@@ -1,7 +1,7 @@
 /**
  * A link too long for a message, shortened through the preview server: the
  * same server that draws previews keeps an address for a day and answers with
- * six letters (#118), `preview.cm4ker.ru/x1jpy2`.
+ * six letters (#118), `preview.ommesh.ru/x1jpy2`.
  *
  * A short link lives a day, and the app says so where it offers one: it is for
  * today's chat, not for what a reader will open next week. Only the address
@@ -66,3 +66,4 @@ export async function shortenLink(href: string): Promise<string> {
 export function withShortLink(text: string, long: LongLink, short: string): string {
   return text.slice(0, long.at) + short + text.slice(long.at + long.text.length);
 }
+

@@ -1,6 +1,6 @@
 /**
  * Link previews come from the Ommesh project's preview server
- * (preview.cm4ker.ru, its own repository, ommesh-preview). The server visits
+ * (preview.ommesh.ru, its own repository, ommesh-preview; preview.cm4ker.ru is the same server under the older name). The server visits
  * the link, not this device: a stranger who writes a link learns nothing of
  * its readers and can reach nothing of theirs, and a picture arrives as one
  * the server encoded anew. The server keeps each answer for a day, so a link
@@ -8,7 +8,7 @@
  * device, by HTTPS, with no cookies and no referrer.
  */
 
-export const PREVIEW_SERVER = "https://preview.cm4ker.ru";
+export const PREVIEW_SERVER = "https://preview.ommesh.ru";
 
 /** A preview as the server answers it; see the server's README. */
 export interface Answered {
@@ -45,3 +45,4 @@ export async function askPreview(href: string): Promise<Answered> {
   if (typeof answer.refused === "string") throw new Refused(answer.refused);
   return answer;
 }
+

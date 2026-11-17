@@ -28,5 +28,6 @@ test("a message with no address has nothing to shorten, and www. still counts", 
 test("a short link takes the place of the long one, and the words around it stay", () => {
   const text = "Держи https://example.com/a-very-long-page?with=query и до встречи";
   const found = longestLink(text)!;
-  assert.equal(withShortLink(text, found, "https://preview.cm4ker.ru/x1jpy2"), "Держи https://preview.cm4ker.ru/x1jpy2 и до встречи");
+  assert.equal(withShortLink(text, found, "https://preview.ommesh.ru/x1jpy2"), "Держи https://preview.ommesh.ru/x1jpy2 и до встречи");
 });
+

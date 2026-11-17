@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { t } from "../i18n/index.js";
 import { ATTACH_DEFAULTS, attachmentsReady, autoPathStyle, keyFor, linkFor, presignPut, publicBase, sizeText, type AttachmentsSettings } from "./attachments.js";
 
 const SETTINGS: AttachmentsSettings = {
@@ -77,8 +78,10 @@ test("a bucket behind a proxy on the web's own port is put in the path only when
   assert.equal(autoPathStyle(behind), false);
 });
 
-test("a size is said the way the app says sizes", () => {
-  assert.equal(sizeText(900), "1 КБ");
-  assert.equal(sizeText(2_400_000), "2,3 МБ");
+test("a size follows the app's language and the reader's decimal mark", () => {
+  // Both halves are read while drawing: the number ours, the words i18n's.
+  assert.equal(sizeText(900), t("chats.preview.kb", { size: "1" }));
+  assert.equal(sizeText(2_400_000), t("chats.preview.mb", { size: "2.3" }));
 });
+
 

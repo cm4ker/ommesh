@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { locale, t } from "../i18n/index.js";
+import { sizeText } from "../lib/attachments.js";
 import { markSeen, tapLink, useLinkPreview, usePreviewMode } from "../lib/linkPreview.js";
 import { durationLabel, linkAllowed, type Preview } from "../lib/linkPreviewParse.js";
 import { LINK, linkOf, openLink } from "../lib/webLinks.js";
@@ -109,12 +110,6 @@ function LinkCardSlot({ href, message }: { href: string; message: string }) {
   return <LinkCard href={href} preview={entry.preview} picture={entry.picture} />;
 }
 
-/** A file's size in the reader's units and decimal mark. */
-function sizeText(bytes: number): string {
-  const number = (n: number) => n.toLocaleString(locale(), { maximumFractionDigits: 1 });
-  return bytes >= 1024 * 1024 ? t("chats.preview.mb", { size: number(bytes / 1024 / 1024) }) : t("chats.preview.kb", { size: number(Math.max(1, bytes / 1024)) });
-}
-
 /**
  * A preview: the host it came from, which is the one thing a page cannot
  * choose for itself, then its title, its description and its picture, beside
@@ -180,3 +175,4 @@ function LinkCard({ href, preview, picture }: { href: string; preview: Preview; 
     </a>
   );
 }
+

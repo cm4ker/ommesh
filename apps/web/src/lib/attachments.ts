@@ -9,6 +9,7 @@
  */
 
 import { useSyncExternalStore } from "react";
+import { locale, t } from "../i18n/index.js";
 import { readSetting, writeSetting } from "./storage.js";
 
 export interface AttachmentsSettings {
@@ -302,8 +303,9 @@ export async function compressPhoto(file: File): Promise<{ blob: Blob; name: str
 
 /** What a file weighs, said the way the app says sizes. */
 export function sizeText(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toLocaleString(undefined, { maximumFractionDigits: 1 })} МБ`;
-  return `${Math.max(1, Math.round(bytes / 1024)).toLocaleString()} КБ`;
+  // The reader's decimal mark and the app's own units, as a file card says a size.
+  const number = (n: number) => n.toLocaleString(locale(), { maximumFractionDigits: 1 });
+  return bytes >= 1024 * 1024 ? t("chats.preview.mb", { size: number(bytes / 1024 / 1024) }) : t("chats.preview.kb", { size: number(Math.max(1, bytes / 1024)) });
 }
 
 /** Asks the disk, or the camera, for one file; null when the picker was put away. */
@@ -344,3 +346,5 @@ export async function testBucket(s: AttachmentsSettings): Promise<{ ms: number }
   if (!answer || !answer.ok) throw new AttachError("read", answer?.status ?? 0);
   return { ms: Math.round(performance.now() - started) };
 }
+
+

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ATTACH_DEFAULTS, attachmentsReady, keyFor, linkFor, presignPut, publicBase, sizeText, type AttachmentsSettings } from "./attachments.js";
+import { ATTACH_DEFAULTS, attachmentsReady, autoPathStyle, keyFor, linkFor, presignPut, publicBase, sizeText, type AttachmentsSettings } from "./attachments.js";
 
 const SETTINGS: AttachmentsSettings = {
   ...ATTACH_DEFAULTS,
@@ -67,7 +67,18 @@ test("a bucket on an address and a port is reached by path, not by its name unde
   assert.match(url, /^http:\/\/localhost:9000\/ommesh\/f\/6f3a91c2\.pdf\?/);
 });
 
+test("a bucket behind a proxy on the web's own port is put in the path only when said so", async () => {
+  const behind = { ...SETTINGS, endpoint: "https://preview.example.ru" };
+  assert.match(await presignPut(behind, "p/6f3a91c2.jpg", AT), /^https:\/\/ommesh\.preview\.example\.ru\/p\//);
+  const path = await presignPut({ ...behind, pathStyle: true }, "p/6f3a91c2.jpg", AT);
+  assert.match(path, /^https:\/\/preview\.example\.ru\/ommesh\/p\/6f3a91c2\.jpg\?/);
+  // A port or a bare address cannot be a subdomain: those are a path whatever the switch says.
+  assert.equal(autoPathStyle({ ...SETTINGS, endpoint: "http://localhost:9000" }), true);
+  assert.equal(autoPathStyle(behind), false);
+});
+
 test("a size is said the way the app says sizes", () => {
   assert.equal(sizeText(900), "1 КБ");
   assert.equal(sizeText(2_400_000), "2,3 МБ");
 });
+

@@ -324,7 +324,9 @@
   "attachments.whyNetwork": "нет ответа: адрес, сеть или CORS",
   "attachments.whyRead": "файл записался, но не читается: проверьте публичный адрес",
   "attachments.whyOther": "что-то другое",
-  "attachments.corsNote": "Загрузка идёт обычным PUT из страницы, поэтому бакет должен разрешать адреса приложения: https://ommesh.cm4ker.ru, tauri://localhost, https://localhost.",
+  "attachments.pathNote": "Это для корзины вроде MinIO за своим прокси. Обычное облако оставьте как есть.",
+  "attachments.pathStyle": "Корзина в пути",
+  "attachments.pathStyleHint": "Адрес выглядит как сервер/корзина/файл, а не корзина.сервер/файл.",  "attachments.corsNote": "Загрузка идёт обычным PUT из страницы, поэтому бакет должен разрешать адреса приложения: https://ommesh.cm4ker.ru, tauri://localhost, https://localhost.",
   "attachments.linkNote": "Ссылка выйдет такой: {link}",
   "attachments.off": "Выкл",
   "attachments.on": "Вкл",  "messages.openAtUnread": "Открывать с первого непрочитанного",
@@ -757,6 +759,7 @@
   "wifi.passwordLong": "Пароль — не длиннее {max} знаков",
   "wifi.saved": "Записано. Заработает после перезагрузки радио"
 }
+
 
 
 

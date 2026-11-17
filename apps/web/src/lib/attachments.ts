@@ -25,6 +25,13 @@ export interface AttachmentsSettings {
   publicBase: string;
   /** Photos are squeezed to 1600 px and about 400 KB; files go as they are. */
   compressPhotos: boolean;
+  /**
+   * Whether the bucket sits in the path (`host/bucket/key`) rather than in the
+   * host (`bucket.host/key`). Unset is auto: a port or an address in the
+   * endpoint means a path, since a port cannot be a subdomain. Set by hand for
+   * a bucket behind a proxy on the web's own port, which auto cannot tell apart.
+   */
+  pathStyle?: boolean;
 }
 
 export const ATTACH_DEFAULTS: AttachmentsSettings = {
@@ -147,12 +154,25 @@ async function signingKey(secret: string, date: string, region: string): Promise
 function targetFor(s: AttachmentsSettings, key: string): { host: string; path: string; secure: boolean } {
   const endpoint = new URL(s.endpoint.trim());
   const bucket = s.bucket.trim();
-  const pathStyle = endpoint.port !== "" || /^\d+\.\d+\.\d+\.\d+$/.test(endpoint.hostname);
+  // A port or a bare address cannot be a subdomain, so those are a path; anything
+  // else the reader may have said for himself, as a bucket behind a proxy cannot
+  // be told apart from a bucket with its own name.
+  const pathStyle = s.pathStyle ?? autoPathStyle(s);
   return {
     host: pathStyle ? endpoint.host : `${bucket}.${endpoint.host}`,
     path: pathStyle ? `/${bucket}/${key}` : `/${key}`,
     secure: endpoint.protocol !== "http:",
   };
+}
+
+/** What the endpoint's own shape says about the bucket being in the path, with the reader silent. */
+export function autoPathStyle(s: AttachmentsSettings): boolean {
+  try {
+    const endpoint = new URL(s.endpoint.trim());
+    return endpoint.port !== "" || /^\d+\.\d+\.\d+\.\d+$/.test(endpoint.hostname);
+  } catch {
+    return false;
+  }
 }
 
 const stamp = (at: Date) => at.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");

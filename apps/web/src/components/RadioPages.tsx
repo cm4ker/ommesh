@@ -65,7 +65,7 @@ import { ReportPage } from "./ReportPage.js";
 import { QuietPage, QuietRow } from "./QuietPage.js";
 import { getLanguagePreference, languageName, languages, setLanguagePreference, subscribeLanguage, systemLanguage, t, type Key } from "../i18n/index.js";
 import { errorText } from "../i18n/errors.js";
-import { AttachError, attachmentsReady, getAttachments, publicBase, setAttachments, testBucket, useAttachments, type AttachmentsSettings } from "../lib/attachments.js";
+import { AttachError, attachmentsReady, autoPathStyle, getAttachments, publicBase, setAttachments, testBucket, useAttachments, type AttachmentsSettings } from "../lib/attachments.js";
 
 type Self = NonNullable<SessionState["self"]>;
 
@@ -1077,6 +1077,9 @@ function AttachmentsServerPage() {
         <CommitField label={t("radio.attachments.secret")} value={s.secretKey} mono secret done={t("common.saved")} hint={t("radio.attachments.secretHint")} check={required} onCommit={async (text) => setAttachments({ secretKey: text })} />
         <CommitField label={t("radio.attachments.public")} value={s.publicBase} mono done={t("common.saved")} hint={t("radio.attachments.publicHint")} check={optionalUrl} onCommit={async (text) => setAttachments({ publicBase: text })} />
       </Group>
+      <Group note={t("radio.attachments.pathNote")}>
+        <SwitchRow label={t("radio.attachments.pathStyle")} hint={t("radio.attachments.pathStyleHint")} checked={s.pathStyle ?? autoPathStyle(s)} onChange={(on) => setAttachments({ pathStyle: on })} />
+      </Group>
       <Group note={t("radio.attachments.corsNote")}>
         <Block>
           <Button variant="primary" size="lg" busy={testing} disabled={testing || !ready} onClick={() => void runTest()}>
@@ -1601,6 +1604,8 @@ export function ResetQuestion({ open, onClose, onReset }: { open: boolean; onClo
     </Dialog>
   );
 }
+
+
 
 
 

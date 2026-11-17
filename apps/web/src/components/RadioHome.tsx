@@ -78,11 +78,11 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
   const contactsValue = state.contactsFull ? t("radio.home.full") : use ? t("radio.home.used", { used: use.used, max: use.max }) : undefined;
   const reading = useResync();
   // Где лежат вложения, если они включены: хост виден строкой, как у прочих настроек.
-  const attachmentsValue = !attachments.enabled ? t("radio.attachments.off") : (() => {
+  const attachmentsValue = (() => {
     try {
       return new URL(publicBase(attachments)).host;
     } catch {
-      return t("radio.attachments.on");
+      return undefined;
     }
   })();
   const link = useLink();

@@ -27,7 +27,7 @@ import { session, useSession } from "../lib/session.js";
 import { FORMAT_CHOICES, formatAround, formatKey, formatRuns, keysOf, plainText, toggleFormat, type FormatChoice, type FormatKind } from "../lib/textFormat.js";
 import { noteFormatSelection, offerFormatMenu } from "../lib/formatMenu.js";
 import { toast } from "../lib/toast.js";
-import { AttachError, MAX_FILE_BYTES, MAX_PHOTO_BYTES, attachmentsReady, compressPhoto, getAttachments, keyFor, linkFor, pickFile, presignPut, putBytes, sizeText } from "../lib/attachments.js";
+import { AttachError, MAX_FILE_BYTES, MAX_PHOTO_BYTES, attachmentsReady, compressPhoto, getAttachments, keyFor, linkFor, pickFile, sizeText, uploadAt } from "../lib/attachments.js";
 import { openRadioPage } from "../lib/nav.js";
 import { longestLink, shortenLink, ShortRefused, withShortLink } from "../lib/shortLink.js";
 import { usePreviewMode } from "../lib/linkPreview.js";
@@ -225,14 +225,13 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
     try {
       const settings = getAttachments();
       const key = keyFor(kind, name, blob.type || file.type);
-      const url = await presignPut(settings, key);
-      await putBytes(url, blob, name, (share) => setStaged((s) => (s && s.id === id ? { ...s, progress: share } : s)), controller.signal);
+      const used = await uploadAt(settings, key, blob, name, (share) => setStaged((s) => (s && s.id === id ? { ...s, progress: share } : s)), controller.signal);
       if (controller.signal.aborted) return;
       if (attachAbort.current === controller) attachAbort.current = null;
       setStaged((s) => (s && s.id === id ? null : s));
       // Пока шла загрузка, могли открыть другой чат: ссылка остаётся в том, где её начали.
       if (attachChat.current !== forChat) return;
-      insertLink(linkFor(key, settings));
+      insertLink(linkFor(key, used));
     } catch (error) {
       if (controller.signal.aborted) return;
       const code = error instanceof AttachError ? error.code : "network";
@@ -824,3 +823,4 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
     </footer>
   );
 }
+

@@ -13,43 +13,80 @@ import { locale, t } from "../i18n/index.js";
 import { readSetting, writeSetting } from "./storage.js";
 
 export interface AttachmentsSettings {
-  /** Off by default: nothing leaves the device until the reader sets a bucket. */
-  enabled: boolean;
-  /** The S3 endpoint, such as https://s3.example.ru. */
-  endpoint: string;
-  bucket: string;
-  /** R2 says auto, Selectel ru-1, MinIO usually us-east-1. */
-  region: string;
+  /**
+   * The endpoint and the bucket in one address, as the storage's own page shows
+   * it: `https://s3.example.ru/photos`. Everything else — where the upload goes,
+   * where the link is read — follows from it.
+   */
+  server: string;
   accessKey: string;
   secretKey: string;
-  /** Where the file is read from, such as https://i.example.ru. Empty: the endpoint and the bucket. */
-  publicBase: string;
-  /** Photos are squeezed to 1600 px and about 400 KB; files go as they are. */
-  compressPhotos: boolean;
   /**
-   * Whether the bucket sits in the path (`host/bucket/key`) rather than in the
-   * host (`bucket.host/key`). Unset is auto: a port or an address in the
-   * endpoint means a path, since a port cannot be a subdomain. Set by hand for
-   * a bucket behind a proxy on the web's own port, which auto cannot tell apart.
+   * The region the storage insisted on, once it has said so. Unset is
+   * `us-east-1`, which every storage but Amazon's own regional buckets accepts;
+   * Amazon names the region it wants, and one retry puts it here.
    */
-  pathStyle?: boolean;
+  region?: string;
+}
+
+/** Where a bucket lives, read out of one address. */
+export interface BucketAddress {
+  /** `https://preview.ommesh.ru` */
+  endpoint: string;
+  /** `files` */
+  bucket: string;
 }
 
 export const ATTACH_DEFAULTS: AttachmentsSettings = {
-  enabled: false,
-  endpoint: "",
-  bucket: "",
-  region: "",
+  server: "",
   accessKey: "",
   secretKey: "",
-  publicBase: "",
-  compressPhotos: true,
 };
 
 /** The reader's own bucket, on this device only. */
 const KEY = "meshnet.attachments";
 
-let settings = { ...ATTACH_DEFAULTS, ...readSetting<Partial<AttachmentsSettings>>(KEY, {}) };
+/** S3's own rule for a bucket name: three letters at least, no capitals. */
+const BUCKET_NAME = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/;
+
+/**
+ * The endpoint and the bucket out of the one address the reader was given, or
+ * null when it does not name a bucket. The bucket is the first segment of the
+ * path — the bucket in the path — which is what every self-hosted storage and
+ * both big clouds accept.
+ */
+export function parseServer(server: string): BucketAddress | null {
+  let url: URL;
+  try {
+    url = new URL(server.trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  const bucket = url.pathname.split("/").filter(Boolean)[0] ?? "";
+  if (!BUCKET_NAME.test(bucket)) return null;
+  return { endpoint: `${url.protocol}//${url.host}`, bucket };
+}
+
+/** Settings as they are kept between versions: the old fields became one address. */
+function stored(): AttachmentsSettings {
+  const raw = readSetting<Partial<AttachmentsSettings> & { endpoint?: string; bucket?: string }>(KEY, {});
+  if (typeof raw.server === "string") return { ...ATTACH_DEFAULTS, ...raw, server: raw.server };
+  // Before the server came as one address, it was the endpoint, the bucket, the
+  // public address and the path-style switch, each of them the reader's to fill.
+  // The region goes too: it was free text there, and the one every storage but
+  // Amazon accepts is taken now, with Amazon's own named back on the first upload.
+  const endpoint = (raw.endpoint ?? "").trim().replace(/\/+$/, "");
+  const bucket = (raw.bucket ?? "").trim();
+  return {
+    ...ATTACH_DEFAULTS,
+    server: endpoint && bucket ? `${endpoint}/${bucket}` : "",
+    accessKey: raw.accessKey ?? "",
+    secretKey: raw.secretKey ?? "",
+  };
+}
+
+let settings = stored();
 const listeners = new Set<() => void>();
 
 export function getAttachments(): AttachmentsSettings {
@@ -72,16 +109,15 @@ export function useAttachments(): AttachmentsSettings {
   );
 }
 
-/** Whether an upload can go at all: switched on and every field that matters filled. */
+/** Whether an upload can go at all: an address that names a bucket and both keys. */
 export function attachmentsReady(s = settings): boolean {
-  return s.enabled && s.endpoint.trim() !== "" && s.bucket.trim() !== "" && s.region.trim() !== "" && s.accessKey.trim() !== "" && s.secretKey.trim() !== "";
+  return parseServer(s.server) !== null && s.accessKey.trim() !== "" && s.secretKey.trim() !== "";
 }
 
-/** The host the link is read from: the public base, or the endpoint's own bucket path. */
+/** The host the link is read from: the endpoint's own bucket path. */
 export function publicBase(s = settings): string {
-  const base = s.publicBase.trim() || s.endpoint.trim().replace(/\/+$/, "");
-  if (s.publicBase.trim() !== "") return base.replace(/\/+$/, "");
-  return `${base}/${s.bucket.trim()}`;
+  const address = parseServer(s.server);
+  return address ? `${address.endpoint}/${address.bucket}` : s.server.trim().replace(/\/+$/, "");
 }
 
 /** What the reader actually gets in a message: a short key, so the link fits 158 bytes. */
@@ -99,6 +135,8 @@ export class AttachError extends Error {
   constructor(
     readonly code: "not-configured" | "too-big" | "network" | "refused" | "read" | "photo",
     readonly status = 0,
+    /** What the storage said, when it said anything: Amazon names the region it wants here. */
+    readonly body = "",
   ) {
     super(code);
     this.name = "AttachError";
@@ -151,29 +189,25 @@ async function signingKey(secret: string, date: string, region: string): Promise
   return hmac(byService, "aws4_request");
 }
 
-/** A bucket reached by its own name under the endpoint, or by a path when the endpoint is an address and a port. */
+/** A bucket reached by the path of its endpoint, which is how every storage but a name-per-bucket cloud answers. */
 function targetFor(s: AttachmentsSettings, key: string): { host: string; path: string; secure: boolean } {
-  const endpoint = new URL(s.endpoint.trim());
-  const bucket = s.bucket.trim();
-  // A port or a bare address cannot be a subdomain, so those are a path; anything
-  // else the reader may have said for himself, as a bucket behind a proxy cannot
-  // be told apart from a bucket with its own name.
-  const pathStyle = s.pathStyle ?? autoPathStyle(s);
+  const address = parseServer(s.server);
+  if (!address) throw new AttachError("not-configured");
+  const endpoint = new URL(address.endpoint);
   return {
-    host: pathStyle ? endpoint.host : `${bucket}.${endpoint.host}`,
-    path: pathStyle ? `/${bucket}/${key}` : `/${key}`,
+    host: endpoint.host,
+    path: `/${address.bucket}/${key}`,
     secure: endpoint.protocol !== "http:",
   };
 }
 
-/** What the endpoint's own shape says about the bucket being in the path, with the reader silent. */
-export function autoPathStyle(s: AttachmentsSettings): boolean {
-  try {
-    const endpoint = new URL(s.endpoint.trim());
-    return endpoint.port !== "" || /^\d+\.\d+\.\d+\.\d+$/.test(endpoint.hostname);
-  } catch {
-    return false;
-  }
+/** What the storage signed for when the reader never said: the region every one of them but Amazon accepts. */
+const DEFAULT_REGION = "us-east-1";
+
+/** The region a refusal names, if it names one: `<Region>eu-central-1</Region>` or the header Amazon sends. */
+export function regionFrom(body: string, header: string | null): string | null {
+  const named = /<Region>\s*([a-z0-9-]+)\s*<\/Region>/i.exec(body)?.[1] ?? header?.trim() ?? "";
+  return /^[a-z0-9-]{2,32}$/i.test(named) ? named : null;
 }
 
 const stamp = (at: Date) => at.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
@@ -182,9 +216,10 @@ const stamp = (at: Date) => at.toISOString().replace(/[-:]/g, "").replace(/\.\d{
 export async function presignPut(s: AttachmentsSettings, key: string, at = new Date()): Promise<string> {
   if (!attachmentsReady(s)) throw new AttachError("not-configured");
   const { host, path, secure } = targetFor(s, key);
+  const region = (s.region ?? DEFAULT_REGION).trim();
   const amzDate = stamp(at);
   const date = amzDate.slice(0, 8);
-  const scope = `${date}/${s.region.trim()}/${SERVICE}/aws4_request`;
+  const scope = `${date}/${region}/${SERVICE}/aws4_request`;
   const query: [string, string][] = [
     ["X-Amz-Algorithm", ALGORITHM],
     ["X-Amz-Content-Sha256", "UNSIGNED-PAYLOAD"],
@@ -201,7 +236,7 @@ export async function presignPut(s: AttachmentsSettings, key: string, at = new D
   // The payload is not hashed: it is a photo or a file, and hashing it twice on a phone costs more than it gives.
   const canonicalRequest = ["PUT", path, canonicalQuery, `host:${host}`, "", "host", "UNSIGNED-PAYLOAD"].join("\n");
   const stringToSign = [ALGORITHM, amzDate, scope, await sha256(canonicalRequest)].join("\n");
-  const signature = hex(await hmac(await signingKey(s.secretKey.trim(), date, s.region.trim()), stringToSign));
+  const signature = hex(await hmac(await signingKey(s.secretKey.trim(), date, region), stringToSign));
   return `${secure ? "https" : "http"}://${host}${path}?${canonicalQuery}&X-Amz-Signature=${signature}`;
 }
 
@@ -218,7 +253,10 @@ export function putBytes(url: string, body: Blob, name: string, onProgress: (sha
     request.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress(event.loaded / event.total);
     };
-    request.onload = () => (request.status >= 200 && request.status < 300 ? resolve() : reject(new AttachError("refused", request.status)));
+    request.onload = () =>
+      request.status >= 200 && request.status < 300
+        ? resolve()
+        : reject(new AttachError("refused", request.status, request.responseText ?? ""));
     // A blocked CORS preflight and no network both end here, with no status to tell them apart.
     request.onerror = () => reject(new AttachError("network"));
     request.onabort = () => reject(new AttachError("network"));
@@ -334,17 +372,38 @@ export function pickFile(accept: string): Promise<File | null> {
   });
 }
 
+/**
+ * Signs and puts, taking the region the storage names if it refused the one
+ * signed for: Amazon's regional buckets want their own, and the reader should
+ * not have to know which.
+ */
+export async function uploadAt(s: AttachmentsSettings, key: string, blob: Blob, name: string, onProgress: (share: number) => void, signal: AbortSignal, contentType?: string): Promise<AttachmentsSettings> {
+  let current = s;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const url = await presignPut(current, key);
+      await putBytes(url, blob, name, onProgress, signal, contentType);
+      return current;
+    } catch (error) {
+      const named = attempt === 0 && error instanceof AttachError && error.status >= 400 && error.status < 500 ? regionFrom(error.body, null) : null;
+      if (!named || named === (current.region ?? DEFAULT_REGION)) throw error;
+      current = { ...current, region: named };
+      setAttachments({ region: named });
+    }
+  }
+}
+
 /** Puts a small object in and reads it back: the whole way a photo takes, in a second. */
 export async function testBucket(s: AttachmentsSettings): Promise<{ ms: number }> {
   if (!attachmentsReady(s)) throw new AttachError("not-configured");
   const started = performance.now();
   const key = `t/${shortId()}.txt`;
-  const url = await presignPut(s, key);
-  await putBytes(url, new Blob(["ommesh"], { type: "text/plain" }), "ommesh-test.txt", () => undefined, new AbortController().signal, "text/plain");
+  const used = await uploadAt(s, key, new Blob(["ommesh"], { type: "text/plain" }), "ommesh-test.txt", () => undefined, new AbortController().signal, "text/plain");
   // What the reader sees is the public address, so it is the one checked.
-  const answer = await fetch(linkFor(key, s), { method: "GET", cache: "no-store" }).catch(() => null);
+  const answer = await fetch(linkFor(key, used), { method: "GET", cache: "no-store" }).catch(() => null);
   if (!answer || !answer.ok) throw new AttachError("read", answer?.status ?? 0);
   return { ms: Math.round(performance.now() - started) };
 }
+
 
 

@@ -60,7 +60,6 @@ const PAGES: Partial<Record<RadioPage, { title: Key; parent?: RadioPage; when?: 
   sound: { title: "radio.titles.sound", parent: "notifications" },
   messages: { title: "radio.titles.messages" },
   attachments: { title: "radio.titles.attachments" },
-  attachmentsServer: { title: "radio.titles.attachmentsServer", parent: "attachments" },
   blocked: { title: "radio.titles.blocked", parent: "messages" },
   backup: { title: "radio.titles.backup" },
   history: { title: "radio.titles.history", parent: "backup" },
@@ -137,11 +136,9 @@ export const SETTINGS: readonly Setting[] = [
 
   { page: "messages" },
   { page: "attachments", words: "radio.search.words.attachments" },
-  { page: "attachments", label: "radio.attachments.enabled", words: "radio.search.words.attachments" },
-  { page: "attachments", label: "radio.attachments.server" },
-  { page: "attachmentsServer", label: "radio.attachments.address" },
-  { page: "attachmentsServer", label: "radio.attachments.bucket" },
-  { page: "attachmentsServer", label: "radio.attachments.secret" },
+  { page: "attachments", label: "radio.attachments.address", words: "radio.search.words.attachments" },
+  { page: "attachments", label: "radio.attachments.access" },
+  { page: "attachments", label: "radio.attachments.secret" },
   { page: "messages", label: "radio.messages.openAtUnread", words: "radio.search.words.unread" },
   { page: "blocked", words: "radio.search.words.blocked" },
   { page: "messages", label: "radio.messages.lookalikes", words: "radio.search.words.lookalikes" },
@@ -298,4 +295,5 @@ export function openSetting(s: Setting, ctx: SettingContext, now = Date.now()): 
   flash = s.label || s.group ? { page: s.page, text: settingName(s, ctx), at: now } : null;
   setStack("radio", [{ kind: "radio", page: s.page }]);
 }
+
 

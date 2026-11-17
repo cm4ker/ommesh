@@ -18,7 +18,7 @@ export type Section = "chats" | "mesh" | "radio";
 export type NodePage = "neighbours" | "history" | "settings" | "access" | "console" | "push";
 
 /** The radio section's pages, as a list too: a news file's Show names one (news.ts). */
-export const RADIO_PAGES = ["name", "frequency", "readings", "privacy", "trusted", "remote", "contacts", "removed", "advanced", "console", "key", "pin", "wifi", "notifications", "quiet", "sound", "soundDirect", "soundChats", "soundNodes", "messages", "blocked", "attachments", "attachmentsServer", "history", "backup", "restore", "appearance", "background", "connection", "air", "log", "power", "about", "people", "news", "report"] as const;
+export const RADIO_PAGES = ["name", "frequency", "readings", "privacy", "trusted", "remote", "contacts", "removed", "advanced", "console", "key", "pin", "wifi", "notifications", "quiet", "sound", "soundDirect", "soundChats", "soundNodes", "messages", "blocked", "attachments", "history", "backup", "restore", "appearance", "background", "connection", "air", "log", "power", "about", "people", "news", "report"] as const;
 export type RadioPage = (typeof RADIO_PAGES)[number];
 
 export type Screen =
@@ -69,7 +69,9 @@ function restore(saved: unknown): Nav {
       if (Array.isArray(value.stacks[s]))
         stacks[s] = value.stacks[s]
           .filter((x) => x && typeof x === "object" && "kind" in x && (x as { kind: string }).kind !== "route" && !(x.kind === "radio" && (x.page as string) === "position"))
-          .map((x) => (x.kind === "radio" && ((x.page as string) === "battery" || (x.page as string) === "sensors") ? { kind: "radio", page: "readings" } : x));
+          .map((x) => (x.kind === "radio" && ((x.page as string) === "battery" || (x.page as string) === "sensors") ? { kind: "radio", page: "readings" } : x))
+          // A page that no longer exists is left behind rather than drawn as nothing.
+          .filter((x) => x.kind !== "radio" || (RADIO_PAGES as readonly string[]).includes(x.page as string));
     return { section: value.section as Section, stacks, meshFocus: typeof value.meshFocus === "string" ? value.meshFocus : null };
   }
   // Seven sections became three: Contacts, Map and Nodes are Mesh; Settings and Log are Radio.
@@ -236,4 +238,6 @@ export function takeListLowered(): boolean {
 export function focusOnMap(key: string | null): void {
   set({ ...nav, meshFocus: key, stacks: key === null ? { ...nav.stacks, mesh: [] } : nav.stacks });
 }
+
+
 

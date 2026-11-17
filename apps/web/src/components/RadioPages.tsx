@@ -65,7 +65,7 @@ import { ReportPage } from "./ReportPage.js";
 import { QuietPage, QuietRow } from "./QuietPage.js";
 import { getLanguagePreference, languageName, languages, setLanguagePreference, subscribeLanguage, systemLanguage, t, type Key } from "../i18n/index.js";
 import { errorText } from "../i18n/errors.js";
-import { AttachError, attachmentsReady, autoPathStyle, getAttachments, publicBase, setAttachments, testBucket, useAttachments, type AttachmentsSettings } from "../lib/attachments.js";
+import { AttachError, attachmentsReady, getAttachments, parseServer, publicBase, setAttachments, testBucket, useAttachments, type AttachmentsSettings } from "../lib/attachments.js";
 
 type Self = NonNullable<SessionState["self"]>;
 
@@ -74,7 +74,6 @@ export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = {
   removed: "contacts",
   blocked: "messages",
   quiet: "notifications",
-  attachmentsServer: "attachments",
   sound: "notifications",
   soundDirect: "notifications",
   soundChats: "notifications",
@@ -119,7 +118,6 @@ export const RADIO_TITLES: Record<RadioPage, Key> = {
   soundNodes: "radio.notifications.nodes",
   messages: "radio.titles.messages",
   attachments: "radio.titles.attachments",
-  attachmentsServer: "radio.titles.attachmentsServer",
   blocked: "radio.titles.blocked",
   history: "radio.titles.history",
   backup: "radio.titles.backup",
@@ -320,8 +318,6 @@ function PageBody({ page }: { page: RadioPage }) {
       return <BlockedPage />;
     case "attachments":
       return <AttachmentsPage />;
-    case "attachmentsServer":
-      return <AttachmentsServerPage />;
     case "history":
       return self ? <HistoryPage self={self} /> : <Offline />;
     case "backup":
@@ -997,15 +993,6 @@ function PreviewGroup() {
   );
 }
 
-/** The host a link comes from, for the row that says where the bucket is. */
-function hostOf(s: AttachmentsSettings): string {
-  try {
-    return new URL(publicBase(s)).host;
-  } catch {
-    return "";
-  }
-}
-
 /** What went wrong with the bucket, in words a reader can act on. */
 function bucketErrorText(error: unknown): string {
   if (!(error instanceof AttachError)) return errorText(error);
@@ -1023,43 +1010,21 @@ function bucketErrorText(error: unknown): string {
 
 /**
  * Attachments (#118): a photo or a file goes to the reader's own S3 bucket and
- * the message carries a link. The switch is off until a bucket is named, and
- * the secret is kept on this device alone, so the note says so.
+ * the message carries a link. Three things to fill — the address its storage
+ * shows, the access key and the secret — and one button that writes a byte and
+ * reads it back, since a bucket may take a PUT and still refuse a GET.
  */
 function AttachmentsPage() {
   const s = useAttachments();
-  const ready = attachmentsReady(s);
-  return (
-    <>
-      <Group note={t("radio.attachments.note")}>
-        <SwitchRow label={t("radio.attachments.enabled")} hint={t("radio.attachments.enabledHint")} checked={s.enabled} onChange={(v) => setAttachments({ enabled: v })} />
-        <LinkRow label={t("radio.attachments.server")} value={hostOf(s) || undefined} onClick={() => push({ kind: "radio", page: "attachmentsServer" })} />
-        <SwitchRow label={t("radio.attachments.squeeze")} hint={t("radio.attachments.squeezeHint")} checked={s.compressPhotos} onChange={(v) => setAttachments({ compressPhotos: v })} />
-        <InfoRow label={t("radio.attachments.files")}>{t("radio.attachments.filesValue")}</InfoRow>
-      </Group>
-      {s.enabled && !ready ? <Group note={t("radio.attachments.incomplete")}>{null}</Group> : null}
-    </>
-  );
-}
-
-/**
- * The bucket itself: what S3 needs, and one button that writes a byte and reads
- * it back, since a bucket may take a PUT and still refuse a GET.
- */
-function AttachmentsServerPage() {
-  const s = useAttachments();
   const [testing, setTesting] = useState(false);
-  const ready = attachmentsReady({ ...s, enabled: true });
-  const save = (patch: Partial<AttachmentsSettings>) => async () => {
-    setAttachments(patch);
-  };
+  const ready = attachmentsReady(s);
   const required = (text: string) => (text.trim() ? null : t("radio.attachments.required"));
-  const urlCheck = (text: string) => (/^https?:\/\/\S+$/i.test(text) ? null : t("radio.attachments.addressBad"));
-  const optionalUrl = (text: string) => (text === "" || /^https?:\/\/\S+$/i.test(text) ? null : t("radio.attachments.addressBad"));
+  const address = (text: string) =>
+    parseServer(text) ? null : text.trim() === "" ? t("radio.attachments.required") : t("radio.attachments.addressBad");
   const runTest = async () => {
     setTesting(true);
     try {
-      const { ms } = await testBucket({ ...getAttachments(), enabled: true });
+      const { ms } = await testBucket(getAttachments());
       toast(t("radio.attachments.testOk", { ms }));
     } catch (error) {
       toast(t("radio.attachments.testFail", { reason: bucketErrorText(error) }), "error");
@@ -1069,16 +1034,10 @@ function AttachmentsServerPage() {
   };
   return (
     <>
-      <Group note={t("radio.attachments.serverNote")}>
-        <CommitField label={t("radio.attachments.address")} value={s.endpoint} mono done={t("common.saved")} check={urlCheck} onCommit={async (text) => setAttachments({ endpoint: text })} />
-        <CommitField label={t("radio.attachments.bucket")} value={s.bucket} mono done={t("common.saved")} check={required} onCommit={async (text) => setAttachments({ bucket: text })} />
-        <CommitField label={t("radio.attachments.region")} value={s.region} mono done={t("common.saved")} check={required} onCommit={async (text) => setAttachments({ region: text })} />
+      <Group note={t("radio.attachments.note")}>
+        <CommitField label={t("radio.attachments.address")} value={s.server} mono done={t("common.saved")} hint={t("radio.attachments.addressHint")} check={address} onCommit={async (text) => setAttachments({ server: text.trim() })} />
         <CommitField label={t("radio.attachments.access")} value={s.accessKey} mono done={t("common.saved")} hint={t("radio.attachments.accessHint")} check={required} onCommit={async (text) => setAttachments({ accessKey: text })} />
         <CommitField label={t("radio.attachments.secret")} value={s.secretKey} mono secret done={t("common.saved")} hint={t("radio.attachments.secretHint")} check={required} onCommit={async (text) => setAttachments({ secretKey: text })} />
-        <CommitField label={t("radio.attachments.public")} value={s.publicBase} mono done={t("common.saved")} hint={t("radio.attachments.publicHint")} check={optionalUrl} onCommit={async (text) => setAttachments({ publicBase: text })} />
-      </Group>
-      <Group note={t("radio.attachments.pathNote")}>
-        <SwitchRow label={t("radio.attachments.pathStyle")} hint={t("radio.attachments.pathStyleHint")} checked={s.pathStyle ?? autoPathStyle(s)} onChange={(on) => setAttachments({ pathStyle: on })} />
       </Group>
       <Group note={t("radio.attachments.corsNote")}>
         <Block>
@@ -1087,7 +1046,11 @@ function AttachmentsServerPage() {
           </Button>
         </Block>
       </Group>
-      {ready ? <Group note={t("radio.attachments.linkNote", { link: `${publicBase({ ...s, enabled: true })}/p/6f3a91c2.jpg` })}>{null}</Group> : null}
+      {ready ? (
+        <Group note={t("radio.attachments.linkNote", { link: `${publicBase(s)}/p/6f3a91c2.jpg` })}>
+          <InfoRow label={t("radio.attachments.files")}>{t("radio.attachments.filesValue")}</InfoRow>
+        </Group>
+      ) : null}
     </>
   );
 }
@@ -1604,6 +1567,8 @@ export function ResetQuestion({ open, onClose, onReset }: { open: boolean; onClo
     </Dialog>
   );
 }
+
+
 
 
 

@@ -67,9 +67,9 @@ function restore(saved: unknown): Nav {
     // Privacy, which lies under it on the stack; Battery and Sensors became Readings.
     for (const s of SECTIONS)
       if (Array.isArray(value.stacks[s]))
-        stacks[s] = value.stacks[s]
+        stacks[s] = (value.stacks[s] as Screen[])
           .filter((x) => x && typeof x === "object" && "kind" in x && (x as { kind: string }).kind !== "route" && !(x.kind === "radio" && (x.page as string) === "position"))
-          .map((x) => (x.kind === "radio" && ((x.page as string) === "battery" || (x.page as string) === "sensors") ? { kind: "radio", page: "readings" } : x))
+          .map((x): Screen => (x.kind === "radio" && ((x.page as string) === "battery" || (x.page as string) === "sensors") ? { kind: "radio", page: "readings" } : x))
           // A page that no longer exists is left behind rather than drawn as nothing.
           .filter((x) => x.kind !== "radio" || (RADIO_PAGES as readonly string[]).includes(x.page as string));
     return { section: value.section as Section, stacks, meshFocus: typeof value.meshFocus === "string" ? value.meshFocus : null };

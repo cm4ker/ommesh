@@ -309,7 +309,25 @@
   "format.hiddenShow": "Скрытый текст. Нажмите, чтобы открыть",
   "composer.cursiveOn": "В этом сообщении ещё т → m, п → n, и → u, у → y",
   "composer.fits": "влезает",
-  "composer.field": "Сообщение для {name}",
+  "attach.button": "Прикрепить фото или файл",
+  "attach.hold": "Удерживайте, чтобы приложить",
+  "attach.menuTitle": "Прикрепить",
+  "attach.photo": "Фото",
+  "attach.photoHint": "Сжать и отправить ссылку",
+  "attach.file": "Файл",
+  "attach.fileHint": "До 25 МБ, как есть",
+  "attach.notSet": "Передача вложений не настроена",
+  "attach.notSetDetail": "Сначала укажите корзину.",
+  "attach.setUp": "Настроить",
+  "attach.uploading": "Загружаю · {share} %",
+  "attach.failed": "Не удалось загрузить",
+  "attach.refused": "Сервер ответил {status}.",
+  "attach.network": "Нет ответа от корзины.",
+  "attach.photoFailed": "Не удалось прочитать снимок.",
+  "attach.retry": "Повторить",
+  "attach.cancel": "Убрать",
+  "attach.tooBig": "{name} — {size}, а файлы до {max}.",
+  "attach.photoTooBig": "Снимок {size}: до сжатия принимаем до {max}.",  "composer.field": "Сообщение для {name}",
   "channel.title": "Канал",
   "channel.gone": "Этого канала больше нет в радио.",
   "channel.goneTitle": "Этого канала нет в радио.",
@@ -547,3 +565,5 @@
   "place.done": "Готово",
   "place.preview": "Место"
 }
+
+

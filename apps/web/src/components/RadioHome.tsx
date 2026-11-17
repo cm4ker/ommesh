@@ -14,6 +14,7 @@ import { placeOpen } from "../lib/privacy.js";
 import { PULL_TRIGGER, usePull } from "../lib/pull.js";
 import { resync, STEP_COUNT, stepLabel, useResync } from "../lib/resync.js";
 import { summaryOf, useNoticePrefs } from "../lib/noticePrefs.js";
+import { publicBase, useAttachments } from "../lib/attachments.js";
 import { useQuiet } from "../lib/quiet.js";
 import { useUnits } from "../lib/units.js";
 import { quietStatus } from "./QuietPage.js";
@@ -29,7 +30,7 @@ import { Group, LinkRow } from "../ui/List.js";
 import { showMenu } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
 import { MovedStrip } from "./BackupPage.js";
-import { AirIcon, AlertIcon, BellIcon, FileIcon, GaugeIcon, InfoIcon, LinkIcon, LogIcon, PaletteIcon, PersonIcon, PowerIcon, RadioIcon, RefreshIcon, SearchIcon, ShieldIcon, SlidersIcon, TextIcon, UsersIcon, WavesIcon } from "./Icons.js";
+import { AirIcon, AlertIcon, AttachIcon, BellIcon, FileIcon, GaugeIcon, InfoIcon, LinkIcon, LogIcon, PaletteIcon, PersonIcon, PowerIcon, RadioIcon, RefreshIcon, SearchIcon, ShieldIcon, SlidersIcon, TextIcon, UsersIcon, WavesIcon } from "./Icons.js";
 import { presetName, radioTitle } from "./RadioPages.js";
 import { readingsSummary } from "./Readings.js";
 import { SettingsResults, useSettingContext } from "./SettingsFind.js";
@@ -73,8 +74,17 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
   const prefs = useNoticePrefs();
   const notices = quiet.until !== null ? quietStatus(quiet.until) : summaryOf(prefs);
   const use = memoryUse(state);
+  const attachments = useAttachments();
   const contactsValue = state.contactsFull ? t("radio.home.full") : use ? t("radio.home.used", { used: use.used, max: use.max }) : undefined;
   const reading = useResync();
+  // Где лежат вложения, если они включены: хост виден строкой, как у прочих настроек.
+  const attachmentsValue = !attachments.enabled ? t("radio.attachments.off") : (() => {
+    try {
+      return new URL(publicBase(attachments)).host;
+    } catch {
+      return t("radio.attachments.on");
+    }
+  })();
   const link = useLink();
   const scroller = useRef<HTMLDivElement>(null);
   const pull = usePull(scroller, onPull, online && !reading);
@@ -204,6 +214,7 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
         <Group title={t("radio.home.thisApp")}>
           {row("notifications", <BellIcon size={17} />, notices)}
           {row("messages", <TextIcon size={17} />, lookalikes.on ? t("radio.home.lookalikes") : undefined)}
+          {row("attachments", <AttachIcon size={17} />, attachmentsValue)}
           {row("backup", <FileIcon size={17} />, saved ? dayLabel(saved / 1000) : undefined)}
           {row("appearance", <PaletteIcon size={17} />, theme === "system" ? t("radio.home.themeSystem") : themeName(theme))}
           {row("connection", state.link ? <LinkIcon kind={state.link.kind} size={17} /> : <RadioIcon size={17} />, state.link ? { ble: "Bluetooth", serial: "USB", tcp: "Wi-Fi" }[state.link.kind] : undefined)}
@@ -230,3 +241,4 @@ function themeName(id: string): string | undefined {
 function onPull(): void {
   void resync();
 }
+

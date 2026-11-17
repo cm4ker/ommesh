@@ -273,7 +273,25 @@
   "format.hiddenShow": "Hidden text. Tap to show",
   "composer.cursiveOn": "In this message also т → m, п → n, и → u, у → y",
   "composer.fits": "fits",
-  "composer.field": "Message {name}",
+  "attach.button": "Attach a photo or a file",
+  "attach.hold": "Hold to attach",
+  "attach.menuTitle": "Attach",
+  "attach.photo": "Photo",
+  "attach.photoHint": "Squeeze it and send a link",
+  "attach.file": "File",
+  "attach.fileHint": "Up to 25 MB, as it is",
+  "attach.notSet": "Attachments are not set up",
+  "attach.notSetDetail": "Point the app at a bucket first.",
+  "attach.setUp": "Set up",
+  "attach.uploading": "Uploading · {share}%",
+  "attach.failed": "Upload failed",
+  "attach.refused": "The server answered {status}.",
+  "attach.network": "No answer from the bucket.",
+  "attach.photoFailed": "Could not read the photo.",
+  "attach.retry": "Try again",
+  "attach.cancel": "Remove",
+  "attach.tooBig": "{name} is {size}: files go up to {max}.",
+  "attach.photoTooBig": "The photo is {size}: up to {max} before squeezing.",  "composer.field": "Message {name}",
   "channel.title": "Channel",
   "channel.gone": "The radio no longer has this channel.",
   "channel.goneTitle": "This channel is not on the radio.",
@@ -485,3 +503,5 @@
   "place.done": "Done",
   "place.preview": "Place"
 }
+
+

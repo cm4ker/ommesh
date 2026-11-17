@@ -27,13 +27,29 @@ import { session, useSession } from "../lib/session.js";
 import { FORMAT_CHOICES, formatAround, formatKey, formatRuns, keysOf, plainText, toggleFormat, type FormatChoice, type FormatKind } from "../lib/textFormat.js";
 import { noteFormatSelection, offerFormatMenu } from "../lib/formatMenu.js";
 import { toast } from "../lib/toast.js";
+import { AttachError, MAX_FILE_BYTES, MAX_PHOTO_BYTES, attachmentsReady, compressPhoto, getAttachments, keyFor, linkFor, pickFile, presignPut, putBytes, sizeText } from "../lib/attachments.js";
+import { openRadioPage } from "../lib/nav.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
-import { CheckIcon, ClockIcon, CloseIcon, LocationIcon, ReplyIcon, SendIcon, TextIcon, WavesIcon } from "./Icons.js";
+import { AttachIcon, CheckIcon, ClockIcon, CloseIcon, FileIcon, LocationIcon, PictureIcon, ReplyIcon, SendIcon, TextIcon, WavesIcon } from "./Icons.js";
 import { t } from "../i18n/index.js";
 import { tx } from "../i18n/rich.js";
 
 /** A message being answered: on the air, its author's name and the start of it before the text. */
+/** Что уже выбрано и как идёт: одна полоска над полем, как у ответа или места (#118). */
+interface Staged {
+  id: string;
+  kind: "photo" | "file";
+  name: string;
+  size: number;
+  preview: string | null;
+  phase: "uploading" | "error";
+  progress: number;
+  code: AttachError["code"] | null;
+  status: number;
+  file: File;
+}
+
 export interface Reply {
   id: string;
   name: string;
@@ -135,6 +151,126 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
       setText(el.value);
     }
   };
+
+  /* ---------- вложения: фото и файл уходят в корзину, в поле — ссылка (#118) ---------- */
+
+  const [staged, setStaged] = useState<Staged | null>(null);
+  const [holdingAttach, setHoldingAttach] = useState(false);
+  const attachAbort = useRef<AbortController | null>(null);
+  // The chat an upload was started in: the link must not land in the next one opened while it goes.
+  const attachChat = useRef(conversation);
+  useEffect(() => {
+    attachChat.current = conversation;
+  }, [conversation]);
+
+  /** Ссылка встаёт в конец поля: сообщение — это она, а слово перед ней остаётся словом. */
+  const insertLink = (link: string) => {
+    const current = field.current?.value ?? text;
+    const glue = current.trim() === "" ? "" : " ";
+    replace(current.length, current.length, glue + link);
+  };
+
+  const dropStaged = () => {
+    attachAbort.current?.abort();
+    attachAbort.current = null;
+    setStaged((s) => {
+      if (s?.preview) URL.revokeObjectURL(s.preview);
+      return null;
+    });
+  };
+
+  const upload = async (kind: "photo" | "file", file: File) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const forChat = conversation;
+    attachAbort.current?.abort();
+    const controller = new AbortController();
+    attachAbort.current = controller;
+    let blob: Blob = file;
+    let name = file.name;
+    let preview: string | null = null;
+    if (kind === "photo") {
+      try {
+        const squeezed = await compressPhoto(file);
+        blob = squeezed.blob;
+        name = squeezed.name;
+        preview = URL.createObjectURL(blob);
+      } catch {
+        setStaged({ id, kind, name: file.name, size: file.size, preview: null, phase: "error", progress: 0, code: "photo", status: 0, file });
+        return;
+      }
+    }
+    setStaged({ id, kind, name, size: blob.size, preview, phase: "uploading", progress: 0, code: null, status: 0, file });
+    try {
+      const settings = getAttachments();
+      const key = keyFor(kind, name, blob.type || file.type);
+      const url = await presignPut(settings, key);
+      await putBytes(url, blob, name, (share) => setStaged((s) => (s && s.id === id ? { ...s, progress: share } : s)), controller.signal);
+      if (controller.signal.aborted) return;
+      if (attachAbort.current === controller) attachAbort.current = null;
+      setStaged((s) => (s && s.id === id ? null : s));
+      // Пока шла загрузка, могли открыть другой чат: ссылка остаётся в том, где её начали.
+      if (attachChat.current !== forChat) return;
+      insertLink(linkFor(key, settings));
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      const code = error instanceof AttachError ? error.code : "network";
+      const status = error instanceof AttachError ? error.status : 0;
+      setStaged((s) => (s && s.id === id ? { ...s, phase: "error", code, status } : s));
+    }
+  };
+
+  const choose = async (kind: "photo" | "file") => {
+    const file = await pickFile(kind === "photo" ? "image/*" : "");
+    if (!file) return;
+    if (kind === "file" && file.size > MAX_FILE_BYTES) {
+      toast(t("chats.attach.tooBig", { name: file.name, size: sizeText(file.size), max: sizeText(MAX_FILE_BYTES) }), "error");
+      return;
+    }
+    if (kind === "photo" && file.size > MAX_PHOTO_BYTES) {
+      toast(t("chats.attach.photoTooBig", { size: sizeText(file.size), max: sizeText(MAX_PHOTO_BYTES) }), "error");
+      return;
+    }
+    void upload(kind, file);
+  };
+
+  const askForBucket = () => {
+    toast(t("chats.attach.notSet"), "", { label: t("chats.attach.setUp"), run: () => openRadioPage("attachments") }, t("chats.attach.notSetDetail"));
+  };
+
+  // Удержание открывает меню, как у отправки; тап только говорит, как это работает.
+  const attachPress = usePress(
+    (at) => {
+      if (!attachmentsReady()) return askForBucket();
+      showMenu(
+        [
+          { label: t("chats.attach.photo"), hint: t("chats.attach.photoHint"), icon: <PictureIcon size={17} />, onSelect: () => void choose("photo") },
+          { label: t("chats.attach.file"), hint: t("chats.attach.fileHint"), icon: <FileIcon size={17} />, onSelect: () => void choose("file") },
+        ],
+        { title: t("chats.attach.menuTitle"), at },
+      );
+    },
+    setHoldingAttach,
+    // С мышью удержание тоже годится: правой кнопкой меню не найти.
+    { mouse: true },
+  );
+  const attachTap = (e: MouseEvent) => {
+    if (e.detail > 0) {
+      if (!attachmentsReady()) return askForBucket();
+      toast(t("chats.attach.hold"));
+      return;
+    }
+    // С клавиатуры держать нечего: сразу выбор фото.
+    void choose("photo");
+  };
+
+  const attachLine = (s: Staged) =>
+    s.code === "refused"
+      ? t("chats.attach.refused", { status: s.status })
+      : s.code === "network"
+        ? t("chats.attach.network")
+        : s.code === "photo"
+          ? t("chats.attach.photoFailed")
+          : t("chats.attach.failed");
 
   /**
    * The selection put in markers, or taken out of them, as one edit Undo can take back, with the
@@ -440,7 +576,11 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
 
   const saved = cost.typed - cost.used;
   // An empty field's button puts a place in it; with a place or text in it, it sends.
-  const button = nothing
+  // Пока вложение в пути, отправлять нечего: ссылки в поле ещё нет, и кнопка ждёт её.
+  const uploading = staged?.phase === "uploading";
+  const button = uploading
+    ? { cls: "idle", label: t("chats.attach.uploading", { share: Math.round((staged?.progress ?? 0) * 100) }), icon: <ClockIcon size={18} />, disabled: true, act: () => undefined }
+    : nothing
     ? { cls: "pin", label: t("chats.place.attach"), icon: <LocationIcon size={19} />, disabled: false, act: pinPressed }
     : place && !placeReady(place)
       ? { cls: "idle", label: t("chats.place.locating"), icon: <SendIcon size={18} />, disabled: true, act: () => undefined }
@@ -547,6 +687,32 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
             ) : null}
           </div>
         ) : null}
+        {staged ? (
+          <div className={["compose-bar", "attach-bar", staged.phase === "error" ? "bad" : ""].join(" ")}>
+            {staged.preview ? (
+              <span className="attach-thumb" style={{ backgroundImage: `url("${staged.preview}")` }} />
+            ) : (
+              <span className="attach-badge">{(/\.([a-z0-9]+)$/i.exec(staged.name)?.[1] ?? "FILE").toUpperCase().slice(0, 4)}</span>
+            )}
+            <span className="attach-text">
+              <b>{staged.phase === "error" ? t("chats.attach.failed") : t("chats.attach.uploading", { share: Math.round(staged.progress * 100) })}</b>
+              <small>{staged.phase === "error" ? attachLine(staged) : `${staged.name} · ${sizeText(staged.size)}`}</small>
+              {staged.phase === "uploading" ? (
+                <span className="attach-progress">
+                  <i style={{ width: `${Math.round(staged.progress * 100)}%` }} />
+                </span>
+              ) : null}
+            </span>
+            {staged.phase === "error" ? (
+              <button type="button" className="attach-retry" onMouseDown={(e) => e.preventDefault()} onClick={() => void upload(staged.kind, staged.file)}>
+                {t("chats.attach.retry")}
+              </button>
+            ) : null}
+            <button type="button" className="compose-bar-close" aria-label={t("chats.attach.cancel")} onMouseDown={(e) => e.preventDefault()} onClick={dropStaged}>
+              <CloseIcon size={14} />
+            </button>
+          </div>
+        ) : null}
         <div className="compose-row">
           <div className="compose-field">
             <div className="compose-mirror" ref={mirror} aria-hidden="true">
@@ -591,6 +757,21 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
           </div>
           <button
             type="button"
+            className={["compose-send", "attach", holdingAttach ? "holding" : ""].join(" ")}
+            aria-label={t("chats.attach.button")}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={attachTap}
+            {...attachPress}
+          >
+            {holdingAttach ? (
+              <svg className="hold-ring" viewBox="0 0 46 46" aria-hidden="true">
+                <circle cx="23" cy="23" r="21" />
+              </svg>
+            ) : null}
+            <AttachIcon size={18} />
+          </button>
+          <button
+            type="button"
             className={["compose-send", button.cls, holding && nothing ? "holding" : ""].join(" ")}
             aria-label={button.label}
             disabled={button.disabled}
@@ -616,3 +797,8 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
     </footer>
   );
 }
+
+
+
+
+

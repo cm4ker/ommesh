@@ -326,7 +326,7 @@
   "attachments.whyOther": "что-то другое",
   "attachments.pathNote": "Это для корзины вроде MinIO за своим прокси. Обычное облако оставьте как есть.",
   "attachments.pathStyle": "Корзина в пути",
-  "attachments.pathStyleHint": "Адрес выглядит как сервер/корзина/файл, а не корзина.сервер/файл.",  "attachments.corsNote": "Загрузка идёт обычным PUT из страницы, поэтому бакет должен разрешать адреса приложения: https://ommesh.cm4ker.ru, tauri://localhost, https://localhost.",
+  "attachments.pathStyleHint": "Адрес выглядит как сервер/корзина/файл, а не корзина.сервер/файл.",  "attachments.corsNote": "Загрузка идёт обычным PUT из страницы, поэтому корзина должна разрешать адреса приложения: https://ommesh.cm4ker.ru, https://client.ommesh.ru, https://localhost (телефон), tauri://localhost и http://tauri.localhost (десктоп).",
   "attachments.linkNote": "Ссылка выйдет такой: {link}",
   "attachments.off": "Выкл",
   "attachments.on": "Вкл",  "messages.openAtUnread": "Открывать с первого непрочитанного",

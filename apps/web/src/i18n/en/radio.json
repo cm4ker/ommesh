@@ -326,7 +326,7 @@
   "attachments.whyOther": "something else",
   "attachments.pathNote": "For a bucket like MinIO behind a proxy of its own. A cloud bucket stays as it is.",
   "attachments.pathStyle": "Bucket in the path",
-  "attachments.pathStyleHint": "The address reads server/bucket/file rather than bucket.server/file.",  "attachments.corsNote": "Uploads are ordinary PUTs from the page, so the bucket must allow the app's addresses: https://ommesh.cm4ker.ru, tauri://localhost, https://localhost.",
+  "attachments.pathStyleHint": "The address reads server/bucket/file rather than bucket.server/file.",  "attachments.corsNote": "The upload is an ordinary PUT from the page, so the bucket must allow the app's origins: https://ommesh.cm4ker.ru, https://client.ommesh.ru, https://localhost (phone), tauri://localhost and http://tauri.localhost (desktop).",
   "attachments.linkNote": "A link comes out like this: {link}",
   "attachments.off": "Off",
   "attachments.on": "On",  "messages.openAtUnread": "Open at first unread",

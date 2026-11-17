@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { t } from "../i18n/index.js";
-import { ATTACH_DEFAULTS, attachmentsReady, keyFor, linkFor, parseServer, presignPut, publicBase, regionFrom, sizeText, type AttachmentsSettings } from "./attachments.js";
+import { ATTACH_DEFAULTS, attachmentsReady, keyFor, linkFor, parseServer, presignPut, publicBase, regionFor, regionFrom, regionFromServer, sizeText, type AttachmentsSettings } from "./attachments.js";
 
 const SETTINGS: AttachmentsSettings = {
   ...ATTACH_DEFAULTS,
@@ -67,6 +67,19 @@ test("a region the storage named is the one signed for, and the same moment and 
   assert.notEqual(await presignPut(SETTINGS, "p/1.jpg", AT), await presignPut(SETTINGS, "p/2.jpg", AT));
 });
 
+test("the region a regional address names is the one signed for", async () => {
+  // Selectel puts its region in the host, and refusing a signature for another one is how it answers.
+  assert.equal(regionFromServer("https://s3.ru-6.storage.selcloud.ru/ommesh"), "ru-6");
+  assert.equal(regionFromServer("https://s3.eu-central-1.amazonaws.com/photos"), "eu-central-1");
+  assert.equal(regionFromServer("https://bucket.r2.cloudflarestorage.com/photos"), "auto");
+  assert.equal(regionFromServer("https://storage.yandexcloud.net/photos"), "ru-central1");
+  assert.equal(regionFromServer("https://s3.example.ru/photos"), null);
+  const signed = await presignPut({ ...SETTINGS, server: "https://s3.ru-6.storage.selcloud.ru/ommesh" }, "p/1.jpg", AT);
+  assert.match(signed, /X-Amz-Credential=[^&]*%2Fru-6%2Fs3%2Faws4_request/);
+  // What a storage told once wins over what its address says.
+  assert.equal(regionFor({ server: "https://s3.ru-6.storage.selcloud.ru/ommesh", accessKey: "k", secretKey: "s", region: "us-east-1" }), "us-east-1");
+});
+
 test("a refusal names the region it wants, and only a plain name is taken", () => {
   assert.equal(regionFrom("<Error><Code>AuthorizationHeaderMalformed</Code><Region>eu-central-1</Region></Error>", null), "eu-central-1");
   assert.equal(regionFrom("", "auto"), "auto");
@@ -79,3 +92,4 @@ test("a size follows the app's language and the reader's decimal mark", () => {
   assert.equal(sizeText(900), t("chats.preview.kb", { size: "1" }));
   assert.equal(sizeText(2_400_000), t("chats.preview.mb", { size: "2.3" }));
 });
+

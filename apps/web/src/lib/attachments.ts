@@ -204,10 +204,39 @@ function targetFor(s: AttachmentsSettings, key: string): { host: string; path: s
 /** What the storage signed for when the reader never said: the region every one of them but Amazon accepts. */
 const DEFAULT_REGION = "us-east-1";
 
+/**
+ * The region an address itself names. A regional endpoint carries it in the
+ * host — `s3.ru-6.storage.selcloud.ru`, `s3.eu-central-1.amazonaws.com` — and
+ * signing for the region a storage does not use is refused before the bucket
+ * is ever asked. A storage that names nothing signs for the common one and, if
+ * it refuses, tells its own in the refusal (regionFrom).
+ */
+export function regionFromServer(server: string): string | null {
+  let host: string;
+  try {
+    host = new URL(server.trim()).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+  // Cloudflare has no regions at all, and its own name for that is `auto`.
+  if (host.endsWith(".r2.cloudflarestorage.com")) return "auto";
+  // Yandex calls its one region ru-central1, which the host does not say.
+  if (host === "storage.yandexcloud.net") return "ru-central1";
+  for (const label of host.split(".")) {
+    if (/^[a-z]{2}-[a-z]+-\d+$/.test(label) || /^ru-\d+$/.test(label)) return label;
+  }
+  return null;
+}
+
 /** The region a refusal names, if it names one: `<Region>eu-central-1</Region>` or the header Amazon sends. */
 export function regionFrom(body: string, header: string | null): string | null {
   const named = /<Region>\s*([a-z0-9-]+)\s*<\/Region>/i.exec(body)?.[1] ?? header?.trim() ?? "";
   return /^[a-z0-9-]{2,32}$/i.test(named) ? named : null;
+}
+
+/** The region to sign for: the one a storage named before, else the one the address names, else the common one. */
+export function regionFor(s: AttachmentsSettings): string {
+  return (s.region ?? regionFromServer(s.server) ?? DEFAULT_REGION).trim();
 }
 
 const stamp = (at: Date) => at.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
@@ -216,7 +245,7 @@ const stamp = (at: Date) => at.toISOString().replace(/[-:]/g, "").replace(/\.\d{
 export async function presignPut(s: AttachmentsSettings, key: string, at = new Date()): Promise<string> {
   if (!attachmentsReady(s)) throw new AttachError("not-configured");
   const { host, path, secure } = targetFor(s, key);
-  const region = (s.region ?? DEFAULT_REGION).trim();
+  const region = regionFor(s);
   const amzDate = stamp(at);
   const date = amzDate.slice(0, 8);
   const scope = `${date}/${region}/${SERVICE}/aws4_request`;
@@ -386,7 +415,7 @@ export async function uploadAt(s: AttachmentsSettings, key: string, blob: Blob, 
       return current;
     } catch (error) {
       const named = attempt === 0 && error instanceof AttachError && error.status >= 400 && error.status < 500 ? regionFrom(error.body, null) : null;
-      if (!named || named === (current.region ?? DEFAULT_REGION)) throw error;
+      if (!named || named === regionFor(current)) throw error;
       current = { ...current, region: named };
       setAttachments({ region: named });
     }
@@ -404,6 +433,7 @@ export async function testBucket(s: AttachmentsSettings): Promise<{ ms: number }
   if (!answer || !answer.ok) throw new AttachError("read", answer?.status ?? 0);
   return { ms: Math.round(performance.now() - started) };
 }
+
 
 
 

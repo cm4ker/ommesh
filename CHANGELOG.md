@@ -5,7 +5,7 @@
 ## Unreleased
 
 ### Chats
-- Attachments are set up with three things: the address with the bucket in it, the access key and the secret. The region follows the storage (a refusal names it and the app takes it), the buckets in the path read as they do, and the switches are gone — the clip works as soon as the fields are filled.
+- Attachments are set up with three things: the address with the bucket in it, the access key and the secret. The region follows the address itself — a regional endpoint names its own, and a storage that refuses names one the app keeps — the bucket reads as a path, and the switches are gone — the clip works as soon as the fields are filled.
 - A link too long for a message can be shortened instead of cut: when a message with a link goes over what a radio carries, the line above the field offers Shorten, and the preview server's six letters take the place of the long address. The short link lives a day, and the offer says so; with link previews off, nothing is sent to the server and the message is offered in parts as before.
 - Photos and files in a chat: hold the clip beside Send and choose Photo or File. The picture or document goes into your own S3 bucket, and the message carries a link that this app draws as a picture or a file card, while other MeshCore apps show it as a link. Settings › Attachments holds the bucket and a Test that writes a byte and reads it back; nothing leaves the device until it is set, and the secret stays on this device alone. Photos are squeezed to 1600 px and about 400 KB, files go up to 25 MB as they are.
 - Add someone by the key they sent you, before your radio has heard them: New chat › By key. Paste a public key, or a meshcore:// link from the MeshCore app, which brings the name too, name them if you like, and Add and write opens the chat. Their own advert replaces the name once it comes. Their radio reads your messages only if it has you, so the empty chat offers an advert across the mesh and your key to send them. New chat now keeps a person's two ways under Person and a channel's three under Channel, and a channel's key pasted under By key leads on to joining it.
@@ -461,6 +461,7 @@
 ## 0.2.0 — 2026-09-23
 
 The first release on Google Play and the App Store.
+
 
 
 

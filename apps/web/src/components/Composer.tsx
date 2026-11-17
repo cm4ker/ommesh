@@ -29,6 +29,8 @@ import { noteFormatSelection, offerFormatMenu } from "../lib/formatMenu.js";
 import { toast } from "../lib/toast.js";
 import { AttachError, MAX_FILE_BYTES, MAX_PHOTO_BYTES, attachmentsReady, compressPhoto, getAttachments, keyFor, linkFor, pickFile, presignPut, putBytes, sizeText } from "../lib/attachments.js";
 import { openRadioPage } from "../lib/nav.js";
+import { longestLink, shortenLink, ShortRefused, withShortLink } from "../lib/shortLink.js";
+import { usePreviewMode } from "../lib/linkPreview.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
 import { AttachIcon, CheckIcon, ClockIcon, CloseIcon, FileIcon, LocationIcon, PictureIcon, ReplyIcon, SendIcon, TextIcon, WavesIcon } from "./Icons.js";
@@ -107,6 +109,26 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
   const empty = text.slice(head.length).trim() === "";
   const nothing = empty && !place;
   const over = cost.over > 0;
+  // A link that will not fit is shortened rather than cut: a link in parts is no link (#118).
+  const previews = usePreviewMode();
+  const long = over ? longestLink(text) : null;
+  const [shortening, setShortening] = useState(false);
+  const shorten = async () => {
+    if (!long || shortening) return;
+    setShortening(true);
+    try {
+      const short = await shortenLink(long.href);
+      // The field may have moved while the server answered: the long address is found again.
+      const current = field.current?.value ?? text;
+      const at = current.indexOf(long.text);
+      if (at >= 0) replace(at, at + long.text.length, short);
+    } catch (error) {
+      const busy = error instanceof ShortRefused && error.reason === "busy";
+      toast(t(busy ? "chats.composer.shortBusy" : "chats.composer.shortFailed"), "error");
+    } finally {
+      setShortening(false);
+    }
+  };
   const tone = over ? "over" : cost.used >= cost.budget * 0.8 ? "warn" : "";
   // The tag counts the place with the text, as the reader sees one message.
   const lineBytes = line ? utf8Length(line) + 1 : 0;
@@ -666,7 +688,12 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
             ) : (
               <span className="compose-sets-text">{t("chats.composer.cursiveOn")}</span>
             )}
-            {over ? (
+            {over && long && previews !== "off" ? (
+              <button type="button" className="chip" disabled={shortening} onMouseDown={(e) => e.preventDefault()} onClick={() => void shorten()}>
+                {shortening ? t("chats.composer.shortening") : t("chats.composer.shorten")} <span className="compose-cost">{t("chats.composer.shortLive")}</span>
+              </button>
+            ) : null}
+            {over && (!long || previews === "off") ? (
               <button type="button" className="chip" onMouseDown={(e) => e.preventDefault()} onClick={() => void sendSplit()}>
                 {t("chats.composer.sendIn", { count: parts })}
               </button>
@@ -797,8 +824,3 @@ export function Composer({ conversation, title, reply, onReplyDone, onSent }: { 
     </footer>
   );
 }
-
-
-
-
-

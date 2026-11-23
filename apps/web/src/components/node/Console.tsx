@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { AdvType, type ConsoleEntry, type ContactRecord } from "@meshnet/meshcore";
 import { t } from "../../i18n/index.js";
-import { suggest } from "../../lib/cli.js";
+import { stepHistory, stepPick, suggest } from "../../lib/cli.js";
 import { dayLabel, timeOfDay } from "../../lib/format.js";
 import { useWide } from "../../lib/layout.js";
 import { usePress } from "../../lib/press.js";
@@ -47,8 +47,13 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
   // A command to send once the reader agrees; `typed` when it came from the field, which then empties.
   const [confirming, setConfirming] = useState<{ command: string; typed: boolean } | null>(null);
   const [recall, setRecall] = useState<number | null>(null);
+  const [saved, setSaved] = useState("");
+  const [picked, setPicked] = useState<number | null>(null);
+  const [dismissed, setDismissed] = useState(false);
   const log = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  // Holds off an implicit form submit from the same Enter keypress that just filled a chosen suggestion.
+  const holdSubmit = useRef(false);
   const [asking, setAsking] = useState(false);
   const [relearning, setRelearning] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -90,14 +95,25 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
     (contact ? session.runCli(key, command) : session.runOwnCli(command)).catch(() => undefined);
   };
 
-  const send = (command: string) => {
-    setDraft("");
+  const applyDraft = (text: string) => {
+    setDraft(text);
+    setPicked(null);
     setRecall(null);
+    setSaved("");
+    setDismissed(false);
+  };
+
+  const send = (command: string) => {
+    applyDraft("");
     run(command);
   };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    if (holdSubmit.current) {
+      holdSubmit.current = false;
+      return;
+    }
     const command = draft.trim();
     if (!command) return;
     if (DANGEROUS.test(command)) setConfirming({ command, typed: true });
@@ -112,8 +128,7 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
 
   /** A command from the reference: the field takes it, and the reference makes room for the console again. */
   const pick = (command: string) => {
-    setDraft(command);
-    setRecall(null);
+    applyDraft(command);
     setHelping(false);
     // The sheet goes first, then the field: a phone keeps the keyboard down while the sheet is up.
     setTimeout(() => input.current?.focus(), 80);
@@ -160,22 +175,55 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
 
   const typed = draft.trim();
   const { chips, hint, total } = suggest(draft, target);
+  // While walking sent history or after Escape, keep suggestions out of the way until the reader edits the field.
+  const shown = typed && recall === null && !dismissed ? chips.slice(0, PICK_ROWS) : [];
+  const activePick = picked !== null && picked < shown.length ? picked : null;
+  const activeHint = activePick !== null ? (shown[activePick]?.about ? (shown[activePick]?.hint ?? null) : hint) : hint;
+  const showPick = Boolean(typed && recall === null && !dismissed && (shown.length > 0 || activeHint));
 
   const past = entries.filter((e) => e.command && !e.command.includes("••")).map((e) => e.command);
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    // Tab takes the first suggestion, as a shell would.
-    if (e.key === "Tab" && typed && chips[0]) {
+    if (e.nativeEvent.isComposing) return;
+    if (e.key === "Enter" && e.repeat && holdSubmit.current) {
       e.preventDefault();
-      setDraft(chips[0].fill);
       return;
     }
-    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-    if (past.length === 0) return;
+    const plain = !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
+    if (plain && shown.length > 0) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setPicked(stepPick(activePick, shown.length, e.key));
+        return;
+      }
+      // Tab takes the chosen suggestion, or the first one, as a shell would.
+      if (e.key === "Tab") {
+        e.preventDefault();
+        applyDraft(shown[activePick ?? 0]!.fill);
+        return;
+      }
+      // Enter takes a row the arrows have chosen; otherwise the form submits what is typed.
+      if (e.key === "Enter" && activePick !== null) {
+        e.preventDefault();
+        holdSubmit.current = true;
+        applyDraft(shown[activePick]!.fill);
+        return;
+      }
+    }
+    if (plain && e.key === "Escape" && (activePick !== null || showPick)) {
+      e.preventDefault();
+      if (activePick !== null) setPicked(null);
+      else setDismissed(true);
+      return;
+    }
+    if (!plain || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+    const walked = stepHistory({ index: recall, draft, saved }, past, e.key);
+    if (!walked) return;
     e.preventDefault();
-    const at = recall ?? past.length;
-    const next = Math.max(0, Math.min(past.length, at + (e.key === "ArrowUp" ? -1 : 1)));
-    setRecall(next === past.length ? null : next);
-    setDraft(next === past.length ? "" : past[next]!);
+    setRecall(walked.index);
+    setDraft(walked.draft);
+    setSaved(walked.saved);
+    setPicked(null);
+    setDismissed(false);
   };
 
   const body = (
@@ -204,34 +252,42 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
       {/* The same frame as a chat's composer, so a command is written the way a message is. */}
       <form className={["compose", "console-compose", focused ? "focus" : "", draft ? "has" : "", online ? "" : "waiting"].join(" ")} onSubmit={submit}>
         {/* Nothing typed: the everyday commands, a tap away. Something typed: what it can be, and what that does. */}
-        {typed ? (
+        {showPick ? (
           <div className="cli-pick">
-            {chips.slice(0, PICK_ROWS).map((s, i) => (
-              <button
-                key={s.fill}
-                type="button"
-                className={["cli-pick-row", i === 0 ? "on" : ""].join(" ")}
-                onClick={() => {
-                  setDraft(s.fill);
-                  input.current?.focus();
-                }}
-              >
-                <span className="cli-pick-cmd">{s.label}</span>
-                {s.about ? <span className="cli-pick-desc">{t(s.about)}</span> : null}
-              </button>
-            ))}
+            {shown.length > 0 ? (
+              <div className="cli-pick-list" role="listbox" aria-label={t("node.console.command")}>
+                {shown.map((s, i) => (
+                  <button
+                    key={s.fill}
+                    type="button"
+                    role="option"
+                    aria-selected={i === activePick}
+                    className={["cli-pick-row", i === activePick ? "on" : ""].join(" ")}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      applyDraft(s.fill);
+                      input.current?.focus();
+                    }}
+                  >
+                    <span className="cli-pick-cmd">{s.label}</span>
+                    {s.about ? <span className="cli-pick-desc">{t(s.about)}</span> : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             {total > PICK_ROWS ? <span className="cli-pick-more">{t("cli.more", { count: total - PICK_ROWS })}</span> : null}
-            {hint ? <span className="cli-pick-hint">{t("cli.whatToEnter", { hint })}</span> : null}
+            {activeHint ? <span className="cli-pick-hint">{t("cli.whatToEnter", { hint: activeHint })}</span> : null}
           </div>
-        ) : (
+        ) : !typed ? (
           <div className="chips console-chips">
             {chips.map((s) => (
               <button
                 key={s.fill}
                 type="button"
                 className="chip mono"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
-                  setDraft(s.fill);
+                  applyDraft(s.fill);
                   input.current?.focus();
                 }}
               >
@@ -244,7 +300,7 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
               </button>
             ) : null}
           </div>
-        )}
+        ) : null}
         <div className="compose-box">
           <div className="compose-row">
             <div className="compose-field">
@@ -258,10 +314,19 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
                 placeholder={online ? undefined : t("node.console.disconnected")}
                 value={draft}
                 disabled={!online}
-                onChange={(e) => setDraft(e.target.value)}
+                onChange={(e) => {
+                  holdSubmit.current = false;
+                  applyDraft(e.target.value);
+                }}
                 onKeyDown={onKey}
+                onKeyUp={(e) => {
+                  if (e.key === "Enter") holdSubmit.current = false;
+                }}
                 onFocus={() => setFocused(true)}
-                onBlur={() => setFocused(false)}
+                onBlur={() => {
+                  holdSubmit.current = false;
+                  setFocused(false);
+                }}
               />
             </div>
             {/* The same quiet button as a chat's paperclip: tapped it opens the reference, held it offers the rest. */}
@@ -286,7 +351,10 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
               className={["compose-send", online && typed ? "ready" : "idle"].join(" ")}
               aria-label={t("common.send")}
               disabled={!online || !typed}
-              onMouseDown={(e) => e.preventDefault()}
+              onMouseDown={(e) => {
+                holdSubmit.current = false;
+                e.preventDefault();
+              }}
             >
               <SendIcon size={18} />
             </button>

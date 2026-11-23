@@ -229,10 +229,13 @@ button.c-cmd:focus-visible {
   display: flex;
 }
 /* What is typed can be: the commands that match it, each with a line about what it does. */
-.cli-pick {
+.cli-pick,
+.cli-pick-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+.cli-pick {
   padding: 0 0 var(--space-1);
 }
 .cli-pick-row {
@@ -249,7 +252,7 @@ button.c-cmd:focus-visible {
   text-align: left;
   cursor: pointer;
 }
-/* The first one is what Tab and Enter take. */
+/* The row chosen with the arrow keys: Enter or Tab puts it in the field. */
 .cli-pick-row.on {
   background: var(--selected);
 }
@@ -277,7 +280,7 @@ button.c-cmd:focus-visible {
   font-size: var(--text-xs);
   color: var(--text-faint);
 }
-/* What the value after the first one is. */
+/* What the value after the chosen command is. */
 .cli-pick-hint {
   padding: 2px var(--space-3) var(--space-1);
   font-size: var(--text-xs);

@@ -268,6 +268,8 @@ export interface Suggestion {
   fill: string;
   /** What it does; a value has none. */
   about?: Key;
+  /** What the value after this command is, when it takes one. */
+  hint?: string;
 }
 
 export interface Suggestions {
@@ -317,9 +319,47 @@ export function suggest(draft: string, target: CliTarget = "node", limit = 12): 
     if (seen.has(label)) continue;
     seen.add(label);
     total += 1;
-    if (chips.length < limit) chips.push({ label, fill: c.text, about: c.about });
+    if (chips.length < limit) chips.push({ label, fill: c.text, about: c.about, ...(c.arg ? { hint: t(c.arg) } : {}) });
   }
   // What the value after the first suggestion is: that is what Tab fills in.
-  const first = chips[0] ? list.find((c) => c.text.trim() === chips[0]!.label) : undefined;
-  return { chips, hint: first?.arg ? t(first.arg) : null, total };
+  return { chips, hint: chips[0]?.hint ?? null, total };
+}
+
+/**
+ * Steps the arrow-key highlight through the list of suggestions shown above the
+ * console field: `null` means typing freely (Enter sends what is typed), while an
+ * index points to that row (Enter or Tab puts it in the field). Moving past
+ * either end returns to the field, so a stray arrow press can be undone in one step.
+ */
+export function stepPick(current: number | null, count: number, key: "ArrowUp" | "ArrowDown"): number | null {
+  if (count <= 0) return null;
+  if (current === null) return key === "ArrowDown" ? 0 : count - 1;
+  const next = current + (key === "ArrowDown" ? 1 : -1);
+  return next < 0 || next >= count ? null : next;
+}
+
+export interface HistoryWalk {
+  /** Index into `past`, or null when back at the draft. */
+  index: number | null;
+  /** Text now in the field. */
+  draft: string;
+  /** What was typed before entering history, kept until leaving it again. */
+  saved: string;
+}
+
+/**
+ * Steps through sent commands with Up and Down. Down on a field that is not
+ * walking history does nothing instead of wiping what is typed; Up remembers
+ * whatever was in the field so walking back down restores it.
+ */
+export function stepHistory(current: HistoryWalk, past: readonly string[], key: "ArrowUp" | "ArrowDown"): HistoryWalk | null {
+  if (past.length === 0) return null;
+  if (current.index === null) {
+    if (key === "ArrowDown") return null;
+    return { index: past.length - 1, draft: past[past.length - 1]!, saved: current.draft };
+  }
+  const next = current.index + (key === "ArrowUp" ? -1 : 1);
+  if (next < 0) return { ...current, index: 0, draft: past[0]! };
+  if (next >= past.length) return { index: null, draft: current.saved, saved: "" };
+  return { ...current, index: next, draft: past[next]! };
 }

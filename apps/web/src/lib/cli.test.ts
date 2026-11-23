@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { CLI_GROUPS, CLI_GROUP_TITLE, COMMANDS, RADIO_COMMANDS, suggest } from "./cli.js";
+import { CLI_GROUPS, CLI_GROUP_TITLE, COMMANDS, RADIO_COMMANDS, stepHistory, stepPick, suggest } from "./cli.js";
 
 const labels = (draft: string) => suggest(draft).chips.map((c) => c.label);
 
@@ -96,4 +96,50 @@ test("every command is in a group the reference knows, and each group is named i
     assert.ok(en[key], `en ${key}`);
     assert.ok(ru[key], `ru ${key}`);
   }
+});
+
+test("each command suggestion carries its own value hint", () => {
+  const duty = suggest("duty");
+  assert.equal(duty.chips[0]?.label, "get dutycycle");
+  assert.equal(duty.chips[0]?.hint, undefined);
+  assert.equal(duty.chips[1]?.label, "set dutycycle");
+  assert.equal(duty.chips[1]?.hint, "1–100, % of airtime it may use");
+});
+
+test("arrow keys step through suggestions from either end and return to the field past the edge", () => {
+  assert.equal(stepPick(null, 0, "ArrowDown"), null);
+  assert.equal(stepPick(null, 0, "ArrowUp"), null);
+  // Down starts at the top of the list and returns to typing freely past the bottom.
+  assert.equal(stepPick(null, 3, "ArrowDown"), 0);
+  assert.equal(stepPick(0, 3, "ArrowDown"), 1);
+  assert.equal(stepPick(1, 3, "ArrowDown"), 2);
+  assert.equal(stepPick(2, 3, "ArrowDown"), null);
+  // Up starts at the row closest to the field and returns to typing freely past the top.
+  assert.equal(stepPick(null, 3, "ArrowUp"), 2);
+  assert.equal(stepPick(2, 3, "ArrowUp"), 1);
+  assert.equal(stepPick(1, 3, "ArrowUp"), 0);
+  assert.equal(stepPick(0, 3, "ArrowUp"), null);
+  // One suggestion: either arrow picks it, and pressing again lets it go.
+  assert.equal(stepPick(null, 1, "ArrowDown"), 0);
+  assert.equal(stepPick(0, 1, "ArrowDown"), null);
+  assert.equal(stepPick(null, 1, "ArrowUp"), 0);
+  assert.equal(stepPick(0, 1, "ArrowUp"), null);
+});
+
+test("history walk never clears a draft on Down and restores what was typed on the way back", () => {
+  const past = ["ver", "clock"];
+  assert.equal(stepHistory({ index: null, draft: "", saved: "" }, [], "ArrowUp"), null);
+  // Down outside history leaves the field alone instead of wiping it.
+  assert.equal(stepHistory({ index: null, draft: "get r", saved: "" }, past, "ArrowDown"), null);
+  // Up enters history while keeping the typed draft aside.
+  const first = stepHistory({ index: null, draft: "foo", saved: "" }, past, "ArrowUp");
+  assert.deepEqual(first, { index: 1, draft: "clock", saved: "foo" });
+  const oldest = stepHistory(first!, past, "ArrowUp");
+  assert.deepEqual(oldest, { index: 0, draft: "ver", saved: "foo" });
+  // Past the oldest command it stays on it.
+  assert.deepEqual(stepHistory(oldest!, past, "ArrowUp"), { index: 0, draft: "ver", saved: "foo" });
+  // Walking back down steps forward and restores the held draft.
+  const back = stepHistory(oldest!, past, "ArrowDown");
+  assert.deepEqual(back, { index: 1, draft: "clock", saved: "foo" });
+  assert.deepEqual(stepHistory(back!, past, "ArrowDown"), { index: null, draft: "foo", saved: "" });
 });

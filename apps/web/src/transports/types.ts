@@ -57,11 +57,19 @@ export interface Connector {
   /** `null` asks the picker; a device connects to it. */
   connect(device: FoundDevice | null, options?: ReachOptions): Promise<Transport>;
   /**
+   * Starts interactive pairing so a radio with a dynamic PIN shows it on screen
+   * before `pair` is called. Resolves to `true` when a PIN must be typed in, or
+   * `false` if pairing already completed without one.
+   */
+  beginPair?(device: FoundDevice): Promise<boolean>;
+  /**
    * Bonds with a radio using the PIN on its screen, where the platform lets
    * the client do that itself. A `connect` that fails with `needsPairing`
    * set is the cue to ask for the PIN and call this.
    */
   pair?(device: FoundDevice, pin: string): Promise<void>;
+  /** Aborts an in-progress interactive pairing started by `beginPair` or `connect`. */
+  cancelPair?(): Promise<void>;
   /** A cable's port: its settings and its log. */
   port?: PortAccess;
 }

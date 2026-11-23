@@ -3,7 +3,7 @@ import { useBackLayer, useSectionsBack } from "../lib/back.js";
 import { chatsInOrder, getChatOrder } from "../lib/chatOrder.js";
 import { getPins } from "../lib/chatPins.js";
 import { summarize, totalUnread } from "../lib/conversations.js";
-import { pairLink, reconnectNow, useLink } from "../lib/link.js";
+import { beginPairLink, cancelPairLink, pairLink, reconnectNow, useLink } from "../lib/link.js";
 import { useSideways, useWide } from "../lib/layout.js";
 import { back, focusOnMap, getNav, goSection, openConversation, setStack, shownConversation, swapProfile, topOf, useNav, type Nav, type Screen, type Section } from "../lib/nav.js";
 import { hasPosition } from "../lib/geo.js";
@@ -119,7 +119,16 @@ function Offline() {
         <>
           <span className="offline-text">{link.error ? t("connect.status.disconnectedWith", { error: link.error }) : t("connect.status.disconnected")}</span>
           {link.pair ? (
-            <Button size="sm" onClick={() => setAsking(true)}>
+            <Button
+              size="sm"
+              onClick={() => {
+                void beginPairLink()
+                  .then((needsPin) => {
+                    if (needsPin) setAsking(true);
+                  })
+                  .catch((error) => toast(t("connect.pair.failed", { error: errorText(error) }), "error"));
+              }}
+            >
               {t("connect.pair.button")}
             </Button>
           ) : link.phase === "failed" ? (
@@ -143,7 +152,10 @@ function PairPrompt({ open, onDone }: { open: boolean; onDone: () => void }) {
       label={t("connect.pair.label")}
       placeholder={t("connect.pair.placeholder")}
       submitLabel={t("connect.pair.submit")}
-      onCancel={onDone}
+      onCancel={() => {
+        void cancelPairLink();
+        onDone();
+      }}
       onSubmit={async (pin) => {
         try {
           await pairLink(pin);

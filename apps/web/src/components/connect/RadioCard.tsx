@@ -212,6 +212,7 @@ function PinForm({ phone }: { phone: boolean }) {
         try {
           await pairLink(pin.trim());
         } catch (err) {
+          setPin("");
           setError(t("connect.pair.failed", { error: errorText(err) }));
         } finally {
           setBusy(false);

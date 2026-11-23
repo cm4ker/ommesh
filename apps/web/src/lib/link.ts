@@ -135,7 +135,11 @@ export function connectWith(connector: Connector, device: FoundDevice | null): P
 async function reach(connector: Connector, device: FoundDevice | null, dropped: boolean): Promise<void> {
   cancelRetry();
   const gen = ++generation;
+  const previous = wantedLink;
   wantedLink = { connector, device };
+  if (previous && (previous.connector !== connector || previous.device?.id !== device?.id)) {
+    void previous.connector.cancelPair?.().catch(() => undefined);
+  }
   // A chooser cannot be reopened without a click, and a radio that wants a PIN will not stop wanting it.
   const tries = device && connector.mode !== "picker" ? CONNECT_TRIES : 1;
   for (let attempt = 1; ; attempt++) {
@@ -191,6 +195,26 @@ function canPair(connector: Connector, device: FoundDevice | null, error: unknow
 }
 
 /**
+ * Ensures an interactive pairing is active for the radio waiting on a bond
+ * (so a radio with a dynamic PIN shows it on its screen). Returns `true` if a
+ * PIN prompt is needed, or `false` if it paired without one and reconnected.
+ */
+export async function beginPairLink(): Promise<boolean> {
+  const link = wantedLink;
+  if (!link?.device || !link.connector.beginPair) return true;
+  const needsPin = await link.connector.beginPair(link.device);
+  if (!needsPin) {
+    void reach(link.connector, link.device, state.dropped).catch(() => undefined);
+  }
+  return needsPin;
+}
+
+/** Aborts an interactive pairing held open for the user to type a PIN. */
+export async function cancelPairLink(): Promise<void> {
+  await wantedLink?.connector.cancelPair?.().catch(() => undefined);
+}
+
+/**
  * Bonds with the radio the last try wanted, with the PIN on its screen (for
  * a phone sharing its radio, any digits: the phone asks on its own screen),
  * and connects again. Throws when the pairing fails, for the PIN prompt.
@@ -205,7 +229,9 @@ export async function pairLink(pin: string): Promise<void> {
 export async function disconnect(): Promise<void> {
   cancelRetry();
   generation++;
+  const previous = wantedLink;
   wantedLink = null;
+  void previous?.connector.cancelPair?.().catch(() => undefined);
   // Said at once: a connect given up on answers to nothing from here, and the screen need not wait for the radio.
   set({ phase: "idle", error: null, retrying: false, attempt: 0, target: null, dropped: false });
   await session.disconnect();

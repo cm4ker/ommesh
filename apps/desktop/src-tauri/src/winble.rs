@@ -49,7 +49,7 @@ use windows::Devices::Enumeration::{
     DeviceAccessStatus, DeviceInformationCustomPairing, DevicePairingKinds, DevicePairingProtectionLevel, DevicePairingRequestedEventArgs,
     DevicePairingResultStatus, DeviceUnpairingResultStatus,
 };
-use windows::Foundation::TypedEventHandler;
+use windows::Foundation::{Deferral, TypedEventHandler};
 use windows::Storage::Streams::{DataReader, DataWriter};
 use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_SINGLETHREADED};
 use windows::Win32::UI::WindowsAndMessaging::{DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE};
@@ -60,6 +60,11 @@ const RX: GUID = GUID::from_u128(0x6e400002_b5a3_f393_e0a9_e50e24dcca9e);
 const TX: GUID = GUID::from_u128(0x6e400003_b5a3_f393_e0a9_e50e24dcca9e);
 const NAME_PREFIX: &str = "MeshCore-";
 const GATT_DEADLINE: Duration = Duration::from_secs(20);
+/// How long an interactive pairing waits while the user reads the PIN off the radio's screen
+/// (longer than the firmware's 120 s passkey window so the radio's own timeout is heard first).
+const PAIR_PIN_DEADLINE: Duration = Duration::from_secs(180);
+/// How long pairing waits when the other side (e.g. a phone) is showing a confirm dialog of its own.
+const PAIR_CONFIRM_DEADLINE: Duration = Duration::from_secs(60);
 /// How long the worker may go without a sign of life before it is given up
 /// on. Every wait pumps, and each pump counts, so only a single call into
 /// Windows that does not return comes near this.
@@ -124,6 +129,22 @@ fn spawn_worker() -> Handle {
     Handle { jobs, life }
 }
 
+enum PinCommand {
+    Submit { pin: String, done: Sender<Result<String, String>> },
+    Cancel,
+}
+
+struct ActivePairing {
+    id: u64,
+    mac: u64,
+    name: String,
+    commands: Sender<PinCommand>,
+    finished: Arc<Mutex<Option<Result<String, String>>>>,
+    /// Closed when the pairing thread exits, so cancelling a previous pairing can wait briefly
+    /// for its WinRT objects to unwind before starting a fresh one.
+    exited: Receiver<()>,
+}
+
 pub struct WinBle {
     worker: Mutex<Handle>,
     stall: Duration,
@@ -132,6 +153,10 @@ pub struct WinBle {
     scanning: Arc<AtomicBool>,
     /// Scans are serialised among themselves: one watcher at a time.
     scan_lock: Arc<Mutex<()>>,
+    /// Interactive pairing currently waiting for the user to read the PIN off the radio's screen.
+    pairing: Mutex<Option<ActivePairing>>,
+    /// Monotonic counter so a finished pairing clears only its own slot.
+    next_pairing_id: AtomicU64,
 }
 
 impl Default for WinBle {
@@ -151,6 +176,24 @@ impl WinBle {
             stall,
             scanning: Arc::new(AtomicBool::new(false)),
             scan_lock: Arc::new(Mutex::new(())),
+            pairing: Mutex::new(None),
+            next_pairing_id: AtomicU64::new(1),
+        }
+    }
+
+    fn cancel_pairing(&self) {
+        let active = self.pairing.lock().ok().and_then(|mut slot| slot.take());
+        if let Some(active) = active {
+            let _ = active.commands.send(PinCommand::Cancel);
+            let _ = active.exited.recv_timeout(Duration::from_secs(2));
+        }
+    }
+
+    fn clear_pairing_if(&self, id: u64) {
+        if let Ok(mut slot) = self.pairing.lock() {
+            if slot.as_ref().is_some_and(|p| p.id == id) {
+                *slot = None;
+            }
         }
     }
 
@@ -696,78 +739,375 @@ fn open_link(app: AppHandle, id: u64, mac: u64, address: &str, on_frame: Channel
     Ok(Link { id, device, service, rx, tx, value_token, status_token })
 }
 
-/// Bonds with the radio using the PIN its screen shows (or its configured
-/// one). A bond that already exists is dropped first, since the only reason to
-/// be here with one is that the radio no longer honours it.
-fn pair(mac: u64, pin: &str) -> Result<String, String> {
-    let device = wait(
-        BluetoothLEDevice::FromBluetoothAddressAsync(mac).map_err(|e| err("device", e))?,
-        "device lookup",
-    )?;
-    let name = device.Name().map(|n| n.to_string()).unwrap_or_default();
-    let pairing = device
-        .DeviceInformation()
-        .and_then(|i| i.Pairing())
-        .map_err(|e| err("pairing", e))?;
-    if pairing.IsPaired().map_err(|e| err("pairing", e))? {
-        log::info!("winble: dropping the old bond with {name}");
-        let result = wait(pairing.UnpairAsync().map_err(|e| err("unpair", e))?, "unpair")?;
-        let status = result.Status().map_err(|e| err("unpair", e))?;
-        if status != DeviceUnpairingResultStatus::Unpaired {
-            return Err(format!("unpair: {status:?}"));
-        }
-    }
-    let custom: DeviceInformationCustomPairing = pairing.Custom().map_err(|e| err("pairing", e))?;
-    let pin = HSTRING::from(pin.trim());
-    let token = custom
-        .PairingRequested(&TypedEventHandler::new(
-            move |_: windows::core::Ref<DeviceInformationCustomPairing>, args: windows::core::Ref<DevicePairingRequestedEventArgs>| {
-                let Some(args) = args.as_ref() else { return Ok(()) };
-                let kind = args.PairingKind()?;
-                log::debug!("winble: pairing asks for {kind:?}");
-                if kind == DevicePairingKinds::ProvidePin {
-                    args.AcceptWithPin(&pin)?;
-                } else {
-                    args.Accept()?;
-                }
-                Ok(())
-            },
-        ))
-        .map_err(|e| err("pairing", e))?;
-    let kinds = DevicePairingKinds::ProvidePin | DevicePairingKinds::ConfirmOnly | DevicePairingKinds::ConfirmPinMatch;
-    let result = wait(
-        custom
-            .PairWithProtectionLevelAsync(kinds, DevicePairingProtectionLevel::EncryptionAndAuthentication)
-            .map_err(|e| err("pairing", e))?,
-        "pairing",
-    );
-    let _ = custom.RemovePairingRequested(token);
-    let result = result?;
-    let status = result.Status().map_err(|e| err("pairing", e))?;
-    if status != DevicePairingResultStatus::Paired {
-        return Err(format!("pairing {name}: {status:?}. Check the PIN on the radio's screen."));
-    }
-    log::info!("winble: paired with {name}");
-    Ok(name)
+/// Outcome of starting BLE pairing: either Windows bonded without asking for a PIN,
+/// or it asked for one and is holding the pairing open while the radio shows the PIN.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase", tag = "status")]
+pub enum PairStart {
+    Paired { name: String },
+    Pin { name: String },
 }
 
-/// Pairs with a radio by address, with its PIN. Answers with the radio's name.
+fn finish_pairing(
+    finished: &Arc<Mutex<Option<Result<String, String>>>>,
+    started_tx: &mut Option<Sender<Result<PairStart, String>>>,
+    submit_tx: &mut Option<Sender<Result<String, String>>>,
+    outcome: Result<String, String>,
+) {
+    if let Ok(mut slot) = finished.lock() {
+        *slot = Some(outcome.clone());
+    }
+    if let Some(tx) = started_tx.take() {
+        let start = match &outcome {
+            Ok(name) => Ok(PairStart::Paired { name: name.clone() }),
+            Err(error) => Err(error.clone()),
+        };
+        let _ = tx.send(start);
+    }
+    if let Some(tx) = submit_tx.take() {
+        let _ = tx.send(outcome);
+    }
+}
+
+/// Runs BLE pairing on its own STA thread. When Windows asks for a PIN (`ProvidePin`),
+/// the pairing is held open via `args.GetDeferral()` and `started_tx` is told `PairStart::Pin`:
+/// by that point Windows has already exchanged SMP keys with the radio, so a radio with a
+/// dynamic per-pairing PIN is showing it on its screen. Once the user submits the PIN (or
+/// cancels), the deferral is completed and the pairing finishes.
+fn run_pairing(
+    mac: u64,
+    started_tx: Sender<Result<PairStart, String>>,
+    commands_rx: Receiver<PinCommand>,
+    finished: Arc<Mutex<Option<Result<String, String>>>>,
+    _exited: Sender<()>,
+) {
+    let mut started_tx = Some(started_tx);
+    let mut submit_tx: Option<Sender<Result<String, String>>> = None;
+
+    // SAFETY: first thing on this thread this module owns.
+    let _ = unsafe { RoInitialize(RO_INIT_SINGLETHREADED) };
+
+    let setup = (|| -> Result<(String, DeviceInformationCustomPairing), String> {
+        let device = wait(
+            BluetoothLEDevice::FromBluetoothAddressAsync(mac).map_err(|e| err("device", e))?,
+            "device lookup",
+        )?;
+        let name = device.Name().map(|n| n.to_string()).unwrap_or_default();
+        let pairing = device
+            .DeviceInformation()
+            .and_then(|i| i.Pairing())
+            .map_err(|e| err("pairing", e))?;
+        if pairing.IsPaired().map_err(|e| err("pairing", e))? {
+            log::info!("winble: dropping the old bond with {name}");
+            let result = wait(pairing.UnpairAsync().map_err(|e| err("unpair", e))?, "unpair")?;
+            let status = result.Status().map_err(|e| err("unpair", e))?;
+            if status != DeviceUnpairingResultStatus::Unpaired {
+                return Err(format!("unpair: {status:?}"));
+            }
+        }
+        let custom = pairing.Custom().map_err(|e| err("pairing", e))?;
+        Ok((name, custom))
+    })();
+
+    let (name, custom) = match setup {
+        Ok(pair) => pair,
+        Err(error) => {
+            finish_pairing(&finished, &mut started_tx, &mut submit_tx, Err(error));
+            return;
+        }
+    };
+
+    enum Requested {
+        ProvidePin { args: DevicePairingRequestedEventArgs, deferral: Deferral },
+        Confirmed,
+    }
+    let (req_tx, req_rx) = mpsc::channel::<Requested>();
+    let req_tx = Mutex::new(req_tx);
+
+    let token = match custom.PairingRequested(&TypedEventHandler::new(
+        move |_: windows::core::Ref<DeviceInformationCustomPairing>, args: windows::core::Ref<DevicePairingRequestedEventArgs>| {
+            let Some(args) = args.as_ref() else { return Ok(()) };
+            let kind = args.PairingKind()?;
+            log::info!("winble: pairing asks for {kind:?}");
+            if kind == DevicePairingKinds::ProvidePin {
+                let deferral = args.GetDeferral()?;
+                if let Ok(tx) = req_tx.lock() {
+                    let _ = tx.send(Requested::ProvidePin { args: args.clone(), deferral });
+                }
+            } else {
+                args.Accept()?;
+                if let Ok(tx) = req_tx.lock() {
+                    let _ = tx.send(Requested::Confirmed);
+                }
+            }
+            Ok(())
+        },
+    )) {
+        Ok(token) => token,
+        Err(error) => {
+            finish_pairing(&finished, &mut started_tx, &mut submit_tx, Err(err("pairing", error)));
+            return;
+        }
+    };
+
+    let kinds = DevicePairingKinds::ProvidePin | DevicePairingKinds::ConfirmOnly | DevicePairingKinds::ConfirmPinMatch;
+    let op = match custom.PairWithProtectionLevelAsync(kinds, DevicePairingProtectionLevel::EncryptionAndAuthentication) {
+        Ok(op) => op,
+        Err(error) => {
+            let _ = custom.RemovePairingRequested(token);
+            finish_pairing(&finished, &mut started_tx, &mut submit_tx, Err(err("pairing", error)));
+            return;
+        }
+    };
+
+    let mut pending_pin: Option<(DevicePairingRequestedEventArgs, Deferral)> = None;
+    let mut deadline = Instant::now() + GATT_DEADLINE;
+    let mut cancelled = false;
+
+    let outcome: Result<String, String> = loop {
+        pump();
+
+        while let Ok(req) = req_rx.try_recv() {
+            match req {
+                Requested::ProvidePin { args, deferral } => {
+                    if cancelled {
+                        let _ = deferral.Complete();
+                    } else {
+                        pending_pin = Some((args, deferral));
+                        deadline = Instant::now() + PAIR_PIN_DEADLINE;
+                        if let Some(tx) = started_tx.take() {
+                            let _ = tx.send(Ok(PairStart::Pin { name: name.clone() }));
+                        }
+                    }
+                }
+                Requested::Confirmed => {
+                    deadline = Instant::now() + PAIR_CONFIRM_DEADLINE;
+                }
+            }
+        }
+
+        loop {
+            match commands_rx.try_recv() {
+                Ok(PinCommand::Submit { pin, done }) => {
+                    if let Some((args, deferral)) = pending_pin.take() {
+                        let hpin = HSTRING::from(pin.trim());
+                        let accepted = args.AcceptWithPin(&hpin);
+                        let completed = deferral.Complete();
+                        if let Err(error) = accepted.and(completed) {
+                            let msg = err("pairing", error);
+                            let _ = done.send(Err(msg));
+                            let _ = op.Cancel();
+                            cancelled = true;
+                            deadline = Instant::now() + Duration::from_secs(2);
+                        } else {
+                            submit_tx = Some(done);
+                            deadline = Instant::now() + GATT_DEADLINE;
+                        }
+                    } else {
+                        let _ = done.send(Err("pairing is not waiting for a PIN".into()));
+                    }
+                }
+                Ok(PinCommand::Cancel) => {
+                    cancelled = true;
+                    if let Some((_, deferral)) = pending_pin.take() {
+                        let _ = deferral.Complete();
+                    }
+                    let _ = op.Cancel();
+                    deadline = Instant::now() + Duration::from_secs(2);
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    if submit_tx.is_none() && !cancelled {
+                        cancelled = true;
+                        if let Some((_, deferral)) = pending_pin.take() {
+                            let _ = deferral.Complete();
+                        }
+                        let _ = op.Cancel();
+                        deadline = Instant::now() + Duration::from_secs(2);
+                    }
+                    break;
+                }
+            }
+        }
+
+        let status = match op.Status() {
+            Ok(s) => s,
+            Err(error) => break Err(err("pairing", error)),
+        };
+        match status {
+            AsyncStatus::Started => {
+                if Instant::now() > deadline {
+                    if let Some((_, deferral)) = pending_pin.take() {
+                        let _ = deferral.Complete();
+                    }
+                    let _ = op.Cancel();
+                    if cancelled {
+                        break Err("pairing cancelled".into());
+                    }
+                    log::warn!("winble: pairing {name} timed out");
+                    break Err(format!("pairing {name}: Windows gave no answer"));
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            AsyncStatus::Completed => {
+                if let Some((_, deferral)) = pending_pin.take() {
+                    let _ = deferral.Complete();
+                }
+                match op.GetResults().and_then(|r| r.Status()) {
+                    Ok(DevicePairingResultStatus::Paired) => {
+                        log::info!("winble: paired with {name}");
+                        break Ok(name.clone());
+                    }
+                    Ok(result_status) => {
+                        log::warn!("winble: pairing {name} ended with {result_status:?}");
+                        break Err(format!("pairing {name}: {result_status:?}. Check the PIN on the radio's screen."));
+                    }
+                    Err(error) => break Err(err("pairing", error)),
+                }
+            }
+            _ => {
+                if let Some((_, deferral)) = pending_pin.take() {
+                    let _ = deferral.Complete();
+                }
+                let code = op.ErrorCode().map(|c| c.0 as u32).unwrap_or(0);
+                break Err(format!("pairing {name}: {status:?} 0x{code:08X}"));
+            }
+        }
+    };
+
+    let _ = custom.RemovePairingRequested(token);
+    finish_pairing(&finished, &mut started_tx, &mut submit_tx, outcome);
+}
+
+/// Starts BLE pairing with a radio so its screen shows the PIN before the user types it.
+/// Returns `PairStart::Pin` once Windows has asked for a PIN (holding pairing open via deferral),
+/// or `PairStart::Paired` if pairing completed without needing a PIN.
 #[tauri::command]
-pub async fn winble_pair(app: AppHandle, address: String, pin: String) -> Result<String, String> {
+pub async fn winble_begin_pair(app: AppHandle, address: String) -> Result<PairStart, String> {
     let mac = parse_address(&address)?;
-    on_worker(&app, move |worker| {
+    // If we are already holding a live PIN prompt open for this exact radio, keep it.
+    {
+        let state = app.state::<WinBle>();
+        if let Ok(slot) = state.pairing.lock() {
+            if let Some(active) = slot.as_ref() {
+                let still_waiting = active.finished.lock().map(|f| f.is_none()).unwrap_or(false);
+                if active.mac == mac && still_waiting {
+                    return Ok(PairStart::Pin { name: active.name.clone() });
+                }
+            }
+        };
+    }
+
+    // Close any previous pairing and any open GATT link before initiating pairing.
+    {
+        let owner = app.clone();
+        tauri::async_runtime::spawn_blocking(move || owner.state::<WinBle>().cancel_pairing())
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    on_worker(&app, |worker| {
         if let Some(old) = worker.link.take() {
             close_link(old);
         }
-        pair(mac, &pin)
+        Ok(())
+    })
+    .await?;
+
+    let (started_tx, started_rx) = mpsc::channel::<Result<PairStart, String>>();
+    let (commands_tx, commands_rx) = mpsc::channel::<PinCommand>();
+    let (exited_tx, exited_rx) = mpsc::channel::<()>();
+    let finished = Arc::new(Mutex::new(None));
+    let id = app.state::<WinBle>().next_pairing_id.fetch_add(1, Ordering::Relaxed);
+
+    let finished_thread = finished.clone();
+    std::thread::Builder::new()
+        .name("winble-pair".into())
+        .spawn(move || run_pairing(mac, started_tx, commands_rx, finished_thread, exited_tx))
+        .map_err(|e| format!("pairing thread: {e}"))?;
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        started_rx
+            .recv_timeout(PAIR_CONFIRM_DEADLINE + Duration::from_secs(10))
+            .map_err(|_| "pairing thread exited unexpectedly".to_string())?
     })
     .await
+    .map_err(|e| e.to_string())?;
+
+    match result {
+        Ok(PairStart::Pin { name }) => {
+            if let Ok(mut slot) = app.state::<WinBle>().pairing.lock() {
+                *slot = Some(ActivePairing {
+                    id,
+                    mac,
+                    name: name.clone(),
+                    commands: commands_tx,
+                    finished,
+                    exited: exited_rx,
+                });
+            }
+            Ok(PairStart::Pin { name })
+        }
+        other => other,
+    }
+}
+
+/// Submits the PIN read from the radio's screen to the pairing held open by `winble_begin_pair`.
+#[tauri::command]
+pub async fn winble_submit_pin(app: AppHandle, address: String, pin: String) -> Result<String, String> {
+    let mac = parse_address(&address)?;
+    let owner = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = owner.state::<WinBle>();
+        let (id, commands, finished) = {
+            let mut slot = state.pairing.lock().map_err(|_| "pairing lock".to_string())?;
+            match slot.as_ref() {
+                Some(active) if active.mac == mac => {
+                    if let Some(done) = active.finished.lock().ok().and_then(|f| f.clone()) {
+                        *slot = None;
+                        return done;
+                    }
+                    (active.id, active.commands.clone(), active.finished.clone())
+                }
+                _ => return Err("pairing expired before the PIN was entered; try again".into()),
+            }
+        };
+        let (done_tx, done_rx) = mpsc::channel::<Result<String, String>>();
+        if commands.send(PinCommand::Submit { pin, done: done_tx }).is_err() {
+            state.clear_pairing_if(id);
+            let prior = finished.lock().ok().and_then(|f| f.clone());
+            return prior.unwrap_or_else(|| Err("pairing ended before the PIN was entered; try again".into()));
+        }
+        let outcome = done_rx
+            .recv_timeout(GATT_DEADLINE + Duration::from_secs(5))
+            .map_err(|_| "pairing gave no answer after the PIN was entered".to_string())
+            .and_then(|r| r);
+        state.clear_pairing_if(id);
+        outcome
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Aborts an in-progress interactive pairing (e.g. when the user clicks Cancel).
+#[tauri::command]
+pub async fn winble_cancel_pair(app: AppHandle) -> Result<(), String> {
+    let owner = app.clone();
+    tauri::async_runtime::spawn_blocking(move || owner.state::<WinBle>().cancel_pairing())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// Opens the link. Frames the radio sends arrive on `on_frame`; `winble:closed` says when it drops.
 #[tauri::command]
 pub async fn winble_connect(app: AppHandle, address: String, on_frame: Channel<Vec<u8>>) -> Result<Connected, String> {
     let mac = parse_address(&address)?;
+    {
+        let owner = app.clone();
+        tauri::async_runtime::spawn_blocking(move || owner.state::<WinBle>().cancel_pairing())
+            .await
+            .map_err(|e| e.to_string())?;
+    }
     let events = app.clone();
     on_worker(&app, move |worker| {
         if let Some(old) = worker.link.take() {
@@ -804,6 +1144,12 @@ pub async fn winble_send(app: AppHandle, data: Vec<u8>) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn winble_disconnect(app: AppHandle, link: Option<u64>) -> Result<(), String> {
+    {
+        let owner = app.clone();
+        tauri::async_runtime::spawn_blocking(move || owner.state::<WinBle>().cancel_pairing())
+            .await
+            .map_err(|e| e.to_string())?;
+    }
     on_worker(&app, move |worker| {
         // A connect given up on can finish after the next one has begun, and
         // its close then waits behind that connect: it must not take the new link down.

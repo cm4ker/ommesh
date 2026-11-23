@@ -77,8 +77,8 @@ export class TauriWinBleTransport extends BaseTransport {
 
 /** Radios connected to before, so a launch can reach one without a scan. */
 const known = knownList("meshnet.winble.known", "ble");
-/** How the firmware names a radio; anything else with its service is a phone sharing one. */
-const RADIO_PREFIX = "MeshCore-";
+
+type PairStart = { status: "paired"; name: string } | { status: "pin"; name: string };
 
 export const tauriWinBleConnector: Connector = {
   id: "tauri-winble",
@@ -125,14 +125,19 @@ export const tauriWinBleConnector: Connector = {
       try {
         ({ name, link } = await open());
       } catch (error) {
-        // A phone sharing its radio has no PIN to type: it asks on its own
-        // screen, and Windows takes any answer. So it is paired at once, and
-        // only a radio (named MeshCore-…) is left to the PIN prompt.
-        if (!/NEEDS_PAIRING/.test(String(error)) || device.name.startsWith(RADIO_PREFIX)) throw error;
-        await invoke<string>("winble_pair", { address: device.id, pin: "" });
+        if (!/NEEDS_PAIRING/.test(String(error))) throw error;
+        // Start Windows pairing before asking for the PIN: radios with a
+        // dynamic per-pairing passkey only generate and display the PIN once
+        // SMP pairing begins. A phone sharing its radio completes without
+        // asking for a PIN (`status: "paired"`), so we reconnect right away.
+        const started = await invoke<PairStart>("winble_begin_pair", { address: device.id });
+        if (started.status === "pin") {
+          throw new NeedsPairingError(t("connect.error.notPaired", { name: device.name }));
+        }
         ({ name, link } = await open());
       }
     } catch (error) {
+      if (error instanceof NeedsPairingError) throw error;
       const text = String(error);
       if (/NEEDS_PAIRING/.test(text)) {
         throw new NeedsPairingError(t("connect.error.notPaired", { name: device.name }));
@@ -145,7 +150,23 @@ export const tauriWinBleConnector: Connector = {
     return transport;
   },
 
+  async beginPair(device) {
+    const started = await invoke<PairStart>("winble_begin_pair", { address: device.id });
+    return started.status === "pin";
+  },
+
   async pair(device, pin) {
-    await invoke<string>("winble_pair", { address: device.id, pin });
+    try {
+      await invoke<string>("winble_submit_pin", { address: device.id, pin });
+    } catch (error) {
+      // Re-open pairing right away so a radio with a random PIN displays a
+      // fresh code on its screen before the user retries.
+      await invoke<PairStart>("winble_begin_pair", { address: device.id }).catch(() => undefined);
+      throw error;
+    }
+  },
+
+  async cancelPair() {
+    await invoke("winble_cancel_pair").catch(() => undefined);
   },
 };

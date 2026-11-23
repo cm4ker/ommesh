@@ -2,6 +2,11 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
+## Unreleased
+
+### Mesh and the map
+- In the console, the Up and Down arrow keys now move through the command suggestions above the field instead of clearing what you typed, and Enter or Tab puts the chosen command into the field. Escape clears the choice or hides the suggestions, while Up and Down on an empty field (or with no suggestions up) still step through commands you already sent.
+
 ## 0.13.0 — 2026-11-23
 
 ### Chats

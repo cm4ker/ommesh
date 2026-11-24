@@ -5,6 +5,7 @@
 ## Unreleased
 
 ### Mesh and the map
+- Ommesh now recognizes radios and remote repeaters/rooms running `meshcore-rs` via the `MCRS` v1 extension protocol (`0x70`): shows the `meshcore-rs` version and build in radio info and node details (with an on-demand query for remote nodes), and unlocks `meshcore-rs` CLI suggestions and command reference filtered by each board's capabilities (`fw.*`, `time.*`, `screen`, `led`, `buzzer`, `rtpath`, `dyncr`, `room`, `sensor scan/add/del`, `mqtt.ommesh`, `log`, etc.) while keeping upstream MeshCore radios untouched.
 - In the console, the Up and Down arrow keys now move through the command suggestions above the field instead of clearing what you typed, and Enter or Tab puts the chosen command into the field. Escape clears the choice or hides the suggestions, while Up and Down on an empty field (or with no suggestions up) still step through commands you already sent.
 
 ## 0.13.0 — 2026-11-23

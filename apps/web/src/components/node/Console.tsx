@@ -51,6 +51,7 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
   const [picked, setPicked] = useState<number | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const log = useRef<HTMLDivElement>(null);
+  const picks = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   // Holds off an implicit form submit from the same Enter keypress that just filled a chosen suggestion.
   const holdSubmit = useRef(false);
@@ -187,6 +188,11 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
   const activeHint = activePick !== null ? (shown[activePick]?.about ? (shown[activePick]?.hint ?? null) : hint) : hint;
   const showPick = Boolean(typed && recall === null && !dismissed && (shown.length > 0 || activeHint));
 
+  useEffect(() => {
+    if (activePick === null) return;
+    picks.current?.querySelector<HTMLElement>(".on")?.scrollIntoView({ block: "nearest" });
+  }, [activePick]);
+
   const past = entries.filter((e) => e.command && !e.command.includes("••")).map((e) => e.command);
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.nativeEvent.isComposing) return;
@@ -259,7 +265,7 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
       <form className={["compose", "console-compose", focused ? "focus" : "", draft ? "has" : "", online ? "" : "waiting"].join(" ")} onSubmit={submit}>
         {/* Nothing typed: the everyday commands, a tap away. Something typed: what it can be, and what that does. */}
         {showPick ? (
-          <div className="cli-pick">
+          <div className="cli-pick" ref={picks}>
             {shown.length > 0 ? (
               <div className="cli-pick-list" role="listbox" aria-label={t("node.console.command")}>
                 {shown.map((s, i) => (

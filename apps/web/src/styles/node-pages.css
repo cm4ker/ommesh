@@ -228,7 +228,9 @@ button.c-cmd:focus-visible {
   min-height: 0;
   display: flex;
 }
-/* What is typed can be: the commands that match it, each with a line about what it does. */
+/* What is typed can be: the commands that match it, each with a line about what it does.
+   Floats over the console as the mention list floats over a chat, so the log stays put
+   behind it and the choices stand apart from the lines above them. */
 .cli-pick,
 .cli-pick-list {
   display: flex;
@@ -236,7 +238,20 @@ button.c-cmd:focus-visible {
   gap: 2px;
 }
 .cli-pick {
-  padding: 0 0 var(--space-1);
+  position: absolute;
+  left: var(--space-2);
+  right: var(--space-2);
+  bottom: 100%;
+  z-index: 5;
+  max-height: min(340px, 45dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-block: 4px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--elevated);
+  box-shadow: 0 8px 28px rgb(var(--shadow-rgb) / 0.24);
 }
 .cli-pick-row {
   display: flex;
@@ -245,7 +260,7 @@ button.c-cmd:focus-visible {
   width: 100%;
   padding: var(--space-2) var(--space-3);
   border: 0;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
   background: none;
   color: inherit;
   font: inherit;
@@ -276,16 +291,22 @@ button.c-cmd:focus-visible {
 }
 /* How many more there are, and where: the rest waits in the reference. */
 .cli-pick-more {
-  padding: 2px var(--space-3) 0;
+  padding: var(--space-1) var(--space-3);
   font-size: var(--text-xs);
   color: var(--text-faint);
 }
 /* What the value after the chosen command is. */
 .cli-pick-hint {
-  padding: 2px var(--space-3) var(--space-1);
+  padding: var(--space-1) var(--space-3);
   font-size: var(--text-xs);
   line-height: 1.35;
   color: var(--text-muted);
+}
+.cli-pick-list + .cli-pick-more,
+.cli-pick-list + .cli-pick-hint {
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
 }
 /* The reference of every command: a panel beside the console, in the console's own tab. */
 .cli-help {

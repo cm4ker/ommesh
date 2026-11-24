@@ -15,6 +15,7 @@ const JOBS: Record<string, Key> = {
   "neighbor.remove ": "node.queue.job.neighbourReset",
   "access list": "node.queue.job.accessList",
   "owner info": "node.queue.job.ownerInfo",
+  "meshcore-rs info": "node.queue.job.mcrsInfo",
   "min/max/avg": "node.queue.job.series",
 };
 

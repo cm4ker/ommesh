@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from "react";
-import { AdvType, type ConsoleEntry, type ContactRecord } from "@meshnet/meshcore";
+import { AdvType, isMeshCoreRsVersion, type ConsoleEntry, type ContactRecord } from "@meshnet/meshcore";
 import { t } from "../../i18n/index.js";
-import { stepHistory, stepPick, suggest } from "../../lib/cli.js";
+import { stepHistory, stepPick, suggest, type CliContext } from "../../lib/cli.js";
 import { dayLabel, timeOfDay } from "../../lib/format.js";
 import { useWide } from "../../lib/layout.js";
 import { usePress } from "../../lib/press.js";
@@ -19,7 +19,7 @@ import { CommandList } from "./CommandHelp.js";
 import { SignIn } from "./SignIn.js";
 
 /** Commands that take a node down, move it, or lock people out. */
-const DANGEROUS = /^(reboot|clkreboot|erase|start ota|poweroff|shutdown|set radio |set pin |password |set prv\.key|set guest\.password|setperm |set wifi\.(ssid|pwd) )/;
+const DANGEROUS = /^(reboot|clkreboot|erase|start ota|fw (update|install|rollback|wifi|ble)\b|poweroff|shutdown|set radio |set pin |password |set prv\.key|set guest\.password|setperm |set wifi\.(ssid|pwd) |set fw\.(root|owner) |set room )/;
 
 /** When the app started; the console keeps what came before it. */
 const STARTED = Date.now();
@@ -68,6 +68,12 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
   // A person's radio (MeshCore 1.18) answers only those it lets control it, and there is no sign-in to find a way back with.
   const person = contact?.type === AdvType.Chat;
   const target = contact && !person ? "node" : "radio";
+  const cliCtx: CliContext =
+    contact === null
+      ? { mcrs: state.mcrs, isRs: isMeshCoreRsVersion(state.device?.firmwareVersion) }
+      : !person
+        ? { mcrs: state.nodeMcrs[key] ?? null, isRs: isMeshCoreRsVersion(state.ownerInfo[key]?.firmware) }
+        : {};
 
   /** A sign-in by flood with the saved password, or the sheet to type one. */
   const relearn = async () => {
@@ -174,7 +180,7 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
   };
 
   const typed = draft.trim();
-  const { chips, hint, total } = suggest(draft, target);
+  const { chips, hint, total } = suggest(draft, target, 12, cliCtx);
   // While walking sent history or after Escape, keep suggestions out of the way until the reader edits the field.
   const shown = typed && recall === null && !dismissed ? chips.slice(0, PICK_ROWS) : [];
   const activePick = picked !== null && picked < shown.length ? picked : null;
@@ -385,7 +391,7 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
               autoCapitalize="off"
               spellCheck={false}
             />
-            <CommandList target={target} query={query} onPick={pick} />
+            <CommandList target={target} ctx={cliCtx} query={query} onPick={pick} />
           </aside>
         </div>
       ) : (
@@ -393,7 +399,7 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
       )}
       {!wide ? (
         <Sheet open={helping} onClose={() => setHelping(false)} title={t("cli.title")} find={<SearchField value={query} onValue={setQuery} aria-label={t("cli.search")} placeholder={t("cli.search")} />}>
-          <CommandList target={target} query={query} onPick={pick} />
+          <CommandList target={target} ctx={cliCtx} query={query} onPick={pick} />
         </Sheet>
       ) : null}
       {contact && !person ? (

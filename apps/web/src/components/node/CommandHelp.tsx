@@ -1,5 +1,5 @@
 import { t } from "../../i18n/index.js";
-import { CLI_GROUPS, CLI_GROUP_TITLE, COMMANDS, RADIO_COMMANDS, type CliTarget } from "../../lib/cli.js";
+import { CLI_GROUPS, CLI_GROUP_TITLE, commandsFor, type CliContext, type CliTarget } from "../../lib/cli.js";
 import { ChevronRightIcon } from "../Icons.js";
 
 /**
@@ -8,8 +8,8 @@ import { ChevronRightIcon } from "../Icons.js";
  * over it (`SearchField`) finds one by its name or by a word from that line:
  * "battery" finds what reads it.
  */
-export function CommandList({ target, query, onPick }: { target: CliTarget; query: string; onPick: (command: string) => void }) {
-  const list = target === "radio" ? RADIO_COMMANDS : COMMANDS;
+export function CommandList({ target, ctx, query, onPick }: { target: CliTarget; ctx?: CliContext; query: string; onPick: (command: string) => void }) {
+  const list = commandsFor(target, ctx);
   const words = query.trim().toLowerCase();
   const found = list.filter((command) => !words || command.text.toLowerCase().includes(words) || t(command.about).toLowerCase().includes(words));
   return (

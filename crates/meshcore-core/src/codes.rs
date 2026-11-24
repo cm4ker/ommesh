@@ -63,6 +63,8 @@ pub const CMD_SEND_CHANNEL_DATA: u8 = 62;
 pub const CMD_SET_DEFAULT_FLOOD_SCOPE: u8 = 63;
 pub const CMD_GET_DEFAULT_FLOOD_SCOPE: u8 = 64;
 pub const CMD_RUN_CLI_COMMAND: u8 = 66;
+/// `meshcore-rs` extension command (`[0x70, subcmd, ...args]`), answered with [`RESP_MCRS`].
+pub const CMD_MCRS: u8 = 0x70;
 
 // Radio → app, in answer to a command. Always below 0x80.
 pub const RESP_OK: u8 = 0;
@@ -95,8 +97,10 @@ pub const RESP_ALLOWED_REPEAT_FREQ: u8 = 26;
 pub const RESP_CHANNEL_DATA_RECV: u8 = 27;
 pub const RESP_DEFAULT_FLOOD_SCOPE: u8 = 28;
 pub const RESP_CLI_REPLY: u8 = 29;
-/// The highest answer code this core knows.
+/// The highest standard upstream answer code this core knows.
 pub const RESP_LAST: u8 = RESP_CLI_REPLY;
+/// `meshcore-rs` extension answer (`[0x70, subcmd, ...body]`).
+pub const RESP_MCRS: u8 = 0x70;
 
 // Radio → app, unprompted. Always 0x80 and above, which is how they are told apart.
 pub const PUSH_MSG_WAITING: u8 = 0x83;

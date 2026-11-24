@@ -5,6 +5,7 @@
  * Layouts are the firmware's `handleCmdFrame`, byte for byte.
  */
 
+import { McrsSub } from "./mcrs.js";
 import { ByteWriter, unixNow, utf8 } from "./bytes.js";
 import {
   APP_PROTOCOL_VERSION,
@@ -329,6 +330,18 @@ export function ownerInfoRequest(): Uint8Array {
   return new ByteWriter().u8(ReqType.GetOwnerInfo).toBytes();
 }
 
+/** A `meshcore-rs` extension request (`[0x70, subcmd, ...args]`) to a remote repeater or room. */
+export function mcrsNodeRequest(sub: number, payload?: Uint8Array): Uint8Array {
+  const w = new ByteWriter().u8(ReqType.Mcrs).u8(sub);
+  if (payload && payload.length > 0) w.bytes(payload);
+  return w.toBytes();
+}
+
+/** Asks a remote `meshcore-rs` repeater or room for its `MCRS` version, build and capabilities. */
+export function mcrsNodeInfoRequest(): Uint8Array {
+  return mcrsNodeRequest(McrsSub.Info);
+}
+
 /** A sensor's min, max and mean for each series over one window, given as seconds ago. */
 export function avgMinMaxRequest(startSecsAgo: number, endSecsAgo = 0): Uint8Array {
   return new ByteWriter().u8(ReqType.GetAvgMinMax).u32(startSecsAgo).u32(endSecsAgo).u8(0).u8(0).toBytes();
@@ -419,6 +432,18 @@ export function getCustomVars(): Uint8Array {
 /** A console line for this radio itself (v14), as typed: the radio answers with `CliReply`. */
 export function runCliCommand(text: string): Uint8Array {
   return new ByteWriter().u8(Cmd.RunCliCommand).string(text).toBytes();
+}
+
+/** A `meshcore-rs` extension command (`[0x70, subcmd, ...args]`) for the connected companion radio. */
+export function mcrsCommand(sub: number, payload?: Uint8Array): Uint8Array {
+  const w = new ByteWriter().u8(Cmd.Mcrs).u8(sub);
+  if (payload && payload.length > 0) w.bytes(payload);
+  return w.toBytes();
+}
+
+/** Asks the connected `meshcore-rs` companion for its `MCRS` version, build and capabilities. */
+export function mcrsInfo(): Uint8Array {
+  return mcrsCommand(McrsSub.Info);
 }
 
 export function setCustomVar(name: string, value: string): Uint8Array {

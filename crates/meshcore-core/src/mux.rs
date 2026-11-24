@@ -659,8 +659,9 @@ impl Mux {
         if command[0] == CMD_GET_CONTACTS && !self.streaming && code != RESP_CONTACTS_START {
             return false;
         }
-        // An answer this core does not know is still an answer, as the page takes it.
-        code > RESP_LAST || takes(command, answer)
+        // An answer this core does not know is still an answer, as the page takes it;
+        // `RESP_MCRS` is known and must match `CMD_MCRS` and its subcommand byte.
+        (code > RESP_LAST && code != RESP_MCRS) || takes(command, answer)
     }
 
     fn finish(&mut self) {
@@ -730,6 +731,7 @@ pub fn takes(command: &[u8], answer: &[u8]) -> bool {
         CMD_GET_ALLOWED_REPEAT_FREQ => &[RESP_ALLOWED_REPEAT_FREQ],
         CMD_GET_DEFAULT_FLOOD_SCOPE => &[RESP_DEFAULT_FLOOD_SCOPE],
         CMD_RUN_CLI_COMMAND => &[RESP_CLI_REPLY],
+        CMD_MCRS => return code == RESP_MCRS && command.get(1) == answer.get(1),
         CMD_EXPORT_PRIVATE_KEY => &[RESP_PRIVATE_KEY, RESP_DISABLED],
         CMD_IMPORT_PRIVATE_KEY => &[RESP_OK, RESP_DISABLED],
         CMD_SIGN_START => &[RESP_SIGN_START],
@@ -1713,5 +1715,30 @@ mod tests {
             vec![16, 2, 0],
             "the oldest went first"
         );
+    }
+
+    #[test]
+    fn mcrs_answers_match_only_their_own_command_and_subcommand() {
+        assert!(takes(&[CMD_MCRS, 0], &[RESP_MCRS, 0, 1]));
+        assert!(!takes(&[CMD_MCRS, 0], &[RESP_MCRS, 1, 1]));
+        assert!(!takes(&[CMD_DEVICE_QUERY, 3], &[RESP_MCRS, 0, 1]));
+
+        let mut rig = Rig::new();
+        rig.attach(Page)
+            .attach(Computer)
+            .up()
+            .radio_says(NO_MORE)
+            .clear();
+        rig.client_says(Page, &[CMD_MCRS, 0])
+            .client_says(Computer, &[5]);
+        assert_eq!(rig.radio, v(&[&[CMD_MCRS, 0]]));
+        // A different subcommand from another app does not finish subcommand 0.
+        rig.radio_says(&[RESP_MCRS, 1, 9]);
+        assert_eq!(rig.radio.len(), 1, "subcommand 0 still waits");
+        // The matching subcommand finishes the request and lets the queued command go.
+        rig.radio_says(&[RESP_MCRS, 0, 1]);
+        assert_eq!(rig.radio, v(&[&[CMD_MCRS, 0], &[5]]));
+        assert_eq!(rig.page, v(&[&[RESP_MCRS, 1, 9], &[RESP_MCRS, 0, 1]]));
+        assert_eq!(rig.computer, v(&[&[RESP_MCRS, 1, 9]]));
     }
 }

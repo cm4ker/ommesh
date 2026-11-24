@@ -97,6 +97,8 @@ export const Cmd = {
   SendRawPacket: 65,
   /** v14: a console command for this radio itself; the answer is `CliReply`. */
   RunCliCommand: 66,
+  /** `meshcore-rs` extension frame (`[0x70, subcmd, ...args]`); answered with `Resp.Mcrs`. */
+  Mcrs: 0x70,
 } as const;
 
 /** Radio → app, in answer to a command. Always below 0x80. */
@@ -131,6 +133,8 @@ export const Resp = {
   ChannelDataRecv: 27,
   DefaultFloodScope: 28,
   CliReply: 29,
+  /** `meshcore-rs` extension reply (`[0x70, subcmd, ...body]`). */
+  Mcrs: 0x70,
 } as const;
 
 /** Radio → app, unprompted. Always 0x80 and above, which is how they are told apart. */
@@ -287,6 +291,8 @@ export const ReqType = {
   /** Sensors on MeshCore 1.18: send the readings by themselves when they move (see `protocol/push.ts`). */
   Subscribe: 0x08,
   Unsubscribe: 0x09,
+  /** `meshcore-rs` extension request (`[0x70, subcmd, ...args]`) to a repeater or room. */
+  Mcrs: 0x70,
 } as const;
 
 /** The low two bits of a client's permissions on a repeater, room or sensor (`ClientACL.h`). */

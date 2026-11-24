@@ -35,6 +35,7 @@ function state(messages: MessageRecord[]): SessionState {
     status: "ready",
     link: null,
     device: null,
+    mcrs: null,
     self: null,
     contacts: {
       [BOB]: {
@@ -79,6 +80,7 @@ function state(messages: MessageRecord[]): SessionState {
     neighbours: {},
     accessLists: {},
     ownerInfo: {},
+    nodeMcrs: {},
     series: {},
     nodeSettings: {},
     consoles: {},

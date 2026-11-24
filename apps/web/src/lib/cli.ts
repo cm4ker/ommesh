@@ -12,16 +12,18 @@
  * knowing its name.
  */
 
+import { hasMcrsCap, hasMcrsVersion, McrsCap, type McrsInfo } from "@meshnet/meshcore";
 import { t, type Key } from "../i18n/index.js";
 
 /** The parts of the reference, in the order it shows them. */
-export type CliGroup = "node" | "advert" | "where" | "radio" | "repeat" | "access" | "power" | "net" | "sensors";
+export type CliGroup = "node" | "updates" | "advert" | "where" | "radio" | "repeat" | "access" | "power" | "net" | "sensors";
 
-export const CLI_GROUPS: CliGroup[] = ["node", "advert", "where", "radio", "repeat", "access", "power", "net", "sensors"];
+export const CLI_GROUPS: CliGroup[] = ["node", "updates", "advert", "where", "radio", "repeat", "access", "power", "net", "sensors"];
 
 /** What a group is called: the heading over its commands. */
 export const CLI_GROUP_TITLE: Record<CliGroup, Key> = {
   node: "cli.group.node",
+  updates: "cli.group.updates",
   advert: "cli.group.advert",
   where: "cli.group.where",
   radio: "cli.group.radio",
@@ -43,6 +45,18 @@ export interface CliCommand {
   about: Key;
   /** Where the reference puts it. */
   group: CliGroup;
+  /** Minimum `MCRS_VERSION` required; omitted for upstream MeshCore commands. */
+  mcrs?: number;
+  /** Optional `McrsCap` bitmask required when `McrsInfo` is known. */
+  cap?: number;
+}
+
+/** What is known about the console target's firmware, used to gate `meshcore-rs` commands. */
+export interface CliContext {
+  /** `MCRS` info read via opcode `0x70`, when available. */
+  mcrs?: McrsInfo | null;
+  /** True when the target is known to run `meshcore-rs` even without `mcrs` (e.g. `-rs` version string). */
+  isRs?: boolean;
 }
 
 const ONOFF = ["on", "off"];
@@ -59,6 +73,8 @@ interface Setting {
   write?: Key;
   arg?: Key;
   values?: string[];
+  mcrs?: number;
+  cap?: number;
 }
 
 const SETTINGS: Setting[] = [
@@ -190,7 +206,19 @@ const PLAIN: CliCommand[] = [
 function commandsOf(plain: CliCommand[], settings: Setting[]): CliCommand[] {
   return [
     ...plain,
-    ...settings.flatMap((s) => (s.read ? [{ text: `get ${s.key}`, about: s.read, group: s.group }] : [])),
+    ...settings.flatMap((s) =>
+      s.read
+        ? [
+            {
+              text: `get ${s.key}`,
+              about: s.read,
+              group: s.group,
+              ...(s.mcrs !== undefined ? { mcrs: s.mcrs } : {}),
+              ...(s.cap !== undefined ? { cap: s.cap } : {}),
+            },
+          ]
+        : [],
+    ),
     ...settings.flatMap((s) =>
       s.write
         ? [
@@ -200,6 +228,8 @@ function commandsOf(plain: CliCommand[], settings: Setting[]): CliCommand[] {
               group: s.group,
               ...(s.arg ? { arg: s.arg } : {}),
               ...(s.values ? { values: s.values } : {}),
+              ...(s.mcrs !== undefined ? { mcrs: s.mcrs } : {}),
+              ...(s.cap !== undefined ? { cap: s.cap } : {}),
             },
           ]
         : [],
@@ -252,8 +282,101 @@ const RADIO_PLAIN: CliCommand[] = [
 
 export const RADIO_COMMANDS: CliCommand[] = commandsOf(RADIO_PLAIN, RADIO_SETTINGS);
 
+/** `meshcore-rs` settings common to both companions and repeaters/rooms. */
+const MCRS_SHARED_SETTINGS: Setting[] = [
+  { key: "fw.auto", group: "updates", read: "cli.about.fw.auto", write: "cli.about.fw.auto.set", values: ["off", "download", "install"], mcrs: 1 },
+  { key: "fw.channel", group: "updates", read: "cli.about.fw.channel", write: "cli.about.fw.channel.set", values: ["stable", "dev"], mcrs: 1 },
+  { key: "fw.source", group: "updates", read: "cli.about.fw.source", write: "cli.about.fw.source.set", arg: "node.cli.fwSource", values: ["auto"], mcrs: 1 },
+  { key: "fw.server", group: "updates", read: "cli.about.fw.server", write: "cli.about.fw.server.set", arg: "node.cli.fwServer", mcrs: 1, cap: McrsCap.Wifi },
+  { key: "fw.root", group: "updates", read: "cli.about.fw.root", write: "cli.about.fw.root.set", arg: "node.cli.fwKeys", mcrs: 1 },
+  { key: "fw.owner", group: "updates", read: "cli.about.fw.owner", write: "cli.about.fw.owner.set", arg: "node.cli.fwKeys", mcrs: 1 },
+  { key: "time.status", group: "node", read: "cli.about.time.status", mcrs: 1, cap: McrsCap.TimeSync },
+  { key: "time.sync", group: "node", read: "cli.about.time.sync", write: "cli.about.time.sync.set", values: ["off", "listen", "auto"], mcrs: 1, cap: McrsCap.TimeSync },
+  { key: "screen", group: "power", read: "cli.about.screen", write: "cli.about.screen.set", values: ["auto", "manual", "off"], mcrs: 1, cap: McrsCap.Screen },
+  { key: "led", group: "power", read: "cli.about.led", write: "cli.about.led.set", values: ONOFF, mcrs: 1, cap: McrsCap.Led },
+];
+
+/** `meshcore-rs` plain commands common to both companions and repeaters/rooms. */
+const MCRS_SHARED_PLAIN: CliCommand[] = [
+  { text: "mcrs", about: "cli.about.mcrs", group: "node", mcrs: 1 },
+  { text: "fw", about: "cli.about.fw", group: "updates", mcrs: 1 },
+  { text: "fw check", about: "cli.about.fwCheck", group: "updates", mcrs: 1 },
+  { text: "fw update", about: "cli.about.fwUpdate", group: "updates", mcrs: 1, cap: McrsCap.Ota },
+  { text: "fw install", about: "cli.about.fwInstall", group: "updates", mcrs: 1, cap: McrsCap.Ota },
+  { text: "fw rollback", about: "cli.about.fwRollback", group: "updates", mcrs: 1, cap: McrsCap.Ota },
+  { text: "time sync", about: "cli.about.timeSync", group: "node", mcrs: 1, cap: McrsCap.TimeSync },
+  { text: "sensor scan", about: "cli.about.sensorScan", group: "sensors", mcrs: 1 },
+];
+
+/** Extra `meshcore-rs` settings on a repeater or room. */
+const MCRS_NODE_SETTINGS: Setting[] = [
+  ...MCRS_SHARED_SETTINGS,
+  { key: "fw.serve", group: "updates", read: "cli.about.fw.serve", write: "cli.about.fw.serve.set", values: ONOFF, mcrs: 1, cap: McrsCap.Wifi },
+  { key: "time.serve", group: "node", read: "cli.about.time.serve", write: "cli.about.time.serve.set", values: ONOFF, mcrs: 1, cap: McrsCap.Wifi },
+  { key: "time.server", group: "node", read: "cli.about.time.server", write: "cli.about.time.server.set", arg: "node.cli.timeServer", mcrs: 1, cap: McrsCap.Wifi },
+  { key: "time.beacon", group: "node", read: "cli.about.time.beacon", write: "cli.about.time.beacon.set", arg: "node.cli.timeBeacon", mcrs: 1, cap: McrsCap.Wifi },
+  { key: "time.key", group: "node", read: "cli.about.time.key", write: "cli.about.time.key.set", arg: "node.cli.timeKey", mcrs: 1 },
+  { key: "dyncr", group: "radio", read: "cli.about.dyncr", write: "cli.about.dyncr.set", values: ONOFF, mcrs: 1 },
+  { key: "room", group: "node", read: "cli.about.room", write: "cli.about.room.set", values: ONOFF, mcrs: 1 },
+  { key: "buzzer", group: "power", read: "cli.about.buzzer", write: "cli.about.buzzer.set", values: ONOFF, mcrs: 1, cap: McrsCap.Buzzer },
+  { key: "mqtt.ommesh", group: "net", read: "cli.about.mqtt.ommesh", write: "cli.about.mqtt.ommesh.set", values: ONOFF, mcrs: 1, cap: McrsCap.Mqtt },
+];
+
+const MCRS_NODE_PLAIN: CliCommand[] = [
+  ...MCRS_SHARED_PLAIN,
+  { text: "fw ble", about: "cli.about.fwBle", group: "updates", mcrs: 1, cap: McrsCap.BleOta },
+  { text: "fw wifi", about: "cli.about.fwWifi", group: "updates", mcrs: 1, cap: McrsCap.WifiOta },
+  { text: "powersaving stats", about: "cli.about.powersavingStats", group: "power", mcrs: 1, cap: McrsCap.Powersaving },
+  { text: "sensor add ", about: "cli.about.sensorAdd", group: "sensors", arg: "node.cli.sensorAdd", mcrs: 1 },
+  { text: "sensor del ", about: "cli.about.sensorDel", group: "sensors", arg: "node.cli.sensorDel", mcrs: 1 },
+];
+
+/** Extra `meshcore-rs` settings on a connected companion radio. */
+const MCRS_RADIO_SETTINGS: Setting[] = [
+  ...MCRS_SHARED_SETTINGS,
+  { key: "rtpath", group: "repeat", read: "cli.about.rtpath", write: "cli.about.rtpath.set", values: ONOFF, mcrs: 1 },
+  { key: "ui.show_clock", group: "power", read: "cli.about.ui.show_clock", write: "cli.about.ui.show_clock.set", values: ["0", "1"], mcrs: 1, cap: McrsCap.Screen },
+  { key: "advert.interval", group: "where", read: "cli.about.advert.interval", write: "cli.about.advert.interval.set", arg: "node.cli.advertInterval", mcrs: 1 },
+  { key: "flood.advert.interval", group: "where", read: "cli.about.flood.advert.interval", write: "cli.about.flood.advert.interval.set", arg: "node.cli.floodAdvertInterval", mcrs: 1 },
+  { key: "adc.multiplier", group: "power", read: "cli.about.adc.multiplier", write: "cli.about.adc.multiplier.set", arg: "node.cli.adcMultiplier", mcrs: 1, cap: McrsCap.AdcMult },
+  { key: "wifi.enabled", group: "net", read: "cli.about.wifi.enabled.read", mcrs: 1, cap: McrsCap.Wifi },
+];
+
+const MCRS_RADIO_PLAIN: CliCommand[] = [
+  ...MCRS_SHARED_PLAIN,
+  { text: "log", about: "cli.about.log", group: "node", mcrs: 1 },
+  { text: "gps", about: "cli.about.gps", group: "where", mcrs: 1, cap: McrsCap.Gps },
+  { text: "gps ", about: "cli.about.gps.set", group: "where", values: ["on", "off", "sync", "setloc", "advert", "diag"], mcrs: 1, cap: McrsCap.Gps },
+  { text: "gps advert ", about: "cli.about.gpsAdvert", group: "where", values: ["none", "share", "prefs"], mcrs: 1 },
+];
+
+export const MCRS_NODE_COMMANDS: CliCommand[] = commandsOf(MCRS_NODE_PLAIN, MCRS_NODE_SETTINGS);
+export const MCRS_RADIO_COMMANDS: CliCommand[] = commandsOf(MCRS_RADIO_PLAIN, MCRS_RADIO_SETTINGS);
+
 /** Which console a suggestion is for: a node's over the air, or the connected radio's own. */
 export type CliTarget = "node" | "radio";
+
+/**
+ * The commands available on `target`, extended with `meshcore-rs` commands
+ * when `ctx` says the target runs it. When full `McrsInfo` is available,
+ * hardware-dependent commands are filtered by its capability bitmask.
+ */
+export function commandsFor(target: CliTarget, ctx?: CliContext): CliCommand[] {
+  const base = target === "radio" ? RADIO_COMMANDS : COMMANDS;
+  const mcrs = ctx?.mcrs ?? null;
+  if (!mcrs && !ctx?.isRs) return base;
+  const extra = target === "radio" ? MCRS_RADIO_COMMANDS : MCRS_NODE_COMMANDS;
+  const filtered = extra.filter((c) => {
+    const need = c.mcrs ?? 1;
+    if (mcrs) {
+      if (!hasMcrsVersion(mcrs, need)) return false;
+      if (c.cap !== undefined && !hasMcrsCap(mcrs, c.cap)) return false;
+      return true;
+    }
+    return need <= 1;
+  });
+  return [...base, ...filtered];
+}
 
 /** Offered before anything is typed. */
 const FIRST: Record<CliTarget, string[]> = {
@@ -287,11 +410,12 @@ export interface Suggestions {
  * both `get dutycycle` and `set dutycycle`. Each comes with the words of what
  * it does, for the list beside the field and the reference.
  */
-export function suggest(draft: string, target: CliTarget = "node", limit = 12): Suggestions {
-  const list = target === "radio" ? RADIO_COMMANDS : COMMANDS;
+export function suggest(draft: string, target: CliTarget = "node", limit = 12, ctx?: CliContext): Suggestions {
+  const list = commandsFor(target, ctx);
   const typed = draft.replace(/^\s+/, "").replace(/\s+/g, " ").toLowerCase();
   if (typed.trim() === "") {
-    const chips = FIRST[target].map((text): Suggestion => {
+    const starters = ctx?.mcrs || ctx?.isRs ? [...FIRST[target], "fw"] : FIRST[target];
+    const chips = starters.map((text): Suggestion => {
       const found = list.find((c) => c.text.trim() === text);
       return { label: text, fill: text, ...(found ? { about: found.about } : {}) };
     });
@@ -302,9 +426,17 @@ export function suggest(draft: string, target: CliTarget = "node", limit = 12): 
   const at = list.filter((c) => c.text.endsWith(" ") && full.startsWith(c.text) && (c.arg || c.values)).sort((a, b) => b.text.length - a.text.length)[0];
   if (at) {
     const rest = full.slice(at.text.length);
-    const deeper = list.some((c) => c !== at && c.text.startsWith(full) && c.text.length > full.length);
-    if (!deeper || rest.length > 0 || at.values) {
-      const chips = (at.values ?? []).filter((v) => v.startsWith(rest) && v !== rest).map((v) => ({ label: v.trim(), fill: at.text + v }));
+    const deeper = list.filter((c) => c !== at && c.text.startsWith(full) && c.text.length > full.length);
+    if (deeper.length === 0 || rest.length > 0 || at.values) {
+      const chips: Suggestion[] = (at.values ?? []).filter((v) => v.startsWith(rest) && v !== rest).map((v) => ({ label: v.trim(), fill: at.text + v }));
+      const seen = new Set(chips.map((c) => c.fill.trim()));
+      for (const d of deeper) {
+        const sub = d.text.slice(at.text.length);
+        if (!seen.has(d.text.trim()) && sub.trim() !== rest.trim()) {
+          seen.add(d.text.trim());
+          chips.push({ label: sub.trim(), fill: d.text, about: d.about, ...(d.arg ? { hint: t(d.arg) } : {}) });
+        }
+      }
       return { chips, hint: at.arg ? t(at.arg) : null, total: chips.length };
     }
   }

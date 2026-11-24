@@ -22,6 +22,7 @@ import { AclRole, AdvType, Cmd, ContactFlag, ControlType, DIRECT_TEXT_LEN, ErrCo
 import {
   accessListRequest,
   avgMinMaxRequest,
+  mcrsNodeInfoRequest,
   neighboursRequest,
   nodeDiscoverRequest,
   ownerInfoRequest,
@@ -44,6 +45,7 @@ import {
   type SeriesSummary,
 } from "./protocol/frames.js";
 import type { LppReading } from "./protocol/lpp.js";
+import { isMeshCoreRsVersion, readMcrsInfo, type McrsInfo } from "./protocol/mcrs.js";
 import { KEEP_VERSION, peerEntry, peerKeep, peerSaved, READ_MARK_PREFIX, readMarkOf, readMarkValue, textHash, type PeerSide, type ReadMark } from "./protocol/peer.js";
 import type { Transport } from "./transport.js";
 
@@ -379,10 +381,16 @@ export interface RemoteJobInfo {
   until: number | null;
 }
 
+export interface NodeMcrsInfo extends McrsInfo {
+  at: number;
+}
+
 export interface SessionState {
   status: "idle" | "connecting" | "ready" | "closed";
   link: { kind: Transport["kind"]; label: string } | null;
   device: DeviceInfo | null;
+  /** `meshcore-rs` extension info for the connected radio; null on upstream or older `-rs` builds. */
+  mcrs: McrsInfo | null;
   self: (Omit<SelfInfo, "publicKey"> & { key: string; prefix: string }) | null;
   contacts: Record<string, ContactRecord>;
   /** The `lastMod` cursor the next incremental contact fetch starts from. */
@@ -440,6 +448,8 @@ export interface SessionState {
   neighbours: Record<string, NeighbourList>;
   accessLists: Record<string, { entries: AccessRecord[]; at: number }>;
   ownerInfo: Record<string, OwnerInfo>;
+  /** `meshcore-rs` extension info read from remote repeaters and rooms, by contact key. */
+  nodeMcrs: Record<string, NodeMcrsInfo>;
   series: Record<string, SeriesWindow>;
   nodeSettings: Record<string, Record<string, NodeSetting>>;
   consoles: Record<string, ConsoleEntry[]>;
@@ -1161,6 +1171,7 @@ const EMPTY: SessionState = {
   status: "idle",
   link: null,
   device: null,
+  mcrs: null,
   self: null,
   contacts: {},
   contactsCursor: 0,
@@ -1186,6 +1197,7 @@ const EMPTY: SessionState = {
   neighbours: {},
   accessLists: {},
   ownerInfo: {},
+  nodeMcrs: {},
   series: {},
   nodeSettings: {},
   consoles: {},
@@ -1762,7 +1774,7 @@ export class MeshSession {
     this.client = client;
     // While it connects again, the radio and its history stay in sight, so the
     // chats stay on screen rather than giving way to the connect screen.
-    const staying = this.held ? { self: this.state.self, device: this.state.device, ...this.held.history } : {};
+    const staying = this.held ? { self: this.state.self, device: this.state.device, mcrs: this.state.mcrs, ...this.held.history } : {};
     this.set({
       ...EMPTY,
       ...staying,
@@ -1803,6 +1815,7 @@ export class MeshSession {
 
     try {
       const device = await client.deviceQuery();
+      const mcrs = await this.readMcrs(client, device);
       const selfInfo = await client.appStart(this.appName);
       const key = toHex(selfInfo.publicKey);
       const { publicKey: _omit, ...rest } = selfInfo;
@@ -1821,8 +1834,8 @@ export class MeshSession {
       if (this.unreadHistory === key) this.readHistoryLater(key);
       else this.stopHistoryRetry();
       this.contactsKnown = persisted && (persisted.contactsCursor > 0 || Object.keys(persisted.contacts).length > 0) ? key : null;
-      this.set({ device, self, ...this.restored(persisted), autoAdd: null, repeatFreqs: null, region: null, contactsFull: false, removing: null });
-      this.log("link", `connected to ${self.name} (${device.firmwareVersion})`);
+      this.set({ device, mcrs, self, ...this.restored(persisted), autoAdd: null, repeatFreqs: null, region: null, contactsFull: false, removing: null });
+      this.log("link", `connected to ${self.name} (${device.firmwareVersion}${mcrs ? `, MCRS v${mcrs.version}` : ""})`);
 
       await this.syncClock();
       // Ready once the radio has answered and its history is back: the link is
@@ -2021,7 +2034,9 @@ export class MeshSession {
     const messagesBefore = new Set(this.state.messages.filter((m) => m.direction === "in").map((m) => m.id));
     const run: Record<ResyncStep, () => Promise<unknown>> = {
       device: async () => {
-        this.set({ device: await client.deviceQuery() });
+        const device = await client.deviceQuery();
+        const mcrs = await this.readMcrs(client, device);
+        this.set({ device, mcrs });
         await this.readRepeatFreqs(client);
         await this.readRegion(client);
       },
@@ -4838,6 +4853,23 @@ export class MeshSession {
     }
   }
 
+  /**
+   * Queries `MCRS` extension info from a connected `meshcore-rs` companion.
+   * Upstream C++ firmware is never sent `0x70`; older `-rs` builds that refuse
+   * it as unsupported fall back cleanly to null.
+   */
+  private async readMcrs(client: MeshCoreClient, device: DeviceInfo): Promise<McrsInfo | null> {
+    if (!isMeshCoreRsVersion(device.firmwareVersion)) return null;
+    try {
+      return await client.mcrsInfo();
+    } catch (error) {
+      if (!(error instanceof MeshCoreError && error.code === ErrCode.UnsupportedCmd)) {
+        this.log("error", `MCRS info not read: ${(error as Error).message}`);
+      }
+      return null;
+    }
+  }
+
   /** Whether the connected radio runs console lines of its own (MeshCore 1.18, protocol 14). */
   private hasOwnCli(): boolean {
     return (this.state.device?.firmwareVerCode ?? 0) >= 14;
@@ -5290,6 +5322,17 @@ export class MeshSession {
     });
   }
 
+  /** Queries a remote `meshcore-rs` repeater or room for its `MCRS` version, build and capabilities. */
+  async requestNodeMcrs(key: string): Promise<NodeMcrsInfo> {
+    return this.binaryRequest(key, "meshcore-rs info", mcrsNodeInfoRequest(), (data) => {
+      const parsed = readMcrsInfo(data);
+      if (!parsed) throw new Error("malformed meshcore-rs info reply");
+      const info: NodeMcrsInfo = { ...parsed, at: this.now() };
+      this.set({ nodeMcrs: { ...this.state.nodeMcrs, [key]: info } });
+      return info;
+    });
+  }
+
   /** A sensor's min, max and mean of each series over the last `windowSecs`. */
   async requestSeries(key: string, windowSecs: number): Promise<SeriesWindow> {
     return this.binaryRequest(key, "min/max/avg", avgMinMaxRequest(windowSecs, 0), (data) => {
@@ -5477,6 +5520,7 @@ export class MeshSession {
       neighbours: without(this.state.neighbours),
       accessLists: without(this.state.accessLists),
       ownerInfo: without(this.state.ownerInfo),
+      nodeMcrs: without(this.state.nodeMcrs),
       nodeSettings: without(this.state.nodeSettings),
       consoles: without(this.state.consoles),
       series: without(this.state.series),

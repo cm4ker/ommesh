@@ -24,6 +24,16 @@ test("the radio's lines say how it is set up, never its name, key, position or P
   assert.match(lines, /airtime factor: 1/);
   assert.match(lines, /region: set/);
   for (const secret of ["Node-21", "a0a1", "55.75", "37.62", "123456", "msk"]) assert.ok(!lines.includes(secret), secret);
+  assert.ok(!lines.includes("meshcore-rs:"), "upstream firmware has no meshcore-rs line");
+});
+
+test("the radio's lines include meshcore-rs info when present", () => {
+  const rsState = {
+    ...state,
+    mcrs: { version: 1, board: 1, role: 2, counter: 168, caps: 0x203, productVersion: "0.9.0" },
+  };
+  const lines = radioLines(rsState).join("\n");
+  assert.match(lines, /meshcore-rs: 0\.9\.0 \(#168\), MCRS v1, heltec-v4\/companion, caps 0x203/);
 });
 
 test("a command someone asked this radio to run is cut out of the log", () => {

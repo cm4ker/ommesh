@@ -9,7 +9,7 @@
  * names nodes and routes, as the air does, and a command someone asked this
  * radio to run is cut out of it, since it may hold a password.
  */
-import type { LogEntry, SessionState } from "@meshnet/meshcore";
+import { mcrsBoardName, mcrsRoleName, type LogEntry, type SessionState } from "@meshnet/meshcore";
 import { language } from "../i18n/index.js";
 import { PREVIEW_SERVER } from "./linkFetch.js";
 import { nativePlatform, shell } from "./platform.js";
@@ -26,12 +26,17 @@ export function appLine(): string {
 }
 
 /** The radio as far as a report needs it, never its name, key, position or PIN. */
-export function radioLines(state: Pick<SessionState, "device" | "self" | "link" | "contacts" | "channels" | "tuning" | "region" | "sharedAt" | "status">): string[] {
+export function radioLines(state: Pick<SessionState, "device" | "self" | "link" | "contacts" | "channels" | "tuning" | "region" | "sharedAt" | "status"> & Partial<Pick<SessionState, "mcrs">>): string[] {
   const lines: string[] = [];
-  const { device, self } = state;
+  const { device, mcrs, self } = state;
   lines.push(`link: ${state.link ? state.link.kind : "none"}, ${state.status}${state.sharedAt !== null ? ", another app is on the radio too" : ""}`);
   if (device) {
     lines.push(`firmware: ${device.firmwareVersion} (${device.buildDate}), protocol ${device.firmwareVerCode}, ${device.manufacturer}`);
+    if (mcrs) {
+      const target = [mcrsBoardName(mcrs.board), mcrsRoleName(mcrs.role)].filter(Boolean).join("/");
+      const build = mcrs.counter > 0 ? `#${mcrs.counter}` : "local";
+      lines.push(`meshcore-rs: ${mcrs.productVersion} (${build}), MCRS v${mcrs.version}${target ? `, ${target}` : ""}, caps 0x${mcrs.caps.toString(16)}`);
+    }
     const repeat = device.repeatEnabled === null ? "unknown" : device.repeatEnabled ? "yes" : "no";
     lines.push(`passes others' packets on: ${repeat}; route hash: ${device.pathHashMode === null ? "unknown" : `${device.pathHashMode + 1} byte(s)`}`);
     lines.push(`contacts: ${Object.values(state.contacts).filter((c) => !c.unsaved).length} of ${device.maxContacts}; channels: ${state.channels.length} of ${device.maxChannels}`);

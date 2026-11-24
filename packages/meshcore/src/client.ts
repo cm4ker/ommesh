@@ -27,6 +27,7 @@ import {
   type ResponseFrame,
   type SelfInfo,
 } from "./protocol/frames.js";
+import { McrsSub, readMcrsInfo, type McrsInfo } from "./protocol/mcrs.js";
 import type { Transport } from "./transport.js";
 
 export class MeshCoreError extends Error {
@@ -829,6 +830,24 @@ export class MeshCoreClient {
   /** A console line the radio does not answer, as it reboots or turns off at once (`poweroff`). */
   async runCliCommandUnanswered(text: string): Promise<void> {
     await this.request("runCliCommand", cmd.runCliCommand(text), { fireAndForget: true, timeoutMs: 1500 });
+  }
+
+  /** A `meshcore-rs` extension command (`0x70`); returns the `[sub, ...body]` payload. */
+  async mcrs(sub: number, payload?: Uint8Array): Promise<Uint8Array> {
+    const [frame] = await this.request("mcrs", cmd.mcrsCommand(sub, payload), {
+      expect: ["mcrs"],
+      accepts: (f) => f.kind === "mcrs" && f.sub === sub,
+    });
+    if (frame?.kind !== "mcrs") throw new Error(`mcrs: expected mcrs, got ${frame?.kind ?? "nothing"}`);
+    return frame.payload;
+  }
+
+  /** Asks a `meshcore-rs` companion for its extension version, build identity and capabilities. */
+  async mcrsInfo(): Promise<McrsInfo> {
+    const payload = await this.mcrs(McrsSub.Info);
+    const info = readMcrsInfo(payload);
+    if (!info) throw new Error("mcrsInfo: malformed reply");
+    return info;
   }
 
   setAutoAddConfig(config: number, maxHops?: number): Promise<void> {

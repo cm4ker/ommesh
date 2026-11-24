@@ -757,7 +757,7 @@ function confirmNotes(c: { radioChanged: boolean; repeatChanged: boolean; repeat
  * percent it would give now, so the one that looks right is plain to see.
  */
 function AdvancedPage({ self, online }: { self: Self; online: boolean }) {
-  const { device } = useSession();
+  const { device, mcrs } = useSession();
   const hasConsole = useOwnConsole();
   return (
     <>
@@ -770,6 +770,13 @@ function AdvancedPage({ self, online }: { self: Self; online: boolean }) {
         {device ? (
           <>
             <InfoRow label={t("radio.advanced.firmware")}>{t("radio.advanced.firmwareValue", { version: device.firmwareVersion, date: device.buildDate, protocol: device.firmwareVerCode })}</InfoRow>
+            {mcrs ? (
+              <InfoRow label={t("radio.advanced.mcrs")}>
+                {mcrs.counter > 0
+                  ? t("radio.advanced.mcrsBuild", { product: mcrs.productVersion, counter: mcrs.counter, version: mcrs.version })
+                  : t("radio.advanced.mcrsLocal", { product: mcrs.productVersion, version: mcrs.version })}
+              </InfoRow>
+            ) : null}
             <InfoRow label={t("radio.advanced.board")}>{device.manufacturer}</InfoRow>
             <InfoRow label={t("radio.advanced.capacity")}>
               {t("radio.advanced.capacityValue", { contacts: t("radio.advanced.contacts", { count: device.maxContacts }), channels: t("radio.advanced.channels", { count: device.maxChannels }) })}

@@ -100,6 +100,7 @@
   "queue.job.neighbourReset": "neighbour reset",
   "queue.job.accessList": "access list",
   "queue.job.ownerInfo": "owner info",
+  "queue.job.mcrsInfo": "meshcore-rs info",
   "queue.job.series": "min/max/avg",
 
   "access.admins": { "one": "{count} admin · read {time}", "other": "{count} admins · read {time}" },
@@ -388,5 +389,13 @@
   "cli.regionDefault": "region, or <null>",
   "cli.regionPut": "region, then its parent",
   "cli.regionTree": "region tree",
-  "cli.epochSeconds": "epoch seconds"
+  "cli.epochSeconds": "epoch seconds",
+  "cli.fwSource": "auto, repeater name or key prefix (8+ hex)",
+  "cli.fwServer": "host or host:port",
+  "cli.fwKeys": "64-hex fingerprint(s), or off",
+  "cli.timeServer": "host or URL",
+  "cli.timeBeacon": "beacons per day; 0 is off",
+  "cli.timeKey": "64-hex public key",
+  "cli.sensorAdd": "sensor descriptor line",
+  "cli.sensorDel": "sensor name"
 }

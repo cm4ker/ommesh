@@ -1,7 +1,8 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { ByteWriter, fromHex, fromUtf8, toHex } from "./protocol/bytes.js";
-import { AdvType, Cmd, ContactFlag, ErrCode, Push, Resp, TxtType } from "./protocol/codes.js";
+import { AdvType, Cmd, ContactFlag, ErrCode, Push, ReqType, Resp, TxtType } from "./protocol/codes.js";
+import { MCRS_VERSION, McrsBoard, McrsCap, McrsRole, McrsSub } from "./protocol/mcrs.js";
 import { groupDataPayload, groupTextPayload, heardGroupTextPayload } from "./protocol/group.js";
 import { crockford, decodeReaction, encodeReaction, messageHash, REACTION_DATA_TYPE } from "./protocol/reaction.js";
 import { PEER_ENTRY, PEER_HELLO, peerEntry, peerKeep, peerSaved, readMarkOf, readMarkValue, textHash } from "./protocol/peer.js";
@@ -66,6 +67,10 @@ class ScriptedRadio extends BaseTransport {
   relayVersion = 1;
   /** How many traces it refuses next, its packets all taken. */
   busy = 0;
+  /** Override for `DeviceInfo.firmwareVersion` (defaults to `v1.18.0` / `v1.17.1`). */
+  firmwareVersionOverride: string | null = null;
+  /** Answer to `Cmd.Mcrs` `[0x70, 0x00]`; null answers `ErrCode.UnsupportedCmd`. */
+  mcrsInfoPayload: Uint8Array | null = null;
 
   async send(frame: Uint8Array): Promise<void> {
     this.sent.push(frame);
@@ -82,9 +87,16 @@ class ScriptedRadio extends BaseTransport {
   private answer(frame: Uint8Array): Uint8Array[] {
     switch (frame[0]) {
       case Cmd.DeviceQuery: {
-        const w = new ByteWriter().u8(Resp.DeviceInfo).u8(this.protocol).u8(50).u8(this.channelSlots).u32(this.blePin).fixedString("d", 12).fixedString("m", 40).fixedString(this.protocol >= 14 ? "v1.18.0" : "v1.17.1", 20);
+        const fw = this.firmwareVersionOverride ?? (this.protocol >= 14 ? "v1.18.0" : "v1.17.1");
+        const w = new ByteWriter().u8(Resp.DeviceInfo).u8(this.protocol).u8(50).u8(this.channelSlots).u32(this.blePin).fixedString("d", 12).fixedString("m", 40).fixedString(fw, 20);
         if (this.network) w.u8(this.network.repeat ? 1 : 0).u8(this.network.hashMode);
         return [w.toBytes()];
+      }
+      case Cmd.Mcrs: {
+        if (frame[1] === McrsSub.Info && this.mcrsInfoPayload) {
+          return [new ByteWriter().u8(Resp.Mcrs).bytes(this.mcrsInfoPayload).toBytes()];
+        }
+        return [new Uint8Array([Resp.Err, ErrCode.UnsupportedCmd])];
       }
       case Cmd.GetAllowedRepeatFreq:
         return this.network ? [new ByteWriter().u8(Resp.AllowedRepeatFreq).u32(433_000).u32(433_000).u32(869_495).u32(869_495).toBytes()] : [new Uint8Array([Resp.Err, 1])];
@@ -4346,4 +4358,87 @@ test("a copy's routes and channel regions join what this app keeps for the radio
   session.adoptLocal({ routing: { resetAfterMin: 30, contacts: { [CAROL_KEY]: { flood: false } } }, channelRegions: { ["22".repeat(16)]: "ru-nsk" } });
   assert.deepEqual(session.getState().routing, { resetAfterMin: 30, contacts: { [CAROL_KEY]: { flood: true } } });
   assert.deepEqual(session.getState().channelRegions, { ["22".repeat(16)]: "ru-oms" });
+});
+
+function mcrsPayload(version: number, board: number, role: number, counter: number, caps: number, productVersion: string): Uint8Array {
+  const ver = new TextEncoder().encode(productVersion);
+  return new ByteWriter().u8(McrsSub.Info).u8(version).u8(board).u8(role).u32(counter).u32(caps).u8(ver.length).bytes(ver).toBytes();
+}
+
+test("upstream firmware is never sent Cmd.Mcrs and keeps mcrs null", async () => {
+  const radio = new ScriptedRadio();
+  radio.protocol = 14;
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  assert.equal(session.getState().mcrs, null);
+  assert.ok(!radio.sent.some((f) => f[0] === Cmd.Mcrs), "no 0x70 frame sent to upstream firmware");
+  await session.disconnect();
+});
+
+test("meshcore-rs companion reports MCRS version, build and capabilities at connect", async () => {
+  const radio = new ScriptedRadio();
+  radio.protocol = 14;
+  radio.firmwareVersionOverride = "v1.18.0-rs";
+  const caps = McrsCap.Screen | McrsCap.Led | McrsCap.Wifi | McrsCap.Ota | McrsCap.TimeSync;
+  radio.mcrsInfoPayload = mcrsPayload(MCRS_VERSION, McrsBoard.HeltecV4, McrsRole.Companion, 168, caps, "0.9.0");
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  assert.deepEqual(session.getState().mcrs, {
+    version: MCRS_VERSION,
+    board: McrsBoard.HeltecV4,
+    role: McrsRole.Companion,
+    counter: 168,
+    caps,
+    productVersion: "0.9.0",
+  });
+  await session.disconnect();
+});
+
+test("older meshcore-rs build without Cmd.Mcrs still connects with mcrs null", async () => {
+  const radio = new ScriptedRadio();
+  radio.protocol = 14;
+  radio.firmwareVersionOverride = "v1.18.0-rs";
+  radio.mcrsInfoPayload = null;
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  assert.equal(session.getState().status, "ready");
+  assert.equal(session.getState().mcrs, null);
+  assert.ok(radio.sent.some((f) => f[0] === Cmd.Mcrs), "queried once because firmwareVersion ended with -rs");
+  await session.disconnect();
+});
+
+test("requestNodeMcrs queries a remote repeater over LoRa and forgetNode clears it", async () => {
+  const radio = new ScriptedRadio();
+  radio.protocol = 14;
+  const session = new MeshSession({ now: () => 1_700_000_000_000 });
+  await session.connect(radio);
+  const bobKey = toHex(BOB);
+  const asked = session.requestNodeMcrs(bobKey);
+  await tick();
+  const req = radio.sent.filter((f) => f[0] === Cmd.SendBinaryReq).at(-1)!;
+  assert.equal(req[33], ReqType.Mcrs);
+  assert.equal(req[34], McrsSub.Info);
+  const caps = McrsCap.Ota | McrsCap.TimeSync | McrsCap.Powersaving;
+  radio.push(
+    new ByteWriter()
+      .u8(Push.BinaryResponse)
+      .u8(0)
+      .u32(radio.binaryTag)
+      .bytes(mcrsPayload(MCRS_VERSION, McrsBoard.ProMicro, McrsRole.Repeater, 170, caps, "0.9.0"))
+      .toBytes(),
+  );
+  const info = await asked;
+  assert.deepEqual(info, {
+    version: MCRS_VERSION,
+    board: McrsBoard.ProMicro,
+    role: McrsRole.Repeater,
+    counter: 170,
+    caps,
+    productVersion: "0.9.0",
+    at: 1_700_000_000_000,
+  });
+  assert.deepEqual(session.getState().nodeMcrs[bobKey], info);
+  session.forgetNode(bobKey);
+  assert.equal(session.getState().nodeMcrs[bobKey], undefined);
+  await session.disconnect();
 });

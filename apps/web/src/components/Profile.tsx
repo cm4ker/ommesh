@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AclRole, AdvType, contactConversation, isConversationType, isFavourite, isNodeType, NoReplyError } from "@meshnet/meshcore";
+import { AclRole, AdvType, contactConversation, isConversationType, isFavourite, isMeshCoreRsVersion, isNodeType, NoReplyError } from "@meshnet/meshcore";
 import { t, type Key } from "../i18n/index.js";
 import { agoPhrase } from "../lib/format.js";
 import { bearingDeg, compass, distanceKm, formatDistance, hasPosition } from "../lib/geo.js";
@@ -109,6 +109,7 @@ export function Profile({ contactKey, chrome, sheet = false }: { contactKey: str
         : t("mesh.profile.noPosition");
   const heard = heardAt(contact) || null;
   const owner = state.ownerInfo[key];
+  const nodeMcrs = state.nodeMcrs[key];
 
   const cli = (command: string, done: string) => () =>
     void act(async () => {
@@ -130,6 +131,9 @@ export function Profile({ contactKey, chrome, sheet = false }: { contactKey: str
     if (contact.type === AdvType.Chat && (state.device?.firmwareVerCode ?? 0) >= 14) items.push({ label: t("mesh.profile.console"), icon: <TerminalIcon size={17} />, onSelect: () => openNodePage(key, "console") });
     // How this repeater and another hear each other, the other tapped on the map next.
     if (contact.type === AdvType.Repeater) items.push({ label: t("tools.route.checkFrom"), icon: <NodesIcon size={17} />, hint: t("tools.route.checkFromHint"), disabled: !online, onSelect: () => openSpan(key) });
+    if (signedIn && (contact.type === AdvType.Repeater || contact.type === AdvType.Room) && (!owner || isMeshCoreRsVersion(owner.firmware))) {
+      items.push({ label: nodeMcrs ? t("mesh.profile.askMcrsAgain") : t("mesh.profile.askMcrs"), icon: <AirIcon size={17} />, air: true, disabled: !online, onSelect: () => void act(() => session.requestNodeMcrs(key)) });
+    }
     if (admin) {
       items.push(
         { label: t("mesh.profile.advertMesh"), icon: <AirIcon size={17} />, air: true, disabled: !online, onSelect: cli("advert", t("mesh.profile.advertised", { name })) },
@@ -265,6 +269,13 @@ export function Profile({ contactKey, chrome, sheet = false }: { contactKey: str
             </InfoRow>
             <InfoRow label={t("mesh.profile.owner")}>{owner.owner ? <span className="multiline">{owner.owner}</span> : t("mesh.profile.notSet")}</InfoRow>
           </>
+        ) : null}
+        {nodeMcrs ? (
+          <InfoRow label={t("mesh.profile.mcrs")}>
+            {nodeMcrs.counter > 0
+              ? t("radio.advanced.mcrsBuild", { product: nodeMcrs.productVersion, counter: nodeMcrs.counter, version: nodeMcrs.version })
+              : t("radio.advanced.mcrsLocal", { product: nodeMcrs.productVersion, version: nodeMcrs.version })}
+          </InfoRow>
         ) : null}
         {login?.firmwareLevel != null ? <InfoRow label={t("mesh.profile.firmwareLevel")}>{login.firmwareLevel}</InfoRow> : null}
       </Group>

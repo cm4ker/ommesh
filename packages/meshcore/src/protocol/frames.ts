@@ -199,7 +199,9 @@ export type ResponseFrame =
   | { kind: "autoAddConfig"; config: number; maxHops: number }
   | { kind: "allowedRepeatFreq"; ranges: { lowerKhz: number; upperKhz: number }[] }
   | { kind: "defaultFloodScope"; name: string | null; key: Uint8Array | null }
-  | { kind: "cliReply"; text: string };
+  | { kind: "cliReply"; text: string }
+  /** `meshcore-rs` extension reply (`payload` starts with `sub`, matching LoRa binary replies). */
+  | { kind: "mcrs"; sub: number; payload: Uint8Array };
 
 export type PushFrame =
   | { kind: "advert"; publicKey: Uint8Array }
@@ -684,6 +686,11 @@ function decodeResponse(code: number, r: ByteReader): ResponseFrame | null {
       return { kind: "defaultFloodScope", name: r.fixedString(31), key: r.take(16) };
     case Resp.CliReply:
       return { kind: "cliReply", text: r.restString() };
+    case Resp.Mcrs: {
+      const payload = r.rest();
+      if (payload.length < 1) return null;
+      return { kind: "mcrs", sub: payload[0]!, payload };
+    }
     default:
       return null;
   }

@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { CLI_GROUPS, CLI_GROUP_TITLE, COMMANDS, RADIO_COMMANDS, stepHistory, stepPick, suggest } from "./cli.js";
+import { McrsCap, type McrsInfo } from "@meshnet/meshcore";
+import { CLI_GROUPS, CLI_GROUP_TITLE, COMMANDS, MCRS_NODE_COMMANDS, MCRS_RADIO_COMMANDS, RADIO_COMMANDS, commandsFor, stepHistory, stepPick, suggest } from "./cli.js";
 
 const labels = (draft: string) => suggest(draft).chips.map((c) => c.label);
 
@@ -69,11 +70,13 @@ test("a suggestion says what the command does, and how many there are", () => {
   assert.ok(many.total > many.chips.length);
 });
 
+const ALL_COMMANDS = [...COMMANDS, ...RADIO_COMMANDS, ...MCRS_NODE_COMMANDS, ...MCRS_RADIO_COMMANDS];
+
 test("every command has words in both languages", () => {
   const en = words("en");
   const ru = words("ru");
   const missing: string[] = [];
-  for (const command of [...COMMANDS, ...RADIO_COMMANDS]) {
+  for (const command of ALL_COMMANDS) {
     const key = command.about.replace(/^cli\./, "");
     if (!en[key]) missing.push(`en ${key}`);
     if (!ru[key]) missing.push(`ru ${key}`);
@@ -82,7 +85,7 @@ test("every command has words in both languages", () => {
 });
 
 test("no words are left over for a command that no longer exists", () => {
-  const used = new Set([...COMMANDS, ...RADIO_COMMANDS].map((command) => command.about.replace(/^cli\./, "")));
+  const used = new Set(ALL_COMMANDS.map((command) => command.about.replace(/^cli\./, "")));
   const dead = Object.keys(words("en")).filter((key) => key.startsWith("about.") && !used.has(key));
   assert.deepEqual(dead, [], "the reference would never show these");
 });
@@ -90,7 +93,7 @@ test("no words are left over for a command that no longer exists", () => {
 test("every command is in a group the reference knows, and each group is named in both languages", () => {
   const en = words("en");
   const ru = words("ru");
-  for (const command of [...COMMANDS, ...RADIO_COMMANDS]) {
+  for (const command of ALL_COMMANDS) {
     assert.ok(CLI_GROUPS.includes(command.group), `${command.text.trim()} is in no group`);
     const key = CLI_GROUP_TITLE[command.group].replace(/^cli\./, "");
     assert.ok(en[key], `en ${key}`);
@@ -142,4 +145,63 @@ test("history walk never clears a draft on Down and restores what was typed on t
   const back = stepHistory(oldest!, past, "ArrowDown");
   assert.deepEqual(back, { index: 1, draft: "clock", saved: "foo" });
   assert.deepEqual(stepHistory(back!, past, "ArrowDown"), { index: null, draft: "foo", saved: "" });
+});
+
+test("meshcore-rs commands stay hidden on upstream targets and filter by capabilities when McrsInfo is known", () => {
+  // Upstream radio/node sees none of the meshcore-rs extensions.
+  assert.equal(suggest("fw", "radio").chips.length, 0);
+  assert.equal(suggest("fw", "node").chips.length, 0);
+  assert.equal(suggest("set screen", "radio").chips.length, 0);
+  assert.equal(suggest("set dyncr", "node").chips.length, 0);
+
+  // Full meshcore-rs lists have no duplicate command texts.
+  for (const target of ["node", "radio"] as const) {
+    const all = commandsFor(target, { isRs: true });
+    assert.equal(new Set(all.map((c) => c.text)).size, all.length, `${target} has no duplicate commands`);
+  }
+
+  // Companion with Screen + TimeSync + Ota, but without Wifi, Led or Gps:
+  const companionMcrs: McrsInfo = {
+    version: 1,
+    board: 7,
+    role: 2,
+    counter: 168,
+    caps: McrsCap.Screen | McrsCap.TimeSync | McrsCap.Ota,
+    productVersion: "0.9.0",
+  };
+  const radioSuggest = (draft: string) => suggest(draft, "radio", 12, { mcrs: companionMcrs }).chips.map((c) => c.label);
+  assert.ok(radioSuggest("").includes("fw"), "fw starter offered on meshcore-rs");
+  assert.ok(radioSuggest("fw ").includes("fw check"));
+  assert.ok(radioSuggest("fw ").includes("fw rollback"));
+  assert.deepEqual(radioSuggest("set screen "), ["auto", "manual", "off"]);
+  assert.deepEqual(radioSuggest("set rtpath "), ["on", "off"]);
+  assert.ok(radioSuggest("time").includes("time sync"));
+  assert.ok(radioSuggest("ui.show_clock").includes("set ui.show_clock"));
+  assert.equal(radioSuggest("set led").length, 0, "no LED cap -> hidden");
+  assert.equal(radioSuggest("fw.server").length, 0, "no Wifi cap -> hidden");
+  assert.equal(radioSuggest("gps").includes("gps"), false, "no Gps cap -> gps hidden");
+
+  // Repeater with Wifi + Mqtt + Powersaving + BleOta:
+  const repeaterMcrs: McrsInfo = {
+    version: 1,
+    board: 1,
+    role: 1,
+    counter: 170,
+    caps: McrsCap.Wifi | McrsCap.Mqtt | McrsCap.Powersaving | McrsCap.BleOta | McrsCap.Ota | McrsCap.TimeSync,
+    productVersion: "0.9.0",
+  };
+  const nodeSuggest = (draft: string) => suggest(draft, "node", 12, { mcrs: repeaterMcrs }).chips.map((c) => c.label);
+  assert.ok(nodeSuggest("fw ").includes("fw ble"));
+  assert.ok(!nodeSuggest("fw ").includes("fw wifi"), "no WifiOta cap -> hidden");
+  assert.deepEqual(nodeSuggest("powersaving "), ["on", "off", "stats"]);
+  assert.deepEqual(nodeSuggest("powersaving s"), ["stats"]);
+  assert.ok(nodeSuggest("mqtt.ommesh").includes("set mqtt.ommesh"));
+  assert.deepEqual(nodeSuggest("set dyncr "), ["on", "off"]);
+  assert.deepEqual(nodeSuggest("set room "), ["on", "off"]);
+  assert.ok(nodeSuggest("time.serve").includes("set time.serve"));
+  assert.ok(nodeSuggest("sensor ").includes("sensor scan"));
+
+  // Older -rs build without McrsInfo falls back cleanly to v1 commands via isRs.
+  assert.ok(suggest("fw ", "radio", 12, { isRs: true }).chips.some((c) => c.label === "fw check"));
+  assert.ok(suggest("set dyncr", "node", 12, { isRs: true }).chips.some((c) => c.label === "on"));
 });

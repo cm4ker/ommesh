@@ -110,6 +110,7 @@
   "queue.job.neighbourReset": "сброс соседей",
   "queue.job.accessList": "список доступа",
   "queue.job.ownerInfo": "сведения о владельце",
+  "queue.job.mcrsInfo": "сведения meshcore-rs",
   "queue.job.series": "мин./макс./средн.",
 
   "access.admins": {
@@ -462,5 +463,13 @@
   "cli.regionDefault": "регион или <null>",
   "cli.regionPut": "регион, затем родительский",
   "cli.regionTree": "дерево регионов",
-  "cli.epochSeconds": "секунды Unix"
+  "cli.epochSeconds": "секунды Unix",
+  "cli.fwSource": "auto, имя репитера или начало ключа (8+ hex)",
+  "cli.fwServer": "хост или хост:порт",
+  "cli.fwKeys": "отпечаток(и) 64 hex или off",
+  "cli.timeServer": "хост или URL",
+  "cli.timeBeacon": "маяков в сутки; 0 — выключено",
+  "cli.timeKey": "открытый ключ, 64 hex",
+  "cli.sensorAdd": "строка описания датчика",
+  "cli.sensorDel": "имя датчика"
 }

@@ -23,6 +23,7 @@ import { installAndReplay } from "./runtime.js";
 import type { InstalledMiniApp } from "./store.js";
 
 export const DEFAULT_CATALOG_BASE_URL = "https://cm4ker.github.io/ommesh-miniapps";
+export const FALLBACK_CATALOG_BASE_URL = "https://raw.githubusercontent.com/cm4ker/ommesh-miniapps/gh-pages";
 const CACHE_KEY = "meshnet.miniapps.remoteCatalog";
 const REFRESH_COOLDOWN_MS = 5 * 60_000;
 const FETCH_TIMEOUT_MS = 12_000;
@@ -73,6 +74,7 @@ export interface StoreCatalogItem {
   origin: "builtin" | "remote";
   builtinPkg?: MiniAppPackage;
   remoteFile?: string;
+  remoteBaseUrl?: string;
   sha256?: string;
 }
 
@@ -234,7 +236,11 @@ export function parseRemoteCatalog(raw: unknown): RemoteCatalogDocument | null {
 }
 
 /** Merges offline built-in catalog entries with the latest remote catalog manifest. */
-export function mergeCatalogs(builtin: CatalogEntry[], remote: RemoteCatalogDocument | null): StoreCatalogItem[] {
+export function mergeCatalogs(
+  builtin: CatalogEntry[],
+  remote: RemoteCatalogDocument | null,
+  remoteBaseUrl?: string,
+): StoreCatalogItem[] {
   const byId = new Map<string, StoreCatalogItem>();
 
   for (const entry of builtin) {
@@ -280,6 +286,7 @@ export function mergeCatalogs(builtin: CatalogEntry[], remote: RemoteCatalogDocu
         origin: "remote",
         ...(existing?.builtinPkg ? { builtinPkg: existing.builtinPkg } : {}),
         remoteFile: r.file,
+        ...(remoteBaseUrl ? { remoteBaseUrl } : {}),
         sha256: r.sha256,
       });
     }
@@ -315,24 +322,41 @@ export async function fetchCatalogPackage(
     if (item.builtinPkg) return item.builtinPkg;
     throw new Error("invalid remote catalog entry");
   }
-  const baseUrl = (options.baseUrl ?? DEFAULT_CATALOG_BASE_URL).replace(/\/+$/, "");
+  const baseUrls = options.baseUrl
+    ? [options.baseUrl.replace(/\/+$/, "")]
+    : Array.from(
+        new Set(
+          [item.remoteBaseUrl, DEFAULT_CATALOG_BASE_URL, FALLBACK_CATALOG_BASE_URL]
+            .filter((u): u is string => Boolean(u))
+            .map((u) => u.replace(/\/+$/, "")),
+        ),
+      );
   const fetcher = options.fetcher ?? fetch;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  let bytes: Uint8Array;
-  try {
-    const res = await fetcher(`${baseUrl}/${encodeURIComponent(item.remoteFile)}`, {
-      cache: "no-cache",
-      signal: controller.signal,
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const buf = await res.arrayBuffer();
-    if (buf.byteLength === 0 || buf.byteLength > MAX_OMAPP_BYTES) {
-      throw new Error(`unexpected package size (${buf.byteLength} B)`);
+  let bytes: Uint8Array | null = null;
+  let lastError: unknown = null;
+  for (const baseUrl of baseUrls) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const res = await fetcher(`${baseUrl}/${encodeURIComponent(item.remoteFile)}`, {
+        cache: "no-cache",
+        signal: controller.signal,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      if (buf.byteLength === 0 || buf.byteLength > MAX_OMAPP_BYTES) {
+        throw new Error(`unexpected package size (${buf.byteLength} B)`);
+      }
+      bytes = new Uint8Array(buf);
+      break;
+    } catch (err) {
+      lastError = err;
+    } finally {
+      clearTimeout(timer);
     }
-    bytes = new Uint8Array(buf);
-  } finally {
-    clearTimeout(timer);
+  }
+  if (!bytes) {
+    throw lastError instanceof Error ? lastError : new Error("could not download package");
   }
 
   const actualHash = await sha256Hex(bytes);
@@ -406,42 +430,51 @@ export function refreshRemoteCatalog(
   }
   if (inFlight) return inFlight;
 
-  const baseUrl = (options.baseUrl ?? DEFAULT_CATALOG_BASE_URL).replace(/\/+$/, "");
+  const baseUrls = options.baseUrl
+    ? [options.baseUrl.replace(/\/+$/, "")]
+    : [DEFAULT_CATALOG_BASE_URL, FALLBACK_CATALOG_BASE_URL];
   const fetcher = options.fetcher ?? fetch;
   setState({ loading: true, error: null });
 
   inFlight = (async () => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    let lastError: unknown = null;
     try {
-      const res = await fetcher(`${baseUrl}/catalog.json`, {
-        cache: "no-cache",
-        signal: controller.signal,
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json: unknown = await res.json();
-      const parsed = parseRemoteCatalog(json);
-      if (!parsed) throw new Error("invalid catalog.json schema");
-      cachedRemote = parsed;
-      writeSetting(CACHE_KEY, parsed);
+      for (const baseUrl of baseUrls) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+        try {
+          const res = await fetcher(`${baseUrl}/catalog.json`, {
+            cache: "no-cache",
+            signal: controller.signal,
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const json: unknown = await res.json();
+          const parsed = parseRemoteCatalog(json);
+          if (!parsed) throw new Error("invalid catalog.json schema");
+          cachedRemote = parsed;
+          writeSetting(CACHE_KEY, parsed);
+          setState({
+            items: mergeCatalogs(STORE_CATALOG, parsed, baseUrl),
+            loading: false,
+            error: null,
+            checkedAt: Date.now(),
+            updatedAt: parsed.updatedAt || null,
+            hasRemote: true,
+          });
+          return true;
+        } catch (err) {
+          lastError = err;
+        } finally {
+          clearTimeout(timer);
+        }
+      }
       setState({
-        items: mergeCatalogs(STORE_CATALOG, parsed),
         loading: false,
-        error: null,
-        checkedAt: Date.now(),
-        updatedAt: parsed.updatedAt || null,
-        hasRemote: true,
-      });
-      return true;
-    } catch (err) {
-      setState({
-        loading: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: lastError instanceof Error ? lastError.message : String(lastError),
         checkedAt: Date.now(),
       });
       return false;
     } finally {
-      clearTimeout(timer);
       inFlight = null;
     }
   })();

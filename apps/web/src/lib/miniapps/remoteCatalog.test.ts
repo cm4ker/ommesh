@@ -172,4 +172,16 @@ test("fetchCatalogPackage verifies SHA-256 and rejects tampered payloads", async
     () => fetchCatalogPackage(item, { baseUrl: "https://example.test/apps", fetcher: badFetcher }),
     /SHA-256 mismatch/,
   );
+
+  // When primary host returns 404, fetchCatalogPackage falls back to the secondary mirror seamlessly.
+  const seenUrls: string[] = [];
+  const fallbackFetcher = (async (url: string) => {
+    seenUrls.push(url);
+    if (url.includes("cm4ker.github.io")) return new Response("not found", { status: 404 });
+    return new Response(new Uint8Array(bytes), { status: 200 });
+  }) as unknown as typeof fetch;
+  const fromFallback = await fetchCatalogPackage(item, { fetcher: fallbackFetcher });
+  assert.equal(fromFallback.manifest.id, "ommesh.backgammon");
+  assert.equal(seenUrls.length, 2);
+  assert.ok(seenUrls[1]!.includes("raw.githubusercontent.com/cm4ker/ommesh-miniapps/gh-pages"));
 });

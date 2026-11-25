@@ -4,14 +4,6 @@
 
 ## Unreleased
 
-### Mini-apps (MCRS v2)
-- Added a dedicated **Apps** section (fourth top-level tab, alongside Chats, Mesh, and Settings) with a catalog/store and sandboxed mini-apps running in isolated iframes (`sandbox="allow-scripts"`, `MessageChannel` RPC via `@ommesh/miniapp-sdk`, strict CSP, and automatic theme/font-scale syncing).
-- Added `meshcore-rs` **MCRS v2** reliable ACKed binary P2P datagram transport (`SUB_SEND_PEER_DATA`, `SUB_SYNC_PEER_DATA`, `PUSH_CODE_MCRS`, `cap::PEER_DATA`) across `@meshnet/meshcore`, `meshcore-core` phone relay/background watcher, and Android (`Apps` notification channel), with separate per-app notification preferences under Settings › Notifications.
-- Added the built-in **Chess** (`ommesh.chess`, `appId = 0x0100`) P2P LoRa mini-app with compact binary moves, ACKed delivery, two-way chunked sync recovery (`OP_SYNC_REQ` / `OP_SYNC_MOVES`), in-game LoRa chat (`OP_CHAT`), and interactive Demo Mode support, plus a local **LoRa Calculator** utility.
-- Added two new built-in P2P LoRa games — **Checkers** (`ommesh.checkers`, `appId = 0x0101`, Russian draughts 8×8 with mandatory captures, flying kings, 1 AES block per move, and in-game chat) and **Battleship** (`ommesh.battleship`, `appId = 0x0102`, 10×10 naval battle with automatic background hit/miss replies, sunk-ship halos, SHA-256 commit-reveal fair play, side-by-side desktop boards, and touch aiming on phones) — both with live Demo Mode bots.
-- Connected the Mini-App Store to the hosted `ommesh-miniapps` catalog (`catalog.json` on GitHub Pages) with offline fallback, SHA-256 package integrity verification, one-tap install of newly published mini-apps, and in-place updates preserving saved games, chats, and peer grants without updating Ommesh itself.
-- Adapted mini-apps for phones and soft keyboards (full-height mobile view, iOS/Android keyboard height & focus bridging, safe-area insets, no iOS input auto-zoom, native bottom-sheet contact picker without unwanted keyboard popup), fixed `<Dialog>` collapsing on iOS under `.keyboard-follows`, removed the `Sandbox` badge from the mini-app header, and added full `@ommesh/miniapp-sdk` documentation and an interactive Methods Portal (`docs/miniapp-sdk-portal.html`).
-
 ### Mesh and the map
 - A ping beside a node's route now shows the signal in dB, not just a word: a direct or single-hop ping prints both ways right under the answer (`out … · back …`, and tapping it opens Line of sight when both ends sit on the map), while a multi-hop ping shows the weakest leg's SNR on the chip and opens every hop's signal on a tap. Full checks and repeater-to-repeater checks show dB on their quality chip as well.
 - In the console, the command suggestions above the field now float in an elevated, bordered card over the log — the same way the mention list floats over a chat — so they stand clearly apart from the terminal lines above them and no longer squash the log while you type.

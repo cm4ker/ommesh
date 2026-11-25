@@ -31,6 +31,7 @@ pnpm install --frozen-lockfile >/dev/null
 # are built before `cap sync` copies `apps/web/dist` into the project.
 say "build the client"
 pnpm --filter @meshnet/meshcore build
+pnpm --filter @ommesh/miniapp-sdk build
 pnpm --filter @meshnet/web build
 
 say "sync the client and the plugins into the Xcode project"

@@ -29,6 +29,7 @@ function run(command, args, cwd) {
 
 const gradle = process.platform === 'win32' ? '.\\gradlew.bat' : './gradlew';
 run('pnpm', ['--filter', '@meshnet/meshcore', 'build'], root);
+run('pnpm', ['--filter', '@ommesh/miniapp-sdk', 'build'], root);
 run('pnpm', ['--filter', '@meshnet/web', 'build'], root);
 // Syncing Android must not rewrite the iOS Swift package paths on Windows or Linux.
 // Gradle must run after sync: a fresh checkout has no Cordova bridge and may carry another OS's pnpm paths.

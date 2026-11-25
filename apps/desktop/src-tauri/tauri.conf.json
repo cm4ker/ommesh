@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../../web/dist",
     "devUrl": "http://localhost:5180",
-    "beforeDevCommand": "pnpm --filter @meshnet/meshcore build && pnpm --filter @meshnet/web dev",
-    "beforeBuildCommand": "pnpm --filter @meshnet/meshcore build && pnpm --filter @meshnet/web build"
+    "beforeDevCommand": "pnpm --filter @meshnet/meshcore build && pnpm --filter @ommesh/miniapp-sdk build && pnpm --filter @meshnet/web dev",
+    "beforeBuildCommand": "pnpm --filter @meshnet/meshcore build && pnpm --filter @ommesh/miniapp-sdk build && pnpm --filter @meshnet/web build"
   },
   "app": {
     "withGlobalTauri": false,

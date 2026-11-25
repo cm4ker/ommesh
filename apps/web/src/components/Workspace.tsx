@@ -30,6 +30,7 @@ import { AppsIcon, ChatIcon, NodesIcon, SearchIcon, SettingsIcon } from "./Icons
 import { AppsHome } from "./AppsHome.js";
 import { AppsStoreView } from "./AppsStoreView.js";
 import { MiniAppHostView } from "./MiniAppHostView.js";
+import { MINI_APPS_ENABLED } from "../lib/miniapps/feature.js";
 import { useMiniApps, useMiniAppsBadge } from "../lib/miniapps/store.js";
 import { MeshList, MeshMap, MeshPhone, MeshPickBar, ProfileMap, useMeshAttention } from "./Mesh.js";
 import { MessageView } from "./MessageView.js";
@@ -51,7 +52,7 @@ import { errorText } from "../i18n/errors.js";
 const SECTIONS: { id: Section; label: Key; icon: ReactNode }[] = [
   { id: "chats", label: "connect.tabs.chats", icon: <ChatIcon size={22} /> },
   { id: "mesh", label: "connect.tabs.mesh", icon: <NodesIcon size={22} /> },
-  { id: "apps", label: "connect.tabs.apps", icon: <AppsIcon size={22} /> },
+  ...(MINI_APPS_ENABLED ? [{ id: "apps" as const, label: "connect.tabs.apps" as const, icon: <AppsIcon size={22} /> }] : []),
   { id: "radio", label: "connect.tabs.settings", icon: <SettingsIcon size={22} /> },
 ];
 
@@ -181,7 +182,8 @@ function useBadges() {
   // Values rather than the state, so the phone's frame, and the screen in it, re-render only when a badge changes.
   const unread = useSelector(totalUnread);
   const offline = useSelector((state) => state.status !== "ready");
-  return { unread, apps: useMiniAppsBadge(), attention: useMeshAttention(), offline, surveying: useSurveying() };
+  const appsBadge = useMiniAppsBadge();
+  return { unread, apps: MINI_APPS_ENABLED ? appsBadge : 0, attention: useMeshAttention(), offline, surveying: useSurveying() };
 }
 
 /** Whether the card of the survey running is what the map shows, so the strip that leads to it would only repeat it. */
@@ -668,7 +670,7 @@ function useDesktopKeys({ openPalette, togglePanel, escape }: { openPalette: () 
       if (mod && key === "k") {
         e.preventDefault();
         openPalette();
-      } else if ((e.altKey || (mod && isTauri())) && ["1", "2", "3", "4"].includes(e.key)) {
+      } else if ((e.altKey || (mod && isTauri())) && Number(e.key) >= 1 && Number(e.key) <= SECTIONS.length) {
         e.preventDefault();
         goSection(SECTIONS[Number(e.key) - 1]!.id);
       } else if (mod && key === "n" && isTauri()) {

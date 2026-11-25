@@ -16,6 +16,7 @@ import { setPreviewMode, usePreviewMode, type PreviewMode } from "../lib/linkPre
 import { BACKGROUND_NAMES, BACKGROUNDS, setBackground, setBackgroundScale, setBackgroundStrength, useBackgroundPrefs } from "../lib/chatBackground.js";
 import { isDirect, oneSignal, setAppLevel, SIGNALS, setNoticePrefs, useNoticePrefs, type AppNoticeLevel, type Corner, type NoticeKind, type NoticePrefs } from "../lib/noticePrefs.js";
 import { pickText } from "@ommesh/miniapp-sdk";
+import { MINI_APPS_ENABLED } from "../lib/miniapps/feature.js";
 import { useMiniApps } from "../lib/miniapps/store.js";
 import { titleOf } from "../lib/conversations.js";
 import { ChatSoundRow, signalName } from "./ChatNotices.js";
@@ -882,28 +883,30 @@ function NotificationsPage() {
           onChange={(v) => void change({ nodes: v }, v !== "off")}
         />
       </Group>
-      <Group title={t("radio.notifications.appsGroup")}>
-        <SwitchRow label={t("radio.notifications.apps")} hint={t("radio.notifications.appsHint")} checked={prefs.apps} onChange={(v) => void change({ apps: v }, v)} />
-        {installedWithNotices.map((entry) => {
-          const id = entry.pkg.manifest.appId;
-          const own = prefs.appLevel[String(id)];
-          const value = own ?? "inherit";
-          return (
-            <SelectRow
-              key={entry.pkg.manifest.id}
-              label={pickText(entry.pkg.manifest.name, loc)}
-              value={value}
-              options={[
-                { value: "inherit", label: t("radio.notifications.appLevelInherit") },
-                { value: "all", label: t("radio.notifications.appLevelAll") },
-                { value: "silent", label: t("radio.notifications.appLevelSilent") },
-                { value: "off", label: t("radio.notifications.appLevelOff") },
-              ]}
-              onChange={(v) => setAppLevel(id, v === "inherit" ? null : (v as AppNoticeLevel))}
-            />
-          );
-        })}
-      </Group>
+      {MINI_APPS_ENABLED ? (
+        <Group title={t("radio.notifications.appsGroup")}>
+          <SwitchRow label={t("radio.notifications.apps")} hint={t("radio.notifications.appsHint")} checked={prefs.apps} onChange={(v) => void change({ apps: v }, v)} />
+          {installedWithNotices.map((entry) => {
+            const id = entry.pkg.manifest.appId;
+            const own = prefs.appLevel[String(id)];
+            const value = own ?? "inherit";
+            return (
+              <SelectRow
+                key={entry.pkg.manifest.id}
+                label={pickText(entry.pkg.manifest.name, loc)}
+                value={value}
+                options={[
+                  { value: "inherit", label: t("radio.notifications.appLevelInherit") },
+                  { value: "all", label: t("radio.notifications.appLevelAll") },
+                  { value: "silent", label: t("radio.notifications.appLevelSilent") },
+                  { value: "off", label: t("radio.notifications.appLevelOff") },
+                ]}
+                onChange={(v) => setAppLevel(id, v === "inherit" ? null : (v as AppNoticeLevel))}
+              />
+            );
+          })}
+        </Group>
+      ) : null}
       <Group title={t("radio.notifications.popups")} note={t("radio.notifications.popupsNote")}>
         <SelectRow
           label={t("radio.notifications.shownBy")}
@@ -955,7 +958,7 @@ const SOUND_KINDS: { kind: NoticeKind; label: Key; page: RadioPage }[] = [
   { kind: "direct", label: "radio.notifications.direct", page: "soundDirect" },
   { kind: "chats", label: "radio.notifications.chats", page: "soundChats" },
   { kind: "nodes", label: "radio.notifications.nodes", page: "soundNodes" },
-  { kind: "apps", label: "radio.notifications.apps", page: "soundApps" },
+  ...(MINI_APPS_ENABLED ? [{ kind: "apps" as const, label: "radio.notifications.apps" as const, page: "soundApps" as const }] : []),
 ];
 
 /** The sound of each kind of notice, and of the chats that have one of their own (gh #73). */

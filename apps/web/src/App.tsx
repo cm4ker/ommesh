@@ -25,6 +25,7 @@ import { startFollowPhone } from "./lib/followPhone.js";
 import { startSharedSettings } from "./lib/sharedSettings.js";
 import { startShareIn } from "./lib/shareIn.js";
 import { startWifiAddress } from "./lib/radioWifi.js";
+import { MINI_APPS_ENABLED } from "./lib/miniapps/feature.js";
 import { startMiniAppsRuntime } from "./lib/miniapps/runtime.js";
 import { findInstalledByAppId } from "./lib/miniapps/store.js";
 import { isWide, subscribeWide } from "./lib/layout.js";
@@ -141,7 +142,7 @@ export function App() {
   useEffect(() => startShareIn(), []);
   useEffect(() => startWifiAddress(), []);
   // Sandboxed mini-apps runtime: routes MCRS v2 binary peer data to active iframe or background worker.
-  useEffect(() => startMiniAppsRuntime(session), []);
+  useEffect(() => (MINI_APPS_ENABLED ? startMiniAppsRuntime(session) : undefined), []);
 
   // A click on a notice opens what it was about.
   useEffect(() => {
@@ -149,7 +150,7 @@ export function App() {
       if (tag === ALL_CHATS) openConversation(null);
       else if (tag.startsWith("c:")) openConversation(tag.slice(2));
       else if (tag.startsWith("n:")) openProfile(tag.slice(2), true);
-      else if (tag.startsWith("app:")) {
+      else if (MINI_APPS_ENABLED && tag.startsWith("app:")) {
         const rest = tag.slice(4);
         const colon = rest.indexOf(":");
         const appId = Number(colon >= 0 ? rest.slice(0, colon) : rest);
@@ -204,7 +205,7 @@ export function App() {
     const resume = () => {
       if (document.visibilityState !== "visible" || session.getState().status !== "ready") return;
       session.syncMessages().catch(() => undefined);
-      session.syncPeerData().catch(() => undefined);
+      if (MINI_APPS_ENABLED) session.syncPeerData().catch(() => undefined);
     };
     document.addEventListener("visibilitychange", resume);
     return () => document.removeEventListener("visibilitychange", resume);

@@ -13,6 +13,7 @@ import { isFavourite, type SessionState } from "@meshnet/meshcore";
 import { forms, language, pluralTable, subscribeLanguage, t, template } from "../i18n/index.js";
 import { blocksForCore, subscribeBlocks } from "./blocked.js";
 import { signalFile } from "./chime.js";
+import { MINI_APPS_ENABLED } from "./miniapps/feature.js";
 import { installedAppsForCore } from "./miniapps/runtime.js";
 import { subscribeMiniApps } from "./miniapps/store.js";
 import { getNoticePrefs, subscribeNoticePrefs } from "./noticePrefs.js";
@@ -88,10 +89,10 @@ export function coreConfig(state: SessionState, now = Date.now()): string {
     direct: prefs.direct,
     chats: prefs.chats,
     nodes: prefs.nodes,
-    apps: prefs.apps,
-    appLevel: prefs.appLevel,
-    appSound: Object.fromEntries(Object.entries(prefs.appSound).map(([id, signal]) => [id, signalFile(signal)])),
-    installedApps: installedAppsForCore(),
+    apps: MINI_APPS_ENABLED ? prefs.apps : false,
+    appLevel: MINI_APPS_ENABLED ? prefs.appLevel : {},
+    appSound: MINI_APPS_ENABLED ? Object.fromEntries(Object.entries(prefs.appSound).map(([id, signal]) => [id, signalFile(signal)])) : {},
+    installedApps: MINI_APPS_ENABLED ? installedAppsForCore() : {},
     chat: prefs.chat,
     chatUntil: prefs.chatUntil,
     quiet: { spans: quietSpans(prefs.quiet, now), favourites: prefs.quiet.favourites, mentions: prefs.quiet.mentions },
@@ -138,7 +139,7 @@ export function startCoreWatch(state: () => SessionState, subscribe: (listener: 
   const stopSession = subscribe(() => tell(false));
   const stopPrefs = subscribeNoticePrefs(() => tell(true));
   const stopBlocks = subscribeBlocks(() => tell(true));
-  const stopApps = subscribeMiniApps(() => tell(true));
+  const stopApps = MINI_APPS_ENABLED ? subscribeMiniApps(() => tell(true)) : () => undefined;
   const stopLanguage = subscribeLanguage(() => tell(true));
   return () => {
     stopSession();

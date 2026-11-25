@@ -10,6 +10,7 @@
 
 import { useSyncExternalStore } from "react";
 import { ownKey } from "./instance.js";
+import { MINI_APPS_ENABLED } from "./miniapps/feature.js";
 import { readSetting, writeSetting } from "./storage.js";
 
 export type Section = "chats" | "mesh" | "apps" | "radio";
@@ -70,9 +71,19 @@ function restore(saved: unknown): Nav {
     for (const s of SECTIONS)
       if (Array.isArray(value.stacks[s]))
         stacks[s] = value.stacks[s]
-          .filter((x) => x && typeof x === "object" && "kind" in x && (x as { kind: string }).kind !== "route" && !(x.kind === "radio" && (x.page as string) === "position"))
+          .filter(
+            (x) =>
+              x &&
+              typeof x === "object" &&
+              "kind" in x &&
+              (x as { kind: string }).kind !== "route" &&
+              !(x.kind === "radio" && (x.page as string) === "position") &&
+              (MINI_APPS_ENABLED || !(x.kind === "radio" && (x.page as string) === "soundApps")),
+          )
           .map((x) => (x.kind === "radio" && ((x.page as string) === "battery" || (x.page as string) === "sensors") ? { kind: "radio", page: "readings" } : x));
-    return { section: value.section as Section, stacks, meshFocus: typeof value.meshFocus === "string" ? value.meshFocus : null };
+    if (!MINI_APPS_ENABLED) stacks.apps = [];
+    const section: Section = !MINI_APPS_ENABLED && value.section === "apps" ? "chats" : (value.section as Section);
+    return { section, stacks, meshFocus: typeof value.meshFocus === "string" ? value.meshFocus : null };
   }
   // Seven sections became three: Contacts, Map and Nodes are Mesh; Settings and Log are Radio.
   const old = saved as OldNav;
@@ -133,6 +144,7 @@ export function shownConversation(state: Nav, wide: boolean): string | null {
 
 /** To a section as it was left; `reset` goes back to its root, as a second tap on its tab does. */
 export function goSection(section: Section, reset = false): void {
+  if (!MINI_APPS_ENABLED && section === "apps") return;
   set({ ...nav, section, stacks: reset ? { ...nav.stacks, [section]: [] } : nav.stacks, meshFocus: reset && section === "mesh" ? null : nav.meshFocus });
 }
 
@@ -221,10 +233,12 @@ export function openRadioPage(page: RadioPage): void {
 }
 
 export function openMiniApp(id: string, activityId?: string): void {
+  if (!MINI_APPS_ENABLED) return;
   setStack("apps", [{ kind: "app", id, ...(activityId ? { activityId } : {}) }]);
 }
 
 export function openMiniAppStore(): void {
+  if (!MINI_APPS_ENABLED) return;
   setStack("apps", [{ kind: "appStore" }]);
 }
 

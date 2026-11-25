@@ -329,6 +329,8 @@
   "quick.waitingMessageTry": "Not there yet · try {n} of {total}",
   "quick.upTo": "Up to {name} · {time}",
   "quick.direct": "Direct · {time}",
+  "quick.snrBoth": "out {out} · back {back}",
+  "quick.snrOut": "out {out}",
   "quick.noAnswer": "No answer",
   "quick.noAnswerRow": { "one": "No answer {count} time in a row", "other": "No answer {count} times in a row" },
   "quick.upToNoAnswer": "Up to {name} · no answer",

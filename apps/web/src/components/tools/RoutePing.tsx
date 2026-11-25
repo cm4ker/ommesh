@@ -16,19 +16,21 @@ import { AdvType, contactHops, contactRoute, type ContactRecord, type SessionSta
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { t } from "../../i18n/index.js";
+import { tx } from "../../i18n/rich.js";
 import { useBackLayer } from "../../lib/back.js";
 import { discover, undoDiscovery, useDiscovery, type Discovery } from "../../lib/discovery.js";
 import { nameOfHash } from "../../lib/echoes.js";
 import { haptic } from "../../lib/haptic.js";
+import { formatSnr, quality } from "../../lib/los.js";
 import { contactEnd } from "../../lib/mapOverlay.js";
-import { directKey, findWayRound, keepLooking, measuredLegs, pingOnce, settleDirect, undoFound, usePing, weakestLeg, type Ping } from "../../lib/ping.js";
+import { directKey, findWayRound, keepLooking, legSnr, measuredLegs, pingOnce, settleDirect, undoFound, usePing, weakestLeg, type Leg, type Ping } from "../../lib/ping.js";
 import { lostInARow, newestWay, routeShort, tookText, wayChoices, type PingWay, type WayChoice } from "../../lib/pingWays.js";
 import { forgetWay, pingByMessage, setWay, useMessagePing, useWay, type MessagePing } from "../../lib/quickPing.js";
 import { session, useSession } from "../../lib/session.js";
 import { act } from "../../lib/toast.js";
 import { openLineOfSight, openRoute } from "../../lib/toolActions.js";
 import { Button } from "../../ui/Button.js";
-import { CheckIcon, ChevronRightIcon, DirectIcon, NodesIcon, PingIcon, SearchIcon, SendIcon } from "../Icons.js";
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, DirectIcon, NodesIcon, PingIcon, SearchIcon, SendIcon } from "../Icons.js";
 import { CheckResult, Dots, legEnds, namesAlong, QualityChip, relaysOf } from "./RouteSheet.js";
 
 /** How long a finger holds the ping before the ways come up, ms; shorter than a row's menu, as the ping is held on purpose. */
@@ -166,16 +168,34 @@ interface Act {
   run: () => void;
 }
 
+/** One SNR value coloured by quality, for a leg's out or back direction. */
+function SnrVal({ snr }: { snr: number }) {
+  return <span className={`ping-snr-val ${quality(snr)}`}>{t("tools.unit.db", { value: formatSnr(snr) })}</span>;
+}
+
+/** How one leg sounded, in both directions when it came home the same way. */
+function legSnrText(leg: Leg): ReactNode {
+  const out = <SnrVal snr={leg[0]} />;
+  if (leg[1] === null) return tx("tools.quick.snrOut", { out });
+  return tx("tools.quick.snrBoth", { out, back: <SnrVal snr={leg[1]} /> });
+}
+
 /**
  * What the last ping came to, under the route: the newest of the four ways
  * asked. A row of pings along one way shows as dots, with the time of the
- * last and a word for its weakest leg. A check that went on to find where
- * the route breaks shows as checks do.
+ * last and its signal: for a single hop, both directions in dB right under
+ * the line (tapping opens line of sight when both ends sit on the map); for
+ * several hops, the weakest leg's dB on the chip with every leg behind a tap.
+ * A check that went on to find where the route breaks shows as checks do.
  */
 function PingAnswer({ contact, state, route, direct, flood, message, open, go }: { contact: ContactRecord; state: SessionState; route: Ping | null; direct: Ping | null; flood: Discovery | null; message: MessagePing | null; open: (w: PingWay) => boolean; go: (w: PingWay) => void }) {
   const key = contact.key;
   const online = state.status === "ready";
   const newest = newestWay({ route: route?.at ?? null, direct: direct?.at ?? null, flood: flood?.at ?? null, message: message?.at ?? null });
+  const [legsOpen, setLegsOpen] = useState(false);
+  useEffect(() => {
+    setLegsOpen(false);
+  }, [key, newest]);
   if (!newest) return null;
   const acts: Act[] = [];
   const offer = (w: PingWay, label: string, icon: ReactNode) => {
@@ -185,6 +205,8 @@ function PingAnswer({ contact, state, route, direct, flood, message, open, go }:
   let text: string;
   let tone: "" | "muted" | "bad" = "";
   let chip: ReactNode = null;
+  let expandable = false;
+  let signal: ReactNode = null;
   let note: string | null = null;
 
   if (newest === "route" || newest === "direct") {
@@ -215,7 +237,58 @@ function PingAnswer({ contact, state, route, direct, flood, message, open, go }:
       const time = tookText(lastRun.rttMs ?? 0);
       text = isDirect ? t("tools.quick.direct", { time }) : upTo ? t("tools.quick.upTo", { name: upTo, time }) : time;
       const weakest = weakestLeg(p);
-      chip = weakest ? <QualityChip snr={weakest.snr} numbers={false} /> : null;
+      const legs = lastRun.legs;
+      if (legs.length === 1) {
+        // Both directions sit on the line below, so the chip keeps the word alone to avoid repeating one of them.
+        chip = weakest ? <QualityChip snr={weakest.snr} numbers={false} /> : null;
+        const leg = legs[0]!;
+        const ends = legEnds(p, contact, state, 0);
+        const body = <span>{legSnrText(leg)}</span>;
+        signal = ends ? (
+          <button type="button" className="ping-snr" title={t("tools.los.title")} onClick={() => openLineOfSight(ends.a, ends.b, key, leg)}>
+            {body}
+            <ChevronRightIcon size={14} className="line-chev" />
+          </button>
+        ) : (
+          <div className="ping-snr">{body}</div>
+        );
+      } else if (legs.length > 1) {
+        expandable = true;
+        chip = weakest ? <QualityChip snr={weakest.snr} trailing={<ChevronDownIcon size={12} className={["ping-chip-caret", legsOpen ? "open" : ""].join(" ")} />} /> : null;
+        if (legsOpen) {
+          const names = namesAlong(p, contact, state);
+          signal = (
+            <div className="ping-legs">
+              {legs.map((leg, i) => {
+                const ends = legEnds(p, contact, state, i);
+                const body = (
+                  <>
+                    <span className={`ping-leg-dot ${quality(legSnr(leg))}`} aria-hidden="true" />
+                    <span className="ping-leg-main">
+                      <span className="ping-leg-name">
+                        {names[i] ?? ""} ↔ {names[i + 1] ?? ""}
+                      </span>
+                      <span className="ping-leg-snr">{legSnrText(leg)}</span>
+                    </span>
+                  </>
+                );
+                return ends ? (
+                  <button key={i} type="button" className="ping-leg" title={t("tools.los.title")} onClick={() => openLineOfSight(ends.a, ends.b, key, leg)}>
+                    {body}
+                    <ChevronRightIcon size={14} className="line-chev" />
+                  </button>
+                ) : (
+                  <div key={i} className="ping-leg">
+                    {body}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        }
+      } else {
+        chip = weakest ? <QualityChip snr={weakest.snr} numbers={false} /> : null;
+      }
       // Heard with nothing between, while the route goes through relays: it can go straight.
       if (isDirect && (contactHops(contact) ?? 0) > 0 && !session.routePolicy(key).flood) {
         acts.push({
@@ -272,13 +345,24 @@ function PingAnswer({ contact, state, route, direct, flood, message, open, go }:
     }
   }
 
+  const line = (
+    <span className="ping-answer-line">
+      {dots ? <Dots marks={dots.marks} total={dots.marks.length + (dots.live ? 1 : 0)} live={dots.live} /> : null}
+      <span className={["ping-answer-text", tone].join(" ")}>{text}</span>
+      {chip}
+    </span>
+  );
+
   return (
     <div className="ping-answer" aria-live="polite">
-      <div className="ping-answer-line">
-        {dots ? <Dots marks={dots.marks} total={dots.marks.length + (dots.live ? 1 : 0)} live={dots.live} /> : null}
-        <span className={["ping-answer-text", tone].join(" ")}>{text}</span>
-        {chip}
-      </div>
+      {expandable ? (
+        <button type="button" className="ping-answer-toggle" aria-expanded={legsOpen} onClick={() => setLegsOpen((v) => !v)}>
+          {line}
+        </button>
+      ) : (
+        line
+      )}
+      {signal}
       {note ? <p className="ping-answer-note">{note}</p> : null}
       {acts.length ? (
         <div className="ping-answer-acts">

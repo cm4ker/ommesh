@@ -508,6 +508,131 @@
   flex-wrap: wrap;
   gap: var(--space-2);
 }
+.ping-chip-caret {
+  align-self: center;
+  flex: none;
+  margin-right: -2px;
+  transition: transform 0.15s ease;
+}
+.ping-chip-caret.open {
+  transform: rotate(180deg);
+}
+.ping-answer-toggle {
+  display: block;
+  width: calc(100% + var(--space-4));
+  margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-2));
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .ping-answer-toggle:hover {
+    background: var(--hover);
+  }
+}
+/* One hop's SNR in both directions right under the answer, and a tap into line of sight when both ends sit on the map. */
+.ping-snr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: calc(100% + var(--space-4));
+  margin: 0 calc(-1 * var(--space-2));
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+}
+button.ping-snr {
+  cursor: pointer;
+}
+@media (hover: hover) {
+  button.ping-snr:hover {
+    background: var(--hover);
+  }
+}
+.ping-snr-val {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.ping-snr-val.good {
+  color: var(--success);
+}
+.ping-snr-val.fair {
+  color: var(--warning);
+}
+.ping-snr-val.weak {
+  color: var(--danger);
+}
+/* Every leg of a multi-hop ping, kept behind a tap on the answer line so the row stays lean. */
+.ping-legs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-1);
+  border-top: 1px dashed var(--border);
+}
+.ping-leg {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 6px var(--space-2);
+  border: 0;
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--text) 4%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+}
+button.ping-leg {
+  cursor: pointer;
+}
+@media (hover: hover) {
+  button.ping-leg:hover {
+    background: var(--hover);
+  }
+}
+.ping-leg-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.ping-leg-dot.good {
+  background: var(--success);
+}
+.ping-leg-dot.fair {
+  background: var(--warning);
+}
+.ping-leg-dot.weak {
+  background: var(--danger);
+}
+.ping-leg-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ping-leg-name {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.ping-leg-snr {
+  color: var(--text-muted);
+}
 /* The ways to ping, over the finger that held it; the screen dims a little under them. */
 .ways-scrim {
   position: fixed;

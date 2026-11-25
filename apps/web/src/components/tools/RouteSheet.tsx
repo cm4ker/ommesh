@@ -38,12 +38,13 @@ import { showMenu } from "../../ui/Menu.js";
 import { Sheet } from "../../ui/Sheet.js";
 import { AlertIcon, BackIcon, CheckIcon, ChevronRightIcon, CloseIcon, MoreIcon, PingIcon, PlusIcon, RefreshIcon, SaveIcon, StopIcon } from "../Icons.js";
 
-export function QualityChip({ snr, numbers = true }: { snr: number; numbers?: boolean }) {
+export function QualityChip({ snr, numbers = true, trailing }: { snr: number; numbers?: boolean; trailing?: ReactNode }) {
   const q = quality(snr);
   return (
     <span className={`quality ${q}`}>
       {qualityWord(q)}
       {numbers ? <small>{t("tools.unit.db", { value: formatSnr(snr) })}</small> : null}
+      {trailing}
     </span>
   );
 }
@@ -497,7 +498,7 @@ export function CheckResult({ p, names, reach, placed, onLeg, onUndo }: { p: Pin
           <div className="check-result">
             <b className="found-head">{p.broken ? t("tools.check.foundOther") : t("tools.check.found")}</b>
             <span className="muted">{rtt ? t("tools.check.backIn", { via: t("tools.viaRelays", { count: relays }), seconds: (rtt / 1000).toFixed(1) }) : t("tools.viaRelays", { count: relays })}</span>
-            {weakest ? <QualityChip snr={weakest.snr} numbers={false} /> : null}
+            {weakest ? <QualityChip snr={weakest.snr} /> : null}
           </div>
           <p className="check-note">
             {p.search.tries.length > 1
@@ -565,7 +566,7 @@ export function CheckResult({ p, names, reach, placed, onLeg, onUndo }: { p: Pin
       <div className="check-result">
         <b className="mono">{t("tools.unit.ms", { value: Math.round(avg) })}</b>
         <span className="muted">{reach ? t("tools.check.cameBackReach", { good: good.length, total: done, name: reach }) : t("tools.check.cameBack", { good: good.length, total: done })}</span>
-        {weakest ? <QualityChip snr={weakest.snr} numbers={false} /> : null}
+        {weakest ? <QualityChip snr={weakest.snr} /> : null}
       </div>
       {weakRow(done - good.length)}
     </>

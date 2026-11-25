@@ -329,6 +329,8 @@
   "quick.waitingMessageTry": "Пока не дошло · попытка {n} из {total}",
   "quick.upTo": "До {name} · {time}",
   "quick.direct": "Напрямую · {time}",
+  "quick.snrBoth": "туда {out} · обратно {back}",
+  "quick.snrOut": "туда {out}",
   "quick.noAnswer": "Нет ответа",
   "quick.noAnswerRow": { "one": "Нет ответа {count} раз подряд", "few": "Нет ответа {count} раза подряд", "many": "Нет ответа {count} раз подряд", "other": "Нет ответа {count} раза подряд" },
   "quick.upToNoAnswer": "До {name} · нет ответа",

@@ -48,6 +48,10 @@ pub(crate) enum Event {
     Kept(Vec<u8>),
     /// A client took this message from its inbox.
     Taken(Client, Vec<u8>),
+    /// An MCRS v2 peer-data packet read off the radio's queue, now in every peer inbox.
+    KeptPeerData(Vec<u8>),
+    /// A client took this MCRS v2 peer-data packet from its peer inbox.
+    TakenPeerData(Client, Vec<u8>),
     /// A client sent the other an entry ([`PEER_ENTRY`]).
     Entry(Client, Vec<u8>),
     /// A client's command went on the queue for the radio.
@@ -68,6 +72,8 @@ enum Source {
     Client(Client),
     /// The mux's own reading of the message queue.
     Queue,
+    /// The mux's own reading of the MCRS v2 peer-data queue.
+    PeerQueue,
     /// The core's own, as a survey's ask: its answer goes to no client.
     Core,
 }
@@ -91,7 +97,11 @@ pub(crate) struct Mux {
     radio_ready: bool,
     draining: bool,
     drain_again: bool,
+    draining_peer: bool,
+    drain_peer_again: bool,
     inboxes: [Vec<Vec<u8>>; Client::COUNT],
+    /// Incoming MCRS v2 peer-data frames per client, separate from text inboxes.
+    peer_inboxes: [VecDeque<Vec<u8>>; Client::COUNT],
     /// Whether each client tells when it has saved what it took ([`PEER_KEEP`]).
     keeping: [bool; Client::COUNT],
     /// Whether it counts the mirrors it is told as well ([`KEEP_MIRRORS`]).
@@ -123,7 +133,10 @@ impl Mux {
             radio_ready: false,
             draining: false,
             drain_again: false,
+            draining_peer: false,
+            drain_peer_again: false,
             inboxes,
+            peer_inboxes: Default::default(),
             keeping: [false; Client::COUNT],
             keeping_mirrors: [false; Client::COUNT],
             handed: Default::default(),
@@ -178,6 +191,9 @@ impl Mux {
         if !self.inbox(client).is_empty() {
             self.tell(client, vec![PUSH_MSG_WAITING]);
         }
+        if !self.peer_inboxes[client.index()].is_empty() {
+            self.tell(client, vec![PUSH_MCRS, MCRS_SUB_PEER_DATA_WAITING]);
+        }
     }
 
     /// Its waiting commands are dropped; one in flight is still answered, to nobody.
@@ -226,6 +242,20 @@ impl Mux {
             }
             if !frame.is_empty() {
                 self.answer_from_inbox(client);
+            }
+            return;
+        }
+        if frame.len() >= 2
+            && frame[0] == CMD_MCRS
+            && frame[1] == MCRS_SUB_SYNC_PEER_DATA
+            && !self.peer_inboxes[client.index()].is_empty()
+        {
+            if let Some(write) = write {
+                self.out.push(Effect::Written { write });
+            }
+            if let Some(pkt) = self.peer_inboxes[client.index()].pop_front() {
+                self.events.push(Event::TakenPeerData(client, pkt.clone()));
+                self.tell(client, pkt);
             }
             return;
         }
@@ -382,6 +412,13 @@ impl Mux {
         {
             self.draining = false;
         }
+        if self
+            .in_flight
+            .as_ref()
+            .is_some_and(|c| c.source == Source::PeerQueue)
+        {
+            self.draining_peer = false;
+        }
         self.queue.retain(|c| c.source != Source::Core);
         self.in_flight = None;
         self.streaming = false;
@@ -393,6 +430,8 @@ impl Mux {
         if is_push(code) {
             if code == PUSH_MSG_WAITING {
                 self.drain();
+            } else if code == PUSH_MCRS && frame.get(1) == Some(&MCRS_SUB_PEER_DATA_WAITING) {
+                self.drain_peer();
             } else {
                 for client in Client::ALL {
                     if self.is_attached(client) {
@@ -460,6 +499,22 @@ impl Mux {
                     }
                 }
             }
+            Source::PeerQueue => {
+                if code == RESP_MCRS && frame.get(1) == Some(&MCRS_SUB_SYNC_PEER_DATA) && frame.len() > 2 {
+                    self.keep_peer(frame);
+                    self.queue.push_back(Command {
+                        source: Source::PeerQueue,
+                        frame: vec![CMD_MCRS, MCRS_SUB_SYNC_PEER_DATA],
+                        write: None,
+                    });
+                } else {
+                    self.draining_peer = false;
+                    if self.drain_peer_again {
+                        self.drain_peer_again = false;
+                        self.drain_peer();
+                    }
+                }
+            }
             Source::Client(source) => {
                 if self.is_attached(source) {
                     self.tell(source, frame.to_vec());
@@ -492,6 +547,7 @@ impl Mux {
         };
         match command.source {
             Source::Queue => self.draining = false,
+            Source::PeerQueue => self.draining_peer = false,
             Source::Core => self.events.push(Event::Unanswered),
             Source::Client(_) => {}
         }
@@ -531,11 +587,42 @@ impl Mux {
         self.events.push(Event::InboxesChanged);
     }
 
+    fn drain_peer(&mut self) {
+        if self.draining_peer {
+            self.drain_peer_again = true;
+            return;
+        }
+        self.draining_peer = true;
+        self.queue.push_back(Command {
+            source: Source::PeerQueue,
+            frame: vec![CMD_MCRS, MCRS_SUB_SYNC_PEER_DATA],
+            write: None,
+        });
+        self.pump();
+    }
+
+    fn keep_peer(&mut self, frame: &[u8]) {
+        for client in Client::ALL {
+            let inbox = &mut self.peer_inboxes[client.index()];
+            if inbox.len() >= 256 {
+                inbox.pop_front();
+            }
+            inbox.push_back(frame.to_vec());
+            if self.is_attached(client) {
+                self.tell(client, vec![PUSH_MCRS, MCRS_SUB_PEER_DATA_WAITING]);
+            }
+        }
+        self.events.push(Event::KeptPeerData(frame.to_vec()));
+    }
+
     /// A text or a channel datagram the radio took from one client, told to the others.
     fn mirror(&mut self, command: &[u8], answer: &[u8], sender: Client) {
         let taken = match command[0] {
             CMD_SEND_TXT_MSG => answer[0] == RESP_SENT,
             CMD_SEND_CHANNEL_TXT_MSG | CMD_SEND_CHANNEL_DATA => answer[0] == RESP_OK,
+            CMD_MCRS if command.get(1) == Some(&MCRS_SUB_SEND_PEER_DATA) => {
+                answer[0] == RESP_MCRS && answer.get(1) == Some(&MCRS_SUB_SEND_PEER_DATA)
+            }
             _ => false,
         };
         if !taken || command.len() >= 256 {

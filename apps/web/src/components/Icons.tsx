@@ -172,3 +172,5 @@ export const ChartIcon = icon('<path d="M4 19h16"/><path d="M6 15l4-5 3 3 5-7"/>
 /** An address that opens outside the app, in the system's browser. */
 export const ExternalIcon = icon('<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5.5H4.5V6H10"/>');
 export const UsersIcon = icon('<circle cx="9" cy="8" r="3.5"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7"/><path d="M17.5 14.5c2 .8 3.5 2.8 3.5 5.5"/>');
+/** Mini-apps section: a 2×2 grid of tiles. */
+export const AppsIcon = icon('<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>');

@@ -13,7 +13,7 @@
     "emoji": "node scripts/emoji.mjs",
     "news": "node scripts/news.mjs",
     "//": "@meshnet/meshcore is consumed through its dist, so every entry point that loads it rebuilds it first. Without this an edit to the protocol is invisible to the web app until someone remembers to build by hand.",
-    "meshcore": "pnpm --filter @meshnet/meshcore build",
+    "meshcore": "pnpm --filter @meshnet/meshcore build && pnpm --filter @ommesh/miniapp-sdk build",
     "pretypecheck": "pnpm run meshcore",
     "typecheck": "pnpm -r typecheck",
     "pretest": "pnpm run meshcore",

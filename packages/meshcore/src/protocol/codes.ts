@@ -156,6 +156,8 @@ export const Push = {
   ControlData: 0x8e,
   ContactDeleted: 0x8f,
   ContactsFull: 0x90,
+  /** `meshcore-rs` extension push (`[0xE0, subcode, ...]`). */
+  Mcrs: 0xe0,
   /**
    * Not the firmware's: the phone's relay (`mux.rs` in meshcore-core) sends
    * it when the other app sharing the radio sent a text or a reaction. The

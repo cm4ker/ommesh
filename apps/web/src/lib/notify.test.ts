@@ -193,6 +193,7 @@ test("Android makes its channels ring with the sounds, posts through its own plu
       { kind: "direct", sound: "signal_chirp.wav", label: null },
       { kind: "chats", sound: "signal_chirp.wav", label: null },
       { kind: "nodes", sound: "signal_chirp.wav", label: null },
+      { kind: "apps", sound: "signal_hop.wav", label: null },
     ],
   });
   const native = calls[1]?.options as NativeNotice;
@@ -216,5 +217,5 @@ test("on Android a chat's own sound has a channel beside its kind's, named after
   await tellChannels(state);
   const told = calls.filter((c) => c.method === "channels");
   assert.equal(told.length, 1);
-  assert.deepEqual((told[0]?.options as { wanted: unknown[] }).wanted.slice(3), [{ kind: "chats", sound: "signal_roger.wav", label: t("radio.signals.roger") }]);
+  assert.deepEqual((told[0]?.options as { wanted: unknown[] }).wanted.slice(4), [{ kind: "chats", sound: "signal_roger.wav", label: t("radio.signals.roger") }]);
 });

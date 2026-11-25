@@ -25,8 +25,10 @@ import { startFollowPhone } from "./lib/followPhone.js";
 import { startSharedSettings } from "./lib/sharedSettings.js";
 import { startShareIn } from "./lib/shareIn.js";
 import { startWifiAddress } from "./lib/radioWifi.js";
+import { startMiniAppsRuntime } from "./lib/miniapps/runtime.js";
+import { findInstalledByAppId } from "./lib/miniapps/store.js";
 import { isWide, subscribeWide } from "./lib/layout.js";
-import { getNav, openConversation, openProfile, shownConversation, subscribeNav } from "./lib/nav.js";
+import { getNav, openConversation, openMiniApp, openMiniAppStore, openProfile, shownConversation, subscribeNav } from "./lib/nav.js";
 
 const NEW: Record<number, Key> = {
   [AdvType.Chat]: "notices.newContact",
@@ -138,6 +140,8 @@ export function App() {
   // What other apps share to this one (#88), waiting over the chat list for a chat.
   useEffect(() => startShareIn(), []);
   useEffect(() => startWifiAddress(), []);
+  // Sandboxed mini-apps runtime: routes MCRS v2 binary peer data to active iframe or background worker.
+  useEffect(() => startMiniAppsRuntime(session), []);
 
   // A click on a notice opens what it was about.
   useEffect(() => {
@@ -145,6 +149,15 @@ export function App() {
       if (tag === ALL_CHATS) openConversation(null);
       else if (tag.startsWith("c:")) openConversation(tag.slice(2));
       else if (tag.startsWith("n:")) openProfile(tag.slice(2), true);
+      else if (tag.startsWith("app:")) {
+        const rest = tag.slice(4);
+        const colon = rest.indexOf(":");
+        const appId = Number(colon >= 0 ? rest.slice(0, colon) : rest);
+        const activityId = colon >= 0 ? rest.slice(colon + 1) : undefined;
+        const installed = Number.isFinite(appId) ? findInstalledByAppId(appId) : null;
+        if (installed) openMiniApp(installed.pkg.manifest.id, activityId);
+        else openMiniAppStore();
+      }
     });
   }, []);
 
@@ -191,6 +204,7 @@ export function App() {
     const resume = () => {
       if (document.visibilityState !== "visible" || session.getState().status !== "ready") return;
       session.syncMessages().catch(() => undefined);
+      session.syncPeerData().catch(() => undefined);
     };
     document.addEventListener("visibilitychange", resume);
     return () => document.removeEventListener("visibilitychange", resume);

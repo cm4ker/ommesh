@@ -28,10 +28,12 @@ import { t, type Key } from "../i18n/index.js";
 import { readSetting, writeSetting } from "./storage.js";
 
 /** What a notice is about, which on Android is its channel: the reader sets each one's sound in the system. */
-export type NoticeKind = "direct" | "chats" | "nodes";
+export type NoticeKind = "direct" | "chats" | "nodes" | "apps";
 /** How much of a chat rings: a person's chat takes "all" or "off" only. */
 export type ChatLevel = "all" | "mentions" | "off";
 export type NodeLevel = "people" | "all" | "off";
+/** Per-mini-app notification override. */
+export type AppNoticeLevel = "all" | "silent" | "off";
 /** Who draws a notice: the system's notification centre, or the app's own card. */
 export type ShownBy = "system" | "app";
 /** Where on a computer's screen the app's own cards stack. */
@@ -89,6 +91,12 @@ export interface NoticePrefs {
   direct: boolean;
   chats: ChatLevel;
   nodes: NodeLevel;
+  /** Global toggle for installed mini-apps notifications. */
+  apps: boolean;
+  /** Per-app notification level override, keyed by numeric `appId` string. */
+  appLevel: Record<string, AppNoticeLevel>;
+  /** Per-app custom notification sound, keyed by numeric `appId` string. */
+  appSound: Record<string, Signal>;
   /** Chats with a level of their own, by conversation. */
   chat: Record<string, ChatLevel>;
   /** Chats whose own level is for a while, when the while ends, ms (Telegram's "mute for 8 hours"). */
@@ -106,11 +114,14 @@ export const DEFAULT_PREFS: NoticePrefs = {
   direct: true,
   chats: "all",
   nodes: "people",
+  apps: true,
+  appLevel: {},
+  appSound: {},
   chat: {},
   chatUntil: {},
   shownBy: "system",
   corner: "br",
-  sounds: { direct: "chirp", chats: "chirp", nodes: "chirp" },
+  sounds: { direct: "chirp", chats: "chirp", nodes: "chirp", apps: "hop" },
   chatSound: {},
   quiet: DEFAULT_QUIET,
 };
@@ -125,10 +136,12 @@ type Stored = Partial<NoticePrefs> & { signal?: Signal };
 
 export function fromStored(stored: Stored): NoticePrefs {
   const { signal, ...rest } = stored;
-  const before = signal ? { direct: signal, chats: signal, nodes: signal } : {};
+  const before = signal ? { direct: signal, chats: signal, nodes: signal, apps: signal } : {};
   return {
     ...DEFAULT_PREFS,
     ...rest,
+    appLevel: { ...stored.appLevel },
+    appSound: { ...stored.appSound },
     chat: { ...stored.chat },
     chatUntil: { ...stored.chatUntil },
     sounds: { ...DEFAULT_PREFS.sounds, ...before, ...stored.sounds },
@@ -206,6 +219,31 @@ export function setChatSound(conversation: string, signal: Signal | null): void 
   setNoticePrefs({ chatSound });
 }
 
+/** Gives a mini-app a notification level of its own, or null to follow the global `apps` toggle. */
+export function setAppLevel(appId: number | string, level: AppNoticeLevel | null): void {
+  const appLevel = { ...prefs.appLevel };
+  const key = String(appId);
+  if (level) appLevel[key] = level;
+  else delete appLevel[key];
+  setNoticePrefs({ appLevel });
+}
+
+/** Gives a mini-app a notification sound of its own, or null to use the `apps` kind sound. */
+export function setAppSound(appId: number | string, signal: Signal | null): void {
+  const appSound = { ...prefs.appSound };
+  const key = String(appId);
+  if (signal) appSound[key] = signal;
+  else delete appSound[key];
+  setNoticePrefs({ appSound });
+}
+
+/** Effective notification level for a mini-app. */
+export function appNoticeAllowed(p: NoticePrefs, appId: number): AppNoticeLevel {
+  const own = p.appLevel[String(appId)];
+  if (own) return own;
+  return p.apps ? "all" : "off";
+}
+
 export function subscribeNoticePrefs(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
@@ -258,37 +296,47 @@ export function anyMessageWanted(p: NoticePrefs): boolean {
   return p.direct || p.chats !== "off" || Object.values(p.chat).some((l) => l !== "off");
 }
 
-/** The sound a notice rings with: its chat's own, or its kind's. The notice about several chats is one of channels and rooms. */
+/** The sound a notice rings with: its chat's or app's own, or its kind's. The notice about several chats is one of channels and rooms. */
 export function noticeSignal(p: NoticePrefs, notice: { tag: string; kind: NoticeKind }): Signal {
+  if (notice.tag.startsWith("app:")) {
+    const rest = notice.tag.slice(4);
+    const colon = rest.indexOf(":");
+    const appKey = colon >= 0 ? rest.slice(0, colon) : rest;
+    if (appKey && p.appSound[appKey]) return p.appSound[appKey];
+  }
   const conversation = notice.tag.startsWith("c:") ? notice.tag.slice(2) : "";
   return (conversation ? p.chatSound[conversation] : undefined) ?? p.sounds[notice.kind];
 }
 
 /** The one sound every notice rings with, or null when they differ. */
 export function oneSignal(p: NoticePrefs): Signal | null {
-  const all = [...Object.values(p.sounds), ...Object.values(p.chatSound)];
+  const all = [...Object.values(p.sounds), ...Object.values(p.chatSound), ...Object.values(p.appSound)];
   return all.every((s) => s === all[0]) ? (all[0] ?? null) : null;
 }
 
 /**
  * The sounds each kind's notices ring with: the kind's own first, then every
- * other one a chat of that kind has. Android makes a channel of each, since a
- * channel's sound is fixed once it is made.
+ * other one a chat or mini-app of that kind has. Android makes a channel of each,
+ * since a channel's sound is fixed once it is made.
  */
 export function kindSounds(p: NoticePrefs, state: SessionState): { kind: NoticeKind; signal: Signal; own: boolean }[] {
-  const kinds: NoticeKind[] = ["direct", "chats", "nodes"];
+  const kinds: NoticeKind[] = ["direct", "chats", "nodes", "apps"];
   const sounds = kinds.map((kind) => ({ kind, signal: p.sounds[kind], own: true }));
   for (const [conversation, signal] of Object.entries(p.chatSound)) {
     const kind: NoticeKind = isDirect(state, conversation) ? "direct" : "chats";
     if (!sounds.some((s) => s.kind === kind && s.signal === signal)) sounds.push({ kind, signal, own: false });
+  }
+  for (const signal of Object.values(p.appSound)) {
+    if (!sounds.some((s) => s.kind === "apps" && s.signal === signal)) sounds.push({ kind: "apps", signal, own: false });
   }
   return sounds;
 }
 
 /** One word for the Radio screen's row. */
 export function summaryOf(p: NoticePrefs): string {
-  if (!anyMessageWanted(p) && p.nodes === "off") return t("common.off");
-  if (p.direct && p.chats === "all" && p.nodes !== "off") return t("common.on");
+  const anyApps = p.apps || Object.values(p.appLevel).some((l) => l !== "off");
+  if (!anyMessageWanted(p) && p.nodes === "off" && !anyApps) return t("common.off");
+  if (p.direct && p.chats === "all" && p.nodes !== "off" && p.apps) return t("common.on");
   if (p.direct && p.chats === "mentions") return t("radio.notifications.mentions");
   return t("radio.notifications.custom");
 }

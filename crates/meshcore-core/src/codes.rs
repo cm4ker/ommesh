@@ -107,6 +107,12 @@ pub const PUSH_MSG_WAITING: u8 = 0x83;
 pub const PUSH_TRACE_DATA: u8 = 0x89;
 pub const PUSH_NEW_ADVERT: u8 = 0x8a;
 pub const PUSH_CONTROL_DATA: u8 = 0x8e;
+/// `meshcore-rs` extension push (`[0xE0, subcode, ...]`).
+pub const PUSH_MCRS: u8 = 0xe0;
+/// MCRS v2 subcommands / push subcodes for binary P2P datagrams.
+pub const MCRS_SUB_SEND_PEER_DATA: u8 = 0x01;
+pub const MCRS_SUB_SYNC_PEER_DATA: u8 = 0x02;
+pub const MCRS_SUB_PEER_DATA_WAITING: u8 = 0x03;
 /// Not the firmware's: a text or a reaction the other client sharing the radio sent, as
 /// `0xf0`, the command's length, the command, then the radio's answer.
 pub const PUSH_MIRROR: u8 = 0xf0;

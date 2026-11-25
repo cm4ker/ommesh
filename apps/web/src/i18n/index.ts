@@ -18,6 +18,7 @@
 
 import { useSyncExternalStore } from "react";
 import app from "./en/app.json";
+import apps from "./en/apps.json";
 import chats from "./en/chats.json";
 import cli from "./en/cli.json";
 import common from "./en/common.json";
@@ -30,7 +31,7 @@ import radio from "./en/radio.json";
 import tools from "./en/tools.json";
 
 /** The source. An area of its own is one more file here and one import above. */
-const english = { app, chats, cli, common, connect, contacts, mesh, node, notices, radio, tools };
+const english = { app, apps, chats, cli, common, connect, contacts, mesh, node, notices, radio, tools };
 
 type English = typeof english;
 export type Area = keyof English;

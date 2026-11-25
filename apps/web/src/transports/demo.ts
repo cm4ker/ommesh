@@ -22,6 +22,12 @@ import {
   groupTextPayload,
   heardGroupTextPayload,
   MAX_FRAME_SIZE,
+  MAX_PEER_DATA_LEN,
+  MCRS_VERSION,
+  McrsBoard,
+  McrsCap,
+  McrsRole,
+  McrsSub,
   messageHash,
   PEER_HELLO,
   peerEntry,
@@ -40,6 +46,7 @@ import {
 } from "@meshnet/meshcore";
 import type { Connector } from "./types.js";
 import { t } from "../i18n/index.js";
+import { DEMO_CHESS_APP_ID, DemoChessBot } from "./demoChess.js";
 
 /**
  * Who the demo radio is: its private key, the public key that comes of it,
@@ -433,6 +440,8 @@ class DemoRadio extends BaseTransport {
   readonly kind = "ble" as const;
   readonly label = "MeshCore-demo";
   private queue: Uint8Array[] = [];
+  private peerDataQueue: Uint8Array[] = [];
+  private chessBot = new DemoChessBot();
   private timers: ReturnType<typeof setTimeout>[] = [];
   /** What the app has handed in to sign since its start, or null outside one. */
   private signing: Uint8Array | null = null;
@@ -992,7 +1001,7 @@ class DemoRadio extends BaseTransport {
             .u32(own.blePin)
             .fixedString("15 Oct 2026", 12)
             .fixedString("Demo board", 40)
-            .fixedString("v1.18.0", 20)
+            .fixedString("v1.18.0-rs", 20)
             .u8(this.radio.repeat ? 1 : 0)
             .u8(this.radio.pathHashMode)
             .toBytes(),
@@ -1120,6 +1129,66 @@ class DemoRadio extends BaseTransport {
         return [new Uint8Array([Resp.Ok])];
       case Cmd.SyncNextMessage:
         return [this.queue.shift() ?? new Uint8Array([Resp.NoMoreMessages])];
+      case Cmd.Mcrs: {
+        const sub = frame[1];
+        if (sub === McrsSub.Info) {
+          const ver = new TextEncoder().encode("0.10.0-demo");
+          const caps = McrsCap.Screen | McrsCap.Sensors | McrsCap.PeerData;
+          return [
+            new ByteWriter()
+              .u8(Resp.Mcrs)
+              .u8(McrsSub.Info)
+              .u8(MCRS_VERSION)
+              .u8(McrsBoard.HeltecV4)
+              .u8(McrsRole.Companion)
+              .u32(1)
+              .u32(caps)
+              .u8(ver.length)
+              .bytes(ver)
+              .toBytes(),
+          ];
+        }
+        if (sub === McrsSub.SendPeerData) {
+          if (frame.length < 15) return [new Uint8Array([Resp.Err, 6])];
+          const prefix = frame.subarray(7, 13);
+          const appId = frame[13]! | (frame[14]! << 8);
+          const payload = frame.subarray(15);
+          if (appId === 0 || payload.length > MAX_PEER_DATA_LEN) return [new Uint8Array([Resp.Err, 6])];
+          const p = PEOPLE.find((x) => !this.gone.has(x) && prefix.every((b, i) => b === x.key[i]));
+          if (!p) return [new Uint8Array([Resp.Err, 2])];
+          const tag = this.acks++;
+          const flood = this.floods(p);
+          const confirmed = new ByteWriter().u8(Push.SendConfirmed).u32(tag).u32(650).toBytes();
+          if (!p.name.startsWith("Kolya")) {
+            this.later(650, confirmed);
+            if (appId === DEMO_CHESS_APP_ID) {
+              for (const reply of this.chessBot.onOutgoing(payload)) {
+                this.later(reply.delayMs, () => {
+                  this.peerDataQueue.push(
+                    new ByteWriter()
+                      .u8(Resp.Mcrs)
+                      .u8(McrsSub.SyncPeerData)
+                      .i8(28)
+                      .bytes(p.key.subarray(0, 6))
+                      .u8(p.hops)
+                      .u32(Math.floor(Date.now() / 1000))
+                      .u16(appId)
+                      .u8(reply.payload.length)
+                      .bytes(reply.payload)
+                      .toBytes(),
+                  );
+                  this.emitFrame(new Uint8Array([Push.Mcrs, McrsSub.PeerDataWaiting]));
+                });
+              }
+            }
+          }
+          return [new ByteWriter().u8(Resp.Mcrs).u8(McrsSub.SendPeerData).u8(flood ? 1 : 0).u32(tag).u32(2500).toBytes()];
+        }
+        if (sub === McrsSub.SyncPeerData) {
+          return [this.peerDataQueue.shift() ?? new Uint8Array([Resp.Mcrs, McrsSub.SyncPeerData])];
+        }
+        return [new Uint8Array([Resp.Err, 1])];
+      }
       case Cmd.GetBattAndStorage:
         return [new ByteWriter().u8(Resp.BattAndStorage).u16(3980).u32(120).u32(1024).toBytes()];
       case Cmd.GetTuningParams:

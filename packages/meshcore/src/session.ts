@@ -45,7 +45,7 @@ import {
   type SeriesSummary,
 } from "./protocol/frames.js";
 import type { LppReading } from "./protocol/lpp.js";
-import { isMeshCoreRsVersion, readMcrsInfo, type McrsInfo } from "./protocol/mcrs.js";
+import { hasMcrsCap, isMeshCoreRsVersion, McrsCap, McrsSub, readMcrsInfo, type McrsInfo, type PeerDataFrame } from "./protocol/mcrs.js";
 import { KEEP_VERSION, peerEntry, peerKeep, peerSaved, READ_MARK_PREFIX, readMarkOf, readMarkValue, textHash, type PeerSide, type ReadMark } from "./protocol/peer.js";
 import type { Transport } from "./transport.js";
 
@@ -383,6 +383,57 @@ export interface RemoteJobInfo {
 
 export interface NodeMcrsInfo extends McrsInfo {
   at: number;
+}
+
+/** An incoming encrypted binary P2P datagram received over MCRS v2 (`TXT_TYPE_PEER_DATA`). */
+export interface IncomingPeerData {
+  appId: number;
+  /** Hex of the 6-byte sender prefix (or recipient prefix when `mirrored` is true). */
+  peerPrefix: string;
+  /** Full 32-byte hex key of the peer when found in contacts, else null. */
+  peerKey: string | null;
+  payload: Uint8Array;
+  /** Sender's unix seconds timestamp. */
+  timestamp: number;
+  snr: number;
+  hops: number | null;
+  /** True when the other app sharing this radio via the phone relay sent this datagram. */
+  mirrored?: boolean;
+}
+
+export type PeerDataDeliveryStatus = "sent" | "retrying" | "delivered" | "unconfirmed" | "failed";
+
+/** Delivery lifecycle update for an outbound MCRS v2 binary P2P datagram. */
+export interface PeerDataDelivery {
+  packetId: string;
+  appId: number;
+  contactKey: string;
+  status: PeerDataDeliveryStatus;
+  attempt: number;
+  flood?: boolean;
+  rttMs?: number;
+  error?: string;
+}
+
+export interface PeerDataSendHandle {
+  packetId: string;
+  flood: boolean;
+  ackTag: number;
+  estTimeoutMs: number;
+}
+
+interface OutboundPeerData {
+  packetId: string;
+  appId: number;
+  contactKey: string;
+  recipientPrefix: Uint8Array;
+  payload: Uint8Array;
+  timestamp: number;
+  attempt: number;
+  maxAttempts: number;
+  ackTags: Set<number>;
+  timer: ReturnType<typeof setTimeout> | null;
+  done: boolean;
 }
 
 export interface SessionState {
@@ -1525,6 +1576,14 @@ export class MeshSession {
   private radioNotedAt = -Infinity;
   private controlListeners = new Set<(frame: Extract<PushFrame, { kind: "controlData" }>) => void>();
   private heardListeners = new Set<(packet: HeardPacket) => void>();
+  private peerDataListeners = new Set<(packet: IncomingPeerData) => void>();
+  private peerDataDeliveryListeners = new Set<(event: PeerDataDelivery) => void>();
+  /** Outbound MCRS v2 peer datagrams awaiting ACK or scheduled for retry. */
+  private outboundPeerData = new Map<string, OutboundPeerData>();
+  /** Recent incoming peer datagram keys for duplicate suppression across retries. */
+  private seenPeerData = new Set<string>();
+  private syncingPeerData = false;
+  private syncPeerDataAgain = false;
   private readonly traceWait: (estimateMs: number) => number;
   private readonly searchWait: (estimateMs: number) => number;
   private readonly busyWait: number;
@@ -1860,6 +1919,7 @@ export class MeshSession {
       // its channel by index, so it needs no fresh channel list; a message from a
       // contact the radio added meanwhile is tied to it once contacts are read.
       await this.syncMessages();
+      if (hasMcrsCap(mcrs, McrsCap.PeerData)) await this.syncPeerData();
       void this.flushQueue();
       await this.refreshContacts();
       await this.refreshChannels();
@@ -2917,6 +2977,216 @@ export class MeshSession {
   }
 
   // ---- messages ----
+
+  /** Subscribes to incoming MCRS v2 binary P2P datagrams (`TXT_TYPE_PEER_DATA`). */
+  onPeerData(listener: (packet: IncomingPeerData) => void): () => void {
+    this.peerDataListeners.add(listener);
+    return () => this.peerDataListeners.delete(listener);
+  }
+
+  /** Subscribes to delivery / ACK status updates for outbound MCRS v2 binary P2P datagrams. */
+  onPeerDataDelivery(listener: (event: PeerDataDelivery) => void): () => void {
+    this.peerDataDeliveryListeners.add(listener);
+    return () => this.peerDataDeliveryListeners.delete(listener);
+  }
+
+  /**
+   * Sends an encrypted, ACK-confirmed binary P2P datagram to a contact over MCRS v2.
+   * When `retry` is true (default), retries with incrementing `attempt` bytes (and falls
+   * back to flood after direct tries fail) until the radio confirms the ACK.
+   */
+  async sendPeerData(
+    contactKey: string,
+    appId: number,
+    payload: Uint8Array,
+    options: { retry?: boolean; maxAttempts?: number } = {},
+  ): Promise<PeerDataSendHandle> {
+    const client = this.need();
+    if (!hasMcrsCap(this.state.mcrs, McrsCap.PeerData)) {
+      throw new Error("connected radio does not support MCRS v2 peer data");
+    }
+    const contact = this.state.contacts[contactKey];
+    if (!contact) throw new Error("contact not found");
+    const prefix = fromHex(contact.prefix);
+    const timestamp = unixNow();
+    const packetId = `pd:${newId(this.now())}`;
+    const maxAttempts = options.retry === false ? 1 : Math.max(1, Math.min(6, options.maxAttempts ?? 4));
+    const entry: OutboundPeerData = {
+      packetId,
+      appId,
+      contactKey,
+      recipientPrefix: prefix,
+      payload: payload.slice(),
+      timestamp,
+      attempt: 0,
+      maxAttempts,
+      ackTags: new Set(),
+      timer: null,
+      done: false,
+    };
+    this.outboundPeerData.set(packetId, entry);
+    try {
+      const sent = await client.sendPeerData(prefix, appId, entry.payload, { attempt: 0, timestamp });
+      entry.ackTags.add(sent.ackTag);
+      this.emitPeerDataDelivery({ packetId, appId, contactKey, status: "sent", attempt: 0, flood: sent.flood });
+      this.armPeerDataRetry(entry, sent.estTimeoutMs, sent.flood);
+      return { packetId, ...sent };
+    } catch (error) {
+      entry.done = true;
+      this.outboundPeerData.delete(packetId);
+      this.emitPeerDataDelivery({ packetId, appId, contactKey, status: "failed", attempt: 0, error: (error as Error).message });
+      throw error;
+    }
+  }
+
+  /** Drains the companion's MCRS v2 `peer_data_queue` until empty. */
+  async syncPeerData(): Promise<void> {
+    if (!this.client || !hasMcrsCap(this.state.mcrs, McrsCap.PeerData)) return;
+    if (this.syncingPeerData) {
+      this.syncPeerDataAgain = true;
+      return;
+    }
+    this.syncingPeerData = true;
+    try {
+      const client = this.client;
+      while (this.client === client) {
+        const frame = await client.syncNextPeerData();
+        if (!frame) break;
+        this.deliverIncomingPeerData(frame, false);
+      }
+    } catch (error) {
+      this.log("error", `syncPeerData: ${(error as Error).message}`);
+    } finally {
+      this.syncingPeerData = false;
+      if (this.syncPeerDataAgain) {
+        this.syncPeerDataAgain = false;
+        void this.syncPeerData();
+      }
+    }
+  }
+
+  private armPeerDataRetry(entry: OutboundPeerData, estTimeoutMs: number, lastFlood: boolean): void {
+    if (entry.timer) clearTimeout(entry.timer);
+    const waitMs = Math.max(3500, Math.min(25_000, estTimeoutMs + 1500));
+    entry.timer = setTimeout(() => {
+      entry.timer = null;
+      if (entry.done) return;
+      if (entry.attempt + 1 >= entry.maxAttempts) {
+        entry.done = true;
+        this.emitPeerDataDelivery({
+          packetId: entry.packetId,
+          appId: entry.appId,
+          contactKey: entry.contactKey,
+          status: "unconfirmed",
+          attempt: entry.attempt,
+          flood: lastFlood,
+        });
+        return;
+      }
+      void this.retryPeerData(entry, lastFlood);
+    }, waitMs);
+    (entry.timer as { unref?: () => void }).unref?.();
+  }
+
+  private async retryPeerData(entry: OutboundPeerData, lastFlood: boolean): Promise<void> {
+    if (entry.done || !this.client) return;
+    entry.attempt += 1;
+    this.emitPeerDataDelivery({
+      packetId: entry.packetId,
+      appId: entry.appId,
+      contactKey: entry.contactKey,
+      status: "retrying",
+      attempt: entry.attempt,
+    });
+    try {
+      // On the second failed direct try, clear the stale route so the retry floods.
+      if (!lastFlood && entry.attempt === 2) {
+        await this.client.resetPath(fromHex(entry.contactKey)).catch(() => undefined);
+      }
+      const sent = await this.client.sendPeerData(entry.recipientPrefix, entry.appId, entry.payload, {
+        attempt: entry.attempt,
+        timestamp: entry.timestamp,
+      });
+      if (entry.done) return;
+      entry.ackTags.add(sent.ackTag);
+      this.armPeerDataRetry(entry, sent.estTimeoutMs, sent.flood);
+    } catch (error) {
+      if (entry.done) return;
+      entry.done = true;
+      this.emitPeerDataDelivery({
+        packetId: entry.packetId,
+        appId: entry.appId,
+        contactKey: entry.contactKey,
+        status: "failed",
+        attempt: entry.attempt,
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  private confirmPeerDataAck(ackTag: number, roundTripMs: number): boolean {
+    for (const entry of this.outboundPeerData.values()) {
+      if (!entry.ackTags.has(ackTag)) continue;
+      if (entry.timer) clearTimeout(entry.timer);
+      entry.timer = null;
+      const wasDone = entry.done;
+      entry.done = true;
+      this.outboundPeerData.delete(entry.packetId);
+      if (!wasDone) {
+        this.heardFrom(entry.contactKey, this.now());
+        this.emitPeerDataDelivery({
+          packetId: entry.packetId,
+          appId: entry.appId,
+          contactKey: entry.contactKey,
+          status: "delivered",
+          attempt: entry.attempt,
+          rttMs: roundTripMs,
+        });
+      }
+      return true;
+    }
+    return false;
+  }
+
+  private deliverIncomingPeerData(frame: PeerDataFrame, mirrored: boolean): void {
+    const peerPrefix = toHex(frame.senderPrefix);
+    const dedupeKey = `${mirrored ? "m" : "i"}:${peerPrefix}:${frame.timestamp}:${frame.appId}:${toHex(frame.payload)}`;
+    if (this.seenPeerData.has(dedupeKey)) return;
+    this.seenPeerData.add(dedupeKey);
+    if (this.seenPeerData.size > 512) {
+      const oldest = this.seenPeerData.values().next().value;
+      if (oldest !== undefined) this.seenPeerData.delete(oldest);
+    }
+    const contact = this.contactByPrefix(peerPrefix);
+    if (contact && !mirrored) this.heardFrom(contact.key, Math.min(frame.timestamp * 1000, this.now()));
+    const packet: IncomingPeerData = {
+      appId: frame.appId,
+      peerPrefix,
+      peerKey: contact?.key ?? null,
+      payload: frame.payload,
+      timestamp: frame.timestamp,
+      snr: frame.snr,
+      hops: frame.hops,
+      ...(mirrored ? { mirrored: true } : {}),
+    };
+    for (const listener of this.peerDataListeners) {
+      try {
+        listener(packet);
+      } catch (error) {
+        console.error("peerData listener threw", error);
+      }
+    }
+  }
+
+  private emitPeerDataDelivery(event: PeerDataDelivery): void {
+    for (const listener of this.peerDataDeliveryListeners) {
+      try {
+        listener(event);
+      } catch (error) {
+        console.error("peerDataDelivery listener threw", error);
+      }
+    }
+  }
 
   /** The conversation on screen; its messages arrive read. */
   focus(conversation: string | null): void {
@@ -4081,6 +4351,21 @@ export class MeshSession {
       const r = new ByteReader(command);
       const code = r.u8();
       const late = this.state.syncing;
+      if (code === Cmd.Mcrs) {
+        const sub = r.u8();
+        if (sub !== McrsSub.SendPeerData) return;
+        r.skip(1); // attempt
+        const timestamp = r.u32();
+        const recipientPrefix = r.take(PUB_KEY_PREFIX_SIZE);
+        const appId = r.u16();
+        const payload = r.rest();
+        if (appId === 0) return;
+        this.deliverIncomingPeerData(
+          { snr: 0, senderPrefix: recipientPrefix, hops: null, timestamp, appId, payload },
+          true,
+        );
+        return;
+      }
       if (code === Cmd.SendChannelData) {
         const index = r.u8();
         const pathLen = r.u8();
@@ -5911,6 +6196,11 @@ export class MeshSession {
       case "msgWaiting":
         if (this.isReady) this.syncMessages().catch((e: Error) => this.log("error", e.message));
         return;
+      case "mcrsPush":
+        if (frame.sub === McrsSub.PeerDataWaiting && this.isReady) {
+          void this.syncPeerData();
+        }
+        return;
       case "mirror": {
         const keeping = this.keeping;
         const done = this.mirrored(frame.command, frame.answer);
@@ -5949,6 +6239,8 @@ export class MeshSession {
               if (record) this.patchMessage(message.id, { route: contactRoute(record) });
             });
           }
+        } else {
+          this.confirmPeerDataAck(frame.ackTag, frame.roundTripMs);
         }
         return;
       }

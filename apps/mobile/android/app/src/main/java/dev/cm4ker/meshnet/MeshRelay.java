@@ -325,6 +325,8 @@ final class MeshRelay {
                 return "direct";
             case NODES:
                 return "nodes";
+            case APPS:
+                return "apps";
             default:
                 return "chats";
         }

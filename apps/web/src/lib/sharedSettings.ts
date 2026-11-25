@@ -27,7 +27,7 @@ import { previewMode, setPreviewMode, type PreviewMode } from "./linkPreview.js"
 import { getLookalikePrefs, setLookalikePrefs, type LookalikePrefs } from "./lookalikes.js";
 import { getNeighbourSort, NEIGHBOUR_SORTS, setNeighbourSort } from "./neighbourSort.js";
 import { DEFAULT_NODE_ORDER, getNodeOrder, NODE_ORDERS, setNodeOrder, type NodeOrderPrefs } from "./nodeOrder.js";
-import { DEFAULT_QUIET, getNoticePrefs, setChatSound, setChatUntil, setNoticePrefs, SIGNALS, type ChatLevel, type NodeLevel, type NoticeKind, type QuietPrefs, type Signal } from "./noticePrefs.js";
+import { DEFAULT_QUIET, getNoticePrefs, setAppLevel, setAppSound, setChatSound, setChatUntil, setNoticePrefs, SIGNALS, type AppNoticeLevel, type ChatLevel, type NodeLevel, type NoticeKind, type QuietPrefs, type Signal } from "./noticePrefs.js";
 import { RECENT_SIZE, recentReactions, setRecentReactions } from "./reactions.js";
 import { getSendTries, SEND_TRIES_MAX, setSendTries } from "./sendTries.js";
 import { session } from "./session.js";
@@ -151,12 +151,14 @@ sync.share<NodeLevel>({
   valid: oneOf<NodeLevel>(["people", "all", "off"]),
   fallback: "people",
 });
+sync.share<boolean>({ key: "noticeApps", read: () => getNoticePrefs().apps, write: (apps) => setNoticePrefs({ apps }), valid: isBool, fallback: true });
 sync.share<Record<NoticeKind, Signal>>({
   key: "sounds",
   read: () => getNoticePrefs().sounds,
-  write: (sounds) => setNoticePrefs({ sounds }),
-  valid: (value): value is Record<NoticeKind, Signal> => isObject(value) && isSignal(value["direct"]) && isSignal(value["chats"]) && isSignal(value["nodes"]),
-  fallback: { direct: "chirp", chats: "chirp", nodes: "chirp" },
+  write: (sounds) => setNoticePrefs({ sounds: { ...getNoticePrefs().sounds, ...sounds } }),
+  valid: (value): value is Record<NoticeKind, Signal> =>
+    isObject(value) && isSignal(value["direct"]) && isSignal(value["chats"]) && isSignal(value["nodes"]) && (value["apps"] === undefined || isSignal(value["apps"])),
+  fallback: { direct: "chirp", chats: "chirp", nodes: "chirp", apps: "hop" },
 });
 sync.share<QuietPrefs>({
   key: "quiet",
@@ -224,6 +226,8 @@ sync.shareEach<ChatLevel>({
 });
 sync.shareEach<number>({ key: "chatUntil", entries: () => getNoticePrefs().chatUntil, write: setChatUntil, valid: (value): value is number => typeof value === "number" });
 sync.shareEach<Signal>({ key: "chatSound", entries: () => getNoticePrefs().chatSound, write: setChatSound, valid: isSignal });
+sync.shareEach<AppNoticeLevel>({ key: "appLevel", entries: () => getNoticePrefs().appLevel, write: setAppLevel, valid: oneOf<AppNoticeLevel>(["all", "silent", "off"]) });
+sync.shareEach<Signal>({ key: "appSound", entries: () => getNoticePrefs().appSound, write: setAppSound, valid: isSignal });
 // A pin is the radio's: named `<radio>/<conversation>`, so the time it changed on one radio says nothing of another's.
 sync.shareEach<Pin>({
   key: "pin",

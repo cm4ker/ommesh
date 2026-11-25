@@ -35,7 +35,8 @@ pub mod watch;
 pub use ffi::Radio;
 
 pub use watch::{
-    notice_id, Channel, ChatLevel, Contact, NodeLevel, Notice, NoticeKind, WatchConfig,
+    notice_id, AppNoticeLevel, AppWatchMeta, Channel, ChatLevel, Contact, NodeLevel, Notice,
+    NoticeKind, WatchConfig,
 };
 
 use mux::{Event, Mux};
@@ -366,6 +367,9 @@ impl Core {
                     }
                     Event::Taken(Client::Page, frame) => self.watch.taken(&frame),
                     Event::Taken(..) => {}
+                    Event::KeptPeerData(frame) => self.watch.received_peer_data(&frame),
+                    Event::TakenPeerData(Client::Page, frame) => self.watch.taken_peer_data(&frame),
+                    Event::TakenPeerData(..) => {}
                     // What the computer read is no news on the phone either.
                     Event::Entry(Client::Computer, frame) => {
                         if let Some(mark) = frames::read_mark(&frame) {
@@ -550,5 +554,98 @@ mod tests {
             .radio_down()
             .iter()
             .any(|e| matches!(e, Effect::Log { .. })));
+    }
+
+    #[test]
+    fn peer_data_drains_in_background_and_posts_app_notice() {
+        let mut core = Core::in_memory();
+        let mut cfg = WatchConfig::default();
+        cfg.contacts.push(Contact {
+            key: "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899".into(),
+            name: "Alice".into(),
+            kind: codes::ADV_TYPE_CHAT,
+            favourite: false,
+        });
+        let mut labels = std::collections::HashMap::new();
+        labels.insert("4".into(), "Your turn".into());
+        cfg.installed_apps.insert(
+            "256".into(),
+            AppWatchMeta {
+                name: "Chess".into(),
+                fallback: "New move".into(),
+                opcode_mask: 0x1f,
+                labels,
+            },
+        );
+        core.configure(cfg);
+        core.set_background(true);
+        core.radio_up();
+        core.from_radio(vec![RESP_NO_MORE_MESSAGES]);
+
+        // Radio signals incoming MCRS v2 peer data -> mux drains it
+        let effects = core.from_radio(vec![codes::PUSH_MCRS, codes::MCRS_SUB_PEER_DATA_WAITING]);
+        assert!(effects.iter().any(|e| matches!(
+            e,
+            Effect::ToRadio { frame } if frame == &[codes::CMD_MCRS, codes::MCRS_SUB_SYNC_PEER_DATA]
+        )));
+
+        // Radio answers with a chess MOVE packet (opcode 0x04)
+        let mut pkt = vec![
+            codes::RESP_MCRS,
+            codes::MCRS_SUB_SYNC_PEER_DATA,
+            24, // +6 dB
+            0xaa,
+            0xbb,
+            0xcc,
+            0xdd,
+            0xee,
+            0xff,
+            0xff, // direct
+        ];
+        pkt.extend_from_slice(&1_700_000_001u32.to_le_bytes());
+        pkt.extend_from_slice(&0x0100u16.to_le_bytes());
+        pkt.push(4);
+        pkt.extend_from_slice(&[0x04, 0xf2, 0xa4, 0x01]);
+        let effects = core.from_radio(pkt.clone());
+        let grace = effects.iter().find_map(|e| match e {
+            Effect::Wait {
+                timer: Timer::Grace { generation },
+                ..
+            } => Some(*generation),
+            _ => None,
+        });
+        assert!(grace.is_some());
+        core.from_radio(vec![codes::RESP_MCRS, codes::MCRS_SUB_SYNC_PEER_DATA]);
+
+        // Grace expires while page sleeps -> native Apps notice fires with signal_hop.wav
+        let posted = core.timeout(
+            Timer::Grace {
+                generation: grace.unwrap(),
+            },
+            10_000,
+        );
+        let notice = posted.iter().find_map(|e| match e {
+            Effect::Post { notice } => Some(notice),
+            _ => None,
+        });
+        let notice = notice.expect("app notice posted");
+        assert_eq!(notice.kind, NoticeKind::Apps);
+        assert_eq!(notice.title, "Alice • Chess");
+        assert_eq!(notice.body, "Your turn");
+        assert_eq!(notice.sound.as_deref(), Some("signal_hop.wav"));
+
+        // Page wakes up -> withdraws background notice and pulls buffered packet from mux
+        let wake = core.set_background(false);
+        assert!(wake
+            .iter()
+            .any(|e| matches!(e, Effect::Withdraw { tag, .. } if tag == &notice.tag)));
+        let pulled = core.from_client(
+            Client::Page,
+            vec![codes::CMD_MCRS, codes::MCRS_SUB_SYNC_PEER_DATA],
+            None,
+        );
+        assert!(pulled
+            .iter()
+            .any(|e| matches!(e, Effect::ToClient { client: Client::Page, frame } if frame == &pkt)));
     }
 }

@@ -12,13 +12,13 @@ import { useSyncExternalStore } from "react";
 import { ownKey } from "./instance.js";
 import { readSetting, writeSetting } from "./storage.js";
 
-export type Section = "chats" | "mesh" | "radio";
+export type Section = "chats" | "mesh" | "apps" | "radio";
 
 /** A repeater's, room's or sensor's own screens, past its profile. */
 export type NodePage = "neighbours" | "history" | "settings" | "access" | "console" | "push";
 
 /** The radio section's pages, as a list too: a news file's Show names one (news.ts). */
-export const RADIO_PAGES = ["name", "frequency", "readings", "privacy", "trusted", "remote", "contacts", "removed", "advanced", "console", "key", "pin", "wifi", "notifications", "quiet", "sound", "soundDirect", "soundChats", "soundNodes", "messages", "blocked", "attachments", "attachmentsServer", "history", "backup", "restore", "appearance", "background", "connection", "air", "log", "power", "about", "people", "news", "report"] as const;
+export const RADIO_PAGES = ["name", "frequency", "readings", "privacy", "trusted", "remote", "contacts", "removed", "advanced", "console", "key", "pin", "wifi", "notifications", "quiet", "sound", "soundDirect", "soundChats", "soundNodes", "soundApps", "messages", "blocked", "attachments", "attachmentsServer", "history", "backup", "restore", "appearance", "background", "connection", "air", "log", "power", "about", "people", "news", "report"] as const;
 export type RadioPage = (typeof RADIO_PAGES)[number];
 
 export type Screen =
@@ -36,7 +36,9 @@ export type Screen =
   | { kind: "pickNodePlace"; key: string; at: { lat: number; lon: number } | null }
   | { kind: "profile"; key: string }
   | { kind: "node"; key: string; page: NodePage }
-  | { kind: "radio"; page: RadioPage };
+  | { kind: "radio"; page: RadioPage }
+  | { kind: "app"; id: string; activityId?: string }
+  | { kind: "appStore" };
 
 export interface Nav {
   section: Section;
@@ -47,8 +49,8 @@ export interface Nav {
 
 // Each copy of the desktop app has its own screens open (instance.ts).
 const KEY = ownKey("meshnet.nav");
-const SECTIONS: Section[] = ["chats", "mesh", "radio"];
-const EMPTY: Nav = { section: "chats", stacks: { chats: [], mesh: [], radio: [] }, meshFocus: null };
+const SECTIONS: Section[] = ["chats", "mesh", "apps", "radio"];
+const EMPTY: Nav = { section: "chats", stacks: { chats: [], mesh: [], apps: [], radio: [] }, meshFocus: null };
 
 /** What an earlier version saved: one section of seven and one open item in three of them. */
 interface OldNav {
@@ -78,7 +80,7 @@ function restore(saved: unknown): Nav {
   const mesh: Screen[] = old.section === "nodes" && old.node ? [{ kind: "profile", key: old.node }] : old.section === "contacts" && old.contact ? [{ kind: "profile", key: old.contact }] : [];
   const radio: Screen[] = old.section === "log" ? [{ kind: "radio", page: "log" }] : [];
   const section: Section = old.section === "chats" || old.section === undefined ? "chats" : old.section === "radio" || old.section === "settings" || old.section === "log" ? "radio" : "mesh";
-  return { section, stacks: { chats, mesh, radio }, meshFocus: null };
+  return { section, stacks: { chats, mesh, apps: [], radio }, meshFocus: null };
 }
 
 let nav: Nav = restore(readSetting<unknown>(KEY, null));
@@ -216,6 +218,14 @@ export function openNodePage(key: string, page: NodePage): void {
 
 export function openRadioPage(page: RadioPage): void {
   setStack("radio", [{ kind: "radio", page }]);
+}
+
+export function openMiniApp(id: string, activityId?: string): void {
+  setStack("apps", [{ kind: "app", id, ...(activityId ? { activityId } : {}) }]);
+}
+
+export function openMiniAppStore(): void {
+  setStack("apps", [{ kind: "appStore" }]);
 }
 
 let listLowered = false;

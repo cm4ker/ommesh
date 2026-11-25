@@ -68,6 +68,7 @@ public class NoticesPlugin extends Plugin {
         {"direct", "Direct messages", "A message from a person to you."},
         {"chats", "Channels and rooms", "Messages in channels and rooms, or only the ones that mention you."},
         {"nodes", "New nodes", "A node heard for the first time."},
+        {"apps", "Mini-apps", "Updates from installed mini-apps."},
     };
 
     /** LocalNotifications' intent extras, which its listener reads the tap from. */

@@ -27,7 +27,16 @@ import {
   type ResponseFrame,
   type SelfInfo,
 } from "./protocol/frames.js";
-import { McrsSub, readMcrsInfo, type McrsInfo } from "./protocol/mcrs.js";
+import {
+  McrsSub,
+  encodeSendPeerDataBody,
+  readMcrsInfo,
+  readPeerDataFrame,
+  readPeerDataSent,
+  type McrsInfo,
+  type PeerDataFrame,
+  type PeerDataSent,
+} from "./protocol/mcrs.js";
 import type { Transport } from "./transport.js";
 
 export class MeshCoreError extends Error {
@@ -848,6 +857,27 @@ export class MeshCoreClient {
     const info = readMcrsInfo(payload);
     if (!info) throw new Error("mcrsInfo: malformed reply");
     return info;
+  }
+
+  /** Sends an ACKed, encrypted binary P2P datagram to a contact (MCRS v2). */
+  async sendPeerData(
+    recipientPrefix: Uint8Array,
+    appId: number,
+    payload: Uint8Array,
+    options: { attempt?: number; timestamp?: number } = {},
+  ): Promise<PeerDataSent> {
+    const body = encodeSendPeerDataBody(recipientPrefix, appId, payload, options);
+    const reply = await this.mcrs(McrsSub.SendPeerData, body);
+    const sent = readPeerDataSent(reply);
+    if (!sent) throw new Error("sendPeerData: malformed reply");
+    return sent;
+  }
+
+  /** Pops the next queued incoming binary P2P datagram, or returns null when the queue is empty (MCRS v2). */
+  async syncNextPeerData(): Promise<PeerDataFrame | null> {
+    const reply = await this.mcrs(McrsSub.SyncPeerData);
+    if (reply.length <= 1) return null;
+    return readPeerDataFrame(reply);
   }
 
   setAutoAddConfig(config: number, maxHops?: number): Promise<void> {

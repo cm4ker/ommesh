@@ -5,7 +5,7 @@
  * Layouts are the firmware's `handleCmdFrame`, byte for byte.
  */
 
-import { McrsSub } from "./mcrs.js";
+import { McrsSub, encodeSendPeerDataBody } from "./mcrs.js";
 import { ByteWriter, unixNow, utf8 } from "./bytes.js";
 import {
   APP_PROTOCOL_VERSION,
@@ -444,6 +444,21 @@ export function mcrsCommand(sub: number, payload?: Uint8Array): Uint8Array {
 /** Asks the connected `meshcore-rs` companion for its `MCRS` version, build and capabilities. */
 export function mcrsInfo(): Uint8Array {
   return mcrsCommand(McrsSub.Info);
+}
+
+/** Sends an ACKed, encrypted binary P2P datagram to a contact via MCRS v2 (`[0x70, 0x01, ...]`). */
+export function sendPeerData(
+  recipientPrefix: Uint8Array,
+  appId: number,
+  payload: Uint8Array,
+  options: { attempt?: number; timestamp?: number } = {},
+): Uint8Array {
+  return mcrsCommand(McrsSub.SendPeerData, encodeSendPeerDataBody(recipientPrefix, appId, payload, options));
+}
+
+/** Pops the next queued incoming binary P2P datagram via MCRS v2 (`[0x70, 0x02]`). */
+export function syncPeerData(): Uint8Array {
+  return mcrsCommand(McrsSub.SyncPeerData);
 }
 
 export function setCustomVar(name: string, value: string): Uint8Array {

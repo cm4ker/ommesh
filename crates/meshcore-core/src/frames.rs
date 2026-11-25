@@ -35,6 +35,42 @@ pub struct Heard {
     pub name: String,
 }
 
+/// An incoming MCRS v2 binary P2P datagram (`RESP_MCRS` + `MCRS_SUB_SYNC_PEER_DATA`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PeerData {
+    pub snr: i8,
+    pub sender_prefix: [u8; PUB_KEY_PREFIX_SIZE],
+    pub path_len: u8,
+    pub timestamp: u32,
+    pub app_id: u16,
+    pub payload: Vec<u8>,
+}
+
+/// Reads an MCRS v2 peer-data reply frame; returns `None` on empty queue (`[0x70, 0x02]`) or bad shape.
+pub fn read_peer_data(frame: &[u8]) -> Option<PeerData> {
+    if frame.len() < 17 || frame[0] != RESP_MCRS || frame[1] != MCRS_SUB_SYNC_PEER_DATA {
+        return None;
+    }
+    let mut r = Reader(&frame[2..]);
+    let snr = r.u8()? as i8;
+    let sender_prefix: [u8; PUB_KEY_PREFIX_SIZE] = r.take(PUB_KEY_PREFIX_SIZE)?.try_into().ok()?;
+    let path_len = r.u8()?;
+    let timestamp = r.u32()?;
+    let app_id = u16::from_le_bytes(r.take(2)?.try_into().ok()?);
+    let len = r.u8()? as usize;
+    if app_id == 0 || r.0.len() < len {
+        return None;
+    }
+    Some(PeerData {
+        snr,
+        sender_prefix,
+        path_len,
+        timestamp,
+        app_id,
+        payload: r.take(len)?.to_vec(),
+    })
+}
+
 /// Reads a message frame; `None` for anything else, a short frame, or channel data (no text).
 pub fn read_message(frame: &[u8]) -> Option<Received> {
     let (&code, rest) = frame.split_first()?;

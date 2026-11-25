@@ -13,6 +13,8 @@ import { isFavourite, type SessionState } from "@meshnet/meshcore";
 import { forms, language, pluralTable, subscribeLanguage, t, template } from "../i18n/index.js";
 import { blocksForCore, subscribeBlocks } from "./blocked.js";
 import { signalFile } from "./chime.js";
+import { installedAppsForCore } from "./miniapps/runtime.js";
+import { subscribeMiniApps } from "./miniapps/store.js";
 import { getNoticePrefs, subscribeNoticePrefs } from "./noticePrefs.js";
 import { tellChannels } from "./notify.js";
 import { quietSpans } from "./quiet.js";
@@ -65,6 +67,8 @@ function words() {
     channelChatsHint: t("notices.android.channelChatsHint"),
     channelNodes: t("notices.android.channelNodes"),
     channelNodesHint: t("notices.android.channelNodesHint"),
+    channelApps: t("notices.android.channelApps"),
+    channelAppsHint: t("notices.android.channelAppsHint"),
     channelSurvey: t("notices.android.channelSurvey"),
     channelSurveyHint: t("notices.android.channelSurveyHint"),
     channelQuiet: t("notices.android.channelQuiet"),
@@ -84,11 +88,20 @@ export function coreConfig(state: SessionState, now = Date.now()): string {
     direct: prefs.direct,
     chats: prefs.chats,
     nodes: prefs.nodes,
+    apps: prefs.apps,
+    appLevel: prefs.appLevel,
+    appSound: Object.fromEntries(Object.entries(prefs.appSound).map(([id, signal]) => [id, signalFile(signal)])),
+    installedApps: installedAppsForCore(),
     chat: prefs.chat,
     chatUntil: prefs.chatUntil,
     quiet: { spans: quietSpans(prefs.quiet, now), favourites: prefs.quiet.favourites, mentions: prefs.quiet.mentions },
     // As the files the phone rings with: null is a quiet kind or chat.
-    sounds: { direct: signalFile(prefs.sounds.direct), chats: signalFile(prefs.sounds.chats), nodes: signalFile(prefs.sounds.nodes) },
+    sounds: {
+      direct: signalFile(prefs.sounds.direct),
+      chats: signalFile(prefs.sounds.chats),
+      nodes: signalFile(prefs.sounds.nodes),
+      apps: signalFile(prefs.sounds.apps),
+    },
     chatSound: Object.fromEntries(Object.entries(prefs.chatSound).map(([conversation, signal]) => [conversation, signalFile(signal)])),
     contacts: Object.values(state.contacts).map((c) => ({ key: c.key, name: c.name, type: c.type, favourite: isFavourite(c) })),
     channels: state.channels.map((c) => ({ index: c.index, name: c.name })),
@@ -125,11 +138,13 @@ export function startCoreWatch(state: () => SessionState, subscribe: (listener: 
   const stopSession = subscribe(() => tell(false));
   const stopPrefs = subscribeNoticePrefs(() => tell(true));
   const stopBlocks = subscribeBlocks(() => tell(true));
+  const stopApps = subscribeMiniApps(() => tell(true));
   const stopLanguage = subscribeLanguage(() => tell(true));
   return () => {
     stopSession();
     stopPrefs();
     stopBlocks();
+    stopApps();
     stopLanguage();
   };
 }

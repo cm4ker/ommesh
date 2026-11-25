@@ -27,8 +27,8 @@ use serde::Deserialize;
 use crate::codes::*;
 use crate::format::plain_text;
 use crate::frames::{
-    hex, is_text_reaction, read_message, read_new_advert, split_channel_text, text_hash, ReadMark,
-    Received,
+    hex, is_text_reaction, read_message, read_new_advert, read_peer_data, split_channel_text,
+    text_hash, ReadMark, Received,
 };
 use crate::{Effect, Timer};
 
@@ -62,6 +62,26 @@ pub enum NodeLevel {
     People,
     All,
     Off,
+}
+
+/// Notification level for an individual mini-app.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AppNoticeLevel {
+    All,
+    Silent,
+    Off,
+}
+
+/// Declarative metadata from a mini-app's `manifest.json` (`backgroundNotices`) so the Rust core
+/// can display localized notifications while the page is asleep, without executing JS.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AppWatchMeta {
+    pub name: String,
+    pub fallback: String,
+    pub opcode_mask: u8,
+    pub labels: HashMap<String, String>,
 }
 
 /// A contact as the page knows it: its whole key in hex, its name, its advert type, and whether
@@ -116,6 +136,17 @@ pub struct WatchConfig {
     /// Channels and rooms.
     pub chats: ChatLevel,
     pub nodes: NodeLevel,
+    /// Mini-app notifications (MCRS v2 binary peer data).
+    pub apps: bool,
+    /// Per-app notification level overrides, keyed by decimal `appId`.
+    #[serde(rename = "appLevel")]
+    pub app_level: HashMap<String, AppNoticeLevel>,
+    /// Per-app sound overrides (`signal_<id>.wav` or null for silent), keyed by decimal `appId`.
+    #[serde(rename = "appSound")]
+    pub app_sound: HashMap<String, Option<String>>,
+    /// Installed mini-app metadata from `manifest.json`, keyed by decimal `appId`.
+    #[serde(rename = "installedApps")]
+    pub installed_apps: HashMap<String, AppWatchMeta>,
     /// Chats with a level of their own, by conversation.
     pub chat: HashMap<String, ChatLevel>,
     /// Chats whose own level is for a while: when it ends, ms. After it, the kind's level holds.
@@ -175,6 +206,10 @@ impl Default for WatchConfig {
             direct: true,
             chats: ChatLevel::All,
             nodes: NodeLevel::People,
+            apps: true,
+            app_level: HashMap::new(),
+            app_sound: HashMap::new(),
+            installed_apps: HashMap::new(),
             chat: HashMap::new(),
             chat_until: HashMap::new(),
             quiet: Quiet::default(),
@@ -196,24 +231,34 @@ pub struct Sounds {
     pub direct: Option<String>,
     pub chats: Option<String>,
     pub nodes: Option<String>,
+    pub apps: Option<String>,
 }
 
 impl Default for Sounds {
-    /// The page's: every kind chirps.
+    /// The page's: messages and nodes chirp; mini-apps hop.
     fn default() -> Self {
         let chirp = Some("signal_chirp.wav".to_string());
         Sounds {
             direct: chirp.clone(),
             chats: chirp.clone(),
             nodes: chirp,
+            apps: Some("signal_hop.wav".to_string()),
         }
     }
 }
 
 impl WatchConfig {
-    /// The sound a notice rings with, as the page's `noticeSignal`: its chat's own, or its kind's.
+    /// The sound a notice rings with, as the page's `noticeSignal`: its chat's or app's own, or its kind's.
     /// The notice about several chats is one of channels and rooms.
     fn sound(&self, notice: &Notice) -> Option<String> {
+        if let Some(rest) = notice.tag.strip_prefix("app:") {
+            if let Some(app_id) = rest.split(':').next() {
+                if let Some(sound) = self.app_sound.get(app_id) {
+                    return sound.clone();
+                }
+            }
+            return self.sounds.apps.clone();
+        }
         let own = notice
             .tag
             .strip_prefix("c:")
@@ -225,6 +270,7 @@ impl WatchConfig {
                 NoticeKind::Direct => self.sounds.direct.clone(),
                 NoticeKind::Chats => self.sounds.chats.clone(),
                 NoticeKind::Nodes => self.sounds.nodes.clone(),
+                NoticeKind::Apps => self.sounds.apps.clone(),
             },
         }
     }
@@ -359,6 +405,7 @@ pub enum NoticeKind {
     Direct,
     Chats,
     Nodes,
+    Apps,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -448,6 +495,7 @@ enum Waiting {
     /// A message, with where it came among the ones heard while the app is away.
     Message(Vec<u8>, u64),
     Node(Notice),
+    PeerData(Vec<u8>),
 }
 
 pub(crate) struct Watch {
@@ -468,6 +516,7 @@ pub(crate) struct Watch {
     out: Vec<String>,
     all_out: bool,
     nodes_out: Vec<String>,
+    apps_out: Vec<String>,
     /// The number the next message heard takes.
     next_seq: u64,
     passed: Vec<Passed>,
@@ -491,6 +540,7 @@ impl Watch {
             out: Vec::new(),
             all_out: false,
             nodes_out: Vec::new(),
+            apps_out: Vec::new(),
             next_seq: 0,
             passed: Vec::new(),
             now: 0,
@@ -528,6 +578,9 @@ impl Watch {
             for tag in std::mem::take(&mut self.nodes_out) {
                 self.withdraw(tag);
             }
+            for tag in std::mem::take(&mut self.apps_out) {
+                self.withdraw(tag);
+            }
         }
         self.waiting.clear();
         self.chats.clear();
@@ -558,6 +611,27 @@ impl Watch {
             .waiting
             .iter()
             .position(|w| matches!(w, Waiting::Message(f, _) if f == frame))
+        {
+            self.waiting.remove(at);
+        }
+    }
+
+    /// An incoming MCRS v2 peer-data packet read off the radio while the app is away.
+    pub fn received_peer_data(&mut self, frame: &[u8]) {
+        if !self.background {
+            return;
+        }
+        self.waiting.push(Waiting::PeerData(frame.to_vec()));
+        self.news();
+        self.arm();
+    }
+
+    /// The page took this MCRS v2 peer-data packet: it is awake and announces it itself.
+    pub fn taken_peer_data(&mut self, frame: &[u8]) {
+        if let Some(at) = self
+            .waiting
+            .iter()
+            .position(|w| matches!(w, Waiting::PeerData(f) if f == frame))
         {
             self.waiting.remove(at);
         }
@@ -624,7 +698,7 @@ impl Watch {
                     .and_then(|m| self.resolve(m))
                     .filter(|(chat, _)| chat.conversation == mark.conversation)
                     .map(|(_, line)| (*seq, line)),
-                Waiting::Node(_) => None,
+                Waiting::Node(_) | Waiting::PeerData(_) => None,
             })
             .collect();
         // Where the message read came: in its grace, or past it, whether its chat rang for it or not.
@@ -799,6 +873,14 @@ impl Watch {
                     self.nodes_out.push(notice.tag.clone());
                     self.post(notice, true);
                 }
+                Waiting::PeerData(frame) => {
+                    if let Some((notice, heard)) = self.resolve_peer_data(&frame, now) {
+                        if !self.apps_out.contains(&notice.tag) {
+                            self.apps_out.push(notice.tag.clone());
+                        }
+                        self.post(notice, heard);
+                    }
+                }
                 Waiting::Message(frame, seq) => {
                     if let Some((conversation, heard)) = self.add(&frame, seq) {
                         if heard && !loud.contains(&conversation) {
@@ -812,6 +894,67 @@ impl Watch {
             }
         }
         self.announce(fresh, loud);
+    }
+
+    /// Builds a background mini-app notice from `WatchConfig.installed_apps` without running JS.
+    fn resolve_peer_data(&self, frame: &[u8], now: i64) -> Option<(Notice, bool)> {
+        let pkt = read_peer_data(frame)?;
+        let app_key = pkt.app_id.to_string();
+        let level = self
+            .config
+            .app_level
+            .get(&app_key)
+            .copied()
+            .unwrap_or(if self.config.apps {
+                AppNoticeLevel::All
+            } else {
+                AppNoticeLevel::Off
+            });
+        if level == AppNoticeLevel::Off {
+            return None;
+        }
+        let prefix = hex(&pkt.sender_prefix);
+        if self.config.blocked.keys.contains(&prefix) {
+            return None;
+        }
+        let contact = self
+            .config
+            .contacts
+            .iter()
+            .find(|c| c.key.starts_with(&prefix));
+        if let Some(c) = contact {
+            if !c.name.is_empty() && self.config.blocked.names.contains(&name_key(&c.name)) {
+                return None;
+            }
+        }
+        let sender = contact
+            .filter(|c| !c.name.is_empty())
+            .map(|c| c.name.clone())
+            .unwrap_or_else(|| prefix.clone());
+        let peer_id = contact.map(|c| c.key.as_str()).unwrap_or(&prefix);
+        let meta = self.config.installed_apps.get(&app_key);
+        let app_name = meta
+            .filter(|m| !m.name.is_empty())
+            .map(|m| m.name.as_str())
+            .unwrap_or("Mini-App");
+        let opcode = pkt
+            .payload
+            .first()
+            .copied()
+            .map(|b| if let Some(m) = meta { if m.opcode_mask != 0 { b & m.opcode_mask } else { b } } else { b });
+        let body = opcode
+            .and_then(|op| meta.and_then(|m| m.labels.get(&op.to_string())))
+            .map(String::as_str)
+            .or_else(|| meta.filter(|m| !m.fallback.is_empty()).map(|m| m.fallback.as_str()))
+            .unwrap_or("New update");
+        let tag = format!("app:{}:{peer_id}", pkt.app_id);
+        let title = format!("{sender} • {app_name}");
+        let mut notice = Notice::new(tag, title, body.to_string(), NoticeKind::Apps);
+        let heard = level == AppNoticeLevel::All && !self.config.quiet.at(now);
+        if level == AppNoticeLevel::Silent {
+            notice.silent = true;
+        }
+        Some((notice, heard))
     }
 
     /// Adds a message to its chat, if it should ring; its conversation then, and whether it is heard.

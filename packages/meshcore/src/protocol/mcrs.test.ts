@@ -1,18 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ByteWriter } from "./bytes.js";
+import { Push } from "./codes.js";
+import { decodeFrame } from "./frames.js";
 import {
+  MAX_PEER_DATA_LEN,
   MCRS_VERSION,
   McrsBoard,
   McrsCap,
   McrsRole,
   McrsSub,
+  encodeSendPeerDataBody,
   hasMcrsCap,
   hasMcrsVersion,
   isMeshCoreRsVersion,
   mcrsBoardName,
   mcrsRoleName,
   readMcrsInfo,
+  readPeerDataFrame,
+  readPeerDataSent,
 } from "./mcrs.js";
 
 function encodeInfo(info: { version: number; board: number; role: number; counter: number; caps: number; productVersion: string }, extra: number[] = []): Uint8Array {
@@ -38,7 +44,7 @@ test("decodes MCRS info payloads and ignores trailing bytes from newer versions"
   );
   const info = readMcrsInfo(payload);
   assert.deepEqual(info, {
-    version: 1,
+    version: MCRS_VERSION,
     board: McrsBoard.HeltecV4,
     role: McrsRole.Companion,
     counter: 168,
@@ -48,7 +54,8 @@ test("decodes MCRS info payloads and ignores trailing bytes from newer versions"
   assert.equal(mcrsBoardName(info.board), "heltec-v4");
   assert.equal(mcrsRoleName(info.role), "companion");
   assert.equal(hasMcrsVersion(info, 1), true);
-  assert.equal(hasMcrsVersion(info, 2), false);
+  assert.equal(hasMcrsVersion(info, 2), true);
+  assert.equal(hasMcrsVersion(info, 3), false);
   assert.equal(hasMcrsCap(info, McrsCap.Screen | McrsCap.Ota), true);
   assert.equal(hasMcrsCap(info, McrsCap.Gps), false);
 });
@@ -70,4 +77,44 @@ test("detects meshcore-rs firmware version strings", () => {
   assert.equal(isMeshCoreRsVersion("v1.17.1"), false);
   assert.equal(isMeshCoreRsVersion(null), false);
   assert.equal(isMeshCoreRsVersion(undefined), false);
+});
+
+test("encodes and decodes MCRS v2 peer data frames and pushes", () => {
+  const prefix = new Uint8Array([0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]);
+  const move = new Uint8Array([0x04, 0xf2, 0xa4, 0x01, 0x00, 0x00, 0x0c, 0x5a]);
+  const body = encodeSendPeerDataBody(prefix, 0x0100, move, { attempt: 2, timestamp: 1_700_000_001 });
+  assert.equal(body.length, 13 + move.length);
+  assert.equal(body[0], 2);
+  assert.deepEqual(body.subarray(5, 11), prefix);
+  assert.deepEqual(body.subarray(13), move);
+
+  assert.throws(() => encodeSendPeerDataBody(prefix, 0, move));
+  assert.throws(() => encodeSendPeerDataBody(prefix, 0x0100, new Uint8Array(MAX_PEER_DATA_LEN + 1)));
+
+  const sentBytes = new ByteWriter().u8(McrsSub.SendPeerData).u8(1).u32(0x12345678).u32(4200).toBytes();
+  assert.deepEqual(readPeerDataSent(sentBytes), { flood: true, ackTag: 0x12345678, estTimeoutMs: 4200 });
+
+  const recvBytes = new ByteWriter()
+    .u8(McrsSub.SyncPeerData)
+    .i8(24) // +6.0 dB
+    .bytes(prefix)
+    .u8(0xff) // direct
+    .u32(1_700_000_001)
+    .u16(0x0100)
+    .u8(move.length)
+    .bytes(move)
+    .toBytes();
+  assert.deepEqual(readPeerDataFrame(recvBytes), {
+    snr: 6,
+    senderPrefix: prefix,
+    hops: null,
+    timestamp: 1_700_000_001,
+    appId: 0x0100,
+    payload: move,
+  });
+  assert.equal(readPeerDataFrame(new Uint8Array([McrsSub.SyncPeerData])), null);
+
+  const push = decodeFrame(new Uint8Array([Push.Mcrs, McrsSub.PeerDataWaiting]));
+  assert.equal(push.kind, "mcrsPush");
+  if (push.kind === "mcrsPush") assert.equal(push.sub, McrsSub.PeerDataWaiting);
 });

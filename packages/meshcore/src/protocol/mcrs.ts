@@ -14,18 +14,31 @@
  * connected companions and remote nodes alike.
  */
 
-import { ByteReader } from "./bytes.js";
+import { ByteReader, ByteWriter, pathHashCount, unixNow } from "./bytes.js";
+import { PUB_KEY_PREFIX_SIZE } from "./codes.js";
 
 /** Highest `MCRS` extension protocol version this client understands. */
-export const MCRS_VERSION = 1;
+export const MCRS_VERSION = 2;
 
 /** Vendor opcode shared by companion frames (`Cmd.Mcrs` / `Resp.Mcrs`) and LoRa binary requests (`ReqType.Mcrs`). */
 export const MCRS_OPCODE = 0x70;
 
-/** Subcommands multiplexed under `MCRS_OPCODE` (`0x70`). */
+/** Unprompted push opcode (`0xE0`) from a `meshcore-rs` companion. */
+export const MCRS_PUSH_OPCODE = 0xe0;
+
+/** Maximum binary payload size of an MCRS v2 peer datagram (`TXT_TYPE_PEER_DATA`). */
+export const MAX_PEER_DATA_LEN = 150;
+
+/** Subcommands multiplexed under `MCRS_OPCODE` (`0x70`) and push subcodes under `MCRS_PUSH_OPCODE` (`0xE0`). */
 export const McrsSub = {
   /** Protocol version, build identity and hardware/firmware capability bitmask. */
   Info: 0x00,
+  /** Send an ACKed, encrypted binary P2P datagram to a contact. */
+  SendPeerData: 0x01,
+  /** Pop the next incoming binary P2P datagram from the companion's queue. */
+  SyncPeerData: 0x02,
+  /** Push subcode (under `0xE0`): at least one incoming binary P2P datagram is queued. */
+  PeerDataWaiting: 0x03,
 } as const;
 
 /** Capability bits reported in `McrsInfo.caps` (matches `crates/meshcore/src/mcrs.rs`). */
@@ -46,6 +59,8 @@ export const McrsCap = {
   WifiOta: 1 << 13,
   Powersaving: 1 << 14,
   Mqtt: 1 << 15,
+  /** Companion supports ACKed binary P2P datagrams (`SendPeerData` / `SyncPeerData`). */
+  PeerData: 1 << 16,
 } as const;
 
 /** Board identifiers from `meshcore-rs`'s `release::board`. */
@@ -148,4 +163,79 @@ export function readMcrsInfo(data: Uint8Array): McrsInfo | null {
   if (vlen > MAX_PRODUCT_VERSION || r.remaining < vlen) return null;
   const productVersion = new TextDecoder().decode(r.take(vlen));
   return { version, board, role, counter, caps, productVersion };
+}
+
+/** Answer to `McrsSub.SendPeerData`. */
+export interface PeerDataSent {
+  flood: boolean;
+  ackTag: number;
+  estTimeoutMs: number;
+}
+
+/** One incoming binary P2P datagram popped by `McrsSub.SyncPeerData`. */
+export interface PeerDataFrame {
+  /** dB (quarter-dB resolution). */
+  snr: number;
+  senderPrefix: Uint8Array;
+  /** Hops taken over flood, or null when delivered direct. */
+  hops: number | null;
+  timestamp: number;
+  appId: number;
+  payload: Uint8Array;
+}
+
+/** Encodes the body after `[0x70, McrsSub.SendPeerData]`. */
+export function encodeSendPeerDataBody(
+  recipientPrefix: Uint8Array,
+  appId: number,
+  payload: Uint8Array,
+  options: { attempt?: number; timestamp?: number } = {},
+): Uint8Array {
+  if (recipientPrefix.length < PUB_KEY_PREFIX_SIZE) {
+    throw new Error(`recipient prefix must be at least ${PUB_KEY_PREFIX_SIZE} bytes`);
+  }
+  if (!Number.isInteger(appId) || appId <= 0 || appId > 0xffff) {
+    throw new Error(`appId must be 1..65535, got ${appId}`);
+  }
+  if (payload.length > MAX_PEER_DATA_LEN) {
+    throw new Error(`peer data payload is ${payload.length} bytes; max is ${MAX_PEER_DATA_LEN}`);
+  }
+  return new ByteWriter()
+    .u8((options.attempt ?? 0) & 0xff)
+    .u32(options.timestamp ?? unixNow())
+    .bytes(recipientPrefix.subarray(0, PUB_KEY_PREFIX_SIZE))
+    .u16(appId)
+    .bytes(payload)
+    .toBytes();
+}
+
+/** Decodes a `[McrsSub.SendPeerData, flood, ackTag(4), estTimeoutMs(4)]` reply payload. */
+export function readPeerDataSent(data: Uint8Array): PeerDataSent | null {
+  if (data.length < 10 || data[0] !== McrsSub.SendPeerData) return null;
+  const r = new ByteReader(data);
+  r.skip(1);
+  return {
+    flood: r.u8() === 1,
+    ackTag: r.u32(),
+    estTimeoutMs: r.u32(),
+  };
+}
+
+/**
+ * Decodes a `[McrsSub.SyncPeerData, ...]` reply payload; returns `null` when the
+ * queue is empty (`data.length === 1`) or malformed.
+ */
+export function readPeerDataFrame(data: Uint8Array): PeerDataFrame | null {
+  if (data.length < 16 || data[0] !== McrsSub.SyncPeerData) return null;
+  const r = new ByteReader(data);
+  r.skip(1);
+  const snr = r.i8() / 4;
+  const senderPrefix = r.take(PUB_KEY_PREFIX_SIZE);
+  const rawPathLen = r.u8();
+  const hops = rawPathLen === 0xff ? null : pathHashCount(rawPathLen);
+  const timestamp = r.u32();
+  const appId = r.u16();
+  const length = r.u8();
+  if (appId === 0 || length > MAX_PEER_DATA_LEN || r.remaining < length) return null;
+  return { snr, senderPrefix, hops, timestamp, appId, payload: r.take(length) };
 }

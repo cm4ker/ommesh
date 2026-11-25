@@ -70,5 +70,7 @@
   "android.channelChats": "Каналы и комнаты",
   "android.channelChatsHint": "Сообщения в каналах и комнатах или только те, где вас упоминают.",
   "android.channelNodes": "Новые узлы",
-  "android.channelNodesHint": "Узел, услышанный впервые."
+  "android.channelNodesHint": "Узел, услышанный впервые.",
+  "android.channelApps": "Мини-приложения",
+  "android.channelAppsHint": "Ходы, приглашения и события установленных мини-приложений."
 }

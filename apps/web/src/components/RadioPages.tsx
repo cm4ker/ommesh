@@ -14,7 +14,9 @@ import { useBlocks } from "../lib/blocked.js";
 import { setJumboEmoji, useJumboEmoji } from "../lib/jumboEmoji.js";
 import { setPreviewMode, usePreviewMode, type PreviewMode } from "../lib/linkPreview.js";
 import { BACKGROUND_NAMES, BACKGROUNDS, setBackground, setBackgroundScale, setBackgroundStrength, useBackgroundPrefs } from "../lib/chatBackground.js";
-import { isDirect, oneSignal, SIGNALS, setNoticePrefs, useNoticePrefs, type Corner, type NoticeKind, type NoticePrefs } from "../lib/noticePrefs.js";
+import { isDirect, oneSignal, setAppLevel, SIGNALS, setNoticePrefs, useNoticePrefs, type AppNoticeLevel, type Corner, type NoticeKind, type NoticePrefs } from "../lib/noticePrefs.js";
+import { pickText } from "@ommesh/miniapp-sdk";
+import { useMiniApps } from "../lib/miniapps/store.js";
 import { titleOf } from "../lib/conversations.js";
 import { ChatSoundRow, signalName } from "./ChatNotices.js";
 import { askPermission, hasNoticeSettings, openNoticeSettings } from "../lib/notify.js";
@@ -63,7 +65,7 @@ import { NewBuildRow } from "./NewBuild.js";
 import { NewsPage, NewsRow } from "./News.js";
 import { ReportPage } from "./ReportPage.js";
 import { QuietPage, QuietRow } from "./QuietPage.js";
-import { getLanguagePreference, languageName, languages, setLanguagePreference, subscribeLanguage, systemLanguage, t, type Key } from "../i18n/index.js";
+import { getLanguagePreference, language, languageName, languages, setLanguagePreference, subscribeLanguage, systemLanguage, t, type Key } from "../i18n/index.js";
 import { errorText } from "../i18n/errors.js";
 import { AttachError, attachmentsReady, autoPathStyle, getAttachments, publicBase, setAttachments, testBucket, useAttachments, type AttachmentsSettings } from "../lib/attachments.js";
 
@@ -79,6 +81,7 @@ export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = {
   soundDirect: "notifications",
   soundChats: "notifications",
   soundNodes: "notifications",
+  soundApps: "notifications",
   people: "about",
   news: "about",
   report: "about",
@@ -94,7 +97,7 @@ export const RADIO_PARENTS: Partial<Record<RadioPage, RadioPage>> = {
 };
 
 /** Pages that read only under their own parent, one kind's sound under Sound: the palette leaves them out. */
-export const RADIO_INNER: ReadonlySet<RadioPage> = new Set(["soundDirect", "soundChats", "soundNodes"]);
+export const RADIO_INNER: ReadonlySet<RadioPage> = new Set(["soundDirect", "soundChats", "soundNodes", "soundApps"]);
 
 /** Each page's title as a key; `radioTitle` says it. */
 export const RADIO_TITLES: Record<RadioPage, Key> = {
@@ -117,6 +120,7 @@ export const RADIO_TITLES: Record<RadioPage, Key> = {
   soundDirect: "radio.notifications.direct",
   soundChats: "radio.notifications.chats",
   soundNodes: "radio.notifications.nodes",
+  soundApps: "radio.notifications.apps",
   messages: "radio.titles.messages",
   attachments: "radio.titles.attachments",
   attachmentsServer: "radio.titles.attachmentsServer",
@@ -314,6 +318,8 @@ function PageBody({ page }: { page: RadioPage }) {
       return <KindSoundPage kind="chats" />;
     case "soundNodes":
       return <KindSoundPage kind="nodes" />;
+    case "soundApps":
+      return <KindSoundPage kind="apps" />;
     case "messages":
       return <MessagesPage />;
     case "blocked":
@@ -807,6 +813,9 @@ function AdvancedPage({ self, online }: { self: Self; online: boolean }) {
 
 function NotificationsPage() {
   const prefs = useNoticePrefs();
+  const miniApps = useMiniApps();
+  const installedWithNotices = Object.values(miniApps.installed).filter((e) => e.pkg.manifest.appId !== 0 && e.pkg.manifest.permissions.includes("notifications"));
+  const loc = language() === "ru" ? "ru" : "en";
   // Turning something on asks the system first: a notice it refuses would never show.
   const allowed = async () => {
     if (await askPermission()) return true;
@@ -873,6 +882,28 @@ function NotificationsPage() {
           onChange={(v) => void change({ nodes: v }, v !== "off")}
         />
       </Group>
+      <Group title={t("radio.notifications.appsGroup")}>
+        <SwitchRow label={t("radio.notifications.apps")} hint={t("radio.notifications.appsHint")} checked={prefs.apps} onChange={(v) => void change({ apps: v }, v)} />
+        {installedWithNotices.map((entry) => {
+          const id = entry.pkg.manifest.appId;
+          const own = prefs.appLevel[String(id)];
+          const value = own ?? "inherit";
+          return (
+            <SelectRow
+              key={entry.pkg.manifest.id}
+              label={pickText(entry.pkg.manifest.name, loc)}
+              value={value}
+              options={[
+                { value: "inherit", label: t("radio.notifications.appLevelInherit") },
+                { value: "all", label: t("radio.notifications.appLevelAll") },
+                { value: "silent", label: t("radio.notifications.appLevelSilent") },
+                { value: "off", label: t("radio.notifications.appLevelOff") },
+              ]}
+              onChange={(v) => setAppLevel(id, v === "inherit" ? null : (v as AppNoticeLevel))}
+            />
+          );
+        })}
+      </Group>
       <Group title={t("radio.notifications.popups")} note={t("radio.notifications.popupsNote")}>
         <SelectRow
           label={t("radio.notifications.shownBy")}
@@ -924,6 +955,7 @@ const SOUND_KINDS: { kind: NoticeKind; label: Key; page: RadioPage }[] = [
   { kind: "direct", label: "radio.notifications.direct", page: "soundDirect" },
   { kind: "chats", label: "radio.notifications.chats", page: "soundChats" },
   { kind: "nodes", label: "radio.notifications.nodes", page: "soundNodes" },
+  { kind: "apps", label: "radio.notifications.apps", page: "soundApps" },
 ];
 
 /** The sound of each kind of notice, and of the chats that have one of their own (gh #73). */

@@ -16,6 +16,7 @@
     "@capacitor/core": "8.5.2",
     "@capacitor/local-notifications": "^8.3.1",
     "@meshnet/meshcore": "workspace:*",
+    "@ommesh/miniapp-sdk": "workspace:*",
     "@mnlphlp/plugin-blec": "^0.12.0",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-updater": "^2.12.0",

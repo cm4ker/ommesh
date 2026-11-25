@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AdvType, type MessageRecord, type SessionState } from "@meshnet/meshcore";
-import { anyMessageWanted, DEFAULT_PREFS, fromStored, kindSounds, messageWanted, nodeWanted, noticeSignal, oneSignal, summaryOf, type NoticePrefs } from "./noticePrefs.js";
+import { anyMessageWanted, appNoticeAllowed, DEFAULT_PREFS, fromStored, kindSounds, messageWanted, nodeWanted, noticeSignal, oneSignal, summaryOf, type NoticePrefs } from "./noticePrefs.js";
 
 const BOB = "b0".repeat(32);
 const ROOM = "c0".repeat(32);
@@ -55,7 +55,7 @@ test("new nodes: people means a companion only", () => {
 });
 
 test("a chat of its own keeps messages possible with the rest off, and the summary says so", () => {
-  const off = prefs({ direct: false, chats: "off", nodes: "off" });
+  const off = prefs({ direct: false, chats: "off", nodes: "off", apps: false });
   assert.equal(anyMessageWanted(off), false);
   assert.equal(summaryOf(off), "Off");
   const one = { ...off, chat: { "ch:1": "all" as const } };
@@ -67,41 +67,56 @@ test("a chat of its own keeps messages possible with the rest off, and the summa
 
 test("one sound from an earlier build becomes each kind's, and what else was stored stays", () => {
   const p = fromStored({ signal: "sonar", chats: "mentions" } as Parameters<typeof fromStored>[0]);
-  assert.deepEqual(p.sounds, { direct: "sonar", chats: "sonar", nodes: "sonar" });
+  assert.deepEqual(p.sounds, { direct: "sonar", chats: "sonar", nodes: "sonar", apps: "sonar" });
   assert.equal(p.chats, "mentions");
   assert.equal("signal" in p, false);
-  assert.deepEqual(fromStored({ sounds: { direct: "hop", chats: "chirp", nodes: "none" } }).sounds, { direct: "hop", chats: "chirp", nodes: "none" });
+  assert.deepEqual(fromStored({ sounds: { direct: "hop", chats: "chirp", nodes: "none", apps: "sonar" } }).sounds, { direct: "hop", chats: "chirp", nodes: "none", apps: "sonar" });
   assert.deepEqual(fromStored({}), DEFAULT_PREFS);
 });
 
 test("a chat's own sound wins over its kind's; a node's and the notice about several chats ring with their kind's", () => {
-  const p = prefs({ sounds: { direct: "chirp", chats: "hop", nodes: "sonar" }, chatSound: { "ch:0": "roger", [`c:${BOB}`]: "none" } });
+  const p = prefs({ sounds: { direct: "chirp", chats: "hop", nodes: "sonar", apps: "hop" }, chatSound: { "ch:0": "roger", [`c:${BOB}`]: "none" }, appSound: { "256": "sonar" } });
   assert.equal(noticeSignal(p, { tag: "c:ch:0", kind: "chats" }), "roger");
   assert.equal(noticeSignal(p, { tag: "c:ch:1", kind: "chats" }), "hop");
   assert.equal(noticeSignal(p, { tag: `c:c:${BOB}`, kind: "direct" }), "none", "a chat of its own may be quiet");
   assert.equal(noticeSignal(p, { tag: `c:c:${ROOM}`, kind: "chats" }), "hop");
   assert.equal(noticeSignal(p, { tag: "c:", kind: "chats" }), "hop");
   assert.equal(noticeSignal(p, { tag: `n:${BOB}`, kind: "nodes" }), "sonar");
+  assert.equal(noticeSignal(p, { tag: "app:256:g1", kind: "apps" }), "sonar");
+  assert.equal(noticeSignal(p, { tag: "app:257:x", kind: "apps" }), "hop");
+});
+
+test("mini-app per-app notification override wins over global apps toggle", () => {
+  const p = prefs({ apps: false, appLevel: { "256": "silent", "257": "all" } });
+  assert.equal(appNoticeAllowed(p, 256), "silent");
+  assert.equal(appNoticeAllowed(p, 257), "all");
+  assert.equal(appNoticeAllowed(p, 258), "off");
+  assert.equal(appNoticeAllowed(DEFAULT_PREFS, 256), "all");
 });
 
 test("the Sound row names one sound only while every notice rings with it", () => {
-  assert.equal(oneSignal(DEFAULT_PREFS), "chirp");
-  assert.equal(oneSignal(prefs({ chatSound: { "ch:0": "chirp" } })), "chirp");
-  assert.equal(oneSignal(prefs({ chatSound: { "ch:0": "roger" } })), null);
-  assert.equal(oneSignal(prefs({ sounds: { direct: "hop", chats: "chirp", nodes: "chirp" } })), null);
+  assert.equal(oneSignal(DEFAULT_PREFS), null);
+  const allChirp = prefs({ sounds: { direct: "chirp", chats: "chirp", nodes: "chirp", apps: "chirp" } });
+  assert.equal(oneSignal(allChirp), "chirp");
+  assert.equal(oneSignal({ ...allChirp, chatSound: { "ch:0": "chirp" } }), "chirp");
+  assert.equal(oneSignal({ ...allChirp, chatSound: { "ch:0": "roger" } }), null);
+  assert.equal(oneSignal(prefs({ sounds: { direct: "hop", chats: "chirp", nodes: "chirp", apps: "chirp" } })), null);
 });
 
 test("each kind rings with its own sound, and with each other one its chats have, once", () => {
   const p = prefs({
-    sounds: { direct: "chirp", chats: "hop", nodes: "sonar" },
+    sounds: { direct: "chirp", chats: "hop", nodes: "sonar", apps: "hop" },
     chatSound: { "ch:0": "roger", "ch:1": "roger", "ch:2": "hop", [`c:${ROOM}`]: "none", [`c:${BOB}`]: "roger" },
+    appSound: { "256": "sonar" },
   });
   assert.deepEqual(kindSounds(p, state), [
     { kind: "direct", signal: "chirp", own: true },
     { kind: "chats", signal: "hop", own: true },
     { kind: "nodes", signal: "sonar", own: true },
+    { kind: "apps", signal: "hop", own: true },
     { kind: "chats", signal: "roger", own: false },
     { kind: "chats", signal: "none", own: false },
     { kind: "direct", signal: "roger", own: false },
+    { kind: "apps", signal: "sonar", own: false },
   ]);
 });

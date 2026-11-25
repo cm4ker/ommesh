@@ -62,5 +62,7 @@
   "android.channelChats": "Channels and rooms",
   "android.channelChatsHint": "Messages in channels and rooms, or only the ones that mention you.",
   "android.channelNodes": "New nodes",
-  "android.channelNodesHint": "A node heard for the first time."
+  "android.channelNodesHint": "A node heard for the first time.",
+  "android.channelApps": "Mini-apps",
+  "android.channelAppsHint": "Turns, invites, and events from installed mini-apps."
 }

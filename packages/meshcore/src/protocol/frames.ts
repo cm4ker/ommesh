@@ -247,6 +247,8 @@ export type PushFrame =
   | { kind: "controlData"; snr: number; rssi: number; pathLen: number; payload: Uint8Array }
   | { kind: "contactDeleted"; publicKey: Uint8Array }
   | { kind: "contactsFull" }
+  /** `meshcore-rs` extension push (`[0xE0, sub, ...rest]`). */
+  | { kind: "mcrsPush"; sub: number; payload: Uint8Array }
   /** A text or a reaction the other app sharing the radio sent: its command and the radio's answer (see `Push.Mirror`). */
   | { kind: "mirror"; command: Uint8Array; answer: Uint8Array }
   /** The phone's relay says this app shares the radio, and as which side (see `peer.ts`). */
@@ -276,6 +278,7 @@ export const PUSH_KINDS: ReadonlySet<FrameKind> = new Set<FrameKind>([
   "controlData",
   "contactDeleted",
   "contactsFull",
+  "mcrsPush",
   "mirror",
   "peerHello",
   "peerEntry",
@@ -783,6 +786,11 @@ function decodePush(code: number, r: ByteReader): PushFrame | null {
       return { kind: "contactDeleted", publicKey: r.take(PUB_KEY_SIZE) };
     case Push.ContactsFull:
       return { kind: "contactsFull" };
+    case Push.Mcrs: {
+      const payload = r.rest();
+      if (payload.length < 1) return null;
+      return { kind: "mcrsPush", sub: payload[0]!, payload };
+    }
     default:
       return null;
   }

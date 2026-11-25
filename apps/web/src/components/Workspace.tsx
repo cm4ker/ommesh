@@ -26,7 +26,11 @@ import { ChannelWriters } from "./ChannelWriters.js";
 import { ChatSwitcher } from "./ChatSwitcher.js";
 import { ChatList, NEW_CHAT_EVENT } from "./ChatList.js";
 import { ChatView, FIND_IN_CHAT_EVENT } from "./ChatView.js";
-import { ChatIcon, NodesIcon, SearchIcon, SettingsIcon } from "./Icons.js";
+import { AppsIcon, ChatIcon, NodesIcon, SearchIcon, SettingsIcon } from "./Icons.js";
+import { AppsHome } from "./AppsHome.js";
+import { AppsStoreView } from "./AppsStoreView.js";
+import { MiniAppHostView } from "./MiniAppHostView.js";
+import { useMiniApps, useMiniAppsBadge } from "../lib/miniapps/store.js";
 import { MeshList, MeshMap, MeshPhone, MeshPickBar, ProfileMap, useMeshAttention } from "./Mesh.js";
 import { MessageView } from "./MessageView.js";
 import { NodePageView } from "./node/NodePage.js";
@@ -47,6 +51,7 @@ import { errorText } from "../i18n/errors.js";
 const SECTIONS: { id: Section; label: Key; icon: ReactNode }[] = [
   { id: "chats", label: "connect.tabs.chats", icon: <ChatIcon size={22} /> },
   { id: "mesh", label: "connect.tabs.mesh", icon: <NodesIcon size={22} /> },
+  { id: "apps", label: "connect.tabs.apps", icon: <AppsIcon size={22} /> },
   { id: "radio", label: "connect.tabs.settings", icon: <SettingsIcon size={22} /> },
 ];
 
@@ -86,6 +91,10 @@ function ScreenView({ screen, chrome, wide }: { screen: Screen; chrome: Chrome; 
       return <NodePageView key={`${screen.key}:${screen.page}`} contactKey={screen.key} page={screen.page} chrome={chrome} tabs={wide} />;
     case "radio":
       return <RadioPageView page={screen.page} chrome={chrome} />;
+    case "app":
+      return <MiniAppHostView key={screen.id} appSlug={screen.id} activityId={screen.activityId} chrome={chrome} />;
+    case "appStore":
+      return <AppsStoreView chrome={chrome} />;
   }
 }
 
@@ -172,7 +181,7 @@ function useBadges() {
   // Values rather than the state, so the phone's frame, and the screen in it, re-render only when a badge changes.
   const unread = useSelector(totalUnread);
   const offline = useSelector((state) => state.status !== "ready");
-  return { unread, attention: useMeshAttention(), offline, surveying: useSurveying() };
+  return { unread, apps: useMiniAppsBadge(), attention: useMeshAttention(), offline, surveying: useSurveying() };
 }
 
 /** Whether the card of the survey running is what the map shows, so the strip that leads to it would only repeat it. */
@@ -216,6 +225,7 @@ function Phone() {
   // The root of a section, then its stack: the top one on screen, the one under it kept mounted for Back.
   const layers: { key: string; node: ReactNode }[] = [];
   if (nav.section === "chats") layers.push({ key: "root", node: <ChatList selected={null} /> });
+  else if (nav.section === "apps") layers.push({ key: "root", node: <AppsHome selected={null} /> });
   else if (nav.section === "radio") layers.push({ key: "root", node: <RadioHome selected={null} /> });
   screens.forEach((s, i) => {
     const key = `${i}:${JSON.stringify(s)}`;
@@ -305,6 +315,7 @@ function Phone() {
 
 function Badge({ section, badges, away }: { section: Section; badges: ReturnType<typeof useBadges>; away: boolean }) {
   if (section === "chats" && badges.unread > 0) return <span className="tab-badge">{badges.unread}</span>;
+  if (section === "apps" && badges.apps > 0) return <span className="tab-badge">{badges.apps}</span>;
   // A survey running, from any other section: the map is where it is.
   if (section === "mesh" && badges.surveying && away) return <span className="tab-dot rec" title={t("tools.survey.nowTitle")} />;
   if (section === "mesh" && badges.attention) return <span className="tab-dot warn" title={t("connect.badge.attention")} />;
@@ -468,7 +479,7 @@ function fullScreen(stack: Screen[]): Extract<Screen, { kind: "node" | "pickNode
 function layout(nav: Nav) {
   const stack = nav.stacks[nav.section];
   const top = topOf(nav);
-  if (nav.section === "radio") return { chat: null, full: null, panel: null, beside: false, panelDepth: 0 };
+  if (nav.section === "radio" || nav.section === "apps") return { chat: null, full: null, panel: null, beside: false, panelDepth: 0 };
   const full = fullScreen(stack);
   // The profile beside a node's page is the panel's only screen: closing it goes back to the page.
   const beside = full !== null && top !== full;
@@ -484,6 +495,7 @@ function layout(nav: Nav) {
 function Desktop() {
   const nav = useNav();
   const badges = useBadges();
+  const miniApps = useMiniApps();
   const [palette, setPalette] = useState(false);
   const [group, setGroup] = useState<string[] | null>(null);
   const tool = useMeshTool();
@@ -540,6 +552,23 @@ function Desktop() {
           setStack("mesh", [], { meshFocus: null });
         }}
       />
+    );
+  } else if (nav.section === "apps") {
+    const top = topOf(nav);
+    const firstInstalled = Object.keys(miniApps.installed)[0] ?? null;
+    const activeApp =
+      top?.kind === "app"
+        ? top
+        : top?.kind === "appStore"
+          ? null
+          : firstInstalled
+            ? { kind: "app" as const, id: firstInstalled, activityId: undefined }
+            : null;
+    list = <AppsHome selected={activeApp ? activeApp.id : "store"} />;
+    main = activeApp ? (
+      <MiniAppHostView key={activeApp.id} appSlug={activeApp.id} activityId={activeApp.activityId} chrome={{}} />
+    ) : (
+      <AppsStoreView chrome={{}} />
     );
   } else {
     // A page opened from another page keeps its parent picked in the list, and goes back to it.
@@ -636,7 +665,7 @@ function useDesktopKeys({ openPalette, togglePanel, escape }: { openPalette: () 
       if (mod && key === "k") {
         e.preventDefault();
         openPalette();
-      } else if ((e.altKey || (mod && isTauri())) && ["1", "2", "3"].includes(e.key)) {
+      } else if ((e.altKey || (mod && isTauri())) && ["1", "2", "3", "4"].includes(e.key)) {
         e.preventDefault();
         goSection(SECTIONS[Number(e.key) - 1]!.id);
       } else if (mod && key === "n" && isTauri()) {

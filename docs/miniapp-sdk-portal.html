@@ -1,0 +1,1055 @@
+<!doctype html>
+<html lang="ru" data-appearance="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ommesh Mini-App SDK — Methods Portal & Playground</title>
+  <style>
+    :root {
+      --bg: #282c33;
+      --panel: #2f343d;
+      --elevated: #363c46;
+      --chrome: #23272e;
+      --text: #dce1ea;
+      --text-muted: #98a2b3;
+      --text-faint: #6c7688;
+      --border: #3d4450;
+      --border-strong: #4e5766;
+      --accent: #74ade8;
+      --accent-contrast: #141923;
+      --hover: rgba(255, 255, 255, 0.06);
+      --selected: rgba(116, 173, 232, 0.16);
+      --success: #7fd49a;
+      --warning: #e5c07b;
+      --danger: #e06c75;
+      --bubble-in: #343a45;
+      --bubble-out: #2e4560;
+      --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    }
+    :root[data-appearance="light"] {
+      --bg: #fafafa;
+      --panel: #f2f3f5;
+      --elevated: #ffffff;
+      --chrome: #eceef1;
+      --text: #272a30;
+      --text-muted: #5c6370;
+      --text-faint: #8b929e;
+      --border: #dfe2e7;
+      --border-strong: #c8cdd6;
+      --accent: #4c6ef5;
+      --accent-contrast: #ffffff;
+      --hover: rgba(0, 0, 0, 0.045);
+      --selected: rgba(76, 110, 245, 0.12);
+      --success: #2b8a3e;
+      --warning: #c97a00;
+      --danger: #d63939;
+      --bubble-in: #ffffff;
+      --bubble-out: #dce8ff;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13.5px/1.5 var(--font-ui); -webkit-font-smoothing: antialiased; }
+    .shell { display: grid; grid-template-rows: 52px minmax(0, 1fr); height: 100dvh; overflow: hidden; }
+    .topbar {
+      display: flex; align-items: center; gap: 10px; padding: 0 14px;
+      background: var(--chrome); border-bottom: 1px solid var(--border); overflow-x: auto;
+    }
+    .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14.5px; white-space: nowrap; }
+    .brand-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--selected); }
+    .ver { font-size: 11px; font-family: var(--font-mono); color: var(--text-muted); padding: 2px 6px; border: 1px solid var(--border); border-radius: 99px; }
+    .spacer { flex: 1; }
+    .search-box {
+      width: 210px; height: 30px; padding: 0 10px; border-radius: 7px;
+      border: 1px solid var(--border-strong); background: var(--bg); color: var(--text); font: inherit; font-size: 12.5px; outline: none;
+    }
+    .search-box:focus { border-color: var(--accent); }
+    .ctrl, select.ctrl {
+      height: 30px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--border-strong);
+      background: var(--panel); color: var(--text); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+    }
+    .ctrl:hover { background: var(--hover); }
+    .ctrl.on { background: var(--selected); border-color: var(--accent); color: var(--accent); }
+    .ctrl.primary { background: var(--accent); color: var(--accent-contrast); border-color: transparent; }
+
+    .grid { display: grid; grid-template-columns: 248px minmax(0, 1fr) 440px; min-height: 0; overflow: hidden; }
+    @media (max-width: 1120px) { .grid { grid-template-columns: 210px minmax(0, 1fr) 370px; } }
+    @media (max-width: 860px) {
+      .shell { height: auto; min-height: 100dvh; overflow: visible; }
+      .grid { grid-template-columns: 1fr; overflow: visible; }
+      .nav-col, .doc-col, .play-col { border-right: 0; border-bottom: 1px solid var(--border); max-height: none; }
+    }
+    .nav-col { background: var(--panel); border-right: 1px solid var(--border); overflow-y: auto; padding: 10px 8px 20px; }
+    .nav-group { margin: 12px 8px 4px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-faint); }
+    .nav-item {
+      width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 6px;
+      padding: 6px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--text);
+      text-align: left; font-family: var(--font-mono); font-size: 12px; cursor: pointer;
+    }
+    .nav-item:hover { background: var(--hover); }
+    .nav-item.on { background: var(--selected); color: var(--accent); font-weight: 600; }
+    .perm-mini { font-family: var(--font-ui); font-size: 10px; padding: 1px 5px; border-radius: 4px; background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+
+    .doc-col { overflow-y: auto; padding: 20px 24px 36px; border-right: 1px solid var(--border); min-width: 0; }
+    .doc-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .doc-title { margin: 0; font-size: 20px; font-family: var(--font-mono); letter-spacing: -0.02em; }
+    .doc-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+    .chip { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--border); background: var(--panel); color: var(--text-muted); }
+    .chip.perm { border-color: color-mix(in oklab, var(--accent) 45%, var(--border)); color: var(--accent); }
+    .chip.warn { border-color: color-mix(in oklab, var(--warning) 45%, var(--border)); color: var(--warning); }
+    .doc-desc { margin: 0 0 16px; color: var(--text); font-size: 14px; line-height: 1.55; }
+    .sec-h { margin: 18px 0 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+    pre.code {
+      margin: 0; padding: 12px 14px; border-radius: 9px; border: 1px solid var(--border);
+      background: var(--chrome); color: var(--text); font: 12.5px/1.5 var(--font-mono); overflow-x: auto; white-space: pre;
+    }
+    .code-wrap { position: relative; }
+    .code-actions { display: flex; gap: 6px; margin-bottom: 8px; }
+    table.params { width: 100%; border-collapse: collapse; font-size: 12.5px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    table.params th, table.params td { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+    table.params th { background: var(--panel); color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+    table.params tr:last-child td { border-bottom: 0; }
+    code { font-family: var(--font-mono); font-size: 0.92em; background: var(--panel); padding: 1px 5px; border-radius: 4px; }
+    .note-box { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); font-size: 12.5px; color: var(--text-muted); line-height: 1.45; }
+
+    .play-col { display: flex; flex-direction: column; min-height: 0; background: var(--chrome); }
+    .play-tabs { display: flex; align-items: center; gap: 4px; padding: 8px 10px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .ptab { border: 0; background: transparent; color: var(--text-muted); padding: 5px 9px; border-radius: 6px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .ptab.on { background: var(--panel); color: var(--text); }
+    .play-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+    .preview-stage {
+      flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 10px; background: var(--chrome); overflow: auto;
+    }
+    .device-frame {
+      width: 100%; height: 100%; display: flex; flex-direction: column; border-radius: 10px; overflow: hidden;
+      border: 1px solid var(--border-strong); background: var(--bg);
+    }
+    .device-frame.mobile { width: 360px; max-width: 100%; height: 620px; border-radius: 22px; border-width: 3px; box-shadow: 0 12px 32px rgba(0,0,0,0.35); }
+    .mock-head {
+      flex: none; height: 42px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid var(--border); background: var(--bg); font-weight: 600; font-size: 13px;
+    }
+    .mock-iframe { flex: 1; min-height: 0; width: 100%; border: 0; display: block; background: var(--bg); }
+    .mock-kb {
+      flex: none; height: 220px; background: var(--panel); border-top: 1px solid var(--border-strong);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 10px; color: var(--text-muted); font-size: 12px;
+    }
+    .mock-kb-keys { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; width: 100%; max-width: 320px; }
+    .mock-kb-keys span { height: 28px; border-radius: 5px; background: var(--elevated); border: 1px solid var(--border); display: grid; place-items: center; font-size: 11px; color: var(--text); }
+    .hidden { display: none !important; }
+    .editor-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px; gap: 8px; }
+    .editor-area {
+      flex: 1; min-height: 220px; width: 100%; resize: none; border-radius: 8px; border: 1px solid var(--border-strong);
+      background: var(--bg); color: var(--text); font: 12px/1.45 var(--font-mono); padding: 10px; outline: none;
+    }
+    .tool-pane { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .tool-card { background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .tool-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .tool-input { flex: 1; min-width: 120px; height: 30px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--bg); color: var(--text); font: 12px var(--font-mono); }
+    .log-list { font: 11.5px/1.45 var(--font-mono); display: flex; flex-direction: column; gap: 4px; }
+    .log-row { padding: 5px 7px; border-radius: 6px; background: var(--bg); border: 1px solid var(--border); word-break: break-word; }
+    .log-row .tag { font-weight: 700; margin-right: 6px; }
+    .log-row.rpc .tag { color: var(--accent); }
+    .log-row.ev .tag { color: var(--success); }
+    .log-row.err .tag { color: var(--danger); }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <span class="brand"><span class="brand-dot"></span><span id="brandTitle">Ommesh Mini-App SDK</span><span class="ver">omapp-v1</span></span>
+    <input class="search-box" id="searchInput" type="search" placeholder="Search methods… (/)" />
+    <span class="spacer"></span>
+    <select class="ctrl" id="themeSel" title="Theme">
+      <option value="one-dark">One Dark</option>
+      <option value="one-light">One Light</option>
+      <option value="olive-lcd">Olive LCD</option>
+      <option value="pebble-classic">Pebble Classic</option>
+    </select>
+    <button type="button" class="ctrl" id="mobileToggle">Mobile 360px</button>
+    <button type="button" class="ctrl" id="kbToggle">Keyboard</button>
+    <input type="file" id="omappFile" accept=".omapp,.json" class="hidden" />
+    <button type="button" class="ctrl" id="loadOmappBtn">Load .omapp</button>
+    <button type="button" class="ctrl on" id="langToggle">RU / EN</button>
+  </header>
+
+  <div class="grid">
+    <nav class="nav-col" id="navCol"></nav>
+    <main class="doc-col" id="docCol"></main>
+    <section class="play-col">
+      <div class="play-tabs">
+        <button type="button" class="ptab on" data-ptab="preview" id="ptPreview">Live Sandbox</button>
+        <button type="button" class="ptab" data-ptab="code" id="ptCode">HTML Editor</button>
+        <button type="button" class="ptab" data-ptab="radio" id="ptRadio">Mock LoRa</button>
+        <button type="button" class="ptab" data-ptab="log" id="ptLog">KV & Log</button>
+      </div>
+      <div class="play-body">
+        <div class="preview-stage" id="panePreview">
+          <div class="device-frame" id="deviceFrame">
+            <div class="mock-head">
+              <span id="mockAppName">Sandbox Preview</span>
+              <span id="mockVpInfo" style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono)">desktop</span>
+            </div>
+            <iframe id="sandboxFrame" class="mock-iframe" sandbox="allow-scripts" title="Mini-app preview"></iframe>
+            <div class="mock-kb hidden" id="mockKb">
+              <div id="mockKbLabel">Simulated Mobile Soft Keyboard (220 px)</div>
+              <div class="mock-kb-keys">
+                <span>Q</span><span>W</span><span>E</span><span>R</span><span>T</span><span>Y</span><span>U</span><span>I</span><span>O</span><span>P</span>
+                <span>A</span><span>S</span><span>D</span><span>F</span><span>G</span><span>H</span><span>J</span><span>K</span><span>L</span><span>⌫</span>
+              </div>
+              <button type="button" class="ctrl" id="hideKbBtn">Hide Keyboard</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="editor-pane hidden" id="paneCode">
+          <div class="tool-row">
+            <button type="button" class="ctrl primary" id="runCodeBtn">Run in Sandbox ▶</button>
+            <select class="ctrl" id="presetSel">
+              <option value="p2p">Preset: P2P Ping-Pong</option>
+              <option value="storage">Preset: Storage Counter</option>
+              <option value="keyboard">Preset: Mobile Keyboard Form</option>
+              <option value="theme">Preset: Theme & Viewport Inspector</option>
+            </select>
+          </div>
+          <textarea class="editor-area" id="codeEditor" spellcheck="false"></textarea>
+        </div>
+
+        <div class="tool-pane hidden" id="paneRadio">
+          <div class="tool-card">
+            <strong id="mrSendTitle">Simulate incoming LoRa PEER_DATA packet</strong>
+            <div class="tool-row">
+              <select class="ctrl" id="mockSender">
+                <option value="a1b2c3d4e5f6">Alice (a1b2c3d4e5f6)</option>
+                <option value="112233445566">Bob (112233445566)</option>
+              </select>
+              <label style="font-size:12px;display:inline-flex;align-items:center;gap:4px">
+                <input type="checkbox" id="mockMirrored" /> mirrored
+              </label>
+            </div>
+            <div class="tool-row">
+              <input class="tool-input" id="mockHex" value="01 07 00" placeholder="Hex bytes e.g. 01 07 00" />
+              <button type="button" class="ctrl primary" id="injectPktBtn">Inject Packet</button>
+            </div>
+          </div>
+          <div class="tool-card">
+            <strong id="mrActTitle">Trigger onOpenActivity(id)</strong>
+            <div class="tool-row">
+              <input class="tool-input" id="mockActId" value="game:1234" />
+              <button type="button" class="ctrl" id="injectActBtn">Open Activity</button>
+            </div>
+          </div>
+          <div class="tool-card">
+            <strong id="mrOutTitle">Packets sent by mini-app</strong>
+            <div class="log-list" id="sentPktList"><div style="color:var(--text-faint)">—</div></div>
+          </div>
+        </div>
+
+        <div class="tool-pane hidden" id="paneLog">
+          <div class="tool-card">
+            <div class="tool-row" style="justify-content:space-between">
+              <strong id="kvTitle">Isolated KV Storage</strong>
+              <button type="button" class="ctrl" id="clearKvBtn">Clear KV</button>
+            </div>
+            <pre class="code" id="kvDump">{}</pre>
+          </div>
+          <div class="tool-card">
+            <div class="tool-row" style="justify-content:space-between">
+              <strong id="logTitle">RPC & Events Log</strong>
+              <button type="button" class="ctrl" id="clearLogBtn">Clear</button>
+            </div>
+            <div class="log-list" id="rpcLog"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+const THEMES = {
+  "one-dark": {
+    id: "one-dark", appearance: "dark", textScale: 1,
+    tokens: {
+      bg: "#282c33", panel: "#2f343d", elevated: "#363c46", chrome: "#23272e",
+      text: "#dce1ea", textMuted: "#98a2b3", textFaint: "#6c7688",
+      border: "#3d4450", borderStrong: "#4e5766", accent: "#74ade8", accentContrast: "#141923",
+      hover: "rgba(255,255,255,0.06)", selected: "rgba(116,173,232,0.16)",
+      success: "#7fd49a", warning: "#e5c07b", danger: "#e06c75",
+      bubbleIn: "#343a45", bubbleOut: "#2e4560", bubbleText: "#dce1ea", bubbleTextMuted: "#98a2b3"
+    }
+  },
+  "one-light": {
+    id: "one-light", appearance: "light", textScale: 1,
+    tokens: {
+      bg: "#fafafa", panel: "#f2f3f5", elevated: "#ffffff", chrome: "#eceef1",
+      text: "#272a30", textMuted: "#5c6370", textFaint: "#8b929e",
+      border: "#dfe2e7", borderStrong: "#c8cdd6", accent: "#4c6ef5", accentContrast: "#ffffff",
+      hover: "rgba(0,0,0,0.05)", selected: "rgba(76,110,245,0.12)",
+      success: "#2b8a3e", warning: "#c97a00", danger: "#d63939",
+      bubbleIn: "#ffffff", bubbleOut: "#dce8ff", bubbleText: "#272a30", bubbleTextMuted: "#5c6370"
+    }
+  },
+  "olive-lcd": {
+    id: "olive", appearance: "light", look: "lcd", textScale: 1,
+    tokens: {
+      bg: "#9ca886", panel: "#8f9b79", elevated: "#a7b391", chrome: "#859170",
+      text: "#1d2415", textMuted: "#2f3a23", textFaint: "#435034",
+      border: "#5c694a", borderStrong: "#252f1b", accent: "#1d2415", accentContrast: "#9ca886",
+      hover: "rgba(29,36,21,0.1)", selected: "rgba(29,36,21,0.18)",
+      success: "#1d2415", warning: "#1d2415", danger: "#1d2415",
+      bubbleIn: "#a7b391", bubbleOut: "#859170", bubbleText: "#1d2415", bubbleTextMuted: "#2f3a23"
+    }
+  },
+  "pebble-classic": {
+    id: "pebble", appearance: "light", look: "classic", textScale: 1,
+    tokens: {
+      bg: "#d6d3ce", panel: "#c8c4be", elevated: "#e6e3de", chrome: "#bdb9b2",
+      text: "#111111", textMuted: "#444444", textFaint: "#666666",
+      border: "#9a9690", borderStrong: "#5c5954", accent: "#003c9d", accentContrast: "#ffffff",
+      hover: "rgba(0,0,0,0.06)", selected: "rgba(0,60,157,0.16)",
+      success: "#006400", warning: "#8a5a00", danger: "#a40000",
+      bubbleIn: "#e6e3de", bubbleOut: "#c8d7f0", bubbleText: "#111111", bubbleTextMuted: "#444444"
+    }
+  }
+};
+
+const PRESETS = {
+  p2p: `<style>
+  .box { padding: 14px 14px calc(18px + var(--safe-bottom, 0px)); display: flex; flex-direction: column; gap: 10px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--bg); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-contrast); border-color: transparent; }
+  pre { margin: 0; padding: 8px; border-radius: 7px; background: var(--bg); border: 1px solid var(--border); font: 12px/1.4 monospace; min-height: 90px; white-space: pre-wrap; }
+</style>
+<div class="box">
+  <div class="card">
+    <div class="row">
+      <button id="pickBtn">Pick peer</button>
+      <button id="sendBtn" class="primary">Send PING [01 01 00]</button>
+    </div>
+    <div id="st" style="font-size:12px;color:var(--text-muted)">Ready</div>
+    <pre id="out">Waiting for packets…</pre>
+  </div>
+</div>
+<script>
+window.ommeshReady.then(async function (app) {
+  var peer = app.context.grantedPeers[0] || null;
+  var seq = 1;
+  var lines = [];
+  function log(s) { lines.push(s); document.getElementById("out").textContent = lines.slice(-10).join("\\n"); }
+  document.getElementById("pickBtn").onclick = async function () {
+    var p = await app.peers.pick({ requirePeerData: true });
+    if (p) { peer = p; document.getElementById("st").textContent = "Peer: " + p.name; log("picked " + p.name); }
+  };
+  document.getElementById("sendBtn").onclick = async function () {
+    if (!peer) { document.getElementById("st").textContent = "Pick a peer first!"; return; }
+    var pkt = new Uint8Array([1, seq & 0xff, (seq >> 8) & 0xff]);
+    seq++;
+    var res = await app.transport.send(peer.keyPrefix, pkt, { retry: true });
+    log("TX -> " + peer.name + " [" + Array.from(pkt).map(b => b.toString(16).padStart(2,"0")).join(" ") + "] id=" + res.packetId);
+  };
+  app.transport.onDelivery(function (ev) {
+    document.getElementById("st").textContent = "ACK: " + ev.status + (ev.rttMs ? " (" + ev.rttMs + " ms)" : "");
+    log("DELIVERY " + ev.packetId + ": " + ev.status);
+  });
+  app.transport.onPacket(function (pkt) {
+    var hex = Array.from(pkt.payload).map(b => b.toString(16).padStart(2,"0")).join(" ");
+    log("RX <- " + pkt.peerName + (pkt.mirrored ? " [mirrored]" : "") + " [" + hex + "] SNR=" + pkt.snr);
+  });
+});
+<\/script>`,
+
+  storage: `<style>
+  .box { padding: 16px 16px calc(18px + var(--safe-bottom, 0px)); display: flex; flex-direction: column; gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  button { padding: 8px 14px; border-radius: 8px; border: 0; background: var(--accent); color: var(--accent-contrast); font: inherit; font-weight: 600; cursor: pointer; }
+  button.sec { background: var(--bg); color: var(--text); border: 1px solid var(--border-strong); }
+</style>
+<div class="box">
+  <div class="card">
+    <strong id="count">Clicks: 0</strong>
+    <div style="display:flex;gap:8px">
+      <button id="inc">+1 & Save</button>
+      <button id="rst" class="sec">Reset</button>
+    </div>
+    <div id="keys" style="font:12px monospace;color:var(--text-muted)">keys: []</div>
+  </div>
+</div>
+<script>
+window.ommeshReady.then(async function (app) {
+  var n = (await app.storage.get("clicks")) || 0;
+  async function draw() {
+    document.getElementById("count").textContent = "Clicks: " + n;
+    document.getElementById("keys").textContent = "keys: " + JSON.stringify(await app.storage.list());
+  }
+  document.getElementById("inc").onclick = async function () { n++; await app.storage.set("clicks", n); await draw(); };
+  document.getElementById("rst").onclick = async function () { n = 0; await app.storage.delete("clicks"); await draw(); };
+  await draw();
+});
+<\/script>`,
+
+  keyboard: `<style>
+  .wrap { display: flex; flex-direction: column; height: 100%; padding: 12px 12px calc(12px + var(--safe-bottom, 0px)); gap: 10px; }
+  .msgs { flex: 1; min-height: 80px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .m { padding: 6px 10px; border-radius: 8px; background: var(--bubble-out, var(--selected)); align-self: flex-end; max-width: 85%; }
+  .bar { display: flex; gap: 6px; }
+  input { flex: 1; min-height: 36px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--bg); color: var(--text); font: inherit; }
+  button { padding: 0 14px; border-radius: 8px; border: 0; background: var(--accent); color: var(--accent-contrast); font: inherit; font-weight: 600; cursor: pointer; }
+  .meta { font: 11px monospace; color: var(--text-muted); }
+</style>
+<div class="wrap">
+  <div class="meta" id="vp">keyboard: closed</div>
+  <div class="msgs" id="msgs"><div class="m">Tap the input below and toggle "Keyboard" in the top bar!</div></div>
+  <div class="bar">
+    <input id="inp" type="text" enterkeyhint="send" placeholder="Type a message…" />
+    <button id="go">Send</button>
+  </div>
+</div>
+<script>
+window.ommeshReady.then(function (app) {
+  function showVp(vp) {
+    if (!vp) return;
+    document.getElementById("vp").textContent =
+      "mobile=" + vp.mobile + " kb=" + (vp.keyboardOpen ? "OPEN(" + vp.keyboardHeight + "px)" : "closed") +
+      " safeBottom=" + vp.safeBottom + "px " + vp.width + "x" + vp.height;
+  }
+  showVp(app.context.viewport);
+  app.ui.onViewportChange(showVp);
+  function send() {
+    var el = document.getElementById("inp");
+    if (!el.value.trim()) return;
+    var d = document.createElement("div");
+    d.className = "m"; d.textContent = el.value.trim();
+    var box = document.getElementById("msgs");
+    box.appendChild(d); box.scrollTop = box.scrollHeight;
+    el.value = "";
+  }
+  document.getElementById("go").onclick = send;
+  document.getElementById("inp").onkeydown = function (e) { if (e.key === "Enter") send(); };
+});
+<\/script>`,
+
+  theme: `<style>
+  .box { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .swatches { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .sw { padding: 8px; border-radius: 8px; border: 1px solid var(--border); font: 11px monospace; }
+  pre { margin: 0; padding: 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--border); font: 11.5px/1.4 monospace; overflow-x: auto; }
+</style>
+<div class="box">
+  <div class="swatches">
+    <div class="sw" style="background:var(--bg)">--bg</div>
+    <div class="sw" style="background:var(--panel)">--panel</div>
+    <div class="sw" style="background:var(--accent);color:var(--accent-contrast)">--accent</div>
+    <div class="sw" style="background:var(--success);color:#111">--success</div>
+    <div class="sw" style="background:var(--warning);color:#111">--warning</div>
+    <div class="sw" style="background:var(--danger);color:#fff">--danger</div>
+  </div>
+  <pre id="ctx"></pre>
+</div>
+<script>
+window.ommeshReady.then(function (app) {
+  function draw() {
+    document.getElementById("ctx").textContent = JSON.stringify({
+      locale: app.context.locale,
+      theme: { id: app.context.theme.id, appearance: app.context.theme.appearance, look: app.context.theme.look },
+      radio: app.context.radio,
+      viewport: app.context.viewport
+    }, null, 2);
+  }
+  app.ui.onThemeChange(draw);
+  app.ui.onViewportChange(draw);
+  draw();
+});
+<\/script>`
+};
+
+const DOCS = [
+  {
+    id: "ommeshReady", group: "Bootstrap", perm: null, preset: "theme",
+    sig: "window.ommeshReady: Promise<OmmeshApp>",
+    desc: {
+      ru: "Промис, который хост Ommesh автоматически внедряет в каждый iframe до запуска скриптов мини-приложения. Позволяет писать однофайловые `.omapp` на чистом JS без сборщика.",
+      en: "Promise automatically injected by the Ommesh host into every sandboxed iframe before your scripts run. Enables zero-build single-HTML `.omapp` bundles."
+    },
+    params: [
+      { name: "resolve(app)", type: "OmmeshApp", ru: "Готовый экземпляр API (также записывается в `window.ommesh`).", en: "Ready SDK handle (also exposed as `window.ommesh`)." },
+      { name: "connect(timeoutMs?)", type: "Promise<OmmeshApp>", ru: "Импортируемый аналог из `@ommesh/miniapp-sdk` для TypeScript/сборщиков.", en: "Importable TypeScript/ESM equivalent from `@ommesh/miniapp-sdk`." }
+    ],
+    code: `window.ommeshReady.then(async (app) => {\n  console.log("Locale:", app.context.locale);\n  console.log("Radio:", app.context.radio);\n});`
+  },
+  {
+    id: "context", group: "Context", perm: null, preset: "theme",
+    sig: "app.context: MiniAppContext",
+    desc: {
+      ru: "Актуальный снимок состояния сессии: `appId`, владелец радио (`self`), язык (`ru`/`en`), текущая тема, параметры LoRa-радио, мобильный `viewport` и уже разрешённые контакты (`grantedPeers`).",
+      en: "Live read-only snapshot of `appId`, local radio `self`, `locale`, `theme`, `radio` parameters, mobile `viewport`, `initialActivityId`, and `grantedPeers`."
+    },
+    params: [
+      { name: "appId", type: "number", ru: "`0` для офлайн-утилит, `0x0100..0xFFFF` для P2P.", en: "`0` for standalone tools, `0x0100..0xFFFF` for P2P apps." },
+      { name: "self", type: "{ keyPrefix, name } | null", ru: "Публичный префикс (12 hex) и имя вашего радио.", en: "12-char hex prefix and name of the connected radio." },
+      { name: "radio", type: "MiniAppRadioInfo", ru: "`connected`, `maxPayloadBytes` (150), `supportsPeerData`, `sf`, `bwHz`, `cr`.", en: "`connected`, `maxPayloadBytes` (150), `supportsPeerData`, `sf`, `bwHz`, `cr`." },
+      { name: "viewport", type: "MiniAppViewport", ru: "`width`, `height`, `safeBottom`, `keyboardHeight`, `keyboardOpen`, `mobile`.", en: "`width`, `height`, `safeBottom`, `keyboardHeight`, `keyboardOpen`, `mobile`." },
+      { name: "initialActivityId", type: "string | null", ru: "ID активности, если пользователь открыл приложение из уведомления или хаба.", en: "Activity ID passed when launched from a notification or Apps hub." }
+    ],
+    code: `const { radio, viewport, locale } = app.context;\nif (!radio.supportsPeerData) {\n  console.warn("Connect a meshcore-rs v2 companion radio");\n}`
+  },
+  {
+    id: "peers.list", group: "Peers", perm: null, preset: "p2p",
+    sig: "app.peers.list(): Promise<MiniAppPeer[]>",
+    desc: {
+      ru: "Возвращает контакты, к которым у этого приложения уже есть доступ (выбранные через `peers.pick()` или приславшие пакет на ваш `appId`). Полная адресная книга приложению недоступна.",
+      en: "Returns peers already granted to this mini-app (picked via `peers.pick()` or received a packet from). The full contact list is never exposed."
+    },
+    params: [
+      { name: "returns", type: "MiniAppPeer[]", ru: "`{ keyPrefix, name, supportsPeerData }`", en: "`{ keyPrefix, name, supportsPeerData }`" }
+    ],
+    code: `const peers = await app.peers.list();\nconsole.log("Granted peers:", peers);`
+  },
+  {
+    id: "peers.pick", group: "Peers", perm: "peerData", preset: "p2p",
+    sig: "app.peers.pick(options?: PickPeerOptions): Promise<MiniAppPeer | null>",
+    desc: {
+      ru: "Открывает нативный диалог выбора контакта Ommesh. При выборе контакта автоматически выдаёт ему Peer Grant для отправки пакетов через `transport.send()`.",
+      en: "Opens the host-owned contact picker modal. Selecting a contact automatically grants that peer to the mini-app for `transport.send()`."
+    },
+    params: [
+      { name: "options.requirePeerData", type: "boolean?", ru: "Подсказка хосту выделить контакты с поддержкой MCRS v2.", en: "Hint to highlight MCRS v2 capable contacts." },
+      { name: "returns", type: "MiniAppPeer | null", ru: "Выбранный контакт или `null`, если пользователь нажал Отмена.", en: "Chosen peer or `null` if cancelled." }
+    ],
+    code: `const peer = await app.peers.pick({ requirePeerData: true });\nif (!peer) return;\nconsole.log("Selected:", peer.name, peer.keyPrefix);`
+  },
+  {
+    id: "transport.send", group: "Transport", perm: "peerData", preset: "p2p",
+    sig: "app.transport.send(peerPrefix, payload, options?): Promise<SendResult>",
+    desc: {
+      ru: "Отправляет зашифрованную бинарную датаграмму MCRS v2 (`TXT_TYPE_PEER_DATA`) с автоматическим подтверждением LoRa ACK и повторами (direct → flood). Максимум **150 байт**, лимит частоты: **5 подряд, +1 / 1.5 с**.",
+      en: "Sends an encrypted MCRS v2 binary datagram (`TXT_TYPE_PEER_DATA`) with LoRa ACK and direct→flood retries. Max **150 bytes**, rate limit **burst 5, +1 / 1.5 s**."
+    },
+    params: [
+      { name: "peerPrefix", type: "string", ru: "12-символьный hex-префикс разрешённого контакта.", en: "12-char hex prefix of a granted peer." },
+      { name: "payload", type: "Uint8Array", ru: "1..150 байт (≤ 8 байт укладываются в 1 AES-блок на эфире!).", en: "1..150 bytes (≤ 8 bytes fit in a single 16-byte AES block on air!)." },
+      { name: "options.retry", type: "boolean?", ru: "Повторять до получения ACK (по умолчанию `true`).", en: "Retry until ACKed (default `true`)." },
+      { name: "returns", type: "SendResult", ru: "`{ packetId, flood, estTimeoutMs }`", en: "`{ packetId, flood, estTimeoutMs }`" }
+    ],
+    code: `const bytes = new Uint8Array([0x01, 0x07, 0x00]);\nconst res = await app.transport.send(peer.keyPrefix, bytes, { retry: true });\nconsole.log("Queued packet:", res.packetId, res.flood ? "flood" : "direct");`
+  },
+  {
+    id: "transport.onPacket", group: "Transport", perm: "peerData", preset: "p2p",
+    sig: "app.transport.onPacket(cb: (packet: IncomingPacket) => void): () => void",
+    desc: {
+      ru: "Принимает входящие бинарные пакеты вашего `appId`. Ранние пакеты, пришедшие до первой подписки (например, во время `await app.storage.get()`), буферизуются и не теряются.",
+      en: "Receives incoming binary packets for your `appId`. Packets arriving before subscription (e.g. during async startup) are buffered automatically."
+    },
+    params: [
+      { name: "packet.peerPrefix", type: "string", ru: "Hex-префикс отправителя.", en: "Sender hex prefix." },
+      { name: "packet.payload", type: "Uint8Array", ru: "Расшифрованные байты полезной нагрузки.", en: "Decrypted binary payload." },
+      { name: "packet.snr / hops", type: "number / number|null", ru: "SNR в дБ и число хопов (`null` для прямой связи).", en: "SNR in dB and hop count (`null` when direct)." },
+      { name: "packet.mirrored", type: "boolean?", ru: "`true` — зеркало отправки с другого устройства пользователя. Обновите UI, но **не шлите ответ**!", en: "`true` when mirrored from user's second device. Update state, **never** reply!" }
+    ],
+    code: `app.transport.onPacket((pkt) => {\n  if (pkt.mirrored) return;\n  console.log("RX from", pkt.peerName, pkt.payload);\n});`
+  },
+  {
+    id: "transport.onDelivery", group: "Transport", perm: "peerData", preset: "p2p",
+    sig: "app.transport.onDelivery(cb: (update: DeliveryUpdate) => void): () => void",
+    desc: {
+      ru: "Отслеживает жизненный цикл доставки пакетов, отправленных через `transport.send()`: `sent` → `retrying` → `delivered` (с `rttMs`) / `unconfirmed` / `failed`.",
+      en: "Tracks delivery lifecycle for outbound packets: `sent` → `retrying` → `delivered` (with `rttMs`) / `unconfirmed` / `failed`."
+    },
+    params: [
+      { name: "update.packetId", type: "string", ru: "Идентификатор из `SendResult.packetId`.", en: "Matches `SendResult.packetId`." },
+      { name: "update.status", type: "DeliveryStatus", ru: "`sent | retrying | delivered | unconfirmed | failed`", en: "`sent | retrying | delivered | unconfirmed | failed`" },
+      { name: "update.rttMs", type: "number?", ru: "Время до подтверждения ACK в миллисекундах.", en: "Round-trip ACK time in milliseconds." }
+    ],
+    code: `app.transport.onDelivery((ev) => {\n  if (ev.status === "delivered") console.log("ACK in", ev.rttMs, "ms");\n});`
+  },
+  {
+    id: "storage", group: "Storage", perm: "storage", preset: "storage",
+    sig: "app.storage.{ get, set, delete, list }",
+    desc: {
+      ru: "Изолированное KV-хранилище, разделённое по `(radioKey, manifest.id)`. Хранит любые JSON-совместимые данные, квота — **1 МБ** на приложение.",
+      en: "Isolated key-value store scoped by `(radioKey, manifest.id)`. Persists JSON-serializable values up to **1 MiB** per app."
+    },
+    params: [
+      { name: "get<T>(key)", type: "Promise<T | null>", ru: "Читает ключ или возвращает `null`.", en: "Reads a value or returns `null`." },
+      { name: "set(key, value)", type: "Promise<void>", ru: "Записывает JSON-значение (ошибка при > 1 МБ).", en: "Writes a JSON value (throws above 1 MiB)." },
+      { name: "delete(key)", type: "Promise<void>", ru: "Удаляет ключ.", en: "Deletes a key." },
+      { name: "list()", type: "Promise<string[]>", ru: "Возвращает все ключи этого приложения.", en: "Lists all stored keys for this app." }
+    ],
+    code: `const state = (await app.storage.get("state")) || { score: 0 };\nstate.score += 1;\nawait app.storage.set("state", state);`
+  },
+  {
+    id: "ui.setActivities", group: "UI & Mobile", perm: null, preset: "p2p",
+    sig: "app.ui.setActivities(activities: MiniAppActivity[]): Promise<void>",
+    desc: {
+      ru: "Публикует активные сессии (например, партии шахмат) в хаб «Приложения». Элементы с `needsAttention: true` попадают в «Ждут действия» и увеличивают бейдж на вкладке.",
+      en: "Publishes active sessions into the Ommesh Apps hub. Items with `needsAttention: true` appear in 'Needs your action' and increment the Apps tab badge."
+    },
+    params: [
+      { name: "id", type: "string", ru: "До 64 символов; передаётся обратно в `initialActivityId` / `onOpenActivity`.", en: "Up to 64 chars; passed back via `initialActivityId` / `onOpenActivity`." },
+      { name: "title / subtitle", type: "string", ru: "Заголовок (≤ 80) и подзаголовок (≤ 120).", en: "Title (≤ 80) and subtitle (≤ 120)." },
+      { name: "needsAttention", type: "boolean", ru: "Показать точку внимания и увеличить бейдж вкладки.", en: "Shows attention dot and increments tab badge." }
+    ],
+    code: `await app.ui.setActivities([{\n  id: "game:1234",\n  title: "Alice",\n  subtitle: "Your turn: e4",\n  needsAttention: true,\n  updatedAt: Date.now()\n}]);`
+  },
+  {
+    id: "ui.notify", group: "UI & Mobile", perm: "notifications", preset: "p2p",
+    sig: "app.ui.notify(options: NotifyOptions): Promise<void>",
+    desc: {
+      ru: "Отправляет уведомление через системный конвейер Ommesh (учитывает тихие часы и кнопку колокольчика приложения). Нажатие открывает приложение с `tag`.",
+      en: "Posts a notification through Ommesh's notification pipeline (honors quiet hours and per-app bell toggle). Tapping opens your app."
+    },
+    params: [
+      { name: "body", type: "string", ru: "Текст уведомления.", en: "Notification body text." },
+      { name: "title?", type: "string", ru: "Необязательный заголовок (по умолчанию имя контакта • название приложения).", en: "Optional title (defaults to peer • app name)." },
+      { name: "tag?", type: "string", ru: "Группировка уведомлений и `activityId` при клике.", en: "Notification deduplication tag and `activityId` on tap." }
+    ],
+    code: `await app.ui.notify({\n  body: "Ваш ход: Nf3",\n  tag: "game:1234",\n  peerPrefix: peer.keyPrefix\n});`
+  },
+  {
+    id: "ui.onViewportChange", group: "UI & Mobile", perm: null, preset: "keyboard",
+    sig: "app.ui.onViewportChange(cb: (viewport: MiniAppViewport) => void): () => void",
+    desc: {
+      ru: "Уведомляет об изменении размеров окна, мобильном режиме и выезде/скрытии экранной клавиатуры на iOS, Android и мобильных браузерах. Хост автоматически обновляет `--safe-bottom`, `--keyboard-height`, `data-keyboard=\"open\"` и прокручивает активный input в видимую область.",
+      en: "Notifies when the frame resizes, switches mobile/desktop mode, or the soft keyboard opens/closes on iOS, Android and mobile browsers. Automatically updates `--safe-bottom`, `--keyboard-height`, `data-keyboard=\"open\"`, and scrolls focused inputs into view."
+    },
+    params: [
+      { name: "keyboardOpen", type: "boolean", ru: "`true`, пока открыта экранная клавиатура.", en: "`true` while the soft keyboard is visible." },
+      { name: "keyboardHeight", type: "number", ru: "Высота клавиатуры в CSS-пикселях.", en: "Keyboard height in CSS pixels." },
+      { name: "safeBottom", type: "number", ru: "Нижний safe-area (становится `0` при открытой клавиатуре).", en: "Bottom safe area (becomes `0` while keyboard is open)." }
+    ],
+    code: `app.ui.onViewportChange((vp) => {\n  if (vp.keyboardOpen) {\n    chatList.scrollTop = chatList.scrollHeight;\n  }\n});`
+  },
+  {
+    id: "ui.onThemeChange", group: "UI & Mobile", perm: null, preset: "theme",
+    sig: "app.ui.onThemeChange(cb: (theme: MiniAppTheme) => void): () => void",
+    desc: {
+      ru: "Срабатывает при смене темы, полярности (`light`/`dark`), скина (`lcd`/`classic`) или размера текста. Все CSS-переменные `:root` обновляются автоматически до вызова колбэка.",
+      en: "Fires when the user switches theme, appearance (`light`/`dark`), visual look (`lcd`/`classic`), or text scale. CSS variables on `:root` update automatically."
+    },
+    params: [
+      { name: "theme.appearance", type: "\"light\" | \"dark\"", ru: "Светлая или тёмная тема.", en: "Light or dark appearance." },
+      { name: "theme.look", type: "\"lcd\" | \"classic\"?", ru: "Опциональный ретро-скин Ommesh.", en: "Optional Ommesh visual look." }
+    ],
+    code: `app.ui.onThemeChange((theme) => {\n  console.log("Theme changed:", theme.id, theme.appearance);\n});`
+  },
+  {
+    id: "ui.onOpenActivity", group: "UI & Mobile", perm: null, preset: "p2p",
+    sig: "app.ui.onOpenActivity(cb: (activityId: string) => void): () => void",
+    desc: {
+      ru: "Вызывается, когда пользователь нажимает на карточку активности или уведомление при уже открытом мини-приложении. Также доступен `app.ui.close()` для возврата назад.",
+      en: "Called when the user taps an activity or notification while the app is already mounted. Pair with `app.context.initialActivityId` on startup."
+    },
+    params: [
+      { name: "activityId", type: "string", ru: "Идентификатор активности из `setActivities` или `notify.tag`.", en: "Activity ID from `setActivities` or `notify.tag`." }
+    ],
+    code: `app.ui.onOpenActivity((id) => {\n  openGame(id);\n});`
+  },
+  {
+    id: "worker", group: "Background", perm: "peerData", preset: "p2p",
+    sig: "self.onPacket = (input: WorkerInput) => WorkerOutput",
+    desc: {
+      ru: "Запускается хостом в изолированном Web Worker (лимит **2500 мс**, без сети), когда приходит LoRa-пакет `PEER_DATA` при закрытом экране мини-приложения. Пакеты идут строго последовательно.",
+      en: "Executed in an ephemeral Web Worker (**2500 ms** timeout, no network) when a LoRa `PEER_DATA` packet arrives while the UI is closed. Runs strictly sequentially."
+    },
+    params: [
+      { name: "input", type: "{ self, locale, packet, storage }", ru: "Текущий пакет и полный снимок KV-хранилища.", en: "Incoming packet and full KV storage snapshot." },
+      { name: "return.storageSet", type: "Record<string, unknown>?", ru: "Ключи для записи в KV.", en: "KV patches to write." },
+      { name: "return.activities", type: "MiniAppActivity[]?", ru: "Обновлённый список активностей для хаба.", en: "Updated hub activities." },
+      { name: "return.notify", type: "NotifyOptions?", ru: "Уведомление пользователю.", en: "Optional user notification." },
+      { name: "return.send", type: "{ peerPrefix, payload, retry }[]?", ru: "До 2 авто-ответов по LoRa (например, `SYNC_MOVES`).", en: "Up to 2 automatic LoRa replies (e.g. `SYNC_MOVES`)." }
+    ],
+    code: `self.onPacket = function (input) {\n  return {\n    storageSet: { lastRx: Date.now() },\n    notify: { body: "New LoRa packet!", peerPrefix: input.packet.peerPrefix },\n    send: [{ peerPrefix: input.packet.peerPrefix, payload: [2, 1, 0], retry: true }]\n  };\n};`
+  },
+  {
+    id: "manifest", group: "Package & CSS", perm: null, preset: "theme",
+    sig: "MiniAppPackage (format: \"omapp-v1\", <= 512 KiB)",
+    desc: {
+      ru: "Самодостаточный UTF-8 JSON-файл `.omapp`, включающий манифест, монохромную SVG-иконку (`currentColor`), HTML-интерфейс и опциональный `workerJs`. Для локальной разработки используйте `appId` из `0xFF00..0xFFFF` (или `0` для офлайн-утилит).",
+      en: "Self-contained UTF-8 JSON `.omapp` file holding manifest, monochrome `currentColor` SVG icon, HTML entry, and optional `workerJs`. Use `0xFF00..0xFFFF` for dev P2P apps (`0` for standalone)."
+    },
+    params: [
+      { name: "manifest.id", type: "string", ru: "Уникальный slug `/^[a-z0-9][a-z0-9._-]{1,63}$/`.", en: "Unique slug `/^[a-z0-9][a-z0-9._-]{1,63}$/`." },
+      { name: "manifest.appId", type: "0..65535", ru: "`0` (standalone), `0x0100..0xFEFF` (каталог), `0xFF00..0xFFFF` (dev).", en: "`0` (standalone), `0x0100..0xFEFF` (catalog), `0xFF00..0xFFFF` (dev)." },
+      { name: "manifest.permissions", type: "string[]", ru: "Подмножество `[\"peerData\", \"storage\", \"notifications\"]`.", en: "Subset of `[\"peerData\", \"storage\", \"notifications\"]`." },
+      { name: "CSS tokens", type: ":root vars", ru: "`--bg`, `--panel`, `--text`, `--accent`, `--safe-bottom`, `--keyboard-height`, `data-keyboard=\"open\"`.", en: "`--bg`, `--panel`, `--text`, `--accent`, `--safe-bottom`, `--keyboard-height`, `data-keyboard=\"open\"`." }
+    ],
+    code: `{\n  "format": "omapp-v1",\n  "manifest": {\n    "schema": 1,\n    "id": "dev.my-app",\n    "appId": 65281,\n    "version": "1.0.0",\n    "name": { "en": "My App", "ru": "Моё приложение" },\n    "description": { "en": "LoRa P2P demo", "ru": "Демо LoRa P2P" },\n    "author": "You",\n    "scope": "p2p",\n    "minProtocol": 2,\n    "permissions": ["peerData", "storage", "notifications"]\n  },\n  "iconSvg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8'/></svg>",\n  "html": "<div>Hello!</div>"\n}`
+  }
+];
+
+const INLINE_BRIDGE = `
+(function () {
+  var NON_TEXT = { button:1, submit:1, reset:1, checkbox:1, radio:1, range:1, file:1, hidden:1, image:1, color:1 };
+  function isEd(el){ if(!el||el.nodeType!==1) return false; if(el.isContentEditable) return true; if(el.tagName==="TEXTAREA"||el.tagName==="SELECT") return true; return el.tagName==="INPUT" && !NON_TEXT[String(el.type||"text").toLowerCase()]; }
+  function scrollEl(){ var el=document.activeElement; if(isEd(el)) try{ el.scrollIntoView({block:"nearest"}); }catch(e){} }
+  function applyTheme(t){ if(!t||!t.tokens) return; var r=document.documentElement; r.dataset.appearance=t.appearance||"dark"; if(t.look) r.dataset.look=t.look; else delete r.dataset.look; r.style.colorScheme=t.appearance||"dark"; r.style.setProperty("--text-scale",String(t.textScale||1)); for(var k in t.tokens){ r.style.setProperty("--"+k.replace(/[A-Z]/g,function(m){return "-"+m.toLowerCase();}), t.tokens[k]); } }
+  function applyVp(v){ if(!v) return; var r=document.documentElement; r.style.setProperty("--safe-bottom",(v.safeBottom||0)+"px"); r.style.setProperty("--safe-left",(v.safeLeft||0)+"px"); r.style.setProperty("--safe-right",(v.safeRight||0)+"px"); r.style.setProperty("--keyboard-height",(v.keyboardHeight||0)+"px"); r.dataset.keyboard=v.keyboardOpen?"open":"closed"; r.dataset.mobile=v.mobile?"1":"0"; }
+  document.addEventListener("focusin", function(){ if(isEd(document.activeElement)){ window.parent.postMessage({type:"ommesh:focus",typing:true},"*"); setTimeout(scrollEl,120); } });
+  document.addEventListener("focusout", function(){ setTimeout(function(){ window.parent.postMessage({type:"ommesh:focus",typing:isEd(document.activeElement)},"*"); },50); });
+  window.ommeshReady = new Promise(function (resolve) {
+    function onInit(ev) {
+      if (!ev.data || ev.data.type !== "ommesh:init" || !ev.ports || !ev.ports[0]) return;
+      window.removeEventListener("message", onInit);
+      var port = ev.ports[0], ctx = ev.data.context, nextId = 1, pending = new Map();
+      var onPkt = new Set(), onDel = new Set(), onTheme = new Set(), onVp = new Set(), onAct = new Set();
+      var pktQ = [], delQ = [], actQ = null;
+      applyTheme(ctx.theme); applyVp(ctx.viewport);
+      port.onmessage = function (e) {
+        var m = e.data; if (!m) return;
+        if (m.type === "rpc:result") { var p = pending.get(m.id); if (p) { pending.delete(m.id); p.resolve(m.result); } }
+        else if (m.type === "rpc:error") { var p2 = pending.get(m.id); if (p2) { pending.delete(m.id); p2.reject(new Error(m.message)); } }
+        else if (m.type === "event:packet") { if(!onPkt.size) pktQ.push(m.packet); else onPkt.forEach(function(fn){fn(m.packet);}); }
+        else if (m.type === "event:delivery") { if(!onDel.size) delQ.push(m.update); else onDel.forEach(function(fn){fn(m.update);}); }
+        else if (m.type === "event:theme") { ctx = Object.assign({}, ctx, { theme: m.theme }); applyTheme(m.theme); onTheme.forEach(function(fn){fn(m.theme);}); }
+        else if (m.type === "event:viewport") { ctx = Object.assign({}, ctx, { viewport: m.viewport }); applyVp(m.viewport); if(m.viewport.keyboardOpen) setTimeout(scrollEl,80); onVp.forEach(function(fn){fn(m.viewport);}); }
+        else if (m.type === "event:openActivity") { if(!onAct.size) actQ = m.activityId; else onAct.forEach(function(fn){fn(m.activityId);}); }
+        else if (m.type === "event:peers") { ctx = Object.assign({}, ctx, { grantedPeers: m.peers }); }
+      };
+      port.start();
+      function call(req, xfer) { return new Promise(function (res, rej) { var id = nextId++; pending.set(id, { resolve: res, reject: rej }); port.postMessage(Object.assign({ id: id }, req), xfer || []); }); }
+      var api = {
+        get context() { return ctx; },
+        peers: { list: function () { return call({ method: "peers.list" }); }, pick: function (o) { return call({ method: "peers.pick", options: o }); } },
+        transport: {
+          send: function (peerPrefix, payload, o) { var c = payload instanceof Uint8Array ? payload.slice() : new Uint8Array(payload); return call({ method: "transport.send", peerPrefix: peerPrefix, payload: c, retry: o && o.retry }, [c.buffer]); },
+          onPacket: function (fn) { onPkt.add(fn); pktQ.splice(0).forEach(function(x){fn(x);}); return function(){onPkt.delete(fn);}; },
+          onDelivery: function (fn) { onDel.add(fn); delQ.splice(0).forEach(function(x){fn(x);}); return function(){onDel.delete(fn);}; }
+        },
+        storage: {
+          get: function (k) { return call({ method: "storage.get", key: k }); },
+          set: function (k, v) { return call({ method: "storage.set", key: k, value: v }); },
+          delete: function (k) { return call({ method: "storage.delete", key: k }); },
+          list: function () { return call({ method: "storage.list" }); }
+        },
+        ui: {
+          setActivities: function (a) { return call({ method: "ui.setActivities", activities: a }); },
+          notify: function (o) { return call({ method: "ui.notify", options: o }); },
+          onThemeChange: function (fn) { onTheme.add(fn); return function(){onTheme.delete(fn);}; },
+          onViewportChange: function (fn) { onVp.add(fn); return function(){onVp.delete(fn);}; },
+          onOpenActivity: function (fn) { onAct.add(fn); if(actQ!==null){var a=actQ;actQ=null;fn(a);} return function(){onAct.delete(fn);}; },
+          close: function () { call({ method: "ui.close" }); }
+        }
+      };
+      window.ommesh = api;
+      resolve(api);
+    }
+    window.addEventListener("message", onInit);
+    window.parent.postMessage({ type: "ommesh:ready" }, "*");
+  });
+})();`;
+
+let lang = "ru";
+let activeDocId = DOCS[0].id;
+let themeKey = "one-dark";
+let mobileMode = false;
+let kbOpen = false;
+let mockKv = {};
+let grantedPeers = [{ keyPrefix: "a1b2c3d4e5f6", name: "Alice", supportsPeerData: true }];
+let port = null;
+let pktSeq = 1;
+let currentHtml = PRESETS.p2p;
+let currentTitle = "P2P Ping-Pong";
+
+const frame = document.getElementById("sandboxFrame");
+const codeEditor = document.getElementById("codeEditor");
+codeEditor.value = currentHtml;
+
+function addLog(kind, tag, text) {
+  const el = document.getElementById("rpcLog");
+  const row = document.createElement("div");
+  row.className = "log-row " + kind;
+  row.innerHTML = `<span class="tag">${tag}</span><span>${esc(text)}</span>`;
+  el.prepend(row);
+  while (el.children.length > 50) el.lastChild.remove();
+}
+
+function updateKvDump() {
+  document.getElementById("kvDump").textContent = JSON.stringify(mockKv, null, 2);
+}
+
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function currentViewport() {
+  const rect = frame.getBoundingClientRect();
+  return {
+    width: Math.round(rect.width || (mobileMode ? 360 : 420)),
+    height: Math.round(rect.height || (mobileMode ? (kbOpen ? 360 : 580) : 520)),
+    safeBottom: mobileMode && !kbOpen ? 24 : 0,
+    safeLeft: 0,
+    safeRight: 0,
+    keyboardHeight: kbOpen ? 220 : 0,
+    keyboardOpen: kbOpen,
+    mobile: mobileMode
+  };
+}
+
+function buildDoc(html) {
+  const t = THEMES[themeKey];
+  const vp = currentViewport();
+  const vars = Object.entries(t.tokens).map(([k, v]) => `  --${k.replace(/[A-Z]/g, m => "-" + m.toLowerCase())}: ${v};`).join("\n");
+  const base = `:root{color-scheme:${t.appearance};\n${vars}\n  --text-scale:1;\n  --safe-bottom:${vp.safeBottom}px;\n  --safe-left:0px;\n  --safe-right:0px;\n  --keyboard-height:${vp.keyboardHeight}px;\n}\n*{box-sizing:border-box}\nhtml,body{margin:0;padding:0;width:100%;height:100%;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,sans-serif;overscroll-behavior:contain}\n:root[data-look] *{border-radius:0!important}\n:root[data-look="lcd"]{font-family:ui-monospace,Consolas,monospace}\n`;
+  const csp = "default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none';";
+  const head = `<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>${base}</style><script>${INLINE_BRIDGE}<\/script>`;
+  if (/<head[\s>]/i.test(html)) return html.replace(/<head([^>]*)>/i, `<head$1>${head}`);
+  return `<!doctype html><html data-appearance="${t.appearance}"${t.look ? ` data-look="${t.look}"` : ""} data-keyboard="${vp.keyboardOpen ? "open" : "closed"}" data-mobile="${vp.mobile ? "1" : "0"}"><head>${head}</head><body>${html}</body></html>`;
+}
+
+function mountSandbox(html, title) {
+  currentHtml = html;
+  if (title) {
+    currentTitle = title;
+    document.getElementById("mockAppName").textContent = title;
+  }
+  codeEditor.value = html;
+  port?.close();
+  port = null;
+  frame.srcdoc = buildDoc(html);
+  updateVpUI();
+}
+
+function updateVpUI() {
+  const df = document.getElementById("deviceFrame");
+  df.classList.toggle("mobile", mobileMode);
+  document.getElementById("mobileToggle").classList.toggle("on", mobileMode);
+  document.getElementById("kbToggle").classList.toggle("on", kbOpen);
+  document.getElementById("mockKb").classList.toggle("hidden", !kbOpen);
+  const vp = currentViewport();
+  document.getElementById("mockVpInfo").textContent = `${vp.mobile ? "mobile" : "desktop"} · ${vp.width}×${vp.height}${vp.keyboardOpen ? " · KB" : ""}`;
+  if (port) port.postMessage({ type: "event:viewport", viewport: vp });
+}
+
+window.addEventListener("message", (ev) => {
+  if (ev.source !== frame.contentWindow) return;
+  if (ev.data?.type === "ommesh:focus") {
+    addLog("ev", "FOCUS", "typing=" + Boolean(ev.data.typing));
+    if (mobileMode && ev.data.typing && !kbOpen) {
+      kbOpen = true;
+      updateVpUI();
+    }
+    return;
+  }
+  if (ev.data?.type !== "ommesh:ready") return;
+  port?.close();
+  const ch = new MessageChannel();
+  port = ch.port1;
+  port.onmessage = (re) => {
+    const req = re.data;
+    if (!req || typeof req.id !== "number") return;
+    addLog("rpc", req.method, JSON.stringify({ ...req, payload: req.payload ? `[${req.payload.length} B]` : undefined }));
+    const ok = (result) => port?.postMessage({ type: "rpc:result", id: req.id, result });
+    const fail = (message) => { addLog("err", "ERR", message); port?.postMessage({ type: "rpc:error", id: req.id, message }); };
+    switch (req.method) {
+      case "peers.list": return ok(grantedPeers);
+      case "peers.pick": {
+        const picked = grantedPeers[0] || { keyPrefix: "a1b2c3d4e5f6", name: "Alice", supportsPeerData: true };
+        if (!grantedPeers.some(p => p.keyPrefix === picked.keyPrefix)) grantedPeers.push(picked);
+        port.postMessage({ type: "event:peers", peers: grantedPeers });
+        return ok(picked);
+      }
+      case "transport.send": {
+        const bytes = req.payload instanceof Uint8Array ? req.payload : new Uint8Array(req.payload);
+        if (bytes.length > 150) return fail("payload exceeds 150 bytes");
+        const packetId = "mock:" + (pktSeq++);
+        const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join(" ");
+        const sentList = document.getElementById("sentPktList");
+        if (sentList.textContent.trim() === "—") sentList.innerHTML = "";
+        const item = document.createElement("div");
+        item.className = "log-row rpc";
+        item.innerHTML = `<span class="tag">${packetId}</span><span>→ ${esc(req.peerPrefix)} (${bytes.length} B): ${hex}</span>`;
+        sentList.prepend(item);
+        ok({ packetId, flood: false, estTimeoutMs: 1200 });
+        setTimeout(() => {
+          port?.postMessage({ type: "event:delivery", update: { packetId, peerPrefix: req.peerPrefix, status: "delivered", attempt: 0, flood: false, rttMs: 420 } });
+          addLog("ev", "ACK", `${packetId} delivered (420 ms)`);
+        }, 420);
+        return;
+      }
+      case "storage.get": return ok(Object.prototype.hasOwnProperty.call(mockKv, req.key) ? mockKv[req.key] : null);
+      case "storage.set": mockKv[req.key] = req.value; updateKvDump(); return ok(null);
+      case "storage.delete": delete mockKv[req.key]; updateKvDump(); return ok(null);
+      case "storage.list": return ok(Object.keys(mockKv));
+      case "ui.setActivities": addLog("ev", "ACTIVITIES", `${(req.activities || []).length} item(s)`); return ok(null);
+      case "ui.notify": addLog("ev", "NOTIFY", req.options?.body || ""); return ok(null);
+      case "ui.close": addLog("ev", "CLOSE", "mini-app requested close"); return ok(null);
+    }
+  };
+  port.start();
+  frame.contentWindow.postMessage({
+    type: "ommesh:init",
+    context: {
+      appId: 0xff01,
+      self: { keyPrefix: "001122334455", name: "Demo-Radio" },
+      locale: lang,
+      theme: THEMES[themeKey],
+      viewport: currentViewport(),
+      radio: { connected: true, maxPayloadBytes: 150, supportsPeerData: true, sf: 10, bwHz: 62500, cr: 5 },
+      initialActivityId: null,
+      grantedPeers
+    }
+  }, "*", [ch.port2]);
+  addLog("ev", "INIT", "MessageChannel connected");
+});
+
+function renderNav() {
+  const q = document.getElementById("searchInput").value.trim().toLowerCase();
+  const nav = document.getElementById("navCol");
+  nav.innerHTML = "";
+  const groups = [...new Set(DOCS.map(d => d.group))];
+  for (const g of groups) {
+    const items = DOCS.filter(d => d.group === g && (!q || d.id.toLowerCase().includes(q) || d.sig.toLowerCase().includes(q) || d.desc[lang].toLowerCase().includes(q)));
+    if (!items.length) continue;
+    const h = document.createElement("div");
+    h.className = "nav-group";
+    h.textContent = g;
+    nav.appendChild(h);
+    for (const d of items) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "nav-item" + (d.id === activeDocId ? " on" : "");
+      btn.innerHTML = `<span>${esc(d.id)}</span>${d.perm ? `<span class="perm-mini">${esc(d.perm)}</span>` : ""}`;
+      btn.onclick = () => { activeDocId = d.id; renderNav(); renderDoc(); };
+      nav.appendChild(btn);
+    }
+  }
+}
+
+function renderDoc() {
+  const d = DOCS.find(x => x.id === activeDocId) || DOCS[0];
+  const ru = lang === "ru";
+  const col = document.getElementById("docCol");
+  const rows = d.params.map(p => `<tr><td><code>${esc(p.name)}</code></td><td><code>${esc(p.type)}</code></td><td>${esc(p[lang])}</td></tr>`).join("");
+  col.innerHTML = `
+    <div class="doc-head">
+      <div>
+        <h1 class="doc-title">${esc(d.id)}</h1>
+        <div class="doc-chips">
+          <span class="chip">${esc(d.group)}</span>
+          ${d.perm ? `<span class="chip perm">${ru ? "Разрешение" : "Permission"}: ${esc(d.perm)}</span>` : `<span class="chip">${ru ? "Без разрешений" : "No permission"}</span>`}
+        </div>
+      </div>
+      <button type="button" class="ctrl primary" id="tryBtn">${ru ? "Попробовать в песочнице ▶" : "Try in Sandbox ▶"}</button>
+    </div>
+    <p class="doc-desc">${esc(d.desc[lang])}</p>
+    <div class="sec-h">${ru ? "Сигнатура" : "Signature"}</div>
+    <pre class="code">${esc(d.sig)}</pre>
+    <div class="sec-h">${ru ? "Параметры и поля" : "Parameters & Fields"}</div>
+    <table class="params">
+      <thead><tr><th>${ru ? "Имя" : "Name"}</th><th>${ru ? "Тип" : "Type"}</th><th>${ru ? "Описание" : "Description"}</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="sec-h">${ru ? "Пример использования" : "Example"}</div>
+    <div class="code-actions">
+      <button type="button" class="ctrl" id="copyCodeBtn">${ru ? "Копировать код" : "Copy snippet"}</button>
+    </div>
+    <pre class="code">${esc(d.code)}</pre>
+    <div class="sec-h">${ru ? "Совет по LoRa и мобильной адаптации" : "LoRa & Mobile Tip"}</div>
+    <div class="note-box">${ru
+      ? "Используйте <code>var(--safe-bottom)</code> и <code>:root[data-keyboard=\"open\"]</code> для корректного выезда клавиатуры на телефонах. Для P2P-пакетов стремитесь уложиться в ≤ 8 байт (1 AES-блок = 20 Б в эфире) и всегда проверяйте <code>packet.mirrored</code>."
+      : "Use <code>var(--safe-bottom)</code> and <code>:root[data-keyboard=\"open\"]</code> for smooth mobile keyboard layouts. Keep P2P payloads ≤ 8 bytes when possible (1 AES block = 20 B on air) and never auto-reply when <code>packet.mirrored</code> is true."
+    }</div>
+  `;
+  document.getElementById("copyCodeBtn").onclick = () => {
+    navigator.clipboard?.writeText(d.code);
+    document.getElementById("copyCodeBtn").textContent = ru ? "Скопировано ✓" : "Copied ✓";
+  };
+  document.getElementById("tryBtn").onclick = () => {
+    const presetKey = d.preset || "p2p";
+    document.getElementById("presetSel").value = presetKey;
+    if (presetKey === "keyboard") { mobileMode = true; kbOpen = false; }
+    mountSandbox(PRESETS[presetKey], "Preset: " + presetKey);
+    switchPlayTab("preview");
+  };
+}
+
+function switchPlayTab(name) {
+  document.querySelectorAll(".ptab").forEach(b => b.classList.toggle("on", b.dataset.ptab === name));
+  ["Preview", "Code", "Radio", "Log"].forEach(k => {
+    document.getElementById("pane" + k).classList.toggle("hidden", k.toLowerCase() !== name);
+  });
+}
+
+document.querySelectorAll(".ptab").forEach(b => b.onclick = () => switchPlayTab(b.dataset.ptab));
+document.getElementById("searchInput").oninput = renderNav;
+window.addEventListener("keydown", (e) => {
+  if (e.key === "/" && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") {
+    e.preventDefault();
+    document.getElementById("searchInput").focus();
+  }
+});
+
+document.getElementById("langToggle").onclick = () => {
+  lang = lang === "ru" ? "en" : "ru";
+  document.documentElement.lang = lang;
+  document.getElementById("langToggle").textContent = lang === "ru" ? "RU / en" : "ru / EN";
+  renderNav();
+  renderDoc();
+  mountSandbox(currentHtml, currentTitle);
+};
+
+document.getElementById("themeSel").onchange = (e) => {
+  themeKey = e.target.value;
+  const t = THEMES[themeKey];
+  document.documentElement.dataset.appearance = t.appearance;
+  if (port) port.postMessage({ type: "event:theme", theme: t });
+  else mountSandbox(currentHtml, currentTitle);
+};
+
+document.getElementById("mobileToggle").onclick = () => { mobileMode = !mobileMode; updateVpUI(); };
+document.getElementById("kbToggle").onclick = () => { kbOpen = !kbOpen; updateVpUI(); };
+document.getElementById("hideKbBtn").onclick = () => { kbOpen = false; updateVpUI(); };
+document.getElementById("runCodeBtn").onclick = () => { mountSandbox(codeEditor.value, "Custom HTML"); switchPlayTab("preview"); };
+document.getElementById("presetSel").onchange = (e) => {
+  const k = e.target.value;
+  mountSandbox(PRESETS[k], "Preset: " + k);
+};
+
+document.getElementById("loadOmappBtn").onclick = () => document.getElementById("omappFile").click();
+document.getElementById("omappFile").onchange = async (e) => {
+  const f = e.target.files?.[0];
+  e.target.value = "";
+  if (!f) return;
+  try {
+    const pkg = JSON.parse(await f.text());
+    if (pkg.format !== "omapp-v1" || !pkg.html) throw new Error("Not a valid omapp-v1 bundle");
+    const name = typeof pkg.manifest?.name === "string" ? pkg.manifest.name : (pkg.manifest?.name?.[lang] || pkg.manifest?.id || f.name);
+    mountSandbox(pkg.html, name);
+    switchPlayTab("preview");
+    addLog("ev", "LOAD", `Loaded ${f.name} (${pkg.manifest?.id})`);
+  } catch (err) {
+    addLog("err", "LOAD", err.message);
+    switchPlayTab("log");
+  }
+};
+
+document.getElementById("injectPktBtn").onclick = () => {
+  if (!port) return;
+  const senderPrefix = document.getElementById("mockSender").value;
+  const senderName = senderPrefix.startsWith("a1") ? "Alice" : "Bob";
+  const mirrored = document.getElementById("mockMirrored").checked;
+  const hex = document.getElementById("mockHex").value.trim().split(/[\s,]+/).filter(Boolean).map(h => parseInt(h, 16) & 0xff);
+  const payload = new Uint8Array(hex);
+  const packet = { peerPrefix: senderPrefix, peerName: senderName, payload, timestamp: Math.floor(Date.now() / 1000), snr: 7.5, hops: null, ...(mirrored ? { mirrored: true } : {}) };
+  port.postMessage({ type: "event:packet", packet });
+  addLog("ev", "INJECT", `RX ${payload.length} B from ${senderName}${mirrored ? " (mirrored)" : ""}`);
+};
+
+document.getElementById("injectActBtn").onclick = () => {
+  const id = document.getElementById("mockActId").value.trim();
+  if (!id || !port) return;
+  port.postMessage({ type: "event:openActivity", activityId: id });
+  addLog("ev", "OPEN_ACT", id);
+};
+
+document.getElementById("clearKvBtn").onclick = () => { mockKv = {}; updateKvDump(); };
+document.getElementById("clearLogBtn").onclick = () => { document.getElementById("rpcLog").innerHTML = ""; };
+
+renderNav();
+renderDoc();
+mountSandbox(PRESETS.p2p, "Preset: P2P Ping-Pong");
+</script>
+</body>
+</html>

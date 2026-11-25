@@ -55,10 +55,10 @@ On a Mac, open the disk image and drag Ommesh to Applications. On Linux, make th
 
 ## Features
 
-| Chats | Mesh | Settings |
-| :--- | :--- | :--- |
-| Direct messages, channels and rooms | People, repeaters and sensors on a map | Connection, radio settings and app preferences |
-| Delivery status and message routes | Node profiles, telemetry and remote management | Frequency presets, notifications and diagnostics |
+| Chats | Mesh | Apps | Settings |
+| :--- | :--- | :--- | :--- |
+| Direct messages, channels and rooms | People, repeaters and sensors on a map | Isolated LoRa mini-apps & Store | Connection, radio settings and app preferences |
+| Delivery status and message routes | Node profiles, telemetry and remote management | LoRa Chess, utilities & `.omapp` sideloading | Frequency presets, notifications and diagnostics |
 
 ### Messages you can follow
 
@@ -166,12 +166,22 @@ Omit this variable and sync again to bundle the client for use without a develop
 ### Project structure
 
 ```text
-packages/meshcore   Companion Radio Protocol, framing and sessions; no platform code
-apps/web           Shared React + TypeScript client, built with Vite
-apps/desktop       Tauri 2 shell for Windows, macOS and Linux
-apps/mobile        Capacitor 8 shell for Android and iOS
-docs/screenshots   Demo captures used by both README translations
+packages/meshcore      Companion Radio Protocol, framing and sessions; no platform code
+packages/miniapp-sdk   Public SDK, sandbox bridge and .omapp package contract for mini-apps
+apps/web               Shared React + TypeScript client, built with Vite
+apps/desktop           Tauri 2 shell for Windows, macOS and Linux
+apps/mobile            Capacitor 8 shell for Android and iOS
+docs/                  Documentation, SDK methods portal and demo screenshots
 ```
+
+### Mini-Apps SDK
+
+Ommesh runs isolated third-party and official mini-apps (`.omapp`) inside a `sandbox="allow-scripts"` iframe with `connect-src 'none'`, exposing per-radio KV storage, contact picking, theme/mobile keyboard adaptation, background workers, and reliable MCRS v2 binary LoRa P2P datagrams (`150 B` max payload, `16 B` AES blocks with LoRa ACK).
+
+- **SDK Quickstart & Guide:** [packages/miniapp-sdk/README.md](packages/miniapp-sdk/README.md)
+- **Methods Reference:** [docs/miniapp-sdk.md](docs/miniapp-sdk.md) · [Русский](docs/miniapp-sdk.ru.md)
+- **Interactive Methods Portal & Sandbox Playground:** [docs/miniapp-sdk-portal.html](docs/miniapp-sdk-portal.html) *(open locally in any browser to browse every method and test `.omapp` code with a mock radio & mobile keyboard)*
+- **Mini-Apps Repository (official apps, templates & packaging CLI):** [cm4ker/ommesh-miniapps](https://github.com/cm4ker/ommesh-miniapps)
 
 The client selects its transport at runtime. Desktop and mobile shells bundle the same web client and provide native connections, notifications and credential storage.
 

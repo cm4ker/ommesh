@@ -7,6 +7,8 @@
  */
 
 import { encodeOmapp, type MiniAppPackage } from "@ommesh/miniapp-sdk";
+import { battleshipPackage } from "./battleshipBundle.js";
+import { checkersPackage } from "./checkersBundle.js";
 import { chessPackage } from "./chessBundle.js";
 import { loraCalcPackage } from "./loraCalcBundle.js";
 
@@ -16,7 +18,7 @@ export interface CatalogEntry {
   verified: boolean;
 }
 
-const BUILTIN_PACKAGES: MiniAppPackage[] = [chessPackage, loraCalcPackage];
+const BUILTIN_PACKAGES: MiniAppPackage[] = [chessPackage, checkersPackage, battleshipPackage, loraCalcPackage];
 
 export const STORE_CATALOG: CatalogEntry[] = BUILTIN_PACKAGES.map((pkg) => ({
   pkg,

@@ -13,6 +13,7 @@ import {
   type MiniAppPackage,
 } from "@ommesh/miniapp-sdk";
 import { readSetting, writeSetting } from "../storage.js";
+import { compareVersions } from "../version.js";
 
 const INSTALLED_KEY = "meshnet.miniapps.installed";
 const GRANTS_KEY = "meshnet.miniapps.grants";
@@ -148,7 +149,9 @@ export function syncCatalogApps(catalog: { pkg: MiniAppPackage; sizeBytes: numbe
     const id = item.pkg.manifest.id;
     const existing = installed[id];
     if (!existing || existing.source !== "catalog") continue;
-    if (existing.pkg.manifest.version !== item.pkg.manifest.version || existing.sizeBytes !== item.sizeBytes) {
+    const cmp = compareVersions(item.pkg.manifest.version, existing.pkg.manifest.version);
+    // Never downgrade a newer version installed from the remote catalog.
+    if (cmp > 0 || (cmp === 0 && existing.sizeBytes !== item.sizeBytes)) {
       installed[id] = {
         ...existing,
         pkg: item.pkg,

@@ -46,6 +46,8 @@ import {
 } from "@meshnet/meshcore";
 import type { Connector } from "./types.js";
 import { t } from "../i18n/index.js";
+import { DEMO_BATTLESHIP_APP_ID, DemoBattleshipBot } from "./demoBattleship.js";
+import { DEMO_CHECKERS_APP_ID, DemoCheckersBot } from "./demoCheckers.js";
 import { DEMO_CHESS_APP_ID, DemoChessBot } from "./demoChess.js";
 
 /**
@@ -442,6 +444,8 @@ class DemoRadio extends BaseTransport {
   private queue: Uint8Array[] = [];
   private peerDataQueue: Uint8Array[] = [];
   private chessBot = new DemoChessBot();
+  private checkersBot = new DemoCheckersBot();
+  private battleshipBot = new DemoBattleshipBot();
   private timers: ReturnType<typeof setTimeout>[] = [];
   /** What the app has handed in to sign since its start, or null outside one. */
   private signing: Uint8Array | null = null;
@@ -1161,25 +1165,31 @@ class DemoRadio extends BaseTransport {
           const confirmed = new ByteWriter().u8(Push.SendConfirmed).u32(tag).u32(650).toBytes();
           if (!p.name.startsWith("Kolya")) {
             this.later(650, confirmed);
-            if (appId === DEMO_CHESS_APP_ID) {
-              for (const reply of this.chessBot.onOutgoing(payload)) {
-                this.later(reply.delayMs, () => {
-                  this.peerDataQueue.push(
-                    new ByteWriter()
-                      .u8(Resp.Mcrs)
-                      .u8(McrsSub.SyncPeerData)
-                      .i8(28)
-                      .bytes(p.key.subarray(0, 6))
-                      .u8(p.hops)
-                      .u32(Math.floor(Date.now() / 1000))
-                      .u16(appId)
-                      .u8(reply.payload.length)
-                      .bytes(reply.payload)
-                      .toBytes(),
-                  );
-                  this.emitFrame(new Uint8Array([Push.Mcrs, McrsSub.PeerDataWaiting]));
-                });
-              }
+            const botReplies =
+              appId === DEMO_CHESS_APP_ID
+                ? this.chessBot.onOutgoing(payload)
+                : appId === DEMO_CHECKERS_APP_ID
+                  ? this.checkersBot.onOutgoing(payload)
+                  : appId === DEMO_BATTLESHIP_APP_ID
+                    ? this.battleshipBot.onOutgoing(payload)
+                    : [];
+            for (const reply of botReplies) {
+              this.later(reply.delayMs, () => {
+                this.peerDataQueue.push(
+                  new ByteWriter()
+                    .u8(Resp.Mcrs)
+                    .u8(McrsSub.SyncPeerData)
+                    .i8(28)
+                    .bytes(p.key.subarray(0, 6))
+                    .u8(p.hops)
+                    .u32(Math.floor(Date.now() / 1000))
+                    .u16(appId)
+                    .u8(reply.payload.length)
+                    .bytes(reply.payload)
+                    .toBytes(),
+                );
+                this.emitFrame(new Uint8Array([Push.Mcrs, McrsSub.PeerDataWaiting]));
+              });
             }
           }
           return [new ByteWriter().u8(Resp.Mcrs).u8(McrsSub.SendPeerData).u8(flood ? 1 : 0).u32(tag).u32(2500).toBytes()];

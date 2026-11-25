@@ -17,7 +17,8 @@ import { language, t } from "../../i18n/index.js";
 import { appNoticeAllowed, getNoticePrefs } from "../noticePrefs.js";
 import { notify } from "../notify.js";
 import { quietAt } from "../quiet.js";
-import { findCatalogByAppId, STORE_CATALOG } from "./catalog.js";
+import { STORE_CATALOG } from "./catalog.js";
+import { findMergedCatalogByAppId } from "./remoteCatalog.js";
 import type { HostBridge } from "./sandbox.js";
 import {
   bufferPendingPacket,
@@ -97,9 +98,9 @@ async function handleIncomingPeerData(s: MeshSession, raw: IncomingPeerData): Pr
   if (!installed) {
     if (raw.mirrored) return;
     bufferPendingPacket(raw.appId, packet);
-    const entry = findCatalogByAppId(raw.appId);
+    const entry = findMergedCatalogByAppId(raw.appId);
     const loc = currentLocale();
-    const appName = entry ? pickText(entry.pkg.manifest.name, loc) : `App 0x${raw.appId.toString(16)}`;
+    const appName = entry ? pickText(entry.name, loc) : `App 0x${raw.appId.toString(16)}`;
     showMiniAppNotice(raw.appId, appName, {
       body: t("apps.pendingNotice"),
       peerPrefix: packet.peerPrefix,

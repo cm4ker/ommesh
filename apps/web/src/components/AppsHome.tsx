@@ -1,8 +1,14 @@
+import { useEffect, useState } from "react";
 import { McrsCap } from "@meshnet/meshcore";
 import { pickText } from "@ommesh/miniapp-sdk";
 import { language, t } from "../i18n/index.js";
-import { findCatalogByAppId } from "../lib/miniapps/catalog.js";
-import { installAndReplay } from "../lib/miniapps/runtime.js";
+import {
+  countCatalogUpdates,
+  findMergedCatalogByAppId,
+  installFromCatalog,
+  refreshRemoteCatalog,
+  useStoreCatalog,
+} from "../lib/miniapps/remoteCatalog.js";
 import { useMiniApps } from "../lib/miniapps/store.js";
 import { openMiniApp, openMiniAppStore } from "../lib/nav.js";
 import { useSession } from "../lib/session.js";
@@ -28,11 +34,14 @@ export function MiniAppIcon({ svg, size = 20 }: { svg: string; size?: number }) 
  */
 export function AppsHome({ selected }: { selected: string | "store" | null }) {
   const miniApps = useMiniApps();
+  const catalog = useStoreCatalog();
   const state = useSession();
+  const [busyAppId, setBusyAppId] = useState<number | null>(null);
   const loc = language() === "ru" ? "ru" : "en";
 
   const installedList = Object.values(miniApps.installed).sort((a, b) => a.installedAt - b.installedAt);
   const supportsPeerData = state.status !== "ready" || ((state.mcrs?.caps ?? 0) & McrsCap.PeerData) !== 0;
+  const updateCount = countCatalogUpdates(miniApps.installed, catalog.items);
 
   const waitingItems = installedList
     .flatMap((entry) =>
@@ -49,21 +58,30 @@ export function AppsHome({ selected }: { selected: string | "store" | null }) {
     .map(([appIdStr, pkts]) => ({
       appId: Number(appIdStr),
       pkts,
-      catalog: findCatalogByAppId(Number(appIdStr)),
+      catalog: findMergedCatalogByAppId(Number(appIdStr)),
     }));
 
+  // If a peer invited us to an unknown appId, check the remote catalog quietly.
+  const hasUnknownPending = pendingEntries.some((p) => !p.catalog);
+  useEffect(() => {
+    if (hasUnknownPending) void refreshRemoteCatalog();
+  }, [hasUnknownPending]);
+
   const handleInstallPending = async (appId: number) => {
-    const entry = findCatalogByAppId(appId);
+    const entry = findMergedCatalogByAppId(appId);
     if (!entry) {
       openMiniAppStore();
       return;
     }
+    setBusyAppId(appId);
     try {
-      await installAndReplay(entry.pkg, "catalog");
-      toast(t("apps.sideloadDone", { name: pickText(entry.pkg.manifest.name, loc) }));
-      openMiniApp(entry.pkg.manifest.id);
+      const pkg = await installFromCatalog(entry);
+      toast(t("apps.sideloadDone", { name: pickText(pkg.manifest.name, loc) }));
+      openMiniApp(pkg.manifest.id);
     } catch (error) {
       toast(t("apps.sideloadFailed", { error: error instanceof Error ? error.message : String(error) }), "error");
+    } finally {
+      setBusyAppId(null);
     }
   };
 
@@ -75,6 +93,7 @@ export function AppsHome({ selected }: { selected: string | "store" | null }) {
         </div>
         <Button size="sm" variant={selected === "store" ? "primary" : "default"} onClick={openMiniAppStore}>
           {t("apps.storeButton")}
+          {updateCount > 0 ? <span className="apps-pill-badge">{updateCount}</span> : null}
         </Button>
       </header>
       <div className="screen-scroll">
@@ -82,13 +101,14 @@ export function AppsHome({ selected }: { selected: string | "store" | null }) {
 
         {waitingItems.length > 0 || pendingEntries.length > 0 ? (
           <Group title={t("apps.waiting")}>
-            {pendingEntries.map(({ appId, pkts, catalog }) => {
+            {pendingEntries.map(({ appId, pkts, catalog: catItem }) => {
               const last = pkts.at(-1)!;
-              const name = catalog ? pickText(catalog.pkg.manifest.name, loc) : `App 0x${appId.toString(16)}`;
+              const name = catItem ? pickText(catItem.name, loc) : `App 0x${appId.toString(16)}`;
+              const isBusy = busyAppId === appId;
               return (
                 <div key={`pending-${appId}`} className="apps-activity-row">
                   <span className="apps-icon-tile">
-                    {catalog ? <MiniAppIcon svg={catalog.pkg.iconSvg} size={18} /> : "?"}
+                    {catItem ? <MiniAppIcon svg={catItem.iconSvg} size={18} /> : "?"}
                   </span>
                   <div className="apps-row-body">
                     <div className="apps-row-title">{name}</div>
@@ -96,8 +116,8 @@ export function AppsHome({ selected }: { selected: string | "store" | null }) {
                       {t("apps.pendingFrom", { peer: last.peerName, count: pkts.length })}
                     </div>
                   </div>
-                  <Button size="sm" variant="primary" onClick={() => void handleInstallPending(appId)}>
-                    {t("apps.installAndOpen")}
+                  <Button size="sm" variant="primary" disabled={isBusy} onClick={() => void handleInstallPending(appId)}>
+                    {isBusy ? t("apps.installing") : t("apps.installAndOpen")}
                   </Button>
                 </div>
               );

@@ -11,6 +11,10 @@
   overflow: hidden;
   box-shadow: 0 8px 24px rgb(var(--shadow-rgb) / 28%);
 }
+.dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
 .dialog::backdrop {
   background: rgb(var(--shadow-rgb) / 40%);
 }
@@ -18,13 +22,14 @@
    had its lower half, buttons and all, under the keyboard. It is centred in the room between the
    status bar and the keyboard instead, rising with the keyboard, and scrolls if it does not fit. */
 :root.keyboard-follows .dialog {
-  inset-block: var(--safe-top) var(--keyboard-rise, 0px);
-  max-height: calc(100% - var(--safe-top) - var(--keyboard-rise, 0px) - 2 * var(--space-4));
+  inset-block: var(--safe-top) max(var(--keyboard-rise, 0px), var(--safe-bottom));
+  max-height: calc(100dvh - var(--safe-top) - max(var(--keyboard-rise, 0px), var(--safe-bottom)) - 2 * var(--space-4));
 }
 .dialog-inner {
   display: flex;
   flex-direction: column;
-  max-height: inherit;
+  flex: 0 1 auto;
+  min-height: 0;
 }
 .dialog-head {
   flex: none;

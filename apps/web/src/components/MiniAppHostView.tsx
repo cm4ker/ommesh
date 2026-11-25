@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AdvType, MAX_PEER_DATA_LEN, McrsCap } from "@meshnet/meshcore";
+import { AdvType, isFavourite, MAX_PEER_DATA_LEN, McrsCap } from "@meshnet/meshcore";
 import {
   pickText,
   type MiniAppPeer,
@@ -15,7 +15,9 @@ import { registerActiveMiniApp, showMiniAppNotice } from "../lib/miniapps/runtim
 import { buildSandboxDoc, createHostBridge, type HostBridge } from "../lib/miniapps/sandbox.js";
 import { getMiniAppsState, uninstallMiniApp, useMiniApps } from "../lib/miniapps/store.js";
 import { openMiniAppStore } from "../lib/nav.js";
+import { heardAt } from "../lib/nodes.js";
 import { appNoticeAllowed, setAppLevel, useNoticePrefs, type AppNoticeLevel } from "../lib/noticePrefs.js";
+import { routeWords } from "../lib/routes.js";
 import { session, useSession } from "../lib/session.js";
 import { toast } from "../lib/toast.js";
 import { getActiveTheme, subscribeTheme } from "../theme/store.js";
@@ -24,6 +26,7 @@ import { Button, IconButton } from "../ui/Button.js";
 import { Confirm, Dialog } from "../ui/Dialog.js";
 import { SearchField } from "../ui/Field.js";
 import { showMenu } from "../ui/Menu.js";
+import { Sheet } from "../ui/Sheet.js";
 import { MiniAppIcon } from "./AppsHome.js";
 import { Avatar } from "./Avatar.js";
 import { BellIcon, BellOffIcon, InfoIcon, MoreIcon, TrashIcon } from "./Icons.js";
@@ -178,8 +181,12 @@ export function MiniAppHostView({
       listGrantedPeers,
       pickPeer: (options) =>
         new Promise<MiniAppPeer | null>((resolve) => {
+          setIframeTyping(false);
           setPickerQuery("");
-          setPicker({ options, resolve });
+          setPicker((prev) => {
+            prev?.resolve(null);
+            return { options, resolve };
+          });
         }),
       sendPeerData: async (peerPrefix, payload, retry) => {
         const contact = Object.values(session.getState().contacts).find(
@@ -295,12 +302,18 @@ export function MiniAppHostView({
       if (!q) return true;
       return (c.name || "").toLowerCase().includes(q) || c.prefix.toLowerCase().includes(q);
     })
-    .sort((a, b) => (a.name || a.prefix).localeCompare(b.name || b.prefix));
+    .sort(
+      (a, b) =>
+        Number(isFavourite(b)) - Number(isFavourite(a)) ||
+        heardAt(b) - heardAt(a) ||
+        (a.name || a.prefix).localeCompare(b.name || b.prefix),
+    );
 
   const finishPick = (peer: MiniAppPeer | null) => {
-    const req = picker;
-    setPicker(null);
-    req?.resolve(peer);
+    setPicker((prev) => {
+      prev?.resolve(peer);
+      return null;
+    });
   };
 
   return (
@@ -344,45 +357,53 @@ export function MiniAppHostView({
         title={appName}
       />
 
-      <Dialog
+      <Sheet
         open={picker !== null}
         title={t("apps.pickerTitle")}
         onClose={() => finishPick(null)}
-        footer={<Button onClick={() => finishPick(null)}>{t("apps.pickerCancel")}</Button>}
+        find={
+          <>
+            <p className="apps-picker-hint">{t("apps.pickerHint", { app: appName })}</p>
+            <SearchField
+              value={pickerQuery}
+              onValue={setPickerQuery}
+              placeholder={t("apps.pickerSearch")}
+              aria-label={t("apps.pickerSearch")}
+            />
+          </>
+        }
       >
-        <p className="apps-picker-hint">{t("apps.pickerHint", { app: appName })}</p>
-        <SearchField
-          value={pickerQuery}
-          onValue={setPickerQuery}
-          placeholder={t("apps.pickerSearch")}
-          aria-label={t("apps.pickerSearch")}
-        />
-        <div className="apps-picker-list">
-          {contacts.length === 0 ? (
-            <p className="muted">{t("apps.pickerEmpty")}</p>
-          ) : (
-            contacts.map((c) => {
+        {contacts.length === 0 ? (
+          <p className="group-note">
+            {pickerQuery.trim() ? t("chats.newChat.nobodyNamed") : t("apps.pickerEmpty")}
+          </p>
+        ) : (
+          <ul className="list" role="list">
+            {contacts.map((c) => {
               const display = c.name || c.prefix;
               return (
-                <button
-                  key={c.key}
-                  type="button"
-                  className="apps-picker-row"
-                  onClick={() =>
-                    finishPick({ keyPrefix: c.prefix.toLowerCase(), name: display, supportsPeerData: null })
-                  }
-                >
-                  <Avatar name={display} type={c.type} size={28} />
-                  <div className="apps-row-body">
-                    <div className="apps-row-title">{display}</div>
-                    <div className="apps-row-sub mono">{c.prefix}</div>
-                  </div>
-                </button>
+                <li key={c.key}>
+                  <button
+                    type="button"
+                    className="row"
+                    onClick={() =>
+                      finishPick({ keyPrefix: c.prefix.toLowerCase(), name: display, supportsPeerData: null })
+                    }
+                  >
+                    <Avatar name={display} type={c.type} size={36} />
+                    <span className="row-main">
+                      <span className="row-title">{display}</span>
+                      <span className="row-sub muted">
+                        {routeWords(c).text} · <span className="mono">{c.prefix}</span>
+                      </span>
+                    </span>
+                  </button>
+                </li>
               );
-            })
-          )}
-        </div>
-      </Dialog>
+            })}
+          </ul>
+        )}
+      </Sheet>
 
       <Dialog
         open={infoOpen}

@@ -259,44 +259,9 @@
 }
 
 .apps-picker-hint {
-  margin: 0 0 var(--space-2);
+  margin: 0 var(--space-4) var(--space-2);
   font-size: var(--text-sm);
   color: var(--text-muted);
-}
-
-.apps-picker-list {
-  margin-top: var(--space-2);
-  flex: 1;
-  min-height: 0;
-  max-height: min(300px, 45dvh);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-}
-
-.apps-picker-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border: none;
-  border-bottom: 1px solid var(--border);
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
-  text-align: left;
-  font: inherit;
-}
-
-.apps-picker-row:last-child {
-  border-bottom: none;
-}
-
-.apps-picker-row:hover {
-  background: var(--hover);
 }
 
 .apps-info-dl {

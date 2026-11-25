@@ -37,6 +37,8 @@ import { runMiniAppWorker } from "./workerHost.js";
 /** Currently mounted UI iframe bridge (at most one active app on screen). */
 let activeHost: { appSlug: string; appId: number; bridge: HostBridge } | null = null;
 let sessionRef: MeshSession | null = null;
+/** Serializes incoming packet processing so concurrent worker runs never overwrite each other's KV writes. */
+let incomingChain: Promise<void> = Promise.resolve();
 
 // Refresh built-in catalog apps synchronously on module load so the very first render uses the latest bundle.
 syncCatalogApps(STORE_CATALOG);
@@ -182,7 +184,9 @@ export function startMiniAppsRuntime(s: MeshSession): () => void {
   syncCatalogApps(STORE_CATALOG);
   sessionRef = s;
   const stopData = s.onPeerData((pkt) => {
-    void handleIncomingPeerData(s, pkt);
+    incomingChain = incomingChain
+      .then(() => handleIncomingPeerData(s, pkt))
+      .catch((error) => console.error("mini-app incoming packet failed", error));
   });
   const stopDelivery = s.onPeerDataDelivery((ev) => handleDelivery(s, ev));
   return () => {

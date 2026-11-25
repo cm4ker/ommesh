@@ -10,7 +10,7 @@
 
 import type { MiniAppPackage, WorkerInput, WorkerOutput } from "@ommesh/miniapp-sdk";
 
-const WORKER_TIMEOUT_MS = 350;
+const WORKER_TIMEOUT_MS = 2500;
 
 /**
  * Wraps the app's `workerJs` inside a tiny isolated harness that blocks `fetch`

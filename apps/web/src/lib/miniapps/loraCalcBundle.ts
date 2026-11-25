@@ -10,11 +10,12 @@ const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fi
 
 const HTML = `
 <style>
-  .wrap { max-width: 560px; margin: 0 auto; padding: 20px 18px 32px; display: flex; flex-direction: column; gap: 16px; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 20px calc(18px + var(--safe-right, 0px)) calc(32px + var(--safe-bottom, 0px)) calc(18px + var(--safe-left, 0px)); display: flex; flex-direction: column; gap: 16px; }
   h2 { margin: 0; font-size: 18px; }
   .sub { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; }
   .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
   .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  @media (max-width: 420px) { .grid { grid-template-columns: 1fr; } .stats { grid-template-columns: 1fr; } }
   label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted); }
   input, select { background: var(--bg); color: var(--text); border: 1px solid var(--border-strong); border-radius: 8px; padding: 8px 10px; font-size: 14px; }
   .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
@@ -109,7 +110,7 @@ export const loraCalcPackage: MiniAppPackage = {
     schema: 1,
     id: "ommesh.lora-calc",
     appId: 0,
-    version: "1.0.0",
+    version: "1.0.1",
     name: { ru: "Калькулятор LoRa", en: "LoRa Calculator" },
     description: {
       ru: "Офлайн-расчёт эфирного времени и зоны Френеля без доступа к радио и контактам",

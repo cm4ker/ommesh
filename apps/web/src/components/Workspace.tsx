@@ -233,11 +233,14 @@ function Phone() {
   });
   const kept = layers.slice(-2);
 
-  // The conversation takes the whole height: its composer sits where the tabs were.
-  const tabs = shown?.kind !== "chat";
-  // The screen under a conversation has the tabs, though, and they go and come with it: drawn
-  // under the conversation as it slides in, and as a swipe back uncovers that screen.
-  const underTabs = !tabs && (screens.length < 2 || screens[screens.length - 2]!.kind !== "chat");
+  // Conversations and mini-apps take the whole screen height on a phone, clearing room for composers and keyboards.
+  const tabs = shown?.kind !== "chat" && shown?.kind !== "app";
+  // The screen under a conversation or mini-app has the tabs, though, and they go and come with it: drawn
+  // under the screen as it slides in, and as a swipe back uncovers that screen.
+  const underTabs =
+    !tabs &&
+    (screens.length < 2 ||
+      (screens[screens.length - 2]!.kind !== "chat" && screens[screens.length - 2]!.kind !== "app"));
   // Nodes picked in the Mesh list: their Remove takes the tabs' place, as a chat's picked messages take the field's.
   const picking = useNodePick() !== null && nav.section === "mesh" && shown === null;
   // Held sideways, the tabs stand down the left edge and the sheets open on the right (styles/sideways.css).

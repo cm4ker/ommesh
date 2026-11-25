@@ -329,8 +329,11 @@ export class DemoChessBot {
     if (op === OP_SYNC_REQ && payload.length >= 5) {
       const fromPly = payload[3]! | (payload[4]! << 8);
       const game = this.games.get(gid);
-      if (!game || fromPly >= game.moves.length) return [];
-      const slice = game.moves.slice(fromPly, fromPly + 64);
+      if (!game) return [];
+      if (fromPly > game.moves.length) {
+        return [{ delayMs: 500, payload: new Uint8Array([OP_SYNC_REQ, gid & 0xff, (gid >> 8) & 0xff, game.moves.length & 0xff, (game.moves.length >> 8) & 0xff]) }];
+      }
+      const slice = game.moves.slice(fromPly, fromPly + 72);
       const out = new Uint8Array(6 + slice.length * 2);
       out[0] = OP_SYNC_MOVES;
       out[1] = gid & 0xff;

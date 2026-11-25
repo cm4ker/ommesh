@@ -19,6 +19,7 @@ import {
   type MiniAppPackage,
   type MiniAppPeer,
   type MiniAppTheme,
+  type MiniAppViewport,
   type NotifyOptions,
   type PickPeerOptions,
   type SendResult,
@@ -33,19 +34,25 @@ import {
   setAppKv,
 } from "./store.js";
 
+const MAX_PRE_READY_QUEUE = 64;
+
 /** Converts Ommesh camelCase ThemeTokens into CSS custom properties on `:root`. */
-function themeCssVars(theme: MiniAppTheme): string {
+function themeCssVars(theme: MiniAppTheme, viewport?: MiniAppViewport): string {
   const lines = Object.entries(theme.tokens).map(
     ([k, v]) => `  --${k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)}: ${v};`,
   );
   lines.push(`  --text-scale: ${theme.textScale ?? 1};`);
+  lines.push(`  --safe-bottom: ${Math.max(0, Math.round(viewport?.safeBottom ?? 0))}px;`);
+  lines.push(`  --safe-left: ${Math.max(0, Math.round(viewport?.safeLeft ?? 0))}px;`);
+  lines.push(`  --safe-right: ${Math.max(0, Math.round(viewport?.safeRight ?? 0))}px;`);
+  lines.push(`  --keyboard-height: ${Math.max(0, Math.round(viewport?.keyboardHeight ?? 0))}px;`);
   return `:root {\n  color-scheme: ${theme.appearance};\n${lines.join("\n")}\n}`;
 }
 
 /** Builds a self-contained, CSP-hardened HTML document for `iframe.srcdoc`. */
-export function buildSandboxDoc(pkg: MiniAppPackage, theme: MiniAppTheme): string {
+export function buildSandboxDoc(pkg: MiniAppPackage, theme: MiniAppTheme, viewport?: MiniAppViewport): string {
   const baseStyle = `
-${themeCssVars(theme)}
+${themeCssVars(theme, viewport)}
 * { box-sizing: border-box; }
 html, body {
   margin: 0;
@@ -57,6 +64,16 @@ html, body {
   font-family: var(--font-ui, "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
   font-size: calc(14px * var(--text-scale, 1));
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: contain;
+}
+/* Prevent iOS Safari / WKWebView from zooming into inputs smaller than 16px. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"], [type="radio"], [type="range"]),
+  textarea,
+  select {
+    font-size: max(16px, calc(14px * var(--text-scale, 1))) !important;
+  }
 }
 :root[data-look] *,
 :root[data-look] *::before,
@@ -101,12 +118,14 @@ html, body {
 }
 `;
   const bridge = `<script>${INLINE_SDK_BRIDGE.replace(/<\/script>/gi, "<\\/script>")}</script>`;
-  const head = `<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${SANDBOX_CSP}"><style>${baseStyle}</style>${bridge}`;
+  const head = `<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"><meta http-equiv="Content-Security-Policy" content="${SANDBOX_CSP}"><style>${baseStyle}</style>${bridge}`;
   const lookAttr = theme.look ? ` data-look="${theme.look}"` : "";
+  const kbAttr = ` data-keyboard="${viewport?.keyboardOpen ? "open" : "closed"}"`;
+  const mobAttr = ` data-mobile="${viewport?.mobile ? "1" : "0"}"`;
   if (/<head[\s>]/i.test(pkg.html)) {
     return pkg.html.replace(/<head([^>]*)>/i, `<head$1>${head}`);
   }
-  return `<!doctype html><html data-appearance="${theme.appearance}"${lookAttr}><head>${head}</head><body>${pkg.html}</body></html>`;
+  return `<!doctype html><html data-appearance="${theme.appearance}"${lookAttr}${kbAttr}${mobAttr}><head>${head}</head><body>${pkg.html}</body></html>`;
 }
 
 export interface HostBridgeDeps {
@@ -117,6 +136,7 @@ export interface HostBridgeDeps {
   pickPeer: (options?: PickPeerOptions) => Promise<MiniAppPeer | null>;
   sendPeerData: (peerPrefix: string, payload: Uint8Array, retry?: boolean) => Promise<SendResult>;
   notify: (options: NotifyOptions) => void;
+  onTypingChange?: (typing: boolean) => void;
   onClose: () => void;
 }
 
@@ -125,6 +145,7 @@ export interface HostBridge {
   sendPacket(packet: IncomingPacket): void;
   sendDelivery(update: DeliveryUpdate): void;
   sendTheme(theme: MiniAppTheme): void;
+  sendViewport(viewport: MiniAppViewport): void;
   sendOpenActivity(activityId: string): void;
   sendPeers(peers: MiniAppPeer[]): void;
   destroy(): void;
@@ -159,6 +180,10 @@ export function createHostBridge(deps: HostBridgeDeps): HostBridge {
   const limiter = new RateLimiter();
   let port: MessagePort | null = null;
   let destroyed = false;
+  // Queue events that arrive after the host view mounts but before the iframe finishes loading and sends `ommesh:ready`.
+  const preReadyPackets: IncomingPacket[] = [];
+  const preReadyDeliveries: DeliveryUpdate[] = [];
+  let preReadyOpenActivity: string | null = null;
 
   function post(msg: HostRpcMessage): void {
     if (destroyed || !port) return;
@@ -239,6 +264,10 @@ export function createHostBridge(deps: HostBridgeDeps): HostBridge {
     attach(iframe: HTMLIFrameElement): () => void {
       function onMessage(ev: MessageEvent): void {
         if (destroyed || ev.source !== iframe.contentWindow) return;
+        if (ev.data?.type === "ommesh:focus") {
+          deps.onTypingChange?.(Boolean(ev.data.typing));
+          return;
+        }
         if (ev.data?.type !== "ommesh:ready") return;
         port?.close();
         const channel = new MessageChannel();
@@ -258,22 +287,63 @@ export function createHostBridge(deps: HostBridgeDeps): HostBridge {
           "*",
           [channel.port2],
         );
+        // Flush any packets or deliveries that arrived while the iframe was still booting.
+        for (const pkt of preReadyPackets.splice(0, preReadyPackets.length)) {
+          post({ type: "event:packet", packet: pkt });
+        }
+        for (const upd of preReadyDeliveries.splice(0, preReadyDeliveries.length)) {
+          post({ type: "event:delivery", update: upd });
+        }
+        if (preReadyOpenActivity !== null) {
+          const actId = preReadyOpenActivity;
+          preReadyOpenActivity = null;
+          post({ type: "event:openActivity", activityId: actId });
+        }
       }
 
       window.addEventListener("message", onMessage);
       return () => {
         window.removeEventListener("message", onMessage);
+        deps.onTypingChange?.(false);
         port?.close();
         port = null;
       };
     },
-    sendPacket: (packet) => post({ type: "event:packet", packet }),
-    sendDelivery: (update) => post({ type: "event:delivery", update }),
+    sendPacket(packet) {
+      if (destroyed) return;
+      if (!port) {
+        preReadyPackets.push(packet);
+        if (preReadyPackets.length > MAX_PRE_READY_QUEUE) preReadyPackets.shift();
+        return;
+      }
+      post({ type: "event:packet", packet });
+    },
+    sendDelivery(update) {
+      if (destroyed) return;
+      if (!port) {
+        preReadyDeliveries.push(update);
+        if (preReadyDeliveries.length > MAX_PRE_READY_QUEUE) preReadyDeliveries.shift();
+        return;
+      }
+      post({ type: "event:delivery", update });
+    },
     sendTheme: (theme) => post({ type: "event:theme", theme }),
-    sendOpenActivity: (activityId) => post({ type: "event:openActivity", activityId }),
+    sendViewport: (viewport) => post({ type: "event:viewport", viewport }),
+    sendOpenActivity(activityId) {
+      if (destroyed) return;
+      if (!port) {
+        preReadyOpenActivity = activityId;
+        return;
+      }
+      post({ type: "event:openActivity", activityId });
+    },
     sendPeers: (peers) => post({ type: "event:peers", peers }),
     destroy() {
       destroyed = true;
+      preReadyPackets.length = 0;
+      preReadyDeliveries.length = 0;
+      preReadyOpenActivity = null;
+      deps.onTypingChange?.(false);
       port?.close();
       port = null;
     },

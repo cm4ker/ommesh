@@ -88,12 +88,33 @@ export interface MiniAppRadioInfo {
   cr?: number;
 }
 
+export interface MiniAppViewport {
+  /** Visible width of the mini-app frame in CSS pixels. */
+  width: number;
+  /** Visible height of the mini-app frame in CSS pixels. */
+  height: number;
+  /** Bottom safe-area inset in CSS pixels (0 while the soft keyboard is open). */
+  safeBottom: number;
+  /** Left safe-area inset in CSS pixels. */
+  safeLeft: number;
+  /** Right safe-area inset in CSS pixels. */
+  safeRight: number;
+  /** Soft keyboard height in CSS pixels (0 when hidden). */
+  keyboardHeight: number;
+  /** Whether the soft keyboard is currently open. */
+  keyboardOpen: boolean;
+  /** Whether the host is rendering in compact phone layout. */
+  mobile: boolean;
+}
+
 export interface MiniAppContext {
   appId: number;
   self: { keyPrefix: string; name: string } | null;
   locale: Locale;
   theme: MiniAppTheme;
   radio: MiniAppRadioInfo;
+  /** Current viewport dimensions, safe-area insets and soft-keyboard state. */
+  viewport?: MiniAppViewport;
   /** Optional activity id the user tapped to open this app (e.g. `"game:a4f2"`). */
   initialActivityId: string | null;
   /** Peers already granted to this app (either picked earlier or messaged us). */
@@ -173,6 +194,7 @@ export interface OmmeshApp {
     setActivities(activities: MiniAppActivity[]): Promise<void>;
     notify(options: NotifyOptions): Promise<void>;
     onThemeChange(cb: (theme: MiniAppTheme) => void): () => void;
+    onViewportChange(cb: (viewport: MiniAppViewport) => void): () => void;
     onOpenActivity(cb: (activityId: string) => void): () => void;
     close(): void;
   };
@@ -198,6 +220,7 @@ export type HostRpcMessage =
   | { type: "event:packet"; packet: IncomingPacket }
   | { type: "event:delivery"; update: DeliveryUpdate }
   | { type: "event:theme"; theme: MiniAppTheme }
+  | { type: "event:viewport"; viewport: MiniAppViewport }
   | { type: "event:openActivity"; activityId: string }
   | { type: "event:peers"; peers: MiniAppPeer[] };
 

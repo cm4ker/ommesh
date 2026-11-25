@@ -5,9 +5,12 @@ import {
   type MiniAppPeer,
   type MiniAppPermission,
   type MiniAppTheme,
+  type MiniAppViewport,
   type PickPeerOptions,
 } from "@ommesh/miniapp-sdk";
 import { language, t, type Key } from "../i18n/index.js";
+import { getKeyboardState, setIframeTyping, subscribeKeyboard } from "../lib/keyboard.js";
+import { isWide, subscribeWide } from "../lib/layout.js";
 import { registerActiveMiniApp, showMiniAppNotice } from "../lib/miniapps/runtime.js";
 import { buildSandboxDoc, createHostBridge, type HostBridge } from "../lib/miniapps/sandbox.js";
 import { getMiniAppsState, uninstallMiniApp, useMiniApps } from "../lib/miniapps/store.js";
@@ -23,7 +26,7 @@ import { SearchField } from "../ui/Field.js";
 import { showMenu } from "../ui/Menu.js";
 import { MiniAppIcon } from "./AppsHome.js";
 import { Avatar } from "./Avatar.js";
-import { BellIcon, BellOffIcon, InfoIcon, LockIcon, MoreIcon, TrashIcon } from "./Icons.js";
+import { BellIcon, BellOffIcon, InfoIcon, MoreIcon, TrashIcon } from "./Icons.js";
 import { ScreenHead, type Chrome } from "./ScreenHead.js";
 
 const PERM_LABEL: Record<MiniAppPermission, Key> = {
@@ -48,15 +51,52 @@ function currentMiniAppTheme(): MiniAppTheme {
   };
 }
 
+function readCssPx(name: string): number {
+  if (typeof window === "undefined") return 0;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const value = Number.parseFloat(raw);
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+}
+
+function currentMiniAppViewport(iframe: HTMLIFrameElement | null): MiniAppViewport {
+  const kb = getKeyboardState();
+  const rect = iframe?.getBoundingClientRect();
+  return {
+    width: Math.round(rect?.width || (typeof window !== "undefined" ? window.innerWidth : 0)),
+    height: Math.round(rect?.height || (typeof window !== "undefined" ? window.innerHeight : 0)),
+    safeBottom: kb.open ? 0 : readCssPx("--safe-bottom"),
+    safeLeft: readCssPx("--safe-left"),
+    safeRight: readCssPx("--safe-right"),
+    keyboardHeight: kb.height,
+    keyboardOpen: kb.open,
+    mobile: !isWide(),
+  };
+}
+
+function sameViewport(a: MiniAppViewport | null, b: MiniAppViewport): boolean {
+  return (
+    !!a &&
+    a.width === b.width &&
+    a.height === b.height &&
+    a.safeBottom === b.safeBottom &&
+    a.safeLeft === b.safeLeft &&
+    a.safeRight === b.safeRight &&
+    a.keyboardHeight === b.keyboardHeight &&
+    a.keyboardOpen === b.keyboardOpen &&
+    a.mobile === b.mobile
+  );
+}
+
 interface PickerRequest {
   options?: PickPeerOptions | undefined;
   resolve: (peer: MiniAppPeer | null) => void;
 }
 
 /**
- * Sandboxed mini-app host screen: renders a host-owned top bar (title, sandbox
- * indicator, quick per-app notification toggle, menu), mounts `<iframe sandbox="allow-scripts">`,
- * bridges `MessageChannel` RPCs, and renders the host-owned contact picker modal.
+ * Isolated mini-app host screen: renders a host-owned top bar (title, quick
+ * per-app notification toggle, menu), mounts `<iframe sandbox="allow-scripts">`,
+ * bridges `MessageChannel` RPCs and viewport/keyboard updates, and renders the
+ * host-owned contact picker modal.
  */
 export function MiniAppHostView({
   appSlug,
@@ -71,6 +111,7 @@ export function MiniAppHostView({
   const noticePrefs = useNoticePrefs();
   const state = useSession();
   const loc = language() === "ru" ? "ru" : "en";
+  const radioKey = state.self?.key ?? "local";
 
   const entry = miniApps.installed[appSlug];
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -84,9 +125,13 @@ export function MiniAppHostView({
   const [removeOpen, setRemoveOpen] = useState(false);
 
   const initialTheme = useMemo(() => currentMiniAppTheme(), [appSlug]);
-  const srcDoc = useMemo(() => (entry ? buildSandboxDoc(entry.pkg, initialTheme) : ""), [entry, initialTheme]);
+  const initialViewport = useMemo(() => currentMiniAppViewport(null), [appSlug]);
+  const srcDoc = useMemo(
+    () => (entry ? buildSandboxDoc(entry.pkg, initialTheme, initialViewport) : ""),
+    [entry, initialTheme, initialViewport],
+  );
 
-  // Mount sandboxed bridge & active app registration.
+  // Mount isolated bridge, active app registration, and live theme/viewport/keyboard sync.
   useEffect(() => {
     const iframe = iframeRef.current;
     if (!entry || !iframe) return;
@@ -119,6 +164,7 @@ export function MiniAppHostView({
           self: self ? { keyPrefix: self.prefix, name: self.name } : null,
           locale: language() === "ru" ? "ru" : "en",
           theme: currentMiniAppTheme(),
+          viewport: currentMiniAppViewport(iframe),
           radio: {
             connected: s.status === "ready",
             maxPayloadBytes: MAX_PEER_DATA_LEN,
@@ -146,6 +192,7 @@ export function MiniAppHostView({
       notify: (options) => {
         showMiniAppNotice(manifest.appId, pickText(manifest.name, language() === "ru" ? "ru" : "en"), options);
       },
+      onTypingChange: (typing) => setIframeTyping(typing),
       onClose: () => {
         if (chrome.onBack) chrome.onBack();
         else openMiniAppStore();
@@ -158,16 +205,37 @@ export function MiniAppHostView({
     const stopTheme = subscribeTheme(() => bridge.sendTheme(currentMiniAppTheme()));
     const stopText = subscribeTextSize(() => bridge.sendTheme(currentMiniAppTheme()));
 
+    let lastVp: MiniAppViewport | null = null;
+    const pushViewport = () => {
+      const next = currentMiniAppViewport(iframe);
+      if (sameViewport(lastVp, next)) return;
+      lastVp = next;
+      bridge.sendViewport(next);
+    };
+    const stopKeyboard = subscribeKeyboard(pushViewport);
+    const stopWide = subscribeWide(pushViewport);
+    window.addEventListener("resize", pushViewport);
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", pushViewport);
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(pushViewport) : null;
+    ro?.observe(iframe);
+
     return () => {
+      ro?.disconnect();
+      vv?.removeEventListener("resize", pushViewport);
+      window.removeEventListener("resize", pushViewport);
+      stopWide();
+      stopKeyboard();
       stopText();
       stopTheme();
       unregister();
       detach();
       bridge.destroy();
+      setIframeTyping(false);
       if (bridgeRef.current === bridge) bridgeRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entry?.pkg.manifest.id, entry?.pkg.manifest.version, entry?.sizeBytes]);
+  }, [entry?.pkg.manifest.id, entry?.pkg.manifest.version, entry?.sizeBytes, radioKey]);
 
   // Forward activityId changes to an already-mounted app iframe.
   useEffect(() => {
@@ -264,15 +332,11 @@ export function MiniAppHostView({
         <span className="screen-name apps-host-title">
           <MiniAppIcon svg={entry.pkg.iconSvg} size={18} />
           <span>{appName}</span>
-          <span className="apps-sandbox-badge">
-            <LockIcon size={11} />
-            <span>{t("apps.sandboxBadge")}</span>
-          </span>
         </span>
       </ScreenHead>
 
       <iframe
-        key={`${m.id}:${m.version}:${entry.sizeBytes}`}
+        key={`${m.id}:${m.version}:${entry.sizeBytes}:${radioKey}`}
         ref={iframeRef}
         className="apps-iframe"
         sandbox="allow-scripts"

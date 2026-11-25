@@ -1,5 +1,72 @@
 import { isCapacitor, nativePlatform } from "./platform.js";
 
+export interface KeyboardState {
+  open: boolean;
+  height: number;
+}
+
+const keyboardListeners = new Set<(state: KeyboardState) => void>();
+let keyboardState: KeyboardState = { open: false, height: 0 };
+let nativeKeyboardActive = false;
+let iframeTyping = false;
+let onIframeTypingChanged: ((active: boolean) => void) | null = null;
+let stopVisualViewport: (() => void) | null = null;
+
+function emitKeyboard(open: boolean, height: number): void {
+  const h = open ? Math.max(0, Math.round(height)) : 0;
+  if (keyboardState.open === open && keyboardState.height === h) return;
+  keyboardState = { open, height: h };
+  for (const listener of keyboardListeners) listener(keyboardState);
+}
+
+/** Current soft-keyboard visibility and height reported by the shell or visualViewport. */
+export function getKeyboardState(): KeyboardState {
+  return keyboardState;
+}
+
+/** Subscribes to soft-keyboard open/height updates on iOS, Android and mobile browsers. */
+export function subscribeKeyboard(listener: (state: KeyboardState) => void): () => void {
+  keyboardListeners.add(listener);
+  if (!nativeKeyboardActive && !stopVisualViewport && typeof window !== "undefined" && window.visualViewport) {
+    const vv = window.visualViewport;
+    const coarse = () => typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+    const update = () => {
+      if (!coarse()) {
+        emitKeyboard(false, 0);
+        return;
+      }
+      const shrink = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+      // Ignore small browser chrome shifts; a soft keyboard is at least ~120 px tall.
+      const open = shrink >= 120;
+      emitKeyboard(open, open ? shrink : 0);
+    };
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    update();
+    stopVisualViewport = () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      stopVisualViewport = null;
+    };
+  }
+  return () => {
+    keyboardListeners.delete(listener);
+    if (keyboardListeners.size === 0 && stopVisualViewport) stopVisualViewport();
+  };
+}
+
+/**
+ * Tells keyboard tracking whether an editable field inside a sandboxed mini-app
+ * iframe currently holds focus. On iOS, `document.activeElement` in the host is
+ * the `<iframe>` itself, so without this signal `followKeyboard()` would ignore
+ * the keyboard and leave it covering the mini-app.
+ */
+export function setIframeTyping(active: boolean): void {
+  if (iframeTyping === active) return;
+  iframeTyping = active;
+  onIframeTypingChanged?.(active);
+}
+
 /**
  * On iOS the page follows the keyboard itself.
  *
@@ -15,8 +82,9 @@ import { isCapacitor, nativePlatform } from "./platform.js";
  * The plugin hears every keyboard in the app, the one a system prompt brings up
  * too (the Bluetooth PIN on a reconnect), and drops its "will hide" when a
  * "will show" follows at once. So the page makes room only while one of its own
- * fields has the focus, and gives it back on anything that says the keyboard is
- * gone: its "did hide", the field losing the focus, the app going away.
+ * fields (or an active input inside a mini-app iframe) has the focus, and gives
+ * it back on anything that says the keyboard is gone: its "did hide", the field
+ * losing the focus, the app going away.
  *
  * A screen that has said it moves for the keyboard itself (`moveForKeyboard`)
  * gets the height instead, while the field is in it, and the app keeps its size.
@@ -26,9 +94,12 @@ import { isCapacitor, nativePlatform } from "./platform.js";
  * (styles/sideways.css).
  */
 export function followKeyboard(): void {
+  nativeKeyboardActive = true;
+  if (stopVisualViewport) stopVisualViewport();
   const root = document.documentElement;
   root.classList.add("keyboard-follows");
   let shrunk = 0;
+  let lastReportedHeight = 0;
   const set = (height: number) => {
     const field = document.activeElement;
     const mover = height > 0 && field ? ([...movers.keys()].find((el) => el.contains(field)) ?? null) : null;
@@ -40,13 +111,31 @@ export function followKeyboard(): void {
     if (shrink !== shrunk) root.style.setProperty("--keyboard", `${shrink}px`);
     shrunk = shrink;
     root.classList.toggle("keyboard-open", height > 0);
+    emitKeyboard(height > 0, height);
   };
-  const shown = (event: Event) => set(typing() ? ((event as Event & { keyboardHeight?: number }).keyboardHeight ?? 0) : 0);
+  const shown = (event: Event) => {
+    const h = Math.max(0, Math.round((event as Event & { keyboardHeight?: number }).keyboardHeight ?? 0));
+    lastReportedHeight = h;
+    set(typing() ? h : 0);
+  };
+  const hidden = () => {
+    lastReportedHeight = 0;
+    set(0);
+  };
+  onIframeTypingChanged = (active) => {
+    if (active) {
+      if (lastReportedHeight > 0) set(lastReportedHeight);
+    } else {
+      setTimeout(() => {
+        if (!typing()) set(0);
+      }, 50);
+    }
+  };
   // The plugin's window events carry the height on the event itself.
   window.addEventListener("keyboardWillShow", shown);
   window.addEventListener("keyboardDidShow", shown);
-  window.addEventListener("keyboardWillHide", () => set(0));
-  window.addEventListener("keyboardDidHide", () => set(0));
+  window.addEventListener("keyboardWillHide", hidden);
+  window.addEventListener("keyboardDidHide", hidden);
   // A field that loses the focus to nothing else takes the keyboard with it.
   document.addEventListener("focusout", () => {
     setTimeout(() => {
@@ -54,12 +143,14 @@ export function followKeyboard(): void {
     }, 50);
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") set(0);
+    if (document.visibilityState === "hidden") hidden();
   });
   // A field lower than the room the keyboard leaves comes into view once the keyboard is up.
   window.addEventListener("keyboardDidShow", () => {
     const field = document.activeElement;
-    if (typing() && field instanceof HTMLElement) field.scrollIntoView({ block: "nearest" });
+    if (typing() && field instanceof HTMLElement && field.tagName !== "IFRAME") {
+      field.scrollIntoView({ block: "nearest" });
+    }
   });
 }
 
@@ -89,18 +180,25 @@ export function moveForKeyboard(el: HTMLElement, move: (height: number) => void)
  * the foot of the screen and sat under them.
  */
 export function watchKeyboard(): void {
+  nativeKeyboardActive = true;
+  if (stopVisualViewport) stopVisualViewport();
   const root = document.documentElement;
   root.classList.add("keyboard-heard");
-  const up = (on: boolean) => {
+  const up = (on: boolean, height = 0) => {
     root.classList.toggle("keyboard-up", on);
     root.classList.toggle("keyboard-open", on);
+    emitKeyboard(on, height);
   };
-  window.addEventListener("keyboardWillShow", () => up(true));
-  window.addEventListener("keyboardDidShow", () => up(true));
-  window.addEventListener("keyboardWillHide", () => up(false));
-  window.addEventListener("keyboardDidHide", () => up(false));
+  const shown = (event: Event) => {
+    const h = Math.max(0, Math.round((event as Event & { keyboardHeight?: number }).keyboardHeight ?? 0));
+    up(true, h);
+  };
+  window.addEventListener("keyboardWillShow", shown);
+  window.addEventListener("keyboardDidShow", shown);
+  window.addEventListener("keyboardWillHide", () => up(false, 0));
+  window.addEventListener("keyboardDidHide", () => up(false, 0));
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") up(false);
+    if (document.visibilityState === "hidden") up(false, 0);
   });
 }
 
@@ -125,8 +223,9 @@ export function raiseKeyboard(): void {
     .catch(() => undefined);
 }
 
-/** Whether one of the page's own fields has the focus, so that the keyboard up is the page's. */
+/** Whether one of the page's own fields (or a mini-app iframe input) has the focus. */
 function typing(): boolean {
+  if (iframeTyping) return true;
   const field = document.activeElement;
   return field instanceof HTMLElement && (field.isContentEditable || field.matches("input, textarea, select"));
 }

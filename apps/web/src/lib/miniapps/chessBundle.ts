@@ -9,7 +9,7 @@
  * - `0x03` DECLINE:    `[0x03, gid(u16 LE)]` (3 B -> 1 AES block)
  * - `0x04` MOVE:       `[0x04, gid(u16 LE), ply(u16 LE), moveBits(u16 LE), posHash8(u8)]` (8 B -> 1 AES block)
  * - `0x05` ACTION:     `[0x05, gid(u16 LE), ply(u16 LE), action(u8: 1=resign,2=drawOffer,3=drawAccept,4=drawDecline)]` (6 B)
- * - `0x06` SYNC_REQ:   `[0x06, gid(u16 LE), fromPly(u16 LE)]` (5 B)
+ * - `0x06` SYNC_REQ:   `[0x06, gid(u16 LE), fromPly(u16 LE), hash8?(u8), statusFlags?(u8)]` (5..7 B -> 1 AES block)
  * - `0x07` SYNC_MOVES: `[0x07, gid(u16 LE), fromPly(u16 LE), count(u8), ...moves(u16 LE)]` (up to 72 plies/packet)
  * - `0x08` CHAT:       `[0x08, gid(u16 LE), ...utf8]` (up to 147 B UTF-8 in-game chat message)
  */
@@ -21,10 +21,12 @@ export const CHESS_APP_ID = 0x0100;
 const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="6" r="2.5"/><path d="M9.5 10.5h5l1 5.5H8.5l1-5.5Z"/><path d="M7 18.5h10v2H7z"/></svg>`;
 
 /** Shared deterministic FIDE chess rules + binary wire codec used inside both UI iframe and background worker. */
-const CHESS_ENGINE_JS = `
+export const CHESS_ENGINE_JS = `
 var OP_INVITE = 1, OP_ACCEPT = 2, OP_DECLINE = 3, OP_MOVE = 4, OP_ACTION = 5, OP_SYNC_REQ = 6, OP_SYNC_MOVES = 7, OP_CHAT = 8;
 var MAX_CHAT_UTF8 = 147;
+var MAX_SYNC_CHUNK = 72;
 var ACT_RESIGN = 1, ACT_DRAW_OFFER = 2, ACT_DRAW_ACCEPT = 3, ACT_DRAW_DECLINE = 4;
+var SYNC_FLAG_ACTIVE = 1, SYNC_FLAG_FINISHED = 2, SYNC_FLAG_WIN_W = 4, SYNC_FLAG_WIN_B = 8, SYNC_FLAG_DRAW = 16;
 var PROMO_MAP = ["", "n", "b", "r", "q"];
 
 function sqName(sq) {
@@ -307,6 +309,23 @@ function replayMoves(moveBitsList) {
   return { pos: pos, labels: labels, legal: legalEnd, check: check, outcome: outcome };
 }
 
+function gameSyncFlags(g) {
+  var flags = 0;
+  if (g.status === "active") flags |= SYNC_FLAG_ACTIVE;
+  if (g.status === "finished") {
+    flags |= SYNC_FLAG_FINISHED;
+    if (g.winner === "w") flags |= SYNC_FLAG_WIN_W;
+    else if (g.winner === "b") flags |= SYNC_FLAG_WIN_B;
+    else if (g.winner === "draw") flags |= SYNC_FLAG_DRAW;
+  }
+  return flags;
+}
+
+function gamePosHash8(g) {
+  var rep = replayMoves(g.moves || []);
+  return posHash8(rep ? rep.pos : initialState());
+}
+
 function encodePacket(op, gameId, extra) {
   var out = new Uint8Array(3 + (extra ? extra.length : 0));
   out[0] = op & 0x1f;
@@ -331,11 +350,14 @@ function encodeMovePkt(gameId, ply, moveBits, hash8) {
 function encodeActionPkt(gameId, ply, action) {
   return encodePacket(OP_ACTION, gameId, [ply & 0xff, (ply >> 8) & 0xff, action & 0xff]);
 }
-function encodeSyncReq(gameId, fromPly) {
+function encodeSyncReq(gameId, fromPly, hash8, flags) {
+  if (typeof hash8 === "number") {
+    return encodePacket(OP_SYNC_REQ, gameId, [fromPly & 0xff, (fromPly >> 8) & 0xff, hash8 & 0xff, (flags || 0) & 0xff]);
+  }
   return encodePacket(OP_SYNC_REQ, gameId, [fromPly & 0xff, (fromPly >> 8) & 0xff]);
 }
 function encodeSyncMoves(gameId, fromPly, movesSlice) {
-  var count = Math.min(72, movesSlice.length);
+  var count = Math.min(MAX_SYNC_CHUNK, movesSlice.length);
   var buf = new Uint8Array(3 + count * 2);
   buf[0] = fromPly & 0xff;
   buf[1] = (fromPly >> 8) & 0xff;
@@ -367,7 +389,15 @@ function decodePacket(bytes) {
   if (op === OP_DECLINE) return { op: op, gameId: gameId };
   if (op === OP_MOVE && bytes.length >= 8) return { op: op, gameId: gameId, ply: bytes[3] | (bytes[4] << 8), moveBits: bytes[5] | (bytes[6] << 8), hash8: bytes[7] };
   if (op === OP_ACTION && bytes.length >= 6) return { op: op, gameId: gameId, ply: bytes[3] | (bytes[4] << 8), action: bytes[5] };
-  if (op === OP_SYNC_REQ && bytes.length >= 5) return { op: op, gameId: gameId, fromPly: bytes[3] | (bytes[4] << 8) };
+  if (op === OP_SYNC_REQ && bytes.length >= 5) {
+    return {
+      op: op,
+      gameId: gameId,
+      fromPly: bytes[3] | (bytes[4] << 8),
+      hash8: bytes.length >= 6 ? bytes[5] : null,
+      flags: bytes.length >= 7 ? bytes[6] : 0
+    };
+  }
   if (op === OP_SYNC_MOVES && bytes.length >= 6) {
     var fromPly = bytes[3] | (bytes[4] << 8);
     var count = bytes[5];
@@ -383,6 +413,38 @@ function decodePacket(bytes) {
     return { op: op, gameId: gameId, text: txt };
   }
   return null;
+}
+
+/**
+ * Builds outbound sync packet(s) when the user taps Sync.
+ * Always requests moves after our current ply (working even beyond 72 plies)
+ * AND re-broadcasts our latest move/invite/accept/action when we may be ahead,
+ * so EITHER player pressing Sync reconciles both sides — including against v1.3.1 peers.
+ */
+function buildManualSyncPackets(g) {
+  var pkts = [];
+  var hash8 = gamePosHash8(g);
+  var flags = gameSyncFlags(g);
+  var rep = replayMoves(g.moves || []);
+  var myTurn = g.status === "active" && rep && rep.pos.turn === g.myColor;
+
+  if (g.status === "invited_out") {
+    pkts.push(encodeInvite(g.gameId, g.myColor));
+    pkts.push(encodeSyncReq(g.gameId, 0, hash8, flags));
+    return pkts;
+  }
+  if (g.status === "active" && g.moves.length === 0 && g.myColor === "b") {
+    pkts.push(encodeAccept(g.gameId, g.myColor));
+  }
+  if (g.moves.length > 0 && (!myTurn || g.status === "finished")) {
+    var lastMove = g.moves[g.moves.length - 1];
+    pkts.push(encodeMovePkt(g.gameId, g.moves.length, lastMove, hash8));
+  }
+  if (g.status === "finished" && g.finishAction) {
+    pkts.push(encodeActionPkt(g.gameId, g.moves.length, g.finishAction));
+  }
+  pkts.push(encodeSyncReq(g.gameId, g.moves.length, hash8, flags));
+  return pkts;
 }
 
 function buildActivities(games, locale) {
@@ -441,78 +503,117 @@ function applyIncomingPacket(games, packet, locale) {
   var now = Date.now();
   var replies = [];
   var notify = null;
+  var mirrored = Boolean(packet.mirrored);
   var peerName = packet.peerName || packet.peerPrefix.slice(0, 8);
+
+  function pushReply(payloadBytes) {
+    // Mirrored frames came from our own secondary device; never echo replies to the opponent.
+    if (mirrored) return;
+    replies.push({ peerPrefix: packet.peerPrefix, payload: Array.from(payloadBytes), retry: true });
+  }
 
   if (decoded.op === OP_INVITE) {
     if (!g) {
+      var myColor = mirrored ? decoded.challengerColor : (decoded.challengerColor === "w" ? "b" : "w");
       games[key] = {
         id: key,
         gameId: gid,
         peerPrefix: packet.peerPrefix,
         peerName: peerName,
-        myColor: decoded.challengerColor === "w" ? "b" : "w",
-        status: packet.mirrored ? "invited_out" : "invited_in",
+        myColor: myColor,
+        status: mirrored ? "invited_out" : "invited_in",
         moves: [],
         drawOfferedBy: null,
         winner: null,
+        finishAction: null,
         updatedAt: now
       };
-      if (!packet.mirrored) notify = { body: ru ? "Приглашение в шахматы" : "Chess invitation", tag: "game:" + key, peerPrefix: packet.peerPrefix };
+      if (!mirrored) notify = { body: ru ? "Приглашение в шахматы" : "Chess invitation", tag: "game:" + key, peerPrefix: packet.peerPrefix };
       return { changed: true, notify: notify, replies: replies, gameKey: key };
+    }
+    // Re-sent invite while we already accepted: re-send ACCEPT (and any moves) to heal stuck invited_out peer.
+    if (!mirrored && (g.status === "active" || g.status === "finished")) {
+      pushReply(encodeAccept(gid, g.myColor));
+      if (g.moves.length > 0) pushReply(encodeSyncMoves(gid, 0, g.moves));
+      return { changed: false, notify: null, replies: replies, gameKey: key };
     }
     return { changed: false, notify: null, replies: [] };
   }
 
   if (!g) {
-    // Unknown gameId (e.g. fresh device) -> create placeholder and ask for full history sync!
+    // Unknown gameId (e.g. fresh device) -> infer our color from move parity and recover history!
     if (decoded.op === OP_MOVE || decoded.op === OP_SYNC_MOVES) {
+      var inferredColor = "b";
+      if (decoded.op === OP_MOVE) {
+        var moverColor = (decoded.ply % 2 === 1) ? "w" : "b";
+        inferredColor = mirrored ? moverColor : (moverColor === "w" ? "b" : "w");
+      }
       games[key] = {
         id: key, gameId: gid, peerPrefix: packet.peerPrefix, peerName: peerName,
-        myColor: "b", status: "active", moves: [], drawOfferedBy: null, winner: null, updatedAt: now
+        myColor: inferredColor, status: "active", moves: [], drawOfferedBy: null, winner: null, finishAction: null, updatedAt: now
       };
       g = games[key];
     } else {
       return { changed: false, notify: null, replies: [] };
     }
   }
-  if (peerName && !packet.mirrored) g.peerName = peerName;
+  if (peerName && !mirrored) g.peerName = peerName;
 
   if (decoded.op === OP_ACCEPT) {
     if (g.status === "invited_out" || g.status === "invited_in") {
       g.status = "active";
       g.updatedAt = now;
-      if (!packet.mirrored) notify = { body: ru ? "Приглашение принято — можно ходить" : "Invite accepted", tag: "game:" + key, peerPrefix: packet.peerPrefix };
-      return { changed: true, notify: notify, replies: replies, gameKey: key };
+      if (!mirrored) notify = { body: ru ? "Приглашение принято — можно ходить" : "Invite accepted", tag: "game:" + key, peerPrefix: packet.peerPrefix };
+      return { changed: true, notify: notify, replies: replies, gameKey: key, synced: true };
     }
+    return { changed: false, notify: null, replies: [], gameKey: key, synced: true };
   } else if (decoded.op === OP_DECLINE) {
     g.status = "declined";
     g.updatedAt = now;
-    if (!packet.mirrored) notify = { body: ru ? "Приглашение отклонено" : "Invite declined", tag: "game:" + key, peerPrefix: packet.peerPrefix };
+    if (!mirrored) notify = { body: ru ? "Приглашение отклонено" : "Invite declined", tag: "game:" + key, peerPrefix: packet.peerPrefix };
     return { changed: true, notify: notify, replies: replies, gameKey: key };
   } else if (decoded.op === OP_MOVE) {
     var expectedPly = g.moves.length + 1;
     if (decoded.ply <= g.moves.length) {
-      // Idempotent duplicate retry
-      return { changed: false, notify: null, replies: [] };
+      var changedSt = false;
+      if (g.status === "invited_out" || g.status === "invited_in") {
+        g.status = "active";
+        g.updatedAt = now;
+        changedSt = true;
+      }
+      // Same ply with a different move -> histories diverged, request full sync from ply 0.
+      if (decoded.ply > 0 && g.moves[decoded.ply - 1] !== decoded.moveBits) {
+        pushReply(encodeSyncReq(gid, 0, gamePosHash8(g), gameSyncFlags(g)));
+        return { changed: changedSt, notify: null, replies: replies, gameKey: key };
+      }
+      // Peer re-sent an older move while we already have newer moves -> push our tail immediately!
+      if (decoded.ply < g.moves.length) {
+        pushReply(encodeSyncMoves(gid, decoded.ply, g.moves.slice(decoded.ply)));
+        if (g.status === "finished" && g.finishAction) pushReply(encodeActionPkt(gid, g.moves.length, g.finishAction));
+      }
+      return { changed: changedSt, notify: null, replies: replies, gameKey: key };
     }
     if (decoded.ply > expectedPly) {
-      replies.push({ peerPrefix: packet.peerPrefix, payload: Array.from(encodeSyncReq(gid, g.moves.length)), retry: true });
+      pushReply(encodeSyncReq(gid, g.moves.length, gamePosHash8(g), gameSyncFlags(g)));
       return { changed: false, notify: null, replies: replies, gameKey: key };
     }
     var candidate = g.moves.concat([decoded.moveBits]);
     var rep = replayMoves(candidate);
     if (!rep || posHash8(rep.pos) !== decoded.hash8) {
-      replies.push({ peerPrefix: packet.peerPrefix, payload: Array.from(encodeSyncReq(gid, 0)), retry: true });
+      pushReply(encodeSyncReq(gid, 0, gamePosHash8(g), gameSyncFlags(g)));
       return { changed: false, notify: null, replies: replies, gameKey: key };
     }
     g.moves = candidate;
     g.status = rep.outcome ? "finished" : "active";
-    if (rep.outcome) g.winner = rep.outcome === "white" ? "w" : rep.outcome === "black" ? "b" : "draw";
+    if (rep.outcome) {
+      g.winner = rep.outcome === "white" ? "w" : rep.outcome === "black" ? "b" : "draw";
+      g.finishAction = null;
+    }
     var u = unpackMove(decoded.moveBits);
-    g.drawOfferedBy = u.offerDraw ? (packet.mirrored ? g.myColor : (g.myColor === "w" ? "b" : "w")) : null;
+    g.drawOfferedBy = u.offerDraw ? (mirrored ? g.myColor : (g.myColor === "w" ? "b" : "w")) : null;
     g.updatedAt = now;
     var label = rep.labels[rep.labels.length - 1] || "";
-    if (!packet.mirrored) {
+    if (!mirrored) {
       notify = {
         body: (ru ? "Ваш ход: " : "Your turn: ") + label,
         tag: "game:" + key,
@@ -522,48 +623,144 @@ function applyIncomingPacket(games, packet, locale) {
     return { changed: true, notify: notify, replies: replies, gameKey: key };
   } else if (decoded.op === OP_ACTION) {
     if (decoded.action === ACT_RESIGN) {
+      var nextWinner = mirrored ? (g.myColor === "w" ? "b" : "w") : g.myColor;
+      if (g.status === "finished" && g.winner === nextWinner) return { changed: false, notify: null, replies: [], gameKey: key, synced: true };
       g.status = "finished";
-      g.winner = packet.mirrored ? (g.myColor === "w" ? "b" : "w") : g.myColor;
+      g.winner = nextWinner;
+      g.finishAction = mirrored ? ACT_RESIGN : null;
       g.updatedAt = now;
-      if (!packet.mirrored) notify = { body: ru ? "Соперник сдался — вы победили!" : "Opponent resigned — you win!", tag: "game:" + key, peerPrefix: packet.peerPrefix };
-      return { changed: true, notify: notify, replies: replies, gameKey: key };
+      if (!mirrored) notify = { body: ru ? "Соперник сдался — вы победили!" : "Opponent resigned — you win!", tag: "game:" + key, peerPrefix: packet.peerPrefix };
+      return { changed: true, notify: notify, replies: replies, gameKey: key, synced: true };
     } else if (decoded.action === ACT_DRAW_OFFER) {
-      g.drawOfferedBy = packet.mirrored ? g.myColor : (g.myColor === "w" ? "b" : "w");
+      g.drawOfferedBy = mirrored ? g.myColor : (g.myColor === "w" ? "b" : "w");
       g.updatedAt = now;
-      if (!packet.mirrored) notify = { body: ru ? "Предложена ничья" : "Draw offered", tag: "game:" + key, peerPrefix: packet.peerPrefix };
+      if (!mirrored) notify = { body: ru ? "Предложена ничья" : "Draw offered", tag: "game:" + key, peerPrefix: packet.peerPrefix };
       return { changed: true, notify: notify, replies: replies, gameKey: key };
     } else if (decoded.action === ACT_DRAW_ACCEPT) {
+      if (g.status === "finished" && g.winner === "draw") return { changed: false, notify: null, replies: [], gameKey: key, synced: true };
       g.status = "finished";
       g.winner = "draw";
+      g.finishAction = ACT_DRAW_ACCEPT;
       g.drawOfferedBy = null;
       g.updatedAt = now;
-      if (!packet.mirrored) notify = { body: ru ? "Партия завершена вничью" : "Game drawn", tag: "game:" + key, peerPrefix: packet.peerPrefix };
-      return { changed: true, notify: notify, replies: replies, gameKey: key };
+      if (!mirrored) notify = { body: ru ? "Партия завершена вничью" : "Game drawn", tag: "game:" + key, peerPrefix: packet.peerPrefix };
+      return { changed: true, notify: notify, replies: replies, gameKey: key, synced: true };
     } else if (decoded.action === ACT_DRAW_DECLINE) {
       g.drawOfferedBy = null;
       g.updatedAt = now;
       return { changed: true, notify: null, replies: replies, gameKey: key };
     }
   } else if (decoded.op === OP_SYNC_REQ) {
+    var changedReq = false;
+    var ourHash = gamePosHash8(g);
+    var ourFlags = gameSyncFlags(g);
+    if (g.status === "invited_out" && ((decoded.flags & (SYNC_FLAG_ACTIVE | SYNC_FLAG_FINISHED)) !== 0 || decoded.fromPly > 0)) {
+      g.status = "active";
+      g.updatedAt = now;
+      changedReq = true;
+    }
     if (decoded.fromPly < g.moves.length) {
       var slice = g.moves.slice(decoded.fromPly);
-      replies.push({ peerPrefix: packet.peerPrefix, payload: Array.from(encodeSyncMoves(gid, decoded.fromPly, slice)), retry: true });
+      pushReply(encodeSyncMoves(gid, decoded.fromPly, slice));
+      if (g.status === "finished" && g.finishAction && decoded.fromPly + slice.length >= g.moves.length) {
+        pushReply(encodeActionPkt(gid, g.moves.length, g.finishAction));
+      }
+    } else if (decoded.fromPly > g.moves.length) {
+      // Peer is ahead of us -> ask them for everything after our ply.
+      pushReply(encodeSyncReq(gid, g.moves.length, ourHash, ourFlags));
+    } else {
+      // Same ply count: check for missed accept, hash divergence, finished action, or confirm in-sync.
+      if (decoded.fromPly === 0 && g.status === "active" && g.myColor === "b") {
+        pushReply(encodeAccept(gid, g.myColor));
+      } else if (decoded.hash8 !== null && decoded.hash8 !== ourHash) {
+        // Diverged history at equal ply -> send full history from ply 0.
+        pushReply(encodeSyncMoves(gid, 0, g.moves));
+      } else {
+        if (g.status === "finished" && g.finishAction) {
+          pushReply(encodeActionPkt(gid, g.moves.length, g.finishAction));
+        }
+        // Send a 0-move confirmation so the requester knows both sides match.
+        pushReply(encodeSyncMoves(gid, g.moves.length, []));
+      }
     }
-    return { changed: false, notify: null, replies: replies, gameKey: key };
+    return { changed: changedReq, notify: null, replies: replies, gameKey: key };
   } else if (decoded.op === OP_SYNC_MOVES) {
+    // Gap between our history and incoming chunk -> request starting from our own ply.
+    if (decoded.fromPly > g.moves.length) {
+      pushReply(encodeSyncReq(gid, g.moves.length, gamePosHash8(g), gameSyncFlags(g)));
+      return { changed: false, notify: null, replies: replies, gameKey: key };
+    }
+    // 0-move confirmation from peer at our ply: no further replies (prevents ping-pong).
+    if (decoded.moves.length === 0) {
+      var activated = false;
+      if (g.status === "invited_out") {
+        g.status = "active";
+        g.updatedAt = now;
+        activated = true;
+      }
+      return { changed: activated, notify: null, replies: [], gameKey: key, synced: true };
+    }
     var base = g.moves.slice(0, decoded.fromPly);
     var merged = base.concat(decoded.moves);
     var repSync = replayMoves(merged);
-    if (repSync && merged.length >= g.moves.length) {
+    if (!repSync) {
+      // Local prefix before fromPly diverged from peer -> ask for full history from ply 0.
+      if (decoded.fromPly > 0) {
+        pushReply(encodeSyncReq(gid, 0, gamePosHash8(g), gameSyncFlags(g)));
+      }
+      return { changed: false, notify: null, replies: replies, gameKey: key };
+    }
+    if (merged.length > g.moves.length) {
       g.moves = merged;
       g.status = repSync.outcome ? "finished" : "active";
-      if (repSync.outcome) g.winner = repSync.outcome === "white" ? "w" : repSync.outcome === "black" ? "b" : "draw";
+      if (repSync.outcome) {
+        g.winner = repSync.outcome === "white" ? "w" : repSync.outcome === "black" ? "b" : "draw";
+        g.finishAction = null;
+      }
       g.updatedAt = now;
-      return { changed: true, notify: null, replies: replies, gameKey: key };
+      // If peer sent a full 72-ply chunk, more moves may follow — pull the next chunk immediately.
+      if (decoded.moves.length >= MAX_SYNC_CHUNK) {
+        pushReply(encodeSyncReq(gid, g.moves.length, posHash8(repSync.pos), gameSyncFlags(g)));
+      }
+      return { changed: true, notify: null, replies: replies, gameKey: key, synced: true };
     }
+    if (merged.length === g.moves.length) {
+      var differs = false;
+      for (var mi = 0; mi < merged.length; mi++) {
+        if (merged[mi] !== g.moves[mi]) { differs = true; break; }
+      }
+      var becameActive = g.status === "invited_out";
+      if (differs || becameActive) {
+        // Reconcile divergent equal-length history (fromPly === 0) or finalize pending invite.
+        if (differs && decoded.fromPly === 0) {
+          g.moves = merged;
+          if (repSync.outcome) {
+            g.status = "finished";
+            g.winner = repSync.outcome === "white" ? "w" : repSync.outcome === "black" ? "b" : "draw";
+            g.finishAction = null;
+          } else {
+            g.status = "active";
+          }
+        } else if (becameActive) {
+          g.status = repSync.outcome ? "finished" : "active";
+        }
+        g.updatedAt = now;
+      }
+      if (decoded.moves.length >= MAX_SYNC_CHUNK) {
+        pushReply(encodeSyncReq(gid, g.moves.length, posHash8(repSync.pos), gameSyncFlags(g)));
+      }
+      return { changed: differs || becameActive, notify: null, replies: replies, gameKey: key, synced: true };
+    }
+    // merged.length < g.moves.length: peer is behind us! Push only the moves they are missing.
+    // Guard against truncated 72-move chunks (if they sent 72 moves from 0, don't assume they stopped at 72).
+    if (decoded.moves.length < MAX_SYNC_CHUNK) {
+      pushReply(encodeSyncMoves(gid, merged.length, g.moves.slice(merged.length)));
+      if (g.status === "finished" && g.finishAction) pushReply(encodeActionPkt(gid, g.moves.length, g.finishAction));
+    }
+    return { changed: false, notify: null, replies: replies, gameKey: key };
   } else if (decoded.op === OP_CHAT) {
     if (!Array.isArray(g.chat)) g.chat = [];
-    var fromSide = packet.mirrored ? "me" : "opp";
+    var fromSide = mirrored ? "me" : "opp";
     var ts = packet.timestamp || Math.floor(now / 1000);
     var dup = g.chat.some(function (m) {
       return m.from === fromSide && m.text === decoded.text && Math.abs((m.ts || 0) - ts) <= 5;
@@ -579,7 +776,7 @@ function applyIncomingPacket(games, packet, locale) {
     });
     if (g.chat.length > 80) g.chat = g.chat.slice(-80);
     g.updatedAt = now;
-    if (!packet.mirrored) {
+    if (!mirrored) {
       g.unreadChat = (g.unreadChat || 0) + 1;
       notify = { body: decoded.text, tag: "game:" + key, peerPrefix: packet.peerPrefix };
     }
@@ -653,8 +850,23 @@ const HTML = `
     --piece-shadow: none;
   }
 
-  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 312px; gap: 20px; max-width: 960px; margin: 0 auto; padding: 16px; min-height: 100%; align-items: start; }
-  @media (max-width: 760px) { .layout { grid-template-columns: 1fr; padding: 12px; gap: 14px; } }
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 312px;
+    gap: 20px;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 16px calc(16px + var(--safe-right, 0px)) calc(16px + var(--safe-bottom, 0px)) calc(16px + var(--safe-left, 0px));
+    min-height: 100%;
+    align-items: start;
+  }
+  @media (max-width: 760px) {
+    .layout {
+      grid-template-columns: 1fr;
+      padding: 12px calc(12px + var(--safe-right, 0px)) calc(16px + var(--safe-bottom, 0px)) calc(12px + var(--safe-left, 0px));
+      gap: 14px;
+    }
+  }
   .board-col { display: flex; flex-direction: column; gap: 10px; align-items: center; }
   .bar { width: 100%; max-width: 448px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text-muted); }
   .bar strong { color: var(--text); font-weight: 600; }
@@ -1002,6 +1214,9 @@ const HTML = `
     flex-direction: column;
     gap: 6px;
   }
+  :root[data-keyboard="open"] .chat-list {
+    height: 132px;
+  }
   .chat-msg {
     max-width: 86%;
     padding: 6px 9px;
@@ -1061,32 +1276,33 @@ const HTML = `
     display: flex;
     align-items: center;
     gap: 6px;
+    scroll-margin-bottom: 16px;
   }
   .chat-input {
     flex: 1;
     min-width: 0;
-    height: 32px;
-    padding: 0 10px;
+    min-height: 36px;
+    padding: 4px 10px;
     border-radius: 8px;
     border: 1px solid var(--border-strong);
     background: var(--bg);
     color: var(--text);
     font: inherit;
-    font-size: 12.5px;
+    font-size: 13px;
     outline: none;
   }
   .chat-input:focus { border-color: var(--accent); }
   .chat-input:disabled { opacity: 0.45; }
   .chat-send {
     flex: none;
-    height: 32px;
-    padding: 0 11px;
+    min-height: 36px;
+    padding: 0 12px;
     border-radius: 8px;
     border: 0;
     background: var(--accent);
     color: var(--accent-contrast);
     font: inherit;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     cursor: pointer;
   }
@@ -1123,7 +1339,7 @@ const HTML = `
         <div class="chat-list" id="chatList"></div>
         <div class="quick-row" id="quickRow"></div>
         <div class="chat-form" id="chatForm">
-          <input class="chat-input" id="chatInput" type="text" autocomplete="off" />
+          <input class="chat-input" id="chatInput" type="text" enterkeyhint="send" autocomplete="off" />
           <button type="button" class="chat-send" id="chatSend">→</button>
         </div>
         <div class="chat-bytes hidden" id="chatBytes"></div>
@@ -1160,7 +1376,7 @@ window.ommeshReady.then(async function (app) {
     startBtn: "Выбрать соперника", yourTurn: "Ваш ход", waitTurn: "Ход соперника",
     white: "Белые", black: "Чёрные", you: "Вы", accept: "Принять", decline: "Отклонить",
     draw: "Ничья", acceptDraw: "Принять ничью", declineDraw: "Продолжить",
-    sync: "Синхр.", resign: "Сдаться", promote: "Превратить пешку:",
+    sync: "Синхр.", synced: "Синхронизировано ✓", resign: "Сдаться", promote: "Превратить пешку:",
     sending: "Отправка по LoRa…", delivered: "Доставлено ✓", retrying: "Повторная отправка…",
     unconfirmed: "Нет ACK — проверьте, что у соперника meshcore-rs", failed: "Ошибка отправки",
     inviteSent: "Приглашение отправлено", inviteIn: "Приглашает сыграть в шахматы",
@@ -1175,7 +1391,7 @@ window.ommeshReady.then(async function (app) {
     startBtn: "Pick opponent", yourTurn: "Your turn", waitTurn: "Opponent's turn",
     white: "White", black: "Black", you: "You", accept: "Accept", decline: "Decline",
     draw: "Offer draw", acceptDraw: "Accept draw", declineDraw: "Decline",
-    sync: "Sync", resign: "Resign", promote: "Promote pawn:",
+    sync: "Sync", synced: "Synced ✓", resign: "Resign", promote: "Promote pawn:",
     sending: "Sending over LoRa…", delivered: "Delivered ✓", retrying: "Retrying…",
     unconfirmed: "No ACK — opponent may need meshcore-rs", failed: "Send failed",
     inviteSent: "Invitation sent", inviteIn: "Invited you to play chess",
@@ -1198,6 +1414,7 @@ window.ommeshReady.then(async function (app) {
   var deliveryByGame = {};
   var packetToGame = {};
   var packetToChat = {};
+  var packetChain = Promise.resolve();
 
   async function persist() {
     await app.storage.set("games", games);
@@ -1217,6 +1434,13 @@ window.ommeshReady.then(async function (app) {
     render();
   }
 
+  async function syncGame(g) {
+    var pkts = buildManualSyncPackets(g);
+    for (var i = 0; i < pkts.length; i++) {
+      await sendForGame(g, pkts[i], T.sync);
+    }
+  }
+
   async function startNewGame() {
     var peer = await app.peers.pick({ requirePeerData: true });
     if (!peer) return;
@@ -1224,7 +1448,7 @@ window.ommeshReady.then(async function (app) {
     var key = "g:" + gid.toString(16).padStart(4, "0");
     var g = {
       id: key, gameId: gid, peerPrefix: peer.keyPrefix, peerName: peer.name,
-      myColor: "w", status: "invited_out", moves: [], drawOfferedBy: null, winner: null, updatedAt: Date.now()
+      myColor: "w", status: "invited_out", moves: [], drawOfferedBy: null, winner: null, finishAction: null, updatedAt: Date.now()
     };
     games[key] = g;
     selectedKey = key;
@@ -1243,7 +1467,8 @@ window.ommeshReady.then(async function (app) {
       void persist();
     }
     render();
-    if (sideTab === "chat") {
+    var isTouch = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+    if (sideTab === "chat" && !isTouch) {
       var ci = document.getElementById("chatInput");
       if (ci && !ci.disabled) ci.focus();
     }
@@ -1308,6 +1533,13 @@ window.ommeshReady.then(async function (app) {
     }
   });
 
+  app.ui.onViewportChange(function (vp) {
+    if (vp && vp.keyboardOpen && sideTab === "chat") {
+      var list = document.getElementById("chatList");
+      if (list) list.scrollTop = list.scrollHeight;
+    }
+  });
+
   var quickRowEl = document.getElementById("quickRow");
   T.chatQuick.forEach(function (phrase) {
     var qb = document.createElement("button");
@@ -1355,25 +1587,40 @@ window.ommeshReady.then(async function (app) {
     render();
   });
 
-  app.transport.onPacket(async function (pkt) {
-    var res = applyIncomingPacket(games, pkt, app.context.locale);
-    if (res.changed) {
-      if (!selectedKey && res.gameKey) selectedKey = res.gameKey;
-      if (res.isChat && res.gameKey === selectedKey && sideTab === "chat" && games[res.gameKey]) {
-        games[res.gameKey].unreadChat = 0;
+  app.transport.onPacket(function (pkt) {
+    packetChain = packetChain.then(async function () {
+      var res = applyIncomingPacket(games, pkt, app.context.locale);
+      if (res.synced && res.gameKey) {
+        deliveryByGame[res.gameKey] = { tone: "ok", text: T.synced };
       }
-      await persist();
-      if (res.notify && !(res.isChat && res.gameKey === selectedKey && sideTab === "chat")) {
-        void app.ui.notify(res.notify);
+      if (res.changed) {
+        if (!selectedKey && res.gameKey) selectedKey = res.gameKey;
+        if (res.isChat && res.gameKey === selectedKey && sideTab === "chat" && games[res.gameKey]) {
+          games[res.gameKey].unreadChat = 0;
+        }
+        await persist();
+        if (res.notify && !(res.isChat && res.gameKey === selectedKey && sideTab === "chat")) {
+          void app.ui.notify(res.notify);
+        }
+        render();
+      } else if (res.synced) {
+        render();
       }
-      render();
-    }
-    if (res.replies && res.replies.length) {
-      for (var i = 0; i < res.replies.length; i++) {
-        var r = res.replies[i];
-        void app.transport.send(r.peerPrefix, new Uint8Array(r.payload), { retry: true }).catch(function () {});
+      if (res.replies && res.replies.length) {
+        for (var i = 0; i < res.replies.length; i++) {
+          var r = res.replies[i];
+          try {
+            var sent = await app.transport.send(r.peerPrefix, new Uint8Array(r.payload), { retry: true });
+            if (res.gameKey) packetToGame[sent.packetId] = res.gameKey;
+          } catch (err) {
+            if (res.gameKey) {
+              deliveryByGame[res.gameKey] = { tone: "err", text: T.failed + ": " + (err && err.message ? err.message : String(err)) };
+              render();
+            }
+          }
+        }
       }
-    }
+    });
   });
 
   async function commitMove(g, move) {
@@ -1385,6 +1632,7 @@ window.ommeshReady.then(async function (app) {
     if (rep.outcome) {
       g.status = "finished";
       g.winner = rep.outcome === "white" ? "w" : rep.outcome === "black" ? "b" : "draw";
+      g.finishAction = null;
     }
     g.updatedAt = Date.now();
     selectedSq = null;
@@ -1683,7 +1931,7 @@ window.ommeshReady.then(async function (app) {
         var aDraw = document.createElement("button");
         aDraw.className = "btn primary"; aDraw.textContent = T.acceptDraw;
         aDraw.onclick = async function () {
-          g.status = "finished"; g.winner = "draw"; g.drawOfferedBy = null; g.updatedAt = Date.now();
+          g.status = "finished"; g.winner = "draw"; g.finishAction = ACT_DRAW_ACCEPT; g.drawOfferedBy = null; g.updatedAt = Date.now();
           await persist();
           await sendForGame(g, encodeActionPkt(g.gameId, g.moves.length, ACT_DRAW_ACCEPT), T.drawn);
         };
@@ -1707,16 +1955,24 @@ window.ommeshReady.then(async function (app) {
       }
       var syncBtn = document.createElement("button");
       syncBtn.className = "btn"; syncBtn.textContent = T.sync;
-      syncBtn.onclick = function () { void sendForGame(g, encodeSyncReq(g.gameId, 0), T.sync); };
+      syncBtn.onclick = function () { void syncGame(g); };
       var resBtn = document.createElement("button");
       resBtn.className = "btn danger"; resBtn.textContent = T.resign;
       resBtn.onclick = async function () {
-        g.status = "finished"; g.winner = oppColor; g.updatedAt = Date.now();
+        g.status = "finished"; g.winner = oppColor; g.finishAction = ACT_RESIGN; g.updatedAt = Date.now();
         await persist();
         await sendForGame(g, encodeActionPkt(g.gameId, g.moves.length, ACT_RESIGN), T.resign);
       };
       actsEl.appendChild(syncBtn); actsEl.appendChild(resBtn);
       mainEl.appendChild(actsEl);
+    } else if (g.status === "invited_out" || g.status === "finished") {
+      var extraActs = document.createElement("div");
+      extraActs.className = "actions";
+      var syncExtraBtn = document.createElement("button");
+      syncExtraBtn.className = "btn"; syncExtraBtn.textContent = T.sync;
+      syncExtraBtn.onclick = function () { void syncGame(g); };
+      extraActs.appendChild(syncExtraBtn);
+      mainEl.appendChild(extraActs);
     }
   }
 
@@ -1736,11 +1992,11 @@ export const chessPackage: MiniAppPackage = {
     schema: 1,
     id: "ommesh.chess",
     appId: CHESS_APP_ID,
-    version: "1.3.1",
+    version: "1.4.0",
     name: { ru: "Шахматы", en: "Chess" },
     description: {
-      ru: "Шахматы по LoRa с подтверждением ходов (1 AES-блок на ход, авто-ресинк и фоновые уведомления)",
-      en: "LoRa chess with delivery ACKs (1 AES block per move, auto-resync and background notifications)",
+      ru: "Шахматы по LoRa с подтверждением ходов (1 AES-блок на ход, двусторонний ресинк и фоновые уведомления)",
+      en: "LoRa chess with delivery ACKs (1 AES block per move, two-way resync and background notifications)",
     },
     author: "Ommesh",
     scope: "p2p",

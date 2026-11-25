@@ -26,7 +26,6 @@
   "removed": "Удалено: {name}",
   "removeConfirmTitle": "Удалить «{name}»?",
   "removeConfirmBody": "Приложение и его изолированные локальные данные будут удалены.",
-  "sandboxBadge": "Песочница",
   "standaloneTag": "Офлайн",
   "peerTag": "LoRa P2P",
   "appIdLabel": "ID приложения",

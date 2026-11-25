@@ -26,7 +26,6 @@
   "removed": "{name} removed",
   "removeConfirmTitle": "Remove {name}?",
   "removeConfirmBody": "The app and its isolated local data will be removed.",
-  "sandboxBadge": "Sandbox",
   "standaloneTag": "Offline",
   "peerTag": "LoRa P2P",
   "appIdLabel": "App ID",

@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+### Mini-apps (MCRS v2)
+- Added a dedicated **Apps** section (fourth top-level tab, alongside Chats, Mesh, and Settings) with a catalog/store and sandboxed mini-apps running in isolated iframes (`sandbox="allow-scripts"`, `MessageChannel` RPC via `@ommesh/miniapp-sdk`, strict CSP, and automatic theme/font-scale syncing).
+- Added `meshcore-rs` **MCRS v2** reliable ACKed binary P2P datagram transport (`SUB_SEND_PEER_DATA`, `SUB_SYNC_PEER_DATA`, `PUSH_CODE_MCRS`, `cap::PEER_DATA`) across `@meshnet/meshcore`, `meshcore-core` phone relay/background watcher, and Android (`Apps` notification channel), with separate per-app notification preferences under Settings › Notifications.
+- Added the built-in **Chess** (`ommesh.chess`, `appId = 0x0100`) P2P LoRa mini-app with compact binary moves, ACKed delivery, mid-game sync recovery (`OP_SYNC_REQ` / `OP_SYNC_MOVES`), in-game LoRa chat (`OP_CHAT`), and interactive Demo Mode support, plus a local **LoRa Calculator** utility.
+
 ### Mesh and the map
 - In the console, the command suggestions above the field now float in an elevated, bordered card over the log — the same way the mention list floats over a chat — so they stand clearly apart from the terminal lines above them and no longer squash the log while you type.
 - Ommesh now recognizes radios and remote repeaters/rooms running `meshcore-rs` via the `MCRS` v1 extension protocol (`0x70`): shows the `meshcore-rs` version and build in radio info and node details (with an on-demand query for remote nodes), and unlocks `meshcore-rs` CLI suggestions and command reference filtered by each board's capabilities (`fw.*`, `time.*`, `screen`, `led`, `buzzer`, `rtpath`, `dyncr`, `room`, `sensor scan/add/del`, `mqtt.ommesh`, `log`, etc.) while keeping upstream MeshCore radios untouched.

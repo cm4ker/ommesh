@@ -9,8 +9,8 @@
  * - `0x03` DECLINE:    `[0x03, gid(u16 LE)]` (3 B -> 1 AES block)
  * - `0x04` MOVE:       `[0x04, gid(u16 LE), ply(u16 LE), moveBits(u16 LE), posHash8(u8)]` (8 B -> 1 AES block)
  * - `0x05` ACTION:     `[0x05, gid(u16 LE), ply(u16 LE), action(u8: 1=resign,2=drawOffer,3=drawAccept,4=drawDecline)]` (6 B)
- * - `0x06` SYNC_REQ:   `[0x06, gid(u16 LE), fromPly(u16 LE), hash8?(u8), statusFlags?(u8)]` (5..7 B -> 1 AES block)
- * - `0x07` SYNC_MOVES: `[0x07, gid(u16 LE), fromPly(u16 LE), count(u8), ...moves(u16 LE)]` (up to 72 plies/packet)
+ * - `0x06` SYNC_REQ:   `[0x06, gid(u16 LE), fromPly(u16 LE), hash8?(u8), statusFlags?(u8: bits0..4 state, bit5=hasColor, bit6=senderBlack)]` (5..7 B -> 1 AES block)
+ * - `0x07` SYNC_MOVES: `[0x07 | colorBits(bit5=hasColor,bit6=senderBlack), gid(u16 LE), fromPly(u16 LE), count(u8), ...moves(u16 LE)]` (up to 72 plies/packet)
  * - `0x08` CHAT:       `[0x08, gid(u16 LE), ...utf8]` (up to 147 B UTF-8 in-game chat message)
  */
 
@@ -27,6 +27,8 @@ var MAX_CHAT_UTF8 = 147;
 var MAX_SYNC_CHUNK = 72;
 var ACT_RESIGN = 1, ACT_DRAW_OFFER = 2, ACT_DRAW_ACCEPT = 3, ACT_DRAW_DECLINE = 4;
 var SYNC_FLAG_ACTIVE = 1, SYNC_FLAG_FINISHED = 2, SYNC_FLAG_WIN_W = 4, SYNC_FLAG_WIN_B = 8, SYNC_FLAG_DRAW = 16;
+var SYNC_FLAG_HAS_COLOR = 32, SYNC_FLAG_SENDER_B = 64;
+var HDR_HAS_COLOR = 0x20, HDR_SENDER_B = 0x40;
 var PROMO_MAP = ["", "n", "b", "r", "q"];
 
 function sqName(sq) {
@@ -309,6 +311,10 @@ function replayMoves(moveBitsList) {
   return { pos: pos, labels: labels, legal: legalEnd, check: check, outcome: outcome };
 }
 
+function oppSide(c) {
+  return c === "w" ? "b" : "w";
+}
+
 function gameSyncFlags(g) {
   var flags = 0;
   if (g.status === "active") flags |= SYNC_FLAG_ACTIVE;
@@ -317,6 +323,10 @@ function gameSyncFlags(g) {
     if (g.winner === "w") flags |= SYNC_FLAG_WIN_W;
     else if (g.winner === "b") flags |= SYNC_FLAG_WIN_B;
     else if (g.winner === "draw") flags |= SYNC_FLAG_DRAW;
+  }
+  if (g.colorVerified && (g.myColor === "w" || g.myColor === "b")) {
+    flags |= SYNC_FLAG_HAS_COLOR;
+    if (g.myColor === "b") flags |= SYNC_FLAG_SENDER_B;
   }
   return flags;
 }
@@ -356,7 +366,7 @@ function encodeSyncReq(gameId, fromPly, hash8, flags) {
   }
   return encodePacket(OP_SYNC_REQ, gameId, [fromPly & 0xff, (fromPly >> 8) & 0xff]);
 }
-function encodeSyncMoves(gameId, fromPly, movesSlice) {
+function encodeSyncMoves(gameId, fromPly, movesSlice, senderColor) {
   var count = Math.min(MAX_SYNC_CHUNK, movesSlice.length);
   var buf = new Uint8Array(3 + count * 2);
   buf[0] = fromPly & 0xff;
@@ -366,7 +376,11 @@ function encodeSyncMoves(gameId, fromPly, movesSlice) {
     buf[3 + i * 2] = movesSlice[i] & 0xff;
     buf[4 + i * 2] = (movesSlice[i] >> 8) & 0xff;
   }
-  return encodePacket(OP_SYNC_MOVES, gameId, buf);
+  var pkt = encodePacket(OP_SYNC_MOVES, gameId, buf);
+  if (senderColor === "w" || senderColor === "b") {
+    pkt[0] |= HDR_HAS_COLOR | (senderColor === "b" ? HDR_SENDER_B : 0);
+  }
+  return pkt;
 }
 function encodeUtf8Limited(text, maxBytes) {
   var enc = new TextEncoder();
@@ -390,12 +404,15 @@ function decodePacket(bytes) {
   if (op === OP_MOVE && bytes.length >= 8) return { op: op, gameId: gameId, ply: bytes[3] | (bytes[4] << 8), moveBits: bytes[5] | (bytes[6] << 8), hash8: bytes[7] };
   if (op === OP_ACTION && bytes.length >= 6) return { op: op, gameId: gameId, ply: bytes[3] | (bytes[4] << 8), action: bytes[5] };
   if (op === OP_SYNC_REQ && bytes.length >= 5) {
+    var reqFlags = bytes.length >= 7 ? bytes[6] : 0;
+    var reqColor = (reqFlags & SYNC_FLAG_HAS_COLOR) ? ((reqFlags & SYNC_FLAG_SENDER_B) ? "b" : "w") : null;
     return {
       op: op,
       gameId: gameId,
       fromPly: bytes[3] | (bytes[4] << 8),
       hash8: bytes.length >= 6 ? bytes[5] : null,
-      flags: bytes.length >= 7 ? bytes[6] : 0
+      flags: reqFlags,
+      senderColor: reqColor
     };
   }
   if (op === OP_SYNC_MOVES && bytes.length >= 6) {
@@ -405,7 +422,8 @@ function decodePacket(bytes) {
     for (var i = 0; i < count && 6 + i * 2 + 1 < bytes.length; i++) {
       moves.push(bytes[6 + i * 2] | (bytes[7 + i * 2] << 8));
     }
-    return { op: op, gameId: gameId, fromPly: fromPly, moves: moves };
+    var syncColor = (bytes[0] & HDR_HAS_COLOR) ? ((bytes[0] & HDR_SENDER_B) ? "b" : "w") : null;
+    return { op: op, gameId: gameId, fromPly: fromPly, moves: moves, senderColor: syncColor };
   }
   if (op === OP_CHAT && bytes.length > 3) {
     var txt = new TextDecoder().decode(bytes.subarray(3)).trim();
@@ -413,6 +431,62 @@ function decodePacket(bytes) {
     return { op: op, gameId: gameId, text: txt };
   }
   return null;
+}
+
+/**
+ * Derives our ground-truth side ("w" or "b") from any packet whose sender color
+ * is known (invite, accept, move ply parity, or verified sync metadata).
+ */
+function inferMyColor(decoded, mirrored) {
+  if (decoded.op === OP_INVITE) return mirrored ? decoded.challengerColor : oppSide(decoded.challengerColor);
+  if (decoded.op === OP_ACCEPT) return mirrored ? decoded.accepterColor : oppSide(decoded.accepterColor);
+  if (decoded.op === OP_MOVE && decoded.ply > 0) {
+    var mover = (decoded.ply % 2 === 1) ? "w" : "b";
+    return mirrored ? mover : oppSide(mover);
+  }
+  if ((decoded.op === OP_SYNC_REQ || decoded.op === OP_SYNC_MOVES) && decoded.senderColor) {
+    return mirrored ? decoded.senderColor : oppSide(decoded.senderColor);
+  }
+  return null;
+}
+
+/**
+ * Self-heals a legacy game whose side was inverted (e.g. v1.3.1 mirrored OP_INVITE
+ * on desktop sharing a phone's radio). Once verified, a game's side never flips again.
+ */
+function healGameColor(g, decoded, mirrored) {
+  var inferred = inferMyColor(decoded, mirrored);
+  if (!inferred || g.colorVerified) return false;
+  g.colorVerified = true;
+  if (g.myColor === inferred) return false;
+  g.myColor = inferred;
+  if (g.status === "finished" && (g.winner === "w" || g.winner === "b")) {
+    var rep = replayMoves(g.moves || []);
+    if (!rep || !rep.outcome) {
+      g.winner = oppSide(g.winner);
+    }
+  }
+  if (g.drawOfferedBy === "w" || g.drawOfferedBy === "b") {
+    g.drawOfferedBy = oppSide(g.drawOfferedBy);
+  }
+  return true;
+}
+
+/** Repairs stored v1.3.1 outgoing invites saved on a mirrored device as Black. */
+function normalizeStoredGames(games) {
+  var changed = false;
+  if (!games || typeof games !== "object") return false;
+  var keys = Object.keys(games);
+  for (var i = 0; i < keys.length; i++) {
+    var g = games[keys[i]];
+    if (!g || typeof g !== "object") continue;
+    if (!g.colorVerified && g.status === "invited_out" && g.myColor === "b" && (!g.moves || g.moves.length === 0)) {
+      g.myColor = "w";
+      g.colorVerified = true;
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 /**
@@ -425,8 +499,7 @@ function buildManualSyncPackets(g) {
   var pkts = [];
   var hash8 = gamePosHash8(g);
   var flags = gameSyncFlags(g);
-  var rep = replayMoves(g.moves || []);
-  var myTurn = g.status === "active" && rep && rep.pos.turn === g.myColor;
+  var lastMover = g.moves.length > 0 ? ((g.moves.length % 2 === 1) ? "w" : "b") : null;
 
   if (g.status === "invited_out") {
     pkts.push(encodeInvite(g.gameId, g.myColor));
@@ -436,7 +509,8 @@ function buildManualSyncPackets(g) {
   if (g.status === "active" && g.moves.length === 0 && g.myColor === "b") {
     pkts.push(encodeAccept(g.gameId, g.myColor));
   }
-  if (g.moves.length > 0 && (!myTurn || g.status === "finished")) {
+  // Only re-send the last OP_MOVE when WE actually played that move (preserves ply-parity invariant).
+  if (g.moves.length > 0 && lastMover === g.myColor) {
     var lastMove = g.moves[g.moves.length - 1];
     pkts.push(encodeMovePkt(g.gameId, g.moves.length, lastMove, hash8));
   }
@@ -514,13 +588,14 @@ function applyIncomingPacket(games, packet, locale) {
 
   if (decoded.op === OP_INVITE) {
     if (!g) {
-      var myColor = mirrored ? decoded.challengerColor : (decoded.challengerColor === "w" ? "b" : "w");
+      var myColor = inferMyColor(decoded, mirrored) || "b";
       games[key] = {
         id: key,
         gameId: gid,
         peerPrefix: packet.peerPrefix,
         peerName: peerName,
         myColor: myColor,
+        colorVerified: true,
         status: mirrored ? "invited_out" : "invited_in",
         moves: [],
         drawOfferedBy: null,
@@ -531,33 +606,43 @@ function applyIncomingPacket(games, packet, locale) {
       if (!mirrored) notify = { body: ru ? "Приглашение в шахматы" : "Chess invitation", tag: "game:" + key, peerPrefix: packet.peerPrefix };
       return { changed: true, notify: notify, replies: replies, gameKey: key };
     }
+    var invHealed = healGameColor(g, decoded, mirrored);
+    if (invHealed) g.updatedAt = now;
     // Re-sent invite while we already accepted: re-send ACCEPT (and any moves) to heal stuck invited_out peer.
     if (!mirrored && (g.status === "active" || g.status === "finished")) {
       pushReply(encodeAccept(gid, g.myColor));
-      if (g.moves.length > 0) pushReply(encodeSyncMoves(gid, 0, g.moves));
-      return { changed: false, notify: null, replies: replies, gameKey: key };
+      if (g.moves.length > 0) pushReply(encodeSyncMoves(gid, 0, g.moves, g.colorVerified ? g.myColor : null));
+      return { changed: invHealed, notify: null, replies: replies, gameKey: key };
     }
-    return { changed: false, notify: null, replies: [] };
+    return { changed: invHealed, notify: null, replies: [], gameKey: key };
   }
 
+  var created = false;
   if (!g) {
-    // Unknown gameId (e.g. fresh device) -> infer our color from move parity and recover history!
-    if (decoded.op === OP_MOVE || decoded.op === OP_SYNC_MOVES) {
-      var inferredColor = "b";
-      if (decoded.op === OP_MOVE) {
-        var moverColor = (decoded.ply % 2 === 1) ? "w" : "b";
-        inferredColor = mirrored ? moverColor : (moverColor === "w" ? "b" : "w");
-      }
+    // Unknown gameId (e.g. fresh device or second device joining mid-game) -> derive side & recover history.
+    var canCreate = decoded.op === OP_ACCEPT || decoded.op === OP_MOVE || decoded.op === OP_SYNC_MOVES ||
+      (decoded.op === OP_SYNC_REQ && (mirrored || Boolean(decoded.senderColor)));
+    if (canCreate) {
+      var inferredColor = inferMyColor(decoded, mirrored);
+      var initStatus = (decoded.op === OP_SYNC_REQ && !(decoded.flags & (SYNC_FLAG_ACTIVE | SYNC_FLAG_FINISHED)) && decoded.fromPly === 0)
+        ? (mirrored ? "invited_out" : "invited_in")
+        : "active";
       games[key] = {
         id: key, gameId: gid, peerPrefix: packet.peerPrefix, peerName: peerName,
-        myColor: inferredColor, status: "active", moves: [], drawOfferedBy: null, winner: null, finishAction: null, updatedAt: now
+        myColor: inferredColor || "b", colorVerified: Boolean(inferredColor),
+        status: initStatus, moves: [], drawOfferedBy: null, winner: null, finishAction: null, updatedAt: now
       };
       g = games[key];
+      created = true;
     } else {
       return { changed: false, notify: null, replies: [] };
     }
   }
   if (peerName && !mirrored) g.peerName = peerName;
+  var colorHealed = healGameColor(g, decoded, mirrored);
+  if (colorHealed) g.updatedAt = now;
+  var baseChanged = created || colorHealed;
+  var mySyncColor = g.colorVerified ? g.myColor : null;
 
   if (decoded.op === OP_ACCEPT) {
     if (g.status === "invited_out" || g.status === "invited_in") {
@@ -566,7 +651,7 @@ function applyIncomingPacket(games, packet, locale) {
       if (!mirrored) notify = { body: ru ? "Приглашение принято — можно ходить" : "Invite accepted", tag: "game:" + key, peerPrefix: packet.peerPrefix };
       return { changed: true, notify: notify, replies: replies, gameKey: key, synced: true };
     }
-    return { changed: false, notify: null, replies: [], gameKey: key, synced: true };
+    return { changed: baseChanged, notify: null, replies: [], gameKey: key, synced: true };
   } else if (decoded.op === OP_DECLINE) {
     g.status = "declined";
     g.updatedAt = now;
@@ -575,7 +660,7 @@ function applyIncomingPacket(games, packet, locale) {
   } else if (decoded.op === OP_MOVE) {
     var expectedPly = g.moves.length + 1;
     if (decoded.ply <= g.moves.length) {
-      var changedSt = false;
+      var changedSt = baseChanged;
       if (g.status === "invited_out" || g.status === "invited_in") {
         g.status = "active";
         g.updatedAt = now;
@@ -588,20 +673,20 @@ function applyIncomingPacket(games, packet, locale) {
       }
       // Peer re-sent an older move while we already have newer moves -> push our tail immediately!
       if (decoded.ply < g.moves.length) {
-        pushReply(encodeSyncMoves(gid, decoded.ply, g.moves.slice(decoded.ply)));
+        pushReply(encodeSyncMoves(gid, decoded.ply, g.moves.slice(decoded.ply), mySyncColor));
         if (g.status === "finished" && g.finishAction) pushReply(encodeActionPkt(gid, g.moves.length, g.finishAction));
       }
       return { changed: changedSt, notify: null, replies: replies, gameKey: key };
     }
     if (decoded.ply > expectedPly) {
       pushReply(encodeSyncReq(gid, g.moves.length, gamePosHash8(g), gameSyncFlags(g)));
-      return { changed: false, notify: null, replies: replies, gameKey: key };
+      return { changed: baseChanged, notify: null, replies: replies, gameKey: key };
     }
     var candidate = g.moves.concat([decoded.moveBits]);
     var rep = replayMoves(candidate);
     if (!rep || posHash8(rep.pos) !== decoded.hash8) {
       pushReply(encodeSyncReq(gid, 0, gamePosHash8(g), gameSyncFlags(g)));
-      return { changed: false, notify: null, replies: replies, gameKey: key };
+      return { changed: baseChanged, notify: null, replies: replies, gameKey: key };
     }
     g.moves = candidate;
     g.status = rep.outcome ? "finished" : "active";
@@ -624,7 +709,7 @@ function applyIncomingPacket(games, packet, locale) {
   } else if (decoded.op === OP_ACTION) {
     if (decoded.action === ACT_RESIGN) {
       var nextWinner = mirrored ? (g.myColor === "w" ? "b" : "w") : g.myColor;
-      if (g.status === "finished" && g.winner === nextWinner) return { changed: false, notify: null, replies: [], gameKey: key, synced: true };
+      if (g.status === "finished" && g.winner === nextWinner) return { changed: baseChanged, notify: null, replies: [], gameKey: key, synced: true };
       g.status = "finished";
       g.winner = nextWinner;
       g.finishAction = mirrored ? ACT_RESIGN : null;
@@ -637,7 +722,7 @@ function applyIncomingPacket(games, packet, locale) {
       if (!mirrored) notify = { body: ru ? "Предложена ничья" : "Draw offered", tag: "game:" + key, peerPrefix: packet.peerPrefix };
       return { changed: true, notify: notify, replies: replies, gameKey: key };
     } else if (decoded.action === ACT_DRAW_ACCEPT) {
-      if (g.status === "finished" && g.winner === "draw") return { changed: false, notify: null, replies: [], gameKey: key, synced: true };
+      if (g.status === "finished" && g.winner === "draw") return { changed: baseChanged, notify: null, replies: [], gameKey: key, synced: true };
       g.status = "finished";
       g.winner = "draw";
       g.finishAction = ACT_DRAW_ACCEPT;
@@ -651,7 +736,7 @@ function applyIncomingPacket(games, packet, locale) {
       return { changed: true, notify: null, replies: replies, gameKey: key };
     }
   } else if (decoded.op === OP_SYNC_REQ) {
-    var changedReq = false;
+    var changedReq = baseChanged;
     var ourHash = gamePosHash8(g);
     var ourFlags = gameSyncFlags(g);
     if (g.status === "invited_out" && ((decoded.flags & (SYNC_FLAG_ACTIVE | SYNC_FLAG_FINISHED)) !== 0 || decoded.fromPly > 0)) {
@@ -659,9 +744,18 @@ function applyIncomingPacket(games, packet, locale) {
       g.updatedAt = now;
       changedReq = true;
     }
+    if (mirrored && (decoded.flags & SYNC_FLAG_FINISHED) && decoded.fromPly === g.moves.length) {
+      var mirWin = (decoded.flags & SYNC_FLAG_WIN_W) ? "w" : (decoded.flags & SYNC_FLAG_WIN_B) ? "b" : (decoded.flags & SYNC_FLAG_DRAW) ? "draw" : null;
+      if (mirWin && (g.status !== "finished" || g.winner !== mirWin)) {
+        g.status = "finished";
+        g.winner = mirWin;
+        g.updatedAt = now;
+        changedReq = true;
+      }
+    }
     if (decoded.fromPly < g.moves.length) {
       var slice = g.moves.slice(decoded.fromPly);
-      pushReply(encodeSyncMoves(gid, decoded.fromPly, slice));
+      pushReply(encodeSyncMoves(gid, decoded.fromPly, slice, mySyncColor));
       if (g.status === "finished" && g.finishAction && decoded.fromPly + slice.length >= g.moves.length) {
         pushReply(encodeActionPkt(gid, g.moves.length, g.finishAction));
       }
@@ -674,13 +768,13 @@ function applyIncomingPacket(games, packet, locale) {
         pushReply(encodeAccept(gid, g.myColor));
       } else if (decoded.hash8 !== null && decoded.hash8 !== ourHash) {
         // Diverged history at equal ply -> send full history from ply 0.
-        pushReply(encodeSyncMoves(gid, 0, g.moves));
+        pushReply(encodeSyncMoves(gid, 0, g.moves, mySyncColor));
       } else {
         if (g.status === "finished" && g.finishAction) {
           pushReply(encodeActionPkt(gid, g.moves.length, g.finishAction));
         }
         // Send a 0-move confirmation so the requester knows both sides match.
-        pushReply(encodeSyncMoves(gid, g.moves.length, []));
+        pushReply(encodeSyncMoves(gid, g.moves.length, [], mySyncColor));
       }
     }
     return { changed: changedReq, notify: null, replies: replies, gameKey: key };
@@ -688,11 +782,11 @@ function applyIncomingPacket(games, packet, locale) {
     // Gap between our history and incoming chunk -> request starting from our own ply.
     if (decoded.fromPly > g.moves.length) {
       pushReply(encodeSyncReq(gid, g.moves.length, gamePosHash8(g), gameSyncFlags(g)));
-      return { changed: false, notify: null, replies: replies, gameKey: key };
+      return { changed: baseChanged, notify: null, replies: replies, gameKey: key };
     }
     // 0-move confirmation from peer at our ply: no further replies (prevents ping-pong).
     if (decoded.moves.length === 0) {
-      var activated = false;
+      var activated = baseChanged;
       if (g.status === "invited_out") {
         g.status = "active";
         g.updatedAt = now;
@@ -708,7 +802,7 @@ function applyIncomingPacket(games, packet, locale) {
       if (decoded.fromPly > 0) {
         pushReply(encodeSyncReq(gid, 0, gamePosHash8(g), gameSyncFlags(g)));
       }
-      return { changed: false, notify: null, replies: replies, gameKey: key };
+      return { changed: baseChanged, notify: null, replies: replies, gameKey: key };
     }
     if (merged.length > g.moves.length) {
       g.moves = merged;
@@ -749,15 +843,15 @@ function applyIncomingPacket(games, packet, locale) {
       if (decoded.moves.length >= MAX_SYNC_CHUNK) {
         pushReply(encodeSyncReq(gid, g.moves.length, posHash8(repSync.pos), gameSyncFlags(g)));
       }
-      return { changed: differs || becameActive, notify: null, replies: replies, gameKey: key, synced: true };
+      return { changed: baseChanged || differs || becameActive, notify: null, replies: replies, gameKey: key, synced: true };
     }
     // merged.length < g.moves.length: peer is behind us! Push only the moves they are missing.
     // Guard against truncated 72-move chunks (if they sent 72 moves from 0, don't assume they stopped at 72).
     if (decoded.moves.length < MAX_SYNC_CHUNK) {
-      pushReply(encodeSyncMoves(gid, merged.length, g.moves.slice(merged.length)));
+      pushReply(encodeSyncMoves(gid, merged.length, g.moves.slice(merged.length), mySyncColor));
       if (g.status === "finished" && g.finishAction) pushReply(encodeActionPkt(gid, g.moves.length, g.finishAction));
     }
-    return { changed: false, notify: null, replies: replies, gameKey: key };
+    return { changed: baseChanged, notify: null, replies: replies, gameKey: key };
   } else if (decoded.op === OP_CHAT) {
     if (!Array.isArray(g.chat)) g.chat = [];
     var fromSide = mirrored ? "me" : "opp";
@@ -765,7 +859,7 @@ function applyIncomingPacket(games, packet, locale) {
     var dup = g.chat.some(function (m) {
       return m.from === fromSide && m.text === decoded.text && Math.abs((m.ts || 0) - ts) <= 5;
     });
-    if (dup) return { changed: false, notify: null, replies: [] };
+    if (dup) return { changed: baseChanged, notify: null, replies: [] };
     g.chat.push({
       id: "m:" + ts + ":" + Math.random().toString(36).slice(2, 7),
       from: fromSide,
@@ -782,7 +876,7 @@ function applyIncomingPacket(games, packet, locale) {
     }
     return { changed: true, notify: notify, replies: replies, gameKey: key, isChat: true };
   }
-  return { changed: false, notify: null, replies: replies };
+  return { changed: baseChanged, notify: null, replies: replies };
 }
 `;
 
@@ -792,9 +886,10 @@ self.onPacket = function (input) {
   var games = (input.storage && input.storage.games && typeof input.storage.games === "object")
     ? JSON.parse(JSON.stringify(input.storage.games))
     : {};
+  var normalized = normalizeStoredGames(games);
   var res = applyIncomingPacket(games, input.packet, input.locale || "ru");
   var out = {};
-  if (res.changed) {
+  if (normalized || res.changed) {
     out.storageSet = { games: games };
     out.activities = buildActivities(games, input.locale || "ru");
   }
@@ -1405,6 +1500,7 @@ window.ommeshReady.then(async function (app) {
   document.getElementById("chatInput").placeholder = T.chatPlaceholder;
 
   var games = (await app.storage.get("games")) || {};
+  var normalizedOnLoad = normalizeStoredGames(games);
   var selectedKey = app.context.initialActivityId && games[app.context.initialActivityId]
     ? app.context.initialActivityId
     : (Object.keys(games).find(function (k) { return games[k].status !== "declined"; }) || null);
@@ -1448,7 +1544,7 @@ window.ommeshReady.then(async function (app) {
     var key = "g:" + gid.toString(16).padStart(4, "0");
     var g = {
       id: key, gameId: gid, peerPrefix: peer.keyPrefix, peerName: peer.name,
-      myColor: "w", status: "invited_out", moves: [], drawOfferedBy: null, winner: null, finishAction: null, updatedAt: Date.now()
+      myColor: "w", colorVerified: true, status: "invited_out", moves: [], drawOfferedBy: null, winner: null, finishAction: null, updatedAt: Date.now()
     };
     games[key] = g;
     selectedKey = key;
@@ -1980,7 +2076,8 @@ window.ommeshReady.then(async function (app) {
     return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
-  await app.ui.setActivities(buildActivities(games, app.context.locale));
+  if (normalizedOnLoad) await persist();
+  else await app.ui.setActivities(buildActivities(games, app.context.locale));
   render();
 });
 </script>
@@ -1992,7 +2089,7 @@ export const chessPackage: MiniAppPackage = {
     schema: 1,
     id: "ommesh.chess",
     appId: CHESS_APP_ID,
-    version: "1.4.0",
+    version: "1.4.1",
     name: { ru: "Шахматы", en: "Chess" },
     description: {
       ru: "Шахматы по LoRa с подтверждением ходов (1 AES-блок на ход, двусторонний ресинк и фоновые уведомления)",

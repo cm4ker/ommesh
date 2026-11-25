@@ -9,6 +9,7 @@ interface ChessGame {
   peerPrefix: string;
   peerName: string;
   myColor: "w" | "b";
+  colorVerified?: boolean;
   status: "invited_out" | "invited_in" | "active" | "finished" | "declined";
   moves: number[];
   drawOfferedBy: "w" | "b" | null;
@@ -42,7 +43,8 @@ interface ChessEngine {
   encodeMovePkt(gid: number, ply: number, bits: number, hash8: number): Uint8Array;
   encodeActionPkt(gid: number, ply: number, action: number): Uint8Array;
   encodeSyncReq(gid: number, fromPly: number, hash8?: number, flags?: number): Uint8Array;
-  encodeSyncMoves(gid: number, fromPly: number, moves: number[]): Uint8Array;
+  encodeSyncMoves(gid: number, fromPly: number, moves: number[], senderColor?: "w" | "b" | null): Uint8Array;
+  normalizeStoredGames(games: Record<string, ChessGame>): boolean;
   buildManualSyncPackets(g: ChessGame): Uint8Array[];
   applyIncomingPacket(
     games: Record<string, ChessGame>,
@@ -269,4 +271,93 @@ test("chess sync: equal-ply diverged history reconciles via hash mismatch", () =
   const pkts = eng.buildManualSyncPackets(bob[key]!);
   exchange(eng, alice, bob, pkts.map((payload) => ({ to: "alice", payload })));
   assert.deepEqual(Array.from(bob[key]!.moves), lineA);
+});
+
+test("chess side sync: repairs legacy v1.3.1 mirrored outgoing invites saved as Black", () => {
+  const eng = loadEngine();
+  const games: Record<string, ChessGame> = {
+    "g:3e1d": {
+      id: "g:3e1d", gameId: 0x3e1d, peerPrefix: "559e016b0000", peerName: "559E016B",
+      myColor: "b", status: "invited_out", moves: [],
+      drawOfferedBy: null, winner: null, finishAction: null, updatedAt: 1,
+    },
+  };
+  assert.equal(eng.normalizeStoredGames(games), true);
+  assert.equal(games["g:3e1d"]!.myColor, "w");
+  assert.equal(games["g:3e1d"]!.colorVerified, true);
+  assert.equal(eng.normalizeStoredGames(games), false);
+});
+
+test("chess side sync: legacy corrupted desktop game self-heals side and resignation winner on mirrored Sync", () => {
+  const eng = loadEngine();
+  const full = makeLegalMoves(eng, 15); // odd ply -> White made the last move
+  // Phone has true side "w", user resigned -> winner "b".
+  const phoneGame: ChessGame = {
+    id: "g:4ba6", gameId: 0x4ba6, peerPrefix: "ava600000001", peerName: "AVA6 T096",
+    myColor: "w", colorVerified: true, status: "finished", moves: [...full],
+    drawOfferedBy: null, winner: "b", finishAction: eng.ACT_RESIGN, updatedAt: 10,
+  };
+  // Legacy v1.3.1 desktop had inverted side "b" and therefore inverted winner "w" on resignation.
+  const desktopGames: Record<string, ChessGame> = {
+    "g:4ba6": {
+      id: "g:4ba6", gameId: 0x4ba6, peerPrefix: "ava600000001", peerName: "AVA6 T096",
+      myColor: "b", status: "finished", moves: [...full],
+      drawOfferedBy: null, winner: "w", finishAction: eng.ACT_RESIGN, updatedAt: 10,
+    },
+  };
+
+  // Phone taps Sync -> mirrored packets arrive on desktop via phone relay (even with opponent offline!).
+  const pkts = eng.buildManualSyncPackets(phoneGame);
+  for (const payload of pkts) {
+    const res = eng.applyIncomingPacket(
+      desktopGames,
+      { peerPrefix: "ava600000001", peerName: "AVA6 T096", payload, timestamp: 200, snr: 0, hops: null, mirrored: true },
+      "ru",
+    );
+    assert.equal(res.replies.length, 0);
+  }
+  assert.equal(desktopGames["g:4ba6"]!.myColor, "w");
+  assert.equal(desktopGames["g:4ba6"]!.colorVerified, true);
+  assert.equal(desktopGames["g:4ba6"]!.winner, "b");
+});
+
+test("chess side sync: fresh desktop recovers exact White side from OP_ACCEPT and OP_SYNC_MOVES", () => {
+  const eng = loadEngine();
+  const full = makeLegalMoves(eng, 6);
+
+  // Case A: fresh desktop receives opponent's OP_ACCEPT (opponent is Black -> we are White).
+  const gA: Record<string, ChessGame> = {};
+  const resA = eng.applyIncomingPacket(
+    gA,
+    { peerPrefix: "bbbbbb000002", peerName: "Bob", payload: eng.encodeAccept(0x5001, "b"), timestamp: 10, snr: 8, hops: null },
+    "en",
+  );
+  assert.equal(resA.changed, true);
+  assert.equal(gA["g:5001"]!.myColor, "w");
+  assert.equal(gA["g:5001"]!.colorVerified, true);
+
+  // Case B: fresh desktop receives opponent's OP_SYNC_MOVES carrying verified senderColor="b" -> we are White.
+  const gB: Record<string, ChessGame> = {};
+  const resB = eng.applyIncomingPacket(
+    gB,
+    { peerPrefix: "bbbbbb000002", peerName: "Bob", payload: eng.encodeSyncMoves(0x5002, 0, full, "b"), timestamp: 11, snr: 8, hops: null },
+    "en",
+  );
+  assert.equal(resB.changed, true);
+  assert.equal(gB["g:5002"]!.myColor, "w");
+  assert.equal(gB["g:5002"]!.colorVerified, true);
+  assert.deepEqual(Array.from(gB["g:5002"]!.moves), full);
+});
+
+test("chess side sync: manual Sync never re-broadcasts opponent's last move on a finished game", () => {
+  const eng = loadEngine();
+  const full = makeLegalMoves(eng, 14); // even ply -> Black made the last move
+  const whiteFinished: ChessGame = {
+    id: "g:7777", gameId: 0x7777, peerPrefix: "bbbbbb000002", peerName: "Bob",
+    myColor: "w", colorVerified: true, status: "finished", moves: [...full],
+    drawOfferedBy: null, winner: "b", finishAction: null, updatedAt: 1,
+  };
+  const pkts = eng.buildManualSyncPackets(whiteFinished);
+  assert.ok(!pkts.some((p) => (p[0]! & 0x1f) === eng.OP_MOVE), "White must not emit OP_MOVE for Black's ply");
+  assert.ok(pkts.some((p) => (p[0]! & 0x1f) === eng.OP_SYNC_REQ));
 });

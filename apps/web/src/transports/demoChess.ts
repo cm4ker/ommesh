@@ -237,6 +237,7 @@ function legalMoves(p: Pos): { from: number; to: number; promo: number; next: Po
 interface DemoGame {
   pos: Pos;
   moves: number[];
+  botBlack: boolean;
 }
 
 export interface DemoChessReply {
@@ -251,16 +252,17 @@ export class DemoChessBot {
   /** Handles an outgoing `ommesh.chess` packet and returns zero or more delayed opponent packets. */
   onOutgoing(payload: Uint8Array): DemoChessReply[] {
     if (payload.length < 3) return [];
-    const op = payload[0]!;
+    const op = payload[0]! & 0x1f;
     const gid = payload[1]! | (payload[2]! << 8);
 
     if (op === OP_INVITE) {
       const flags = payload[3] ?? 0;
       const challengerBlack = (flags & 1) !== 0;
-      const game: DemoGame = { pos: initialState(), moves: [] };
+      const botBlack = !challengerBlack;
+      const game: DemoGame = { pos: initialState(), moves: [], botBlack };
       this.games.set(gid, game);
       const replies: DemoChessReply[] = [
-        { delayMs: 900, payload: new Uint8Array([OP_ACCEPT, gid & 0xff, (gid >> 8) & 0xff, 0]) },
+        { delayMs: 900, payload: new Uint8Array([OP_ACCEPT, gid & 0xff, (gid >> 8) & 0xff, botBlack ? 1 : 0]) },
       ];
       if (challengerBlack) {
         const movePkt = this.makeBotMove(gid, game);
@@ -278,7 +280,7 @@ export class DemoChessBot {
         return [{ delayMs: 450, payload: new Uint8Array([OP_SYNC_REQ, gid & 0xff, (gid >> 8) & 0xff, 0, 0]) }];
       }
       if (!game) {
-        game = { pos: initialState(), moves: [] };
+        game = { pos: initialState(), moves: [], botBlack: ply % 2 === 1 };
         this.games.set(gid, game);
       }
       if (ply <= game.moves.length) return [];
@@ -296,7 +298,7 @@ export class DemoChessBot {
       const count = payload[5]!;
       let game = this.games.get(gid);
       if (!game || fromPly === 0) {
-        game = { pos: initialState(), moves: [] };
+        game = { pos: initialState(), moves: [], botBlack: true };
         this.games.set(gid, game);
       }
       for (let i = 0; i < count && 6 + i * 2 + 1 < payload.length; i++) {

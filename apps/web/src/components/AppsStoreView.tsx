@@ -12,9 +12,12 @@ import { installAndReplay } from "../lib/miniapps/runtime.js";
 import { uninstallMiniApp, useMiniApps } from "../lib/miniapps/store.js";
 import { openMiniApp } from "../lib/nav.js";
 import { toast } from "../lib/toast.js";
-import { Button } from "../ui/Button.js";
+import { Button, IconButton } from "../ui/Button.js";
 import { Confirm } from "../ui/Dialog.js";
+import { ActionRow, Block, Group } from "../ui/List.js";
 import { MiniAppIcon } from "./AppsHome.js";
+import { Avatar } from "./Avatar.js";
+import { RefreshIcon, UpIcon } from "./Icons.js";
 import { ScreenHead, type Chrome } from "./ScreenHead.js";
 
 const PERM_LABEL: Record<MiniAppPermission, Key> = {
@@ -52,6 +55,7 @@ export function AppsStoreView({ chrome }: { chrome: Chrome }) {
   const catalogIds = new Set(catalog.items.map((e) => e.id));
   const sideloaded = Object.values(miniApps.installed).filter((e) => !catalogIds.has(e.pkg.manifest.id));
   const visibleCatalog = catalog.items.filter((e) => matchesFilter(e.scope, filter));
+  const visibleSideloaded = sideloaded.filter((e) => matchesFilter(e.pkg.manifest.scope, filter));
 
   const handleRefresh = async () => {
     const ok = await refreshRemoteCatalog({ force: true });
@@ -94,171 +98,173 @@ export function AppsStoreView({ chrome }: { chrome: Chrome }) {
       <ScreenHead
         chrome={chrome}
         actions={
-          <>
-            <input
-              ref={fileInput}
-              type="file"
-              accept=".omapp,.json"
-              className="apps-hidden-input"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (f) void handleSideloadFile(f);
-              }}
-            />
-            <Button size="sm" onClick={() => fileInput.current?.click()}>
-              {t("apps.sideloadButton")}
-            </Button>
-          </>
+          <IconButton
+            label={catalog.loading ? t("apps.refreshingCatalog") : t("apps.refreshCatalog")}
+            disabled={catalog.loading}
+            onClick={() => void handleRefresh()}
+          >
+            <RefreshIcon size={17} className={catalog.loading ? "spin" : ""} />
+          </IconButton>
         }
       >
         <span className="screen-name">{t("apps.storeTitle")}</span>
       </ScreenHead>
 
       <div className="screen-scroll">
-        <div className="apps-store-wrap">
-          <div className="apps-store-bar">
-            <div className="preset-chips">
-              {(
-                [
-                  ["all", "apps.filterAll"],
-                  ["p2p", "apps.peerTag"],
-                  ["standalone", "apps.standaloneTag"],
-                ] as const
-              ).map(([id, key]) => (
-                <button
-                  key={id}
-                  type="button"
-                  className={["chip", filter === id ? "on" : ""].filter(Boolean).join(" ")}
-                  onClick={() => setFilter(id)}
-                >
-                  {t(key)}
-                </button>
-              ))}
-            </div>
-            <Button size="sm" variant="ghost" disabled={catalog.loading} onClick={() => void handleRefresh()}>
-              {catalog.loading ? t("apps.refreshingCatalog") : t("apps.refreshCatalog")}
-            </Button>
-          </div>
+        <div className="chips apps-store-chips">
+          {(
+            [
+              ["all", "apps.filterAll"],
+              ["p2p", "apps.peerTag"],
+              ["standalone", "apps.standaloneTag"],
+            ] as const
+          ).map(([id, key]) => (
+            <button
+              key={id}
+              type="button"
+              className={["chip", filter === id ? "on" : ""].filter(Boolean).join(" ")}
+              onClick={() => setFilter(id)}
+            >
+              {t(key)}
+            </button>
+          ))}
+        </div>
 
-          <div className="apps-store-grid">
-            {visibleCatalog.map((item) => {
-              const installed = miniApps.installed[item.id];
-              const updateAvail = hasCatalogUpdate(installed, item);
-              const isBusy = busyId === item.id;
-              const name = pickText(item.name, loc);
-              const verText = installed && updateAvail
-                ? `v${installed.pkg.manifest.version} → v${item.version}`
-                : `v${installed ? installed.pkg.manifest.version : item.version}`;
-              return (
-                <article key={item.id} className="apps-store-card">
-                  <div className="apps-store-head">
-                    <span className="apps-icon-tile apps-icon-lg">
-                      <MiniAppIcon svg={item.iconSvg} size={24} />
-                    </span>
-                    <div className="apps-store-meta">
-                      <div className="apps-store-title-line">
-                        <strong className="apps-store-name">{name}</strong>
-                        {updateAvail ? (
-                          <span className="apps-tag-update">{t("apps.updateBadge", { version: item.version })}</span>
-                        ) : item.verified ? (
-                          <span className="apps-tag-ok">{t("apps.verifiedBadge")}</span>
-                        ) : null}
-                      </div>
-                      <div className="apps-row-sub">
-                        {verText} · {formatKb(item.sizeBytes)} · {item.scope === "standalone" ? t("apps.standaloneTag") : t("apps.peerTag")}
-                      </div>
+        <Group>
+          {visibleCatalog.map((item) => {
+            const installed = miniApps.installed[item.id];
+            const updateAvail = hasCatalogUpdate(installed, item);
+            const isBusy = busyId === item.id;
+            const name = pickText(item.name, loc);
+            const verText = installed && updateAvail
+              ? `v${installed.pkg.manifest.version} → v${item.version}`
+              : `v${installed ? installed.pkg.manifest.version : item.version}`;
+            const permsText = item.permissions.length === 0
+              ? t("apps.noPermissions")
+              : item.permissions.map((p) => t(PERM_LABEL[p])).join(" · ");
+            return (
+              <Block key={item.id} className="apps-store-item">
+                <div className="apps-store-head">
+                  <Avatar name={item.id} size={40} icon={<MiniAppIcon svg={item.iconSvg} size={21} />} />
+                  <div className="apps-store-meta">
+                    <div className="apps-store-title">
+                      <span className="apps-store-name">{name}</span>
+                      {updateAvail ? (
+                        <span className="apps-tag-update">{t("apps.updateBadge", { version: item.version })}</span>
+                      ) : null}
+                    </div>
+                    <div className="apps-store-sub">
+                      {verText} · {formatKb(item.sizeBytes)} ·{" "}
+                      {item.scope === "standalone" ? t("apps.standaloneTag") : t("apps.peerTag")}
                     </div>
                   </div>
-                  <p className="apps-store-desc">{pickText(item.description, loc)}</p>
-                  <div className="apps-perm-row">
-                    {item.permissions.length === 0 ? (
-                      <span className="apps-perm-chip">{t("apps.noPermissions")}</span>
-                    ) : (
-                      item.permissions.map((p) => (
-                        <span key={p} className="apps-perm-chip">
-                          {t(PERM_LABEL[p])}
-                        </span>
-                      ))
-                    )}
-                  </div>
-                  <div className="apps-store-actions">
-                    {installed && updateAvail ? (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          disabled={isBusy}
-                          onClick={() => void handleInstallOrUpdate(item, true)}
-                        >
-                          {isBusy ? t("apps.updating") : t("apps.update")}
-                        </Button>
-                        <Button size="sm" onClick={() => openMiniApp(item.id)}>
+                  {installed && updateAvail ? (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      busy={isBusy}
+                      onClick={() => void handleInstallOrUpdate(item, true)}
+                    >
+                      {t("apps.update")}
+                    </Button>
+                  ) : installed ? (
+                    <Button size="sm" onClick={() => openMiniApp(item.id)}>
+                      {t("apps.open")}
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      busy={isBusy}
+                      onClick={() => void handleInstallOrUpdate(item, false)}
+                    >
+                      {t("apps.install")}
+                    </Button>
+                  )}
+                </div>
+                <p className="apps-store-desc">{pickText(item.description, loc)}</p>
+                <div className="apps-store-foot">
+                  <span className="apps-store-perms">{permsText}</span>
+                  {installed ? (
+                    <span className="apps-store-links">
+                      {updateAvail ? (
+                        <button type="button" className="link" onClick={() => openMiniApp(item.id)}>
                           {t("apps.open")}
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setRemoving({ id: item.id, name })}>
-                          {t("apps.uninstall")}
-                        </Button>
-                      </>
-                    ) : installed ? (
-                      <>
-                        <Button size="sm" variant="primary" onClick={() => openMiniApp(item.id)}>
-                          {t("apps.open")}
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setRemoving({ id: item.id, name })}>
-                          {t("apps.uninstall")}
-                        </Button>
-                      </>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        disabled={isBusy}
-                        onClick={() => void handleInstallOrUpdate(item, false)}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="link apps-link-danger"
+                        onClick={() => setRemoving({ id: item.id, name })}
                       >
-                        {isBusy ? t("apps.installing") : t("apps.install")}
-                      </Button>
-                    )}
+                        {t("apps.uninstall")}
+                      </button>
+                    </span>
+                  ) : null}
+                </div>
+              </Block>
+            );
+          })}
+        </Group>
+
+        {visibleSideloaded.length > 0 ? (
+          <Group title={t("apps.sideloadBadge")}>
+            {visibleSideloaded.map((entry) => {
+              const m = entry.pkg.manifest;
+              const name = pickText(m.name, loc);
+              return (
+                <Block key={m.id} className="apps-store-item">
+                  <div className="apps-store-head">
+                    <Avatar name={m.id} size={40} icon={<MiniAppIcon svg={entry.pkg.iconSvg} size={21} />} />
+                    <div className="apps-store-meta">
+                      <div className="apps-store-title">
+                        <span className="apps-store-name">{name}</span>
+                      </div>
+                      <div className="apps-store-sub">
+                        v{m.version} · {formatKb(entry.sizeBytes)} · {m.author}
+                      </div>
+                    </div>
+                    <Button size="sm" onClick={() => openMiniApp(m.id)}>
+                      {t("apps.open")}
+                    </Button>
                   </div>
-                </article>
+                  <p className="apps-store-desc">{pickText(m.description, loc)}</p>
+                  <div className="apps-store-foot">
+                    <span className="apps-store-perms">{t("apps.sideloadBadge")}</span>
+                    <span className="apps-store-links">
+                      <button
+                        type="button"
+                        className="link apps-link-danger"
+                        onClick={() => setRemoving({ id: m.id, name })}
+                      >
+                        {t("apps.uninstall")}
+                      </button>
+                    </span>
+                  </div>
+                </Block>
               );
             })}
+          </Group>
+        ) : null}
 
-            {sideloaded
-              .filter((e) => matchesFilter(e.pkg.manifest.scope, filter))
-              .map((entry) => {
-                const m = entry.pkg.manifest;
-                const name = pickText(m.name, loc);
-                return (
-                  <article key={m.id} className="apps-store-card">
-                    <div className="apps-store-head">
-                      <span className="apps-icon-tile apps-icon-lg">
-                        <MiniAppIcon svg={entry.pkg.iconSvg} size={24} />
-                      </span>
-                      <div className="apps-store-meta">
-                        <div className="apps-store-title-line">
-                          <strong className="apps-store-name">{name}</strong>
-                          <span className="apps-perm-chip">{t("apps.sideloadBadge")}</span>
-                        </div>
-                        <div className="apps-row-sub">
-                          v{m.version} · {formatKb(entry.sizeBytes)} · {m.author}
-                        </div>
-                      </div>
-                    </div>
-                    <p className="apps-store-desc">{pickText(m.description, loc)}</p>
-                    <div className="apps-store-actions">
-                      <Button size="sm" variant="primary" onClick={() => openMiniApp(m.id)}>
-                        {t("apps.open")}
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setRemoving({ id: m.id, name })}>
-                        {t("apps.uninstall")}
-                      </Button>
-                    </div>
-                  </article>
-                );
-              })}
-          </div>
-        </div>
+        <Group>
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".omapp,.json"
+            className="apps-hidden-input"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) void handleSideloadFile(f);
+            }}
+          />
+          <ActionRow
+            icon={<UpIcon size={17} />}
+            label={t("apps.sideloadButton")}
+            onClick={() => fileInput.current?.click()}
+          />
+        </Group>
       </div>
 
       <Confirm

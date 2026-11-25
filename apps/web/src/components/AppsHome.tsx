@@ -13,8 +13,10 @@ import { useMiniApps } from "../lib/miniapps/store.js";
 import { openMiniApp, openMiniAppStore } from "../lib/nav.js";
 import { useSession } from "../lib/session.js";
 import { toast } from "../lib/toast.js";
-import { Button } from "../ui/Button.js";
-import { Group } from "../ui/List.js";
+import { Button, IconButton } from "../ui/Button.js";
+import { Group, LinkRow } from "../ui/List.js";
+import { Avatar } from "./Avatar.js";
+import { AppsIcon, ChevronRightIcon, PlusIcon } from "./Icons.js";
 
 /** Renders a mini-app's monochrome SVG icon via CSS mask so it inherits theme ink with zero script execution. */
 export function MiniAppIcon({ svg, size = 20 }: { svg: string; size?: number }) {
@@ -29,8 +31,8 @@ export function MiniAppIcon({ svg, size = 20 }: { svg: string; size?: number }) 
 }
 
 /**
- * Root pane of the 4th "Apps" section: active items waiting for user action,
- * incoming invites for uninstalled apps, and the list of installed mini-apps.
+ * Root pane of the 4th "Apps" section: uses the same `list-pane` + `list-head`
+ * + grouped `.line` rows grammar as Chats and Settings.
  */
 export function AppsHome({ selected }: { selected: string | "store" | null }) {
   const miniApps = useMiniApps();
@@ -86,18 +88,23 @@ export function AppsHome({ selected }: { selected: string | "store" | null }) {
   };
 
   return (
-    <div className="screen">
-      <header className="screen-head">
-        <div className="screen-title">
-          <span className="screen-name">{t("apps.title")}</span>
-        </div>
-        <Button size="sm" variant={selected === "store" ? "primary" : "default"} onClick={openMiniAppStore}>
-          {t("apps.storeButton")}
-          {updateCount > 0 ? <span className="apps-pill-badge">{updateCount}</span> : null}
-        </Button>
+    <div className="list-pane">
+      <header className="list-head">
+        <h1>{t("apps.title")}</h1>
+        <IconButton
+          label={t("apps.storeTitle")}
+          className={selected === "store" ? "on" : undefined}
+          onClick={openMiniAppStore}
+        >
+          <PlusIcon size={20} />
+        </IconButton>
       </header>
       <div className="screen-scroll">
-        {!supportsPeerData ? <div className="apps-notice-box">{t("apps.mcrsMissing")}</div> : null}
+        {!supportsPeerData ? (
+          <div className="memory-strip warn" role="status">
+            <span className="grow">{t("apps.mcrsMissing")}</span>
+          </div>
+        ) : null}
 
         {waitingItems.length > 0 || pendingEntries.length > 0 ? (
           <Group title={t("apps.waiting")}>
@@ -106,16 +113,18 @@ export function AppsHome({ selected }: { selected: string | "store" | null }) {
               const name = catItem ? pickText(catItem.name, loc) : `App 0x${appId.toString(16)}`;
               const isBusy = busyAppId === appId;
               return (
-                <div key={`pending-${appId}`} className="apps-activity-row">
-                  <span className="apps-icon-tile">
-                    {catItem ? <MiniAppIcon svg={catItem.iconSvg} size={18} /> : "?"}
-                  </span>
-                  <div className="apps-row-body">
-                    <div className="apps-row-title">{name}</div>
-                    <div className="apps-row-sub">
+                <div key={`pending-${appId}`} className="line">
+                  <Avatar
+                    name={catItem ? catItem.id : String(appId)}
+                    size={36}
+                    icon={catItem ? <MiniAppIcon svg={catItem.iconSvg} size={19} /> : "?"}
+                  />
+                  <span className="line-text">
+                    <span className="apps-clip">{name}</span>
+                    <small className="apps-clip">
                       {t("apps.pendingFrom", { peer: last.peerName, count: pkts.length })}
-                    </div>
-                  </div>
+                    </small>
+                  </span>
                   <Button size="sm" variant="primary" disabled={isBusy} onClick={() => void handleInstallPending(appId)}>
                     {isBusy ? t("apps.installing") : t("apps.installAndOpen")}
                   </Button>
@@ -126,58 +135,72 @@ export function AppsHome({ selected }: { selected: string | "store" | null }) {
               <button
                 key={`${entry.pkg.manifest.id}:${activity.id}`}
                 type="button"
-                className="apps-activity-row apps-clickable"
+                className="line line-link"
                 onClick={() => openMiniApp(entry.pkg.manifest.id, activity.id)}
               >
-                <span className="apps-icon-tile">
-                  <MiniAppIcon svg={entry.pkg.iconSvg} size={18} />
+                <Avatar
+                  name={entry.pkg.manifest.id}
+                  size={36}
+                  icon={<MiniAppIcon svg={entry.pkg.iconSvg} size={19} />}
+                />
+                <span className="line-text">
+                  <span className="apps-clip">{activity.title}</span>
+                  <small className="apps-clip">{activity.subtitle}</small>
                 </span>
-                <div className="apps-row-body">
-                  <div className="apps-row-title">{activity.title}</div>
-                  <div className="apps-row-sub">{activity.subtitle}</div>
-                </div>
                 <span className="apps-attention-dot" />
+                <ChevronRightIcon size={14} className="line-chev" />
               </button>
             ))}
           </Group>
         ) : null}
 
-        <Group title={t("apps.installed")}>
+        <Group title={t("apps.installed")} note={installedList.length === 0 ? t("apps.noApps") : undefined}>
+          {installedList.map((entry) => {
+            const m = entry.pkg.manifest;
+            const acts = miniApps.activities[m.id] ?? [];
+            const attn = acts.filter((a) => a.needsAttention).length;
+            const isSelected = selected === m.id;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                className={["line", "line-link", isSelected ? "selected" : ""].filter(Boolean).join(" ")}
+                aria-current={isSelected ? "page" : undefined}
+                onClick={() => openMiniApp(m.id)}
+              >
+                <Avatar name={m.id} size={36} icon={<MiniAppIcon svg={entry.pkg.iconSvg} size={19} />} />
+                <span className="line-text">
+                  <span className="apps-clip">{pickText(m.name, loc)}</span>
+                  <small className="apps-clip">
+                    {acts[0] ? acts[0].subtitle : pickText(m.description, loc)}
+                  </small>
+                </span>
+                {attn > 0 ? <span className="badge">{attn}</span> : null}
+                <ChevronRightIcon size={14} className="line-chev" />
+              </button>
+            );
+          })}
           {installedList.length === 0 ? (
-            <div className="apps-empty">
-              <p className="muted">{t("apps.noApps")}</p>
-              <Button variant="primary" onClick={openMiniAppStore}>
-                {t("apps.openStore")}
-              </Button>
-            </div>
-          ) : (
-            installedList.map((entry) => {
-              const m = entry.pkg.manifest;
-              const acts = miniApps.activities[m.id] ?? [];
-              const attn = acts.filter((a) => a.needsAttention).length;
-              const isSelected = selected === m.id;
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  className={["apps-list-row", isSelected ? "selected" : ""].filter(Boolean).join(" ")}
-                  onClick={() => openMiniApp(m.id)}
-                >
-                  <span className="apps-icon-tile">
-                    <MiniAppIcon svg={entry.pkg.iconSvg} size={18} />
-                  </span>
-                  <div className="apps-row-body">
-                    <div className="apps-row-title">{pickText(m.name, loc)}</div>
-                    <div className="apps-row-sub">
-                      {acts[0] ? acts[0].subtitle : pickText(m.description, loc)}
-                    </div>
-                  </div>
-                  {attn > 0 ? <span className="apps-pill-badge">{attn}</span> : null}
-                </button>
-              );
-            })
-          )}
+            <LinkRow
+              icon={<AppsIcon size={17} />}
+              label={t("apps.openStore")}
+              selected={selected === "store"}
+              onClick={openMiniAppStore}
+            />
+          ) : null}
         </Group>
+
+        {installedList.length > 0 ? (
+          <Group>
+            <LinkRow
+              icon={<AppsIcon size={17} />}
+              label={t("apps.storeTitle")}
+              value={updateCount > 0 ? <span className="badge">{updateCount}</span> : undefined}
+              selected={selected === "store"}
+              onClick={openMiniAppStore}
+            />
+          </Group>
+        ) : null}
       </div>
     </div>
   );

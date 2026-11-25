@@ -257,7 +257,7 @@ export function MiniAppHostView({
         <ScreenHead chrome={chrome}>
           <span className="screen-name">{t("apps.title")}</span>
         </ScreenHead>
-        <div className="apps-empty">
+        <div className="empty">
           <p className="muted">{t("apps.notInstalled")}</p>
           <Button variant="primary" onClick={openMiniAppStore}>
             {t("apps.openInStore")}
@@ -342,10 +342,8 @@ export function MiniAppHostView({
           </div>
         }
       >
-        <span className="screen-name apps-host-title">
-          <MiniAppIcon svg={entry.pkg.iconSvg} size={18} />
-          <span>{appName}</span>
-        </span>
+        <Avatar name={m.id} size={28} icon={<MiniAppIcon svg={entry.pkg.iconSvg} size={15} />} />
+        <span className="screen-name">{appName}</span>
       </ScreenHead>
 
       <iframe

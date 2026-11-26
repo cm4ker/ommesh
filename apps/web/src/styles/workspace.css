@@ -138,6 +138,14 @@
   font-weight: 600;
   line-height: calc(16px * var(--chrome-scale));
 }
+.tab-badge.react {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(16px * var(--chrome-scale));
+  padding: 0;
+  background: var(--danger);
+}
 .tab-dot {
   position: absolute;
   top: 7px;

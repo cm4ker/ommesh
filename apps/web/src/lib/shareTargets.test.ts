@@ -11,6 +11,7 @@ const channel = (index: number, name: string): ConversationSummary => ({
   preview: null,
   lastAt: 0,
   unread: 0,
+  unreadReactions: 0,
   contact: null,
   channel: { index, name, secret: "" } as ChannelRecord,
 });
@@ -22,6 +23,7 @@ const person = (key: string, type: number = AdvType.Chat): ConversationSummary =
   preview: null,
   lastAt: 0,
   unread: 0,
+  unreadReactions: 0,
   contact: { key, type, name: key } as ContactRecord,
   channel: null,
 });

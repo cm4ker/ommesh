@@ -73,6 +73,10 @@
   "notices.until": "Until {time}, then as by default",
   "row.draft": "Draft:",
   "row.quiet": "Quiet so far.",
+  "row.unreadReactions": {
+    "one": "{count} new reaction",
+    "other": "{count} new reactions"
+  },
   "chat.sameName": {
     "other": "{count} nodes named {name}"
   },
@@ -102,6 +106,10 @@
   "chat.latestBelow": {
     "one": "Latest message, {count} new message below",
     "other": "Latest message, {count} new messages below"
+  },
+  "chat.jumpReaction": {
+    "one": "Go to {count} new reaction",
+    "other": "Go to {count} new reactions"
   },
   "chat.toDay": "Go to a day",
   "chat.resetZoom": "Reset text size",

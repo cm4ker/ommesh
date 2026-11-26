@@ -10,7 +10,7 @@
 
 import { useSyncExternalStore } from "react";
 import { MeshSession, type SessionState } from "@meshnet/meshcore";
-import { isHidden, subscribeBlocks } from "./blocked.js";
+import { isHidden, reactionHidden, subscribeBlocks } from "./blocked.js";
 import { IndexedDbStorage } from "./storage.js";
 import { pushTrace } from "./trace.js";
 
@@ -22,9 +22,10 @@ export const session = new MeshSession({
   trace: pushTrace,
 });
 
-// A blocked sender's messages count toward no unread (blocked.ts); the chats are counted again as the list changes.
-session.setHidden(isHidden);
-subscribeBlocks(() => session.setHidden(isHidden));
+// A blocked sender's messages and channel reactions count toward no unread (blocked.ts); recounted as the list changes.
+const reactionIsHidden = (conversation: string, by: string) => conversation.startsWith("ch:") && reactionHidden(by);
+session.setHidden(isHidden, reactionIsHidden);
+subscribeBlocks(() => session.setHidden(isHidden, reactionIsHidden));
 
 /** Parts of the state that change with the traffic on the air and that `useSession` leaves out. */
 const QUIET: ReadonlySet<string> = new Set<keyof SessionState>(["log"]);

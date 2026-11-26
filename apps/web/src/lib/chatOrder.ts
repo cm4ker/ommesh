@@ -72,7 +72,8 @@ const byLatest = (a: Row, b: Row) => {
 /** A channel's "#" is not part of its name for the alphabet: #omsk stands with the O's. */
 const bare = (title: string) => title.replace(/^#+/, "");
 const byName = (a: Row, b: Row) => bare(a.title).localeCompare(bare(b.title), undefined, { sensitivity: "base" }) || byLatest(a, b);
-const byUnread = (a: Row, b: Row) => Number(b.unread > 0) - Number(a.unread > 0) || byLatest(a, b);
+const hasUnread = (r: Row) => r.unread > 0 || r.unreadReactions > 0;
+const byUnread = (a: Row, b: Row) => Number(hasUnread(b)) - Number(hasUnread(a)) || byLatest(a, b);
 
 export function chatComparator(order: ChatOrder): (a: Row, b: Row) => number {
   return order === "name" ? byName : order === "unread" ? byUnread : byLatest;

@@ -341,6 +341,19 @@
   left: 50%;
   transform: translateX(-50%);
 }
+/* Jump to an unread reaction on one of our messages: sits where the down button does, or rises above it while scrolled up. */
+.chat-jump-react {
+  color: var(--danger);
+}
+.chat-jump-react:hover {
+  color: var(--danger);
+}
+.chat-jump-react.raised {
+  transform: translateY(-56px);
+}
+.chat-jump-react.raised.off {
+  transform: translateY(-48px) scale(0.9);
+}
 @media (prefers-reduced-motion: reduce) {
   .chat-jump,
   .chat-jump.off {

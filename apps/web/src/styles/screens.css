@@ -374,6 +374,13 @@ mark {
   flex: none;
   color: var(--text-faint);
 }
+/* Unread reaction heart and unread message count sitting side by side at the end of a chat row. */
+.row-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
 .list-rows.pinned-end {
   border-bottom: 1px solid var(--border-strong);
 }

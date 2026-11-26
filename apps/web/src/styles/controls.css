@@ -302,6 +302,14 @@ textarea.input {
   font-weight: 600;
   flex: none;
 }
+/* An unread reaction to one of our messages: a heart in the danger tint, matching Telegram's mark. */
+.badge.react {
+  background: var(--danger);
+}
+.row-badges .badge.react {
+  width: calc(18px * var(--text-scale));
+  padding: 0;
+}
 
 .spinner {
   display: inline-block;

@@ -16,10 +16,11 @@ import {
   type SessionState,
 } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
-import { isHidden } from "./blocked.js";
+import { isHidden, reactionHidden } from "./blocked.js";
 import { MENTION } from "./composer.js";
 import { shownText } from "./lookalikes.js";
 import { textWithPlaces } from "./place.js";
+import { unreadReactionCount } from "./reactions.js";
 import { replyHead } from "./replySource.js";
 import { plainText } from "./textFormat.js";
 
@@ -32,6 +33,8 @@ export interface ConversationSummary {
   /** Local ms of the last message, or 0 for a channel nobody has spoken on. */
   lastAt: number;
   unread: number;
+  /** Unread reactions to our messages in this chat. */
+  unreadReactions: number;
   contact: ContactRecord | null;
   channel: ChannelRecord | null;
 }
@@ -51,16 +54,23 @@ function preview(message: MessageRecord, kind: ConversationSummary["kind"]): str
   return text;
 }
 
-export function summarize(state: SessionState, hidden: (m: MessageRecord) => boolean = isHidden): ConversationSummary[] {
+export function summarize(
+  state: SessionState,
+  hidden: (m: MessageRecord) => boolean = isHidden,
+  hiddenReaction: (by: string | null) => boolean = reactionHidden,
+): ConversationSummary[] {
   // The one at the bottom of the chat, so the row says what the chat ends with. A blocked sender's
   // are left out, so their posts neither show on the row nor bring the chat up the list; a chat of
   // theirs alone stays, with nothing on its row.
   const last = new Map<string, MessageRecord | null>();
+  const reactions = new Map<string, number>();
   for (const m of state.messages) {
     const prior = last.get(m.conversation);
     if (hidden(m)) {
       if (prior === undefined) last.set(m.conversation, null);
     } else if (!prior || placedAt(m) >= placedAt(prior)) last.set(m.conversation, m);
+    const n = unreadReactionCount(m, hiddenReaction);
+    if (n > 0) reactions.set(m.conversation, (reactions.get(m.conversation) ?? 0) + n);
   }
 
   const rows: ConversationSummary[] = [];
@@ -77,6 +87,7 @@ export function summarize(state: SessionState, hidden: (m: MessageRecord) => boo
       preview: m ? preview(m, "channel") : null,
       lastAt: m ? placedAt(m) : 0,
       unread: state.unread[id] ?? 0,
+      unreadReactions: reactions.get(id) ?? 0,
       contact: null,
       channel,
     });
@@ -94,6 +105,7 @@ export function summarize(state: SessionState, hidden: (m: MessageRecord) => boo
         preview: m ? preview(m, "channel") : null,
         lastAt: m ? placedAt(m) : 0,
         unread: state.unread[id] ?? 0,
+        unreadReactions: reactions.get(id) ?? 0,
         contact: null,
         channel: null,
       });
@@ -106,6 +118,7 @@ export function summarize(state: SessionState, hidden: (m: MessageRecord) => boo
         preview: m ? preview(m, "contact") : null,
         lastAt: m ? placedAt(m) : 0,
         unread: state.unread[id] ?? 0,
+        unreadReactions: reactions.get(id) ?? 0,
         contact,
         channel: null,
       });
@@ -117,6 +130,7 @@ export function summarize(state: SessionState, hidden: (m: MessageRecord) => boo
         preview: m ? preview(m, "prefix") : null,
         lastAt: m ? placedAt(m) : 0,
         unread: state.unread[id] ?? 0,
+        unreadReactions: reactions.get(id) ?? 0,
         contact: null,
         channel: null,
       });

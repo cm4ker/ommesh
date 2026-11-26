@@ -162,8 +162,18 @@ function Peek({ group, at }: { group: ReactionGroup; at: DOMRect }) {
  * tap puts the same one on, or takes ours back; `live` is false while
  * messages are being picked, or where nothing can be sent.
  */
-/** A message's emoji; `reactions` when some are left off (a blocked sender's). */
-export function Reactions({ message, reactions = message.reactions, live }: { message: MessageRecord; reactions?: MessageReaction[] | undefined; live: boolean }) {
+/** A message's emoji; `reactions` when some are left off (a blocked sender's), `fresh` for ones just seen. */
+export function Reactions({
+  message,
+  reactions = message.reactions,
+  live,
+  fresh,
+}: {
+  message: MessageRecord;
+  reactions?: MessageReaction[] | undefined;
+  live: boolean;
+  fresh?: ReadonlySet<string> | undefined;
+}) {
   const groups = groupReactions(reactions);
   const [peek, setPeek] = useState<{ group: ReactionGroup; at: DOMRect } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -223,7 +233,7 @@ export function Reactions({ message, reactions = message.reactions, live }: { me
           </>
         );
         // Ours outlined while it waits for a repeater, filled once one sends it on, dashed if none did.
-        const className = ["react-chip", g.mine ? "mine" : "", g.carried === "waiting" || g.carried === "unheard" ? g.carried : ""].join(" ");
+        const className = ["react-chip", g.mine ? "mine" : "", g.carried === "waiting" || g.carried === "unheard" ? g.carried : "", fresh?.has(g.emoji) ? "fresh" : ""].join(" ");
         const title = g.carried === null ? whoReacted(g) : `${whoReacted(g)}\n${g.carried === "unheard" ? t("chats.react.unheard") : carriedText(g.carried)}`;
         return live ? (
           <button

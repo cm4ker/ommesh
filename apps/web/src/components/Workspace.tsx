@@ -3,6 +3,7 @@ import { useBackLayer, useSectionsBack } from "../lib/back.js";
 import { chatsInOrder, getChatOrder } from "../lib/chatOrder.js";
 import { getPins } from "../lib/chatPins.js";
 import { summarize, totalUnread } from "../lib/conversations.js";
+import { totalUnreadReactions } from "../lib/reactions.js";
 import { beginPairLink, cancelPairLink, pairLink, reconnectNow, useLink } from "../lib/link.js";
 import { useSideways, useWide } from "../lib/layout.js";
 import { back, focusOnMap, getNav, goSection, openConversation, setStack, shownConversation, swapProfile, topOf, useNav, type Nav, type Screen, type Section } from "../lib/nav.js";
@@ -26,7 +27,7 @@ import { ChannelWriters } from "./ChannelWriters.js";
 import { ChatSwitcher } from "./ChatSwitcher.js";
 import { ChatList, NEW_CHAT_EVENT } from "./ChatList.js";
 import { ChatView, FIND_IN_CHAT_EVENT } from "./ChatView.js";
-import { AppsIcon, ChatIcon, NodesIcon, SearchIcon, SettingsIcon } from "./Icons.js";
+import { AppsIcon, ChatIcon, HeartFilledIcon, NodesIcon, SearchIcon, SettingsIcon } from "./Icons.js";
 import { AppsHome } from "./AppsHome.js";
 import { AppsStoreView } from "./AppsStoreView.js";
 import { MiniAppHostView } from "./MiniAppHostView.js";
@@ -181,9 +182,10 @@ function PairPrompt({ open, onDone }: { open: boolean; onDone: () => void }) {
 function useBadges() {
   // Values rather than the state, so the phone's frame, and the screen in it, re-render only when a badge changes.
   const unread = useSelector(totalUnread);
+  const unreadReactions = useSelector(totalUnreadReactions);
   const offline = useSelector((state) => state.status !== "ready");
   const appsBadge = useMiniAppsBadge();
-  return { unread, apps: MINI_APPS_ENABLED ? appsBadge : 0, attention: useMeshAttention(), offline, surveying: useSurveying() };
+  return { unread, unreadReactions, apps: MINI_APPS_ENABLED ? appsBadge : 0, attention: useMeshAttention(), offline, surveying: useSurveying() };
 }
 
 /** Whether the card of the survey running is what the map shows, so the strip that leads to it would only repeat it. */
@@ -320,6 +322,16 @@ function Phone() {
 
 function Badge({ section, badges, away }: { section: Section; badges: ReturnType<typeof useBadges>; away: boolean }) {
   if (section === "chats" && badges.unread > 0) return <span className="tab-badge">{badges.unread}</span>;
+  if (section === "chats" && badges.unreadReactions > 0)
+    return (
+      <span
+        className="tab-badge react"
+        title={t("chats.row.unreadReactions", { count: badges.unreadReactions })}
+        aria-label={t("chats.row.unreadReactions", { count: badges.unreadReactions })}
+      >
+        <HeartFilledIcon size={9} />
+      </span>
+    );
   if (section === "apps" && badges.apps > 0) return <span className="tab-badge">{badges.apps}</span>;
   // A survey running, from any other section: the map is where it is.
   if (section === "mesh" && badges.surveying && away) return <span className="tab-dot rec" title={t("tools.survey.nowTitle")} />;

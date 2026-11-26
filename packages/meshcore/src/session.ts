@@ -200,6 +200,11 @@ export interface MessageReaction {
   /** Local clock, ms. */
   at: number;
   /**
+   * Someone else's reaction to one of our messages that the reader has not
+   * seen yet: shown as a heart on the chat's row and a button inside it.
+   */
+  unread?: boolean;
+  /**
    * Ours on a channel: no repeater was heard sending it on within the window,
    * so nobody may have it. Sending it again takes this back.
    */
@@ -1510,6 +1515,8 @@ export class MeshSession {
   private focused: string | null = null;
   /** Messages the reader keeps out of sight, from a sender they blocked (`setHidden`). */
   private hidden: (message: MessageRecord) => boolean = () => false;
+  /** Reactions from a blocked sender (`setHidden`): they never mark a chat unread. */
+  private hiddenReaction: (conversation: string, by: string) => boolean = () => false;
   private ackTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Reactions to messages not here yet: a mesh does not keep order, and the message may come next. */
   private pendingReactions: PendingReaction[] = [];
@@ -1641,8 +1648,12 @@ export class MeshSession {
    * again counts as read, so unblocking never brings a pile of old messages back
    * as new. The state changes either way, for what is drawn from it to look again.
    */
-  setHidden(hidden: ((message: MessageRecord) => boolean) | null): void {
+  setHidden(
+    hidden: ((message: MessageRecord) => boolean) | null,
+    hiddenReaction?: ((conversation: string, by: string) => boolean) | null,
+  ): void {
     const next = hidden ?? (() => false);
+    const nextReaction = hiddenReaction ?? (() => false);
     const unread: Record<string, number> = {};
     for (const [conversation, count] of Object.entries(this.state.unread)) {
       if (count <= 0) continue;
@@ -1651,8 +1662,22 @@ export class MeshSession {
         .filter((m) => !next(m)).length;
       if (left) unread[conversation] = left;
     }
+    let reactionsChanged = false;
+    const messages = this.state.messages.map((m) => {
+      if (!m.reactions?.some((r) => r.unread && r.by !== null && nextReaction(m.conversation, r.by))) return m;
+      reactionsChanged = true;
+      return {
+        ...m,
+        reactions: m.reactions.map((r) => {
+          if (!r.unread || r.by === null || !nextReaction(m.conversation, r.by)) return r;
+          const { unread: _omit, ...rest } = r;
+          return rest;
+        }),
+      };
+    });
     this.hidden = next;
-    this.set({ unread });
+    this.hiddenReaction = nextReaction;
+    this.set(reactionsChanged ? { unread, messages } : { unread });
   }
 
   /** Every packet the radio receives, as it hands them up; kept out of the state, which would change with each. */
@@ -3188,18 +3213,65 @@ export class MeshSession {
     }
   }
 
-  /** The conversation on screen; its messages arrive read. */
+  /** The conversation on screen; its messages arrive read. Unread reactions clear as the view brings their messages into sight. */
   focus(conversation: string | null): void {
     this.focused = conversation;
-    if (conversation) this.markRead(conversation);
+    if (conversation) this.clearUnread(conversation);
   }
 
-  markRead(conversation: string): void {
+  private clearUnread(conversation: string): void {
     if (!this.state.unread[conversation]) return;
     const unread = { ...this.state.unread };
     delete unread[conversation];
     this.set({ unread });
     this.markLater(conversation);
+  }
+
+  /** Clears a chat's unread messages and unread reactions together. */
+  markRead(conversation: string): void {
+    const hadUnread = !!this.state.unread[conversation];
+    const messages = this.withoutUnreadReactions(conversation);
+    if (!hadUnread && !messages) return;
+    const patch: Partial<SessionState> = {};
+    if (hadUnread) {
+      const unread = { ...this.state.unread };
+      delete unread[conversation];
+      patch.unread = unread;
+    }
+    if (messages) patch.messages = messages;
+    this.set(patch);
+    if (hadUnread) this.markLater(conversation);
+  }
+
+  /**
+   * Marks unread reactions in a chat as seen; with `messageIds`, only those on
+   * the named messages, as they scroll into sight.
+   */
+  markReactionsRead(conversation: string, messageIds?: readonly string[]): void {
+    const messages = this.withoutUnreadReactions(conversation, messageIds);
+    if (messages) this.set({ messages });
+  }
+
+  /** The message list with unread reaction flags stripped from `conversation` (or specific messages), or null if none had any. */
+  private withoutUnreadReactions(conversation: string, messageIds?: readonly string[]): MessageRecord[] | null {
+    const pick = messageIds ? new Set(messageIds) : null;
+    if (pick && pick.size === 0) return null;
+    let changed = false;
+    const messages = this.state.messages.map((m) => {
+      if (m.conversation !== conversation) return m;
+      if (pick && !pick.has(m.id)) return m;
+      if (!m.reactions?.some((r) => r.unread)) return m;
+      changed = true;
+      return {
+        ...m,
+        reactions: m.reactions.map((r) => {
+          if (!r.unread) return r;
+          const { unread: _omit, ...rest } = r;
+          return rest;
+        }),
+      };
+    });
+    return changed ? messages : null;
   }
 
   deleteConversation(conversation: string): void {
@@ -3231,7 +3303,10 @@ export class MeshSession {
       const id = ids.has(m.id) ? newId(this.now()) : m.id;
       ids.add(id);
       seen.add(key);
-      added.push(id === m.id ? m : { ...m, id });
+      const reactions = m.reactions?.some((r) => r.unread)
+        ? m.reactions.map(({ unread: _omit, ...r }) => r)
+        : m.reactions;
+      added.push(id === m.id && reactions === m.reactions ? m : { ...m, id, ...(reactions ? { reactions } : {}) });
     }
 
     const contacts = { ...this.state.contacts };
@@ -3767,14 +3842,26 @@ export class MeshSession {
   /**
    * `replaces`: the sender's other emoji on the message go. An empty emoji only
    * takes theirs back. `watched`: ours waits to hear a repeater send it on.
+   * Someone else's reaction to one of our messages arrives unread unless they
+   * are hidden or only sent the same emoji again.
    */
   private putReaction(id: string, emoji: string, by: string | null, replaces: boolean, watched = false): void {
     const message = this.state.messages.find((m) => m.id === id);
     if (!message) return;
-    let reactions = message.reactions ?? [];
-    if (replaces) reactions = reactions.filter((r) => r.by !== by);
-    else if (reactions.some((r) => r.by === by && r.emoji === emoji)) return;
-    if (emoji) reactions = [...reactions, { emoji, by, at: this.now(), ...(watched ? { relays: 0 } : {}) }];
+    const prior = message.reactions ?? [];
+    let reactions = prior;
+    if (replaces) {
+      if (by !== null && emoji && prior.find((r) => r.by === by)?.emoji === emoji) return;
+      reactions = prior.filter((r) => r.by !== by);
+    } else if (prior.some((r) => r.by === by && r.emoji === emoji)) {
+      return;
+    }
+    if (emoji) {
+      const unread = message.direction === "out" && by !== null && !this.hiddenReaction(message.conversation, by);
+      reactions = [...reactions, { emoji, by, at: this.now(), ...(unread ? { unread: true } : {}), ...(watched ? { relays: 0 } : {}) }];
+    } else if (reactions.length === prior.length) {
+      return;
+    }
     this.patchMessage(id, { reactions });
   }
 

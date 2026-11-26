@@ -1,4 +1,5 @@
-import type { MessageReaction } from "@meshnet/meshcore";
+import type { MessageReaction, MessageRecord, SessionState } from "@meshnet/meshcore";
+import { reactionHidden } from "./blocked.js";
 import { readSetting, writeSetting } from "./storage.js";
 
 /** The emoji a held message offers before any has been chosen, Telegram's first few. */
@@ -109,4 +110,54 @@ export function reactors(reactions: readonly MessageReaction[] | undefined): Rea
 /** The emoji we put on the message, if any. */
 export function ownReaction(reactions: readonly MessageReaction[] | undefined): string | null {
   return reactions?.find((r) => r.by === null)?.emoji ?? null;
+}
+
+/** Visible unread reactions on a message, skipping senders blocked on channels. */
+function visibleUnread(message: MessageRecord, hidden: (by: string | null) => boolean): MessageReaction[] {
+  if (!message.reactions?.length) return [];
+  const channel = message.conversation.startsWith("ch:");
+  return message.reactions.filter((r) => r.unread && (!channel || !hidden(r.by)));
+}
+
+/** How many unread reactions a message carries for the reader. */
+export function unreadReactionCount(message: MessageRecord, hidden: (by: string | null) => boolean = reactionHidden): number {
+  return visibleUnread(message, hidden).length;
+}
+
+/** The emoji currently unread on a message, each once, so the view can highlight them as they become seen. */
+export function unreadEmojis(message: MessageRecord, hidden: (by: string | null) => boolean = reactionHidden): string[] {
+  const out: string[] = [];
+  for (const r of visibleUnread(message, hidden)) {
+    if (!out.includes(r.emoji)) out.push(r.emoji);
+  }
+  return out;
+}
+
+/**
+ * Messages in a chat with unread reactions, the one reacted to most recently first
+ * (falling back to the later message in the chat), and the total unread reaction count.
+ */
+export function unreadReactedMessages(
+  messages: readonly MessageRecord[],
+  hidden: (by: string | null) => boolean = reactionHidden,
+): { ids: string[]; count: number } {
+  const found: { id: string; latest: number; order: number }[] = [];
+  let count = 0;
+  messages.forEach((m, order) => {
+    const unread = visibleUnread(m, hidden);
+    if (!unread.length) return;
+    count += unread.length;
+    let latest = -Infinity;
+    for (const r of unread) if (r.at > latest) latest = r.at;
+    found.push({ id: m.id, latest, order });
+  });
+  found.sort((a, b) => b.latest - a.latest || b.order - a.order);
+  return { ids: found.map((f) => f.id), count };
+}
+
+/** Total unread reactions across every conversation. */
+export function totalUnreadReactions(state: SessionState, hidden: (by: string | null) => boolean = reactionHidden): number {
+  let count = 0;
+  for (const m of state.messages) count += unreadReactionCount(m, hidden);
+  return count;
 }

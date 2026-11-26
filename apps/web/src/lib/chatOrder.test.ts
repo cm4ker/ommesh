@@ -4,12 +4,12 @@ import { chatComparator, chatGroups, chatsInOrder, type ChatOrder } from "./chat
 import type { RadioPins } from "./chatPins.js";
 import type { ConversationSummary } from "./conversations.js";
 
-function channel(index: number, title: string, lastAt: number, unread = 0): ConversationSummary {
-  return { id: `ch:${index}`, kind: "channel", title, preview: null, lastAt, unread, contact: null, channel: { index, name: title, secret: "00" } };
+function channel(index: number, title: string, lastAt: number, unread = 0, unreadReactions = 0): ConversationSummary {
+  return { id: `ch:${index}`, kind: "channel", title, preview: null, lastAt, unread, unreadReactions, contact: null, channel: { index, name: title, secret: "00" } };
 }
 
-function direct(title: string, lastAt: number, unread = 0): ConversationSummary {
-  return { id: `c:${title}`, kind: "contact", title, preview: null, lastAt, unread, contact: null, channel: null };
+function direct(title: string, lastAt: number, unread = 0, unreadReactions = 0): ConversationSummary {
+  return { id: `c:${title}`, kind: "contact", title, preview: null, lastAt, unread, unreadReactions, contact: null, channel: null };
 }
 
 const pub = channel(0, "Public", 900, 14);
@@ -31,8 +31,11 @@ test("name goes by the alphabet, a channel's # aside and case aside", () => {
   assert.deepEqual(sorted("name"), ["bob", "Hunters", "Lena", "#omsk", "Public", "Work"]);
 });
 
-test("unread first, then the newest", () => {
-  assert.deepEqual(titles([direct("a", 100, 2), direct("b", 900), direct("c", 50, 1)].sort(chatComparator("unread"))), ["a", "c", "b"]);
+test("unread first, including unread reactions, then the newest", () => {
+  assert.deepEqual(
+    titles([direct("a", 100, 2), direct("b", 900), direct("c", 50, 1), channel(0, "d", 200, 0, 1)].sort(chatComparator("unread"))),
+    ["d", "a", "c", "b"],
+  );
 });
 
 test("one list unless channels go first", () => {

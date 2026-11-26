@@ -25,7 +25,7 @@ import { SearchField } from "../ui/Field.js";
 import { showMenu, type MenuItem } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
 import { copyName } from "./HeroName.js";
-import { BellIcon, BellOffIcon, CheckIcon, CloseIcon, ChevronDownIcon, CopyIcon, HashIcon, PersonIcon, MoonIcon, PinIcon, PinOffIcon, PlusIcon, SortIcon, StarFilledIcon, TrashIcon } from "./Icons.js";
+import { BellIcon, BellOffIcon, CheckIcon, CloseIcon, ChevronDownIcon, CopyIcon, HashIcon, HeartFilledIcon, PersonIcon, MoonIcon, PinIcon, PinOffIcon, PlusIcon, SortIcon, StarFilledIcon, TrashIcon } from "./Icons.js";
 import { marked } from "./Marked.js";
 import { BlankRadioStrip } from "./BackupPage.js";
 import { NewBuildStrip } from "./NewBuild.js";
@@ -410,7 +410,7 @@ function ChatRow({ row, radio, selected, pinned, onPin, onDelete }: { row: Conve
         target.kind === "channel" || target.kind === "contact"
           ? { label: target.kind === "channel" ? t("chats.row.copyChannelName") : t("common.copyName"), icon: <CopyIcon size={17} />, onSelect: () => copyName(row.title) }
           : null,
-        row.unread > 0 ? { label: t("chats.row.markRead"), icon: <CheckIcon size={17} />, onSelect: () => session.markRead(row.id) } : null,
+        row.unread > 0 || row.unreadReactions > 0 ? { label: t("chats.row.markRead"), icon: <CheckIcon size={17} />, onSelect: () => session.markRead(row.id) } : null,
         ownLevel(getNoticePrefs(), row.id) === "off"
           ? { label: t("chats.row.unmute"), icon: <BellIcon size={17} />, onSelect: () => setChatLevel(row.id, null) }
           : { label: t("chats.row.mute"), icon: <BellOffIcon size={17} />, onSelect: () => openMuteMenu(row.id, at) },
@@ -455,7 +455,22 @@ function ChatRow({ row, radio, selected, pinned, onPin, onDelete }: { row: Conve
                 (row.preview ?? (row.kind === "channel" ? t("chats.row.quiet") : ""))
               )}
             </span>
-            {row.unread > 0 ? <span className="badge">{row.unread}</span> : pinned ? <PinIcon size={14} className="row-pin" aria-label={t("chats.row.pinned")} /> : null}
+            {row.unread > 0 || row.unreadReactions > 0 ? (
+              <span className="row-badges">
+                {row.unreadReactions > 0 ? (
+                  <span
+                    className="badge react"
+                    title={t("chats.row.unreadReactions", { count: row.unreadReactions })}
+                    aria-label={t("chats.row.unreadReactions", { count: row.unreadReactions })}
+                  >
+                    <HeartFilledIcon size={10} />
+                  </span>
+                ) : null}
+                {row.unread > 0 ? <span className="badge">{row.unread}</span> : null}
+              </span>
+            ) : pinned ? (
+              <PinIcon size={14} className="row-pin" aria-label={t("chats.row.pinned")} />
+            ) : null}
           </span>
         </span>
       </button>

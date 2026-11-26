@@ -4,7 +4,7 @@ import type { ConversationSummary } from "./conversations.js";
 import { nextUnread } from "./nextChat.js";
 
 function row(id: string, unread: number): ConversationSummary {
-  return { id, kind: "channel", title: id, preview: null, lastAt: 0, unread, contact: null, channel: null };
+  return { id, kind: "channel", title: id, preview: null, lastAt: 0, unread, unreadReactions: 0, contact: null, channel: null };
 }
 
 const loud = () => false;

@@ -3423,6 +3423,77 @@ test("a reaction the other app put through the relay is ours here, in a channel 
   await session.disconnect();
 });
 
+test("someone else's reaction to our message arrives unread, clears on markReactionsRead or markRead, and ignores blocked senders", async () => {
+  const radio = new ScriptedRadio();
+  let clock = 1_700_000_000_000;
+  const session = new MeshSession({ now: () => (clock += 1000) });
+  await session.connect(radio);
+  const conv = channelConversation(0);
+  const first = await session.sendText(conv, "first");
+  const second = await session.sendText(conv, "second");
+  radio.queue.push(channelFrame(0, "Alice: hers"));
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(10);
+  const hers = session.getState().messages.find((m) => m.text === "hers")!;
+
+  const hear = async (target: Uint8Array, emoji: string, by: string) => {
+    radio.queue.push(channelDataFrame(0, REACTION_DATA_TYPE, encodeReaction({ target, emoji, by, stamp: Math.floor(clock / 1000) })));
+    radio.push(new Uint8Array([Push.MsgWaiting]));
+    await tick(10);
+  };
+  const unreadOf = (id: string) => (session.getState().messages.find((m) => m.id === id)?.reactions ?? []).filter((r) => r.unread).map((r) => [r.emoji, r.by]);
+
+  const firstHash = await messageHash("first", first.timestamp);
+  const secondHash = await messageHash("second", second.timestamp);
+  const hersHash = await messageHash("hers", hers.timestamp);
+
+  // Reactions to our messages arrive unread; reactions to others' messages or our own never do.
+  await hear(firstHash, "👍", "Bob");
+  await hear(secondHash, "🔥", "Carol");
+  await hear(hersHash, "❤️", "Bob");
+  await session.react(first.id, "🙏");
+  assert.deepEqual(unreadOf(first.id), [["👍", "Bob"]]);
+  assert.deepEqual(unreadOf(second.id), [["🔥", "Carol"]]);
+  assert.deepEqual(unreadOf(hers.id), []);
+
+  // Focusing the chat clears unread messages, but leaves unread reactions until their messages are seen.
+  assert.equal(session.getState().unread[conv], 1);
+  session.focus(conv);
+  assert.equal(session.getState().unread[conv], undefined);
+  assert.deepEqual(unreadOf(first.id), [["👍", "Bob"]]);
+  assert.deepEqual(unreadOf(second.id), [["🔥", "Carol"]]);
+
+  // Seeing one message clears only that message's unread reactions; re-sending the same emoji does not bring it back.
+  session.markReactionsRead(conv, [first.id]);
+  assert.deepEqual(unreadOf(first.id), []);
+  assert.deepEqual(unreadOf(second.id), [["🔥", "Carol"]]);
+  await hear(firstHash, "👍", "Bob");
+  assert.deepEqual(unreadOf(first.id), [], "the same emoji heard again stays read");
+
+  // Changing the emoji makes it unread again; taking it back removes the unread flag with the reaction.
+  await hear(firstHash, "❤️", "Bob");
+  assert.deepEqual(unreadOf(first.id), [["❤️", "Bob"]]);
+  await hear(firstHash, "", "Bob");
+  assert.deepEqual(unreadOf(first.id), []);
+
+  // Blocking a sender strips their unread reactions and ignores new ones from them.
+  session.setHidden(null, (c, by) => c.startsWith("ch:") && by === "Carol");
+  assert.deepEqual(unreadOf(second.id), []);
+  await hear(firstHash, "😂", "Carol");
+  assert.deepEqual(unreadOf(first.id), []);
+
+  // Explicit markRead clears unread messages and unread reactions together, including in direct chats.
+  const dm = await session.sendText(contactConversation(bobKey()), "hey");
+  const dmHash = crockford(await messageHash("hey", dm.timestamp));
+  radio.queue.push(new ByteWriter().u8(Resp.ContactMsgRecvV3).i8(20).u8(0).u8(0).bytes(BOB.subarray(0, 6)).u8(1).u8(TxtType.CliData).u32(1_700_000_090).string(`❤️\n${dmHash}`).toBytes());
+  radio.push(new Uint8Array([Push.MsgWaiting]));
+  await tick(10);
+  assert.deepEqual(unreadOf(dm.id), [["❤️", "Bob"]]);
+  session.markRead(contactConversation(bobKey()));
+  assert.deepEqual(unreadOf(dm.id), []);
+  await session.disconnect();
+});
+
 test("an incoming flooded direct message takes the packet addressed from its sender to us", async () => {
   const radio = new ScriptedRadio();
   const session = new MeshSession({ now: () => 1_700_000_000_000 });

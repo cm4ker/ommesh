@@ -1,8 +1,22 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
+import type { MessageRecord, SessionState } from "@meshnet/meshcore";
 import { parseEmojiData, type RawEmoji } from "./emojiData.js";
-import { groupReactions, MOODS, noteReaction, ownReaction, RADIO_REACTIONS, reactors, stripReactions, TOP_REACTIONS } from "./reactions.js";
+import {
+  groupReactions,
+  MOODS,
+  noteReaction,
+  ownReaction,
+  RADIO_REACTIONS,
+  reactors,
+  stripReactions,
+  TOP_REACTIONS,
+  totalUnreadReactions,
+  unreadEmojis,
+  unreadReactedMessages,
+  unreadReactionCount,
+} from "./reactions.js";
 
 test("who put what on a message lists ours first, then the others as they came", () => {
   const reactions = [
@@ -55,4 +69,28 @@ test("reactions gather by emoji in the order they came, ours marked", () => {
   assert.equal(ownReaction(reactions), "👍");
   assert.equal(ownReaction(reactions.filter((r) => r.by !== null)), null);
   assert.deepEqual(groupReactions(undefined), []);
+});
+
+test("unread reactions are counted, ordered by latest reaction, and exclude blocked channel senders", () => {
+  const msg = (id: string, conversation: string, reactions: MessageRecord["reactions"]): MessageRecord =>
+    ({ id, conversation, direction: "out", reactions }) as MessageRecord;
+  const hidden = (by: string | null) => by === "Spam";
+  const a = msg("a", "ch:0", [
+    { emoji: "👍", by: "Alice", at: 10, unread: true },
+    { emoji: "🔥", by: "Spam", at: 50, unread: true },
+  ]);
+  const b = msg("b", "ch:0", [
+    { emoji: "❤️", by: "Bob", at: 30, unread: true },
+    { emoji: "❤️", by: "Carol", at: 40, unread: true },
+    { emoji: "😂", by: "Dan", at: 5 },
+  ]);
+  const dm = msg("c", "c:bob", [{ emoji: "👍", by: "Spam", at: 60, unread: true }]);
+
+  assert.equal(unreadReactionCount(a, hidden), 1);
+  assert.equal(unreadReactionCount(b, hidden), 2);
+  // Blocking by channel name never hides reactions in a direct chat.
+  assert.equal(unreadReactionCount(dm, hidden), 1);
+  assert.deepEqual(unreadEmojis(b, hidden), ["❤️"]);
+  assert.deepEqual(unreadReactedMessages([a, b], hidden), { ids: ["b", "a"], count: 3 });
+  assert.equal(totalUnreadReactions({ messages: [a, b, dm] } as SessionState, hidden), 4);
 });

@@ -30,6 +30,8 @@ import { replyHead, sourceOf, type ReplyHead } from "../lib/replySource.js";
 import { findMessages, messagesFrom, searchTerm, type Sender } from "../lib/messageSearch.js";
 import { openChannel, openConversation, openMessage, openPlace, openProfile, openRadioPage } from "../lib/nav.js";
 import { cameByPull, nextUnreadChat, openNextChat } from "../lib/nextChat.js";
+import { pageOnScreen } from "../lib/notify.js";
+import { unreadEmojis, unreadReactedMessages } from "../lib/reactions.js";
 import { noteShown } from "../lib/recentChats.js";
 import { openRoute } from "../lib/toolActions.js";
 import { usePress } from "../lib/press.js";
@@ -62,6 +64,7 @@ import {
   CloseIcon,
   CopyIcon,
   DoubleCheckIcon,
+  HeartFilledIcon,
   InfoIcon,
   LinkOffIcon,
   LocationIcon,
@@ -196,6 +199,48 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   known.current ??= new Set(all.map((m) => m.id));
   const [below, setBelow] = useState(0);
   const [away, setAway] = useState(false);
+  // Messages with unread reactions on ours, most recently reacted first, and the chips just brought into sight so they pulse once.
+  const unreadReact = useMemo(() => unreadReactedMessages(messages), [messages, blocks]);
+  const unreadReactRef = useRef<{ ids: string[]; messages: MessageRecord[] }>({ ids: [], messages: [] });
+  unreadReactRef.current = { ids: unreadReact.ids, messages };
+  const [freshReacts, setFreshReacts] = useState<ReadonlyMap<string, ReadonlySet<string>>>(() => new Map());
+  const freshTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(
+    () => () => {
+      for (const timer of freshTimers.current) clearTimeout(timer);
+      freshTimers.current = [];
+    },
+    [],
+  );
+  const flashReactions = useCallback((seen: { id: string; emojis: string[] }[]) => {
+    if (!seen.length) return;
+    setFreshReacts((was) => {
+      const next = new Map(was);
+      for (const { id, emojis } of seen) {
+        const set = new Set(next.get(id));
+        for (const e of emojis) set.add(e);
+        next.set(id, set);
+      }
+      return next;
+    });
+    const timer = setTimeout(() => {
+      freshTimers.current = freshTimers.current.filter((t) => t !== timer);
+      setFreshReacts((was) => {
+        const next = new Map(was);
+        for (const { id, emojis } of seen) {
+          const cur = next.get(id);
+          if (!cur) continue;
+          const left = new Set(cur);
+          for (const e of emojis) left.delete(e);
+          if (left.size) next.set(id, left);
+          else next.delete(id);
+        }
+        return next;
+      });
+    }, 1500);
+    freshTimers.current.push(timer);
+  }, []);
+
   // The replies the reader went up from to the message each answers (#32), the latest last. The button
   // down takes them back to these first, one at a time, as Telegram's does, and to the latest after.
   const returns = useRef<string[]>([]);
@@ -223,7 +268,46 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
       return row !== null && row.getBoundingClientRect().top > middle;
     });
     setBack(returns.current.length > 0);
-  }, []);
+    // Unread reactions on messages currently in sight clear once the page is on screen.
+    if (unreadReactRef.current.ids.length > 0 && box.height > 0 && pageOnScreen()) {
+      const top = box.top + rise.current;
+      const bottom = box.bottom;
+      const seenIds: string[] = [];
+      const seenFresh: { id: string; emojis: string[] }[] = [];
+      const byIdNow = new Map(unreadReactRef.current.messages.map((m) => [m.id, m]));
+      for (const id of unreadReactRef.current.ids) {
+        const row = el.querySelector(`[data-id="${CSS.escape(id)}"]`);
+        if (!row) continue;
+        const target = row.querySelector(".msg-reacts") ?? row;
+        const rect = target.getBoundingClientRect();
+        if (rect.height > 0 && rect.bottom > top + 2 && rect.top < bottom - 2) {
+          seenIds.push(id);
+          const m = byIdNow.get(id);
+          const emojis = m ? unreadEmojis(m) : [];
+          if (emojis.length) seenFresh.push({ id, emojis });
+        }
+      }
+      if (seenIds.length) {
+        flashReactions(seenFresh);
+        session.markReactionsRead(conversation, seenIds);
+      }
+    }
+  }, [conversation, flashReactions]);
+
+  // A reaction arriving while its message is already on screen clears at once; one heard in the background clears when the app returns.
+  useLayoutEffect(() => {
+    if (unreadReact.count > 0) measure();
+  }, [unreadReact.count, measure]);
+  useEffect(() => {
+    if (unreadReact.count === 0) return;
+    const onShow = () => measure();
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("focus", onShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onShow);
+      window.removeEventListener("focus", onShow);
+    };
+  }, [unreadReact.count, measure]);
 
   // Pinned to the bottom, as a chat is, unless the reader has scrolled up to read. Opened with
   // messages unread, and the setting on, it starts at the first of them instead.
@@ -326,7 +410,9 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     el?.scrollTo({ top: el.scrollHeight, behavior: still ? "auto" : "smooth" });
   };
 
-  // One message in the middle of the list.
+  // One message in the middle of the list; when jumping to a reaction on a message taller than the screen,
+  // make sure the reactions at its foot are in sight too.
+  const reactJump = useRef<string | null>(null);
   const centre = useCallback(
     (id: string) => {
       const el = scroller.current;
@@ -336,6 +422,12 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
       const at = row.getBoundingClientRect();
       // Risen for the keyboard, the list's top is under the head: the middle is of what is in sight.
       el.scrollTop += at.top - box.top - rise.current - (box.height - rise.current - at.height) / 2;
+      if (reactJump.current === id) {
+        reactJump.current = null;
+        const reacts = row.querySelector(".msg-reacts");
+        const foot = reacts?.getBoundingClientRect();
+        if (foot && foot.bottom > box.bottom - 16) el.scrollTop += foot.bottom - (box.bottom - 16);
+      }
       stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
       measure();
     },
@@ -531,6 +623,16 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     const id = returns.current.pop();
     if (!id) return toLatest();
     centre(id);
+    setFlashing(id);
+  };
+
+  // Heart button: jumps to the message that most recently got an unread reaction, drawing it in if above the page.
+  const toUnreadReaction = () => {
+    const id = unreadReact.ids[0];
+    if (!id) return;
+    reactJump.current = id;
+    closeFind();
+    setFound({ conversation, id, query: "" });
     setFlashing(id);
   };
 
@@ -807,6 +909,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
                   onPick={pick}
                   onBlock={voice && blockIdOf(m) ? blockOrNot : undefined}
                   blocked={sight.shown.has(m.id)}
+                  freshReactions={freshReacts.get(m.id)}
                 />
                 )}
                 {strip ? <HiddenStrip run={strip} open={unfolded.has(strip.id)} onToggle={toggleRun} /> : null}
@@ -818,9 +921,18 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
 
       <NextChat conversation={conversation} scroller={scroller} inner={inner} enabled={!finding && !selecting} />
 
-      {/* Back to the latest, once scrolled away from it, or first to a reply gone up from; the count is of
-          the new ones still below. */}
+      {/* Jump to an off-screen unread reaction (stacked above the down button when scrolled up), and
+          back to the latest once scrolled away from it or first to a reply gone up from. */}
       <div className="chat-jump-slot">
+        <button
+          type="button"
+          className={["chat-jump", "chat-jump-react", away ? "raised" : "", unreadReact.count > 0 && !finding && !selecting ? "" : "off"].join(" ")}
+          aria-label={t("chats.chat.jumpReaction", { count: unreadReact.count })}
+          onClick={toUnreadReaction}
+        >
+          {unreadReact.count > 0 ? <span className="badge react">{unreadReact.count}</span> : null}
+          <HeartFilledIcon size={18} />
+        </button>
         <button
           type="button"
           className={["chat-jump", away ? "" : "off"].join(" ")}
@@ -1171,13 +1283,15 @@ interface MessageProps {
   onBlock: ((message: MessageRecord) => void) | undefined;
   /** A blocked sender's, shown from under its strip. */
   blocked: boolean;
+  /** Unread reaction emoji that just came into sight on this message, pulsed once. */
+  freshReactions: ReadonlySet<string> | undefined;
 }
 
 /**
  * One bubble. Memoised: a message arriving, or an echo of one, changes one record, and the
  * other bubbles of a long conversation have nothing new to draw.
  */
-const Message = memo(function Message({ message, at, lead, showSender, avatar, me, peer, onReply: replyTo, onSource, onWho, contacts, mark, current, faded, flash, selecting, picked, onPick, onBlock, blocked }: MessageProps) {
+const Message = memo(function Message({ message, at, lead, showSender, avatar, me, peer, onReply: replyTo, onSource, onWho, contacts, mark, current, faded, flash, selecting, picked, onPick, onBlock, blocked, freshReactions }: MessageProps) {
   const out = message.direction === "out";
   // The emoji a name blocked on the channel put on it are left off.
   useBlocks();
@@ -1340,7 +1454,7 @@ const Message = memo(function Message({ message, at, lead, showSender, avatar, m
           {reactions?.length ? (
             // The emoji start a line of their own, and the time sits at the end of their last row.
             <span className="msg-foot">
-              <Reactions message={message} reactions={reactions} live={reactable && !selecting} />
+              <Reactions message={message} reactions={reactions} live={reactable && !selecting} fresh={freshReactions} />
               {meta}
             </span>
           ) : (

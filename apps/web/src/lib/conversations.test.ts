@@ -155,6 +155,28 @@ test("a blocked sender's messages neither show on the row nor bring the chat up"
   );
 });
 
+test("a chat's summary counts visible unread reactions on its messages", () => {
+  const m1: MessageRecord = {
+    ...message("ch:0", "first", 1000, "out"),
+    reactions: [
+      { emoji: "👍", by: "Alice", at: 2000, unread: true },
+      { emoji: "🔥", by: "Spam", at: 2500, unread: true },
+    ],
+  };
+  const m2: MessageRecord = {
+    ...message(`c:${BOB}`, "hi", 3000, "out"),
+    reactions: [
+      { emoji: "❤️", by: "Bob", at: 3500, unread: true },
+      { emoji: "😂", by: "Bob", at: 3600 },
+    ],
+  };
+  const rows = summarize(state([m1, m2]), () => false, (by) => by === "Spam");
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  assert.equal(byId.get("ch:0")?.unreadReactions, 1);
+  assert.equal(byId.get(`c:${BOB}`)?.unreadReactions, 1);
+  assert.equal(byId.get("ch:1")?.unreadReactions, 0);
+});
+
 test("a sender the radio did not name gets a row of its own", () => {
   const rows = summarize(state([message("p:aabbccddeeff", "?", 1000)]));
   assert.equal(rows[0]?.kind, "prefix");

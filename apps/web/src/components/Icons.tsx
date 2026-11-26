@@ -138,6 +138,7 @@ export const ChevronRightIcon = icon('<path d="M9 5l7 7-7 7"/>');
 export const SmileIcon = icon('<circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0"/><path d="M9 9.5h.01M15 9.5h.01"/>');
 export const SadIcon = icon('<circle cx="12" cy="12" r="9"/><path d="M8.5 16.5a4.5 4.5 0 0 1 7 0"/><path d="M9 9.5h.01M15 9.5h.01"/>');
 export const HeartIcon = icon('<path d="M12 20s-7.5-4.6-7.5-10.2A4.2 4.2 0 0 1 12 7.3a4.2 4.2 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20z"/>');
+export const HeartFilledIcon = icon('<path fill="currentColor" d="M12 20s-7.5-4.6-7.5-10.2A4.2 4.2 0 0 1 12 7.3a4.2 4.2 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20z"/>');
 export const ThumbUpIcon = icon('<path d="M7 11v9H4v-9z"/><path d="M7 11l4-7c1.5 0 2.5 1 2.5 2.5V10h5a2 2 0 0 1 2 2.3l-1.2 6A2 2 0 0 1 17.3 20H7"/>');
 export const ThumbDownIcon = icon('<path d="M7 13V4H4v9z"/><path d="M7 13l4 7c1.5 0 2.5-1 2.5-2.5V14h5a2 2 0 0 0 2-2.3l-1.2-6A2 2 0 0 0 17.3 4H7"/>');
 export const PartyIcon = icon('<path d="M4 20l4-11 7 7z"/><path d="M13 3.5v2M18.5 5.5L17 7M20.5 11h-2M15.5 9.5c1-1 2.5-1 3.5 0"/>');

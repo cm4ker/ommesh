@@ -122,6 +122,7 @@
   "error.noAnswer": "{what}: нет ответа за {seconds} с",
   "error.linkDropped": "связь прервалась",
   "error.bluetoothOff": "Bluetooth выключен",
+  "error.locationOff": "Геолокация выключена. Без неё Android может не показывать радио по Bluetooth.",
   "error.nothingToPair": "не с чем создавать пару",
   "error.dbOpen": "не удалось открыть базу данных",
   "error.dbAborted": "транзакция базы данных прервана",

@@ -56,7 +56,8 @@ export function ConnectorPanel({
   // Which search last had the chance to ask to turn Bluetooth on (see the search below).
   const asked = useRef<{ connector: Connector; run: number } | null>(null);
 
-  // Read again after each connect: an address or a radio that worked is remembered then.
+  // Read again after each connect, and once a scan has initialised Bluetooth so Android's
+  // system-paired MeshCore radios are included without prompting before the tab is opened.
   useEffect(() => {
     let alive = true;
     connector.remembered().then(
@@ -66,7 +67,7 @@ export function ConnectorPanel({
     return () => {
       alive = false;
     };
-  }, [connector, busy]);
+  }, [connector, busy, scanning]);
 
   useEffect(() => {
     // The search the tab opens with, and one asked for again, may ask to turn Bluetooth on. One
@@ -134,7 +135,7 @@ export function ConnectorPanel({
       connector={connector}
       faint={connector.mode === "scan" && !heard.has(d.id)}
       onClick={() => connect(d)}
-      onForget={connector.forget && kept.has(d.id) ? () => forget(d.id) : undefined}
+      onForget={connector.forget && kept.has(d.id) && !d.bonded ? () => forget(d.id) : undefined}
     />
   );
 

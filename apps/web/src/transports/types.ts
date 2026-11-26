@@ -19,6 +19,8 @@ export interface FoundDevice {
   usb?: { vid: number; pid: number } | undefined;
   /** The public key of the radio last reached this way, in hex, where the connector keeps its own list. */
   radioKey?: string | undefined;
+  /** Held by the phone's own Bluetooth pairing rather than the app's remembered list, so the app cannot forget it. */
+  bonded?: boolean | undefined;
 }
 
 /** What a connector to a serial port offers beyond connecting. */

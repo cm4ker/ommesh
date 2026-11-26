@@ -9,21 +9,109 @@ import { BluetoothOffError, NeedsPairingError, type Connector, type FoundDevice,
 import { nativePlatform } from "../lib/platform.js";
 import { openRelay, relayComesUp, relayHolds, type RelayLink } from "../lib/relay.js";
 import { knownList } from "./known.js";
+import { roleOf } from "./role.js";
 import { t } from "../i18n/index.js";
 
 type BleModule = typeof import("@capacitor-community/bluetooth-le");
+type BleDevice = import("@capacitor-community/bluetooth-le").BleDevice;
 
 let plugin: Promise<BleModule> | null = null;
-let initialised = false;
+let ready: Promise<BleModule> | null = null;
+
+function loadBle(): Promise<BleModule> {
+  plugin ??= import("@capacitor-community/bluetooth-le");
+  return plugin;
+}
+
+async function bleModule(): Promise<BleModule> {
+  if (!ready) {
+    ready = (async () => {
+      const mod = await loadBle();
+      await mod.BleClient.initialize({ androidNeverForLocation: true });
+      return mod;
+    })().catch((error) => {
+      ready = null;
+      throw error;
+    });
+  }
+  return ready;
+}
 
 async function ble(): Promise<BleModule["BleClient"]> {
-  plugin ??= import("@capacitor-community/bluetooth-le");
-  const mod = await plugin;
-  if (!initialised) {
-    await mod.BleClient.initialize({ androidNeverForLocation: true });
-    initialised = true;
+  return (await bleModule()).BleClient;
+}
+
+function nonEmpty(value: string | null | undefined): string | null {
+  const clean = value?.replace(/\0+$/, "");
+  return clean && clean.trim().length > 0 ? clean : null;
+}
+
+const textDecoder = new TextDecoder();
+
+/**
+ * Complete (0x09) or shortened (0x08) local name from raw Android scan record bytes.
+ * The BLE plugin populates `localName` from `BluetoothDevice.getName()` (the OS cache,
+ * often empty before a GATT connection) instead of `ScanRecord.getDeviceName()`, so
+ * reading the raw advertisement recovers the live name from the radio's scan response.
+ */
+export function advertisedName(raw: DataView | undefined): string | null {
+  if (!raw || raw.byteLength === 0) return null;
+  const bytes = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+  let shortened: string | null = null;
+  let offset = 0;
+  while (offset < bytes.length) {
+    const length = bytes[offset]!;
+    if (length === 0) break;
+    const end = offset + 1 + length;
+    if (end > bytes.length) break;
+    const type = bytes[offset + 1]!;
+    if (type === 0x09 || type === 0x08) {
+      const name = nonEmpty(textDecoder.decode(bytes.subarray(offset + 2, end)));
+      if (name) {
+        if (type === 0x09) return name;
+        shortened ??= name;
+      }
+    }
+    offset = end;
   }
-  return mod.BleClient;
+  return shortened;
+}
+
+/**
+ * Picks a display name from a scan result without letting an empty cached string hide
+ * the radio under "phones sharing a radio".
+ */
+export function scanDeviceName(
+  result: { localName?: string; device: { name?: string }; rawAdvertisement?: DataView },
+  previous?: string,
+): string {
+  const live = advertisedName(result.rawAdvertisement);
+  if (live) return live;
+  // On Android the plugin fills `localName` from the cached device name; once a scan
+  // response has named the radio, a later advert without one keeps that name.
+  if (result.rawAdvertisement && previous && previous !== "MeshCore") return previous;
+  return nonEmpty(result.localName) ?? nonEmpty(result.device.name) ?? nonEmpty(previous) ?? "MeshCore";
+}
+
+/** Whether a device from Android's system connected or bonded lists is a MeshCore radio. */
+export function isMeshCoreDevice(device: Pick<BleDevice, "name" | "uuids">): boolean {
+  if (device.uuids?.some((uuid) => uuid.toLowerCase() === BLE.service)) return true;
+  const name = nonEmpty(device.name);
+  return name !== null && roleOf({ id: "", name, detail: null, rssi: null }, "ble") === "radio";
+}
+
+/** Appends system-bonded MeshCore radios after the app's own remembered list without duplicates. */
+export function mergeRemembered(saved: FoundDevice[], bonded: Pick<BleDevice, "deviceId" | "name" | "uuids">[]): FoundDevice[] {
+  const out = [...saved];
+  const ids = new Set(saved.map((device) => device.id.toUpperCase()));
+  for (const device of bonded) {
+    if (!isMeshCoreDevice(device)) continue;
+    const key = device.deviceId.toUpperCase();
+    if (ids.has(key)) continue;
+    ids.add(key);
+    out.push({ id: device.deviceId, name: nonEmpty(device.name) ?? "MeshCore", detail: null, rssi: null, bonded: true });
+  }
+  return out;
 }
 
 /** The phone's prompt to turn Bluetooth on while it is up, to its answer: whether it was turned on. */
@@ -165,19 +253,31 @@ export const capacitorBleConnector: Connector = {
   mode: "scan",
 
   async scan(onFound, signal, options) {
-    const client = await ble();
+    const mod = await bleModule();
+    const client = mod.BleClient;
     await switchedOn(client, options);
+    const platform = nativePlatform();
     const seen = new Map<string, FoundDevice>();
     // A radio already connected to this phone, by another app or by the
-    // system, stops advertising, and iOS leaves it out of every scan. iOS
-    // hands those over by service instead. Android's list is every GATT
-    // connection, watches and headphones included, so it is not asked.
-    const connected = nativePlatform() === "ios" ? await client.getConnectedDevices([BLE.service]).catch(() => []) : [];
+    // system, stops advertising and drops out of every scan. iOS hands those
+    // over by service; Android lists every GATT connection, so non-MeshCore
+    // devices (watches, headphones) are filtered out here.
+    const connected =
+      platform === "ios"
+        ? await client.getConnectedDevices([BLE.service]).catch(() => [])
+        : platform === "android"
+          ? await client.getConnectedDevices([BLE.service]).then((list) => list.filter(isMeshCoreDevice), () => [])
+          : [];
     for (const device of connected) {
-      seen.set(device.deviceId, { id: device.deviceId, name: device.name ?? "MeshCore", detail: t("connect.device.connectedToPhone"), rssi: null });
+      seen.set(device.deviceId, {
+        id: device.deviceId,
+        name: nonEmpty(device.name) ?? "MeshCore",
+        detail: t("connect.device.connectedToPhone"),
+        rssi: null,
+      });
     }
-    if (seen.size > 0) onFound([...seen.values()]);
     if (signal.aborted) return;
+    if (seen.size > 0) onFound([...seen.values()]);
     // Every advert, so the signal follows the radio as the phone moves (one per pass only gave the
     // first). A radio new to the list shows at once; the rest reach the screen once a second.
     let told = 0;
@@ -189,18 +289,23 @@ export const capacitorBleConnector: Connector = {
       onFound([...seen.values()]);
     };
     signal.addEventListener("abort", () => clearTimeout(later), { once: true });
-    await client.requestLEScan({ services: [BLE.service], allowDuplicates: true }, (result) => {
-      const before = seen.get(result.device.deviceId);
-      // Not every advert carries the name: one without keeps the name heard before.
-      seen.set(result.device.deviceId, {
-        id: result.device.deviceId,
-        name: result.localName ?? result.device.name ?? before?.name ?? "MeshCore",
-        detail: null,
-        rssi: result.rssi ?? before?.rssi ?? null,
-      });
-      if (!before || Date.now() - told >= UPDATE_MS) tell();
-      else later ??= setTimeout(tell, UPDATE_MS - (Date.now() - told));
-    });
+    // Interactive scan while the connect screen is open: full duty cycle on Android
+    // catches sparse adverts (e.g. Wi-Fi/BLE coexistence) that BALANCED can miss.
+    await client.requestLEScan(
+      { services: [BLE.service], allowDuplicates: true, scanMode: mod.ScanMode.SCAN_MODE_LOW_LATENCY },
+      (result) => {
+        const before = seen.get(result.device.deviceId);
+        // Not every advert carries the name: one without keeps the name heard before.
+        seen.set(result.device.deviceId, {
+          id: result.device.deviceId,
+          name: scanDeviceName(result, before?.name),
+          detail: null,
+          rssi: result.rssi ?? before?.rssi ?? null,
+        });
+        if (!before || Date.now() - told >= UPDATE_MS) tell();
+        else later ??= setTimeout(tell, UPDATE_MS - (Date.now() - told));
+      },
+    );
     // The plugin scans until told to stop and resolves as soon as it starts.
     // This one stops after a while, and resolves then, so the screen can tell
     // "still looking" from "nothing found".
@@ -211,12 +316,28 @@ export const capacitorBleConnector: Connector = {
         void client.stopLEScan().catch(() => undefined).finally(resolve);
       };
       const timer = setTimeout(stop, SCAN_MS);
-      signal.addEventListener("abort", stop, { once: true });
+      if (signal.aborted) stop();
+      else signal.addEventListener("abort", stop, { once: true });
     });
+    // Android 10–11 (and some OEM ROMs) return zero scan results silently while the
+    // system Location switch is off. Checked only after an empty scan so Android 12+
+    // phones that scan fine with Location off never see a false warning.
+    if (!signal.aborted && seen.size === 0 && platform === "android") {
+      const locationOn = await client.isLocationEnabled().catch(() => true);
+      if (!locationOn) throw new Error(t("connect.error.locationOff"));
+    }
   },
 
   async remembered() {
-    return known.list();
+    const saved = known.list();
+    // Include MeshCore radios paired in Android's own Bluetooth settings once the
+    // plugin has been initialised, so a radio missed by a scan can still be reached
+    // without prompting for Bluetooth permissions before the Bluetooth tab is used.
+    if (nativePlatform() !== "android" || !ready) return saved;
+    const mod = await ready.catch(() => null);
+    if (!mod) return saved;
+    const bonded = await mod.BleClient.getBondedDevices().catch(() => []);
+    return mergeRemembered(saved, bonded);
   },
 
   async forget(id) {
@@ -274,7 +395,9 @@ export const capacitorBleConnector: Connector = {
       await transport.close().catch(() => undefined);
       throw error;
     }
-    known.remember(device);
+    const saved: FoundDevice = { ...device };
+    delete saved.bonded;
+    known.remember(saved);
     return transport;
   },
 };

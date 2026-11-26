@@ -122,6 +122,7 @@
   "error.noAnswer": "{what} did not answer in {seconds} s",
   "error.linkDropped": "link dropped",
   "error.bluetoothOff": "Bluetooth is off",
+  "error.locationOff": "Location is off. Android may hide nearby Bluetooth radios until it is on.",
   "error.nothingToPair": "nothing to pair with",
   "error.dbOpen": "could not open the database",
   "error.dbAborted": "database transaction aborted",

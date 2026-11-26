@@ -4,6 +4,9 @@
 
 ## Unreleased
 
+### Chats
+- Channels and direct chats now show a heart badge in the chat list (and on the Chats tab when no messages are unread) whenever someone reacts to one of your messages, as in Telegram. Inside the chat, a floating heart button jumps straight to the reacted message if it is scrolled out of sight, and the reaction clears automatically once you see it — or when you choose Mark as read from the chat's menu. Sorting by Unread first keeps chats with new reactions on top too.
+
 ### Settings
 - On radios that support a radio console (MeshCore 1.18 and SmartUI), a terminal icon now sits in the Settings header beside the search button so Radio console opens in one tap instead of going through Advanced. On a desktop it lights up while the console is open, without selecting Advanced or adding a back button.
 
@@ -14,6 +17,9 @@
 - In the console, the command suggestions above the field now float in an elevated, bordered card over the log — the same way the mention list floats over a chat — so they stand clearly apart from the terminal lines above them and no longer squash the log while you type.
 - Ommesh now recognizes radios and remote repeaters/rooms running `meshcore-rs` via the `MCRS` v1 extension protocol (`0x70`): shows the `meshcore-rs` version and build in radio info and node details (with an on-demand query for remote nodes), and unlocks `meshcore-rs` CLI suggestions and command reference filtered by each board's capabilities (`fw.*`, `time.*`, `screen`, `led`, `buzzer`, `rtpath`, `dyncr`, `room`, `sensor scan/add/del`, `mqtt.ommesh`, `log`, etc.) while keeping upstream MeshCore radios untouched.
 - In the console, the Up and Down arrow keys now move through the command suggestions above the field instead of clearing what you typed, and Enter or Tab puts the chosen command into the field. Escape clears the choice or hides the suggestions, while Up and Down on an empty field (or with no suggestions up) still step through commands you already sent.
+
+### Fixes
+- On Android, Bluetooth scanning now finds radios more reliably — including radios paired in Android's Bluetooth settings, already held by the system, or whose name Android has not cached yet. Scanning uses low-latency mode, reads the radio's live name straight from its broadcast so it no longer hides under "Phones sharing a radio", and lets you know if Location is off when a scan comes up empty.
 
 ## 0.13.0 — 2026-11-23
 

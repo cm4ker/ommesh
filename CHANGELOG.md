@@ -4,6 +4,9 @@
 
 ## Unreleased
 
+### Settings
+- On radios that support a radio console (MeshCore 1.18 and SmartUI), a terminal icon now sits in the Settings header beside the search button so Radio console opens in one tap instead of going through Advanced. On a desktop it lights up while the console is open, without selecting Advanced or adding a back button.
+
 ### Mesh and the map
 - A ping beside a node's route now shows the signal in dB, not just a word: a direct or single-hop ping prints both ways right under the answer (`out … · back …`, and tapping it opens Line of sight when both ends sit on the map), while a multi-hop ping shows the weakest leg's SNR on the chip and opens every hop's signal on a tap. Full checks and repeater-to-repeater checks show dB on their quality chip as well.
 - In the console, the command suggestions above the field now float in an elevated, bordered card over the log — the same way the mention list floats over a chat — so they stand clearly apart from the terminal lines above them and no longer squash the log while you type.

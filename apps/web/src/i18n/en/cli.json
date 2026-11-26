@@ -80,7 +80,7 @@
   "about.gps.set": "Turns the receiver on or off, takes time from it, sets the position from it.",
   "about.gpsAdvert": "What the node says about its position.",
   "about.guest.password": "The guest password.",
-  "about.guest.password.set": "A new guest password.",
+  "about.guest.password.set": "A new guest password; leave empty to clear.",
   "about.int.thresh": "The interference threshold.",
   "about.int.thresh.set": "A new threshold; 0 turns it off.",
   "about.lat": "The latitude the node announces.",

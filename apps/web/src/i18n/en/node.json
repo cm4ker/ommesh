@@ -367,6 +367,7 @@
   "cli.ownerInfo": "text; | starts a new line",
   "cli.privateKey": "private key, hex; reboot to apply",
   "cli.password": "password",
+  "cli.guestPassword": "up to 15 bytes; leave empty to clear",
   "cli.adcMultiplier": "e.g. 1.0; 0 is the board's own",
   "cli.bridgeDelay": "0–10000 ms",
   "cli.bridgeBaud": "9600 and up",

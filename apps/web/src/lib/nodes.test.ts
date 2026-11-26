@@ -44,14 +44,20 @@ test("writes use the console's own forms", () => {
   assert.equal(writeCommand("tx", "20"), "set tx 20");
   assert.equal(writeCommand("powersaving", "on"), "powersaving on");
   assert.equal(writeCommand("owner.info", "North group\nask on #test"), "set owner.info North group|ask on #test");
+  assert.equal(writeCommand("guest.password", ""), "set guest.password ");
 });
 
 test("values the node would refuse are caught before they go out", () => {
-  const interval = settingGroups(AdvType.Repeater)
-    .flatMap((g) => g.fields)
-    .find((f) => f.name === "advert.interval")!;
+  const fields = settingGroups(AdvType.Repeater).flatMap((g) => g.fields);
+  const interval = fields.find((f) => f.name === "advert.interval")!;
   assert.equal(validate(interval, "0"), null);
   assert.equal(validate(interval, "30"), "At least 60.");
   assert.equal(validate(interval, "300"), "At most 240.");
   assert.equal(validate(interval, "1.5"), "A whole number.");
+
+  const guest = fields.find((f) => f.name === "guest.password")!;
+  assert.equal(validate(guest, ""), null);
+  assert.equal(validate(guest, "123456789012345"), null);
+  assert.equal(validate(guest, "1234567890123456"), "A password is at most 15 bytes.");
+  assert.equal(validate(guest, "кириллица"), "A password is at most 15 bytes.");
 });

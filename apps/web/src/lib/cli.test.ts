@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { McrsCap, type McrsInfo } from "@meshnet/meshcore";
-import { CLI_GROUPS, CLI_GROUP_TITLE, COMMANDS, MCRS_NODE_COMMANDS, MCRS_RADIO_COMMANDS, RADIO_COMMANDS, commandsFor, consoleAssist, stepHistory, stepPick, suggest } from "./cli.js";
+import { CLI_GROUPS, CLI_GROUP_TITLE, COMMANDS, MCRS_NODE_COMMANDS, MCRS_RADIO_COMMANDS, RADIO_COMMANDS, commandsFor, consoleAssist, prepareConsoleCommand, stepHistory, stepPick, suggest } from "./cli.js";
 
 const labels = (draft: string) => suggest(draft).chips.map((c) => c.label);
 
@@ -240,4 +240,17 @@ test("consoleAssist keeps value hints in flow and hides the floating list on blu
   const recalled = consoleAssist({ ...base, recall: 0, draft: "set adc.multiplier 5.720", suggestions: suggest("set adc.multiplier 5.720") });
   assert.equal(recalled.showList, false);
   assert.equal(recalled.showHintBar, false);
+});
+
+test("prepareConsoleCommand keeps the trailing space needed to clear guest.password and owner.info", () => {
+  assert.equal(prepareConsoleCommand(""), "");
+  assert.equal(prepareConsoleCommand("   "), "");
+  assert.equal(prepareConsoleCommand("set guest.password"), "set guest.password ");
+  assert.equal(prepareConsoleCommand("set guest.password "), "set guest.password ");
+  assert.equal(prepareConsoleCommand("  set guest.password   "), "set guest.password ");
+  assert.equal(prepareConsoleCommand("room set guest.password"), "room set guest.password ");
+  assert.equal(prepareConsoleCommand("set guest.password secret"), "set guest.password secret");
+  assert.equal(prepareConsoleCommand("set owner.info"), "set owner.info ");
+  assert.equal(prepareConsoleCommand("set owner.info "), "set owner.info ");
+  assert.equal(prepareConsoleCommand("get radio "), "get radio");
 });

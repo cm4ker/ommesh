@@ -441,6 +441,7 @@
   "cli.ownerInfo": "текст; | начинает новую строку",
   "cli.privateKey": "закрытый ключ, hex; применится после перезагрузки",
   "cli.password": "пароль",
+  "cli.guestPassword": "до 15 байт; пусто — убрать пароль",
   "cli.adcMultiplier": "например 1.0; 0 — собственный множитель платы",
   "cli.bridgeDelay": "0–10000 мс",
   "cli.bridgeBaud": "от 9600",

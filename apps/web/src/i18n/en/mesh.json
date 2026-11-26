@@ -211,6 +211,7 @@
   "settings.af": "Airtime factor",
   "settings.guests": "Guests",
   "settings.guestPassword": "Guest password",
+  "settings.guestPasswordHint": "Leave blank to allow sign-in without a password. Up to 15 bytes.",
   "settings.allowReadOnly": "Let strangers read",
   "settings.allowReadOnlyHint": "A blank password signs in read-only.",
   "settings.power": "Power",

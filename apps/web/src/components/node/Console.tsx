@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { AdvType, isMeshCoreRsVersion, type ConsoleEntry, type ContactRecord } from "@meshnet/meshcore";
 import { t } from "../../i18n/index.js";
-import { consoleAssist, stepHistory, stepPick, suggest, type CliContext } from "../../lib/cli.js";
+import { consoleAssist, prepareConsoleCommand, stepHistory, stepPick, suggest, type CliContext } from "../../lib/cli.js";
 import { dayLabel, timeOfDay } from "../../lib/format.js";
 import { useWide } from "../../lib/layout.js";
 import { usePress } from "../../lib/press.js";
@@ -137,7 +137,7 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
       holdSubmit.current = false;
       return;
     }
-    const command = draft.trim();
+    const command = prepareConsoleCommand(draft);
     if (!command) return;
     if (DANGEROUS.test(command)) setConfirming({ command, typed: true });
     else send(command);
@@ -482,7 +482,7 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
       ) : null}
       <Confirm
         open={confirming !== null}
-        title={t("node.console.sendTitle", { command: confirming?.command ?? "" })}
+        title={t("node.console.sendTitle", { command: confirming?.command.trim() ?? "" })}
         body={
           <p>
             {confirming?.command.startsWith("set radio")

@@ -5,7 +5,7 @@
  * radio. The console keys are the firmware's (`src/helpers/CommonCLI.cpp`).
  */
 
-import { AclRole, AdvType, contactHops, isNodeType, type ContactRecord, type NodeLogin, type SessionState } from "@meshnet/meshcore";
+import { AclRole, AdvType, MAX_PASSWORD_LEN, contactHops, isNodeType, type ContactRecord, type NodeLogin, type SessionState } from "@meshnet/meshcore";
 import { t, type Key } from "../i18n/index.js";
 
 export type NodeTab = "overview" | "neighbours" | "history" | "settings" | "access" | "console";
@@ -166,7 +166,7 @@ const GROUPS: Record<GroupId, SettingGroup> = {
     makeField("mesh.settings.af", { name: "af", kind: "text" }),
   ]),
   access: makeGroup("access", "mesh.settings.guests", [
-    makeField("mesh.settings.guestPassword", { name: "guest.password", kind: "text" }),
+    makeField("mesh.settings.guestPassword", { name: "guest.password", kind: "text" }, "mesh.settings.guestPasswordHint"),
     makeField("mesh.settings.allowReadOnly", { name: "allow.read.only", kind: "toggle" }, "mesh.settings.allowReadOnlyHint"),
   ]),
   power: makeGroup("power", "mesh.settings.power", [makeField("mesh.settings.powersaving", { name: "powersaving", kind: "toggle" }, "mesh.settings.powersavingHint")]),
@@ -244,6 +244,9 @@ export function validate(field: SettingField, value: string): string | null {
   }
   if ((field.name === "lat" || field.name === "lon") && !Number.isFinite(Number(value))) return t("mesh.settings.degrees");
   if (field.name === "name" && !value.trim()) return t("mesh.settings.nameNeeded");
+  if (field.name === "guest.password" && new TextEncoder().encode(value).length > MAX_PASSWORD_LEN) {
+    return t("common.error.passwordTooLong", { max: MAX_PASSWORD_LEN });
+  }
   if (new TextEncoder().encode(writeCommand(field.name, value)).length > 150) return t("mesh.settings.tooLong");
   return null;
 }

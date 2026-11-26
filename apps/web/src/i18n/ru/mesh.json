@@ -211,6 +211,7 @@
   "settings.af": "Коэффициент эфирного времени",
   "settings.guests": "Гости",
   "settings.guestPassword": "Пароль гостя",
+  "settings.guestPasswordHint": "Пустое поле — вход без пароля. До 15 байт.",
   "settings.allowReadOnly": "Разрешить чтение посторонним",
   "settings.allowReadOnlyHint": "С пустым паролем — вход только на чтение.",
   "settings.power": "Питание",

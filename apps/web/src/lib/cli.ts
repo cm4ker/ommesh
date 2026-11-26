@@ -113,7 +113,7 @@ const SETTINGS: Setting[] = [
   { key: "role", group: "where", read: "cli.about.role" },
   // Access.
   { key: "prv.key", group: "access", write: "cli.about.prv.key.set", arg: "node.cli.privateKey" },
-  { key: "guest.password", group: "access", read: "cli.about.guest.password", write: "cli.about.guest.password.set", arg: "node.cli.password" },
+  { key: "guest.password", group: "access", read: "cli.about.guest.password", write: "cli.about.guest.password.set", arg: "node.cli.guestPassword" },
   { key: "allow.read.only", group: "access", read: "cli.about.allow.read.only", write: "cli.about.allow.read.only.set", values: ONOFF },
   // Power and board.
   { key: "adc.multiplier", group: "power", read: "cli.about.adc.multiplier", write: "cli.about.adc.multiplier.set", arg: "node.cli.adcMultiplier" },
@@ -537,4 +537,18 @@ export function stepHistory(current: HistoryWalk, past: readonly string[], key: 
   if (next < 0) return { ...current, index: 0, draft: past[0]! };
   if (next >= past.length) return { index: null, draft: current.saved, saved: "" };
   return { ...current, index: next, draft: past[next]! };
+}
+
+/** Settings whose empty value must be sent with a trailing space (`set <key> `) for upstream firmware. */
+const CLEARABLE_SET = /^(?:room\s+)?set\s+(?:guest\.password|owner\.info)$/;
+
+/**
+ * Prepares a typed console command for the radio: strips surrounding whitespace,
+ * then restores the single trailing space upstream `CommonCLI` requires when
+ * clearing `guest.password` or `owner.info`.
+ */
+export function prepareConsoleCommand(draft: string): string {
+  const trimmed = draft.trim();
+  if (!trimmed) return "";
+  return CLEARABLE_SET.test(trimmed) ? `${trimmed} ` : trimmed;
 }

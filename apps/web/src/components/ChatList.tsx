@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { isFavourite, parseConversation, TxtType, type MessageRecord } from "@meshnet/meshcore";
-import { isHidden } from "../lib/blocked.js";
+import { hasBlocks, isHidden, useBlocks } from "../lib/blocked.js";
 import { chatAccess } from "../lib/channels.js";
 import { CHAT_ORDERS, changed, chatGroups, chatsInOrder, getChatOrder, setChatOrder, useChatOrder } from "../lib/chatOrder.js";
 import { pinnedAt, radioPins, setPinned, usePinStore } from "../lib/chatPins.js";
@@ -10,7 +10,7 @@ import { useDraft } from "../lib/drafts.js";
 import { jumpTo } from "../lib/jump.js";
 import { useSideways } from "../lib/layout.js";
 import { shownText } from "../lib/lookalikes.js";
-import { findMessages, fold, snippet } from "../lib/messageSearch.js";
+import { fold, searchMessagePage, snippet } from "../lib/messageSearch.js";
 import { plainText } from "../lib/textFormat.js";
 import { openConversation, openRadioPage, setStack } from "../lib/nav.js";
 import { getNoticePrefs, ownLevel, setChatLevel, useNoticePrefs } from "../lib/noticePrefs.js";
@@ -38,7 +38,7 @@ import { t } from "../i18n/index.js";
 export const NEW_CHAT_EVENT = "meshnet:new-chat";
 
 /** Results drawn at a time; a common word can be in thousands of messages. */
-const PAGE = 100;
+const PAGE = 40;
 
 // The query outlives the list: Back from a result, or a trip to another tab, finds it as it was left.
 let keptQuery = "";
@@ -57,6 +57,7 @@ export function ChatList({ selected }: { selected: string | null }) {
   const [deleting, setDeleting] = useState<ConversationSummary | null>(null);
   const sideways = useSideways();
   const order = useChatOrder();
+  const blocks = useBlocks();
   const radio = state.self?.key ?? "";
   const pins = radioPins(usePinStore()[radio], state.channels);
 
@@ -67,13 +68,19 @@ export function ChatList({ selected }: { selected: string | null }) {
   }, []);
 
   // A query finds chats by name and, from two letters, messages in every chat (#42).
-  const q = fold(query.trim());
+  // Deferring the search term lets the input paint each keystroke immediately while React
+  // interrupts stale result renders during rapid typing on a phone.
+  const searchQuery = useDeferredValue(query);
+  const q = fold(searchQuery.trim());
   const byId = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
-  const chatsFound = q ? chatsInOrder(rows.filter((r) => fold(r.title).includes(q)), order, pins) : [];
+  const chatsFound = useMemo(() => (q ? chatsInOrder(rows.filter((r) => fold(r.title).includes(q)), order, pins) : []), [q, rows, order, pins]);
   // A blocked sender's are not found: they are not to be read (blocked.ts).
-  const found = useMemo(() => findMessages(state.messages, query).filter((m) => byId.has(m.conversation) && !isHidden(m)), [state.messages, query, byId]);
-  const groups = chatGroups(rows, order, pins);
-  const unread = rows.filter((r) => r.unread > 0).length;
+  const found = useMemo(
+    () => searchMessagePage(state.messages, searchQuery, limit, hasBlocks() ? isHidden : undefined, blocks),
+    [state.messages, searchQuery, limit, blocks],
+  );
+  const groups = useMemo(() => (q ? [] : chatGroups(rows, order, pins)), [q, rows, order, pins]);
+  const unread = useMemo(() => (q ? 0 : rows.filter((r) => r.unread > 0).length), [q, rows]);
   const pin = (row: ConversationSummary, on: boolean) => {
     setPinned(radio, state.channels, row, on);
     toast(on ? t("chats.list.pinned") : t("chats.list.unpinned"));
@@ -122,7 +129,7 @@ export function ChatList({ selected }: { selected: string | null }) {
         <div className="empty muted">{t("chats.list.empty")}</div>
       ) : q ? (
         <div className="list">
-          {chatsFound.length === 0 && found.length === 0 ? <div className="empty muted">{t("chats.list.noMatch")}</div> : null}
+          {chatsFound.length === 0 && found.total === 0 ? <div className="empty muted">{t("chats.list.noMatch")}</div> : null}
           {chatsFound.length ? (
             <>
               <div className="list-group">{t("chats.search.chats")}</div>
@@ -131,17 +138,18 @@ export function ChatList({ selected }: { selected: string | null }) {
               </ul>
             </>
           ) : null}
-          {found.length ? (
+          {found.total ? (
             <>
-              <div className="list-group">{t("chats.search.messages", { count: found.length })}</div>
+              <div className="list-group">{t("chats.search.messages", { count: found.total })}</div>
               <ul className="list-rows" role="list">
-                {found.slice(0, limit).map((m) => (
-                  <FoundRow key={m.id} message={m} row={byId.get(m.conversation)!} query={query} />
-                ))}
+                {found.items.map((m) => {
+                  const row = byId.get(m.conversation);
+                  return row ? <FoundRow key={m.id} message={m} row={row} query={searchQuery} /> : null;
+                })}
               </ul>
-              {found.length > limit ? (
+              {found.total > found.items.length ? (
                 <button type="button" className="list-more" onClick={() => setLimit(limit + PAGE)}>
-                  {t("chats.search.more", { count: Math.min(PAGE, found.length - limit) })}
+                  {t("chats.search.more", { count: Math.min(PAGE, found.total - found.items.length) })}
                 </button>
               ) : null}
             </>
@@ -362,7 +370,7 @@ function openMuteMenu(conversation: string, at: MenuAt): void {
 }
 
 /** A message the search found: its chat, who wrote it, the words around the match. Tapped, the chat opens at it. */
-function FoundRow({ message, row, query }: { message: MessageRecord; row: ConversationSummary; query: string }) {
+const FoundRow = memo(function FoundRow({ message, row, query }: { message: MessageRecord; row: ConversationSummary; query: string }) {
   const who =
     message.direction === "out"
       ? t("chats.search.you")
@@ -395,7 +403,7 @@ function FoundRow({ message, row, query }: { message: MessageRecord; row: Conver
       </button>
     </li>
   );
-}
+});
 
 function ChatRow({ row, radio, selected, pinned, onPin, onDelete }: { row: ConversationSummary; radio: string; selected: boolean; pinned: boolean; onPin: () => void; onDelete: () => void }) {
   const target = parseConversation(row.id);

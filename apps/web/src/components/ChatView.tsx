@@ -1,9 +1,10 @@
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
+import { Fragment, memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 import { AdvType, isConversationType, isDirect, KEYLESS_INDEX, parseConversation, TxtType, type MessageRecord, type SessionState } from "@meshnet/meshcore";
 import { useBackLayer } from "../lib/back.js";
-import { blockIdOf, inSight, isHidden, reactionHidden, toggleBlock, useBlocks, type HiddenRun } from "../lib/blocked.js";
+import { blockIdOf, hasBlocks, inSight, isHidden, reactionHidden, toggleBlock, useBlocks, type HiddenRun } from "../lib/blocked.js";
 import { chatAccess } from "../lib/channels.js";
 import { onAsk, takeAsk } from "../lib/chatAsk.js";
+import { expandNewer, expandOlder, initialWindow, latestWindow, resolveWindow, type ChatWindow } from "../lib/chatWindow.js";
 import { MENTION, quoteHeadLength } from "../lib/composer.js";
 import { PLACE_SOURCE, placeMessage, placeOfMark } from "../lib/place.js";
 import { LINK, linkOf, openLink } from "../lib/webLinks.js";
@@ -27,7 +28,7 @@ import { shownText, useShownText } from "../lib/lookalikes.js";
 import { copiedText, toggled } from "../lib/messagePick.js";
 import { canShareText, shareText } from "../lib/saveFile.js";
 import { replyHead, sourceOf, type ReplyHead } from "../lib/replySource.js";
-import { findMessages, messagesFrom, searchTerm, type Sender } from "../lib/messageSearch.js";
+import { EMPTY_MATCHES, searchInChat, searchTerm, type Sender } from "../lib/messageSearch.js";
 import { openChannel, openConversation, openMessage, openPlace, openProfile, openRadioPage } from "../lib/nav.js";
 import { cameByPull, nextUnreadChat, openNextChat } from "../lib/nextChat.js";
 import { pageOnScreen } from "../lib/notify.js";
@@ -91,17 +92,7 @@ import { t } from "../i18n/index.js";
 /** Asks the open chat for its own search, from Ctrl+F on the desktop. */
 export const FIND_IN_CHAT_EVENT = "meshnet:find-in-chat";
 
-/**
- * How many of the latest messages a chat draws when it opens; older ones come a
- * page at a time as the reader scrolls up. A channel of six hundred messages,
- * drawn whole, took 0.65 s to open on a phone, and every change to the page's
- * style (the keyboard coming up) restyled all of them.
- */
-const FIRST_DRAWN = 60;
-const MORE_DRAWN = 100;
-/** Messages still drawn above one the chat opens or jumps to: the first unread, a match. */
-const ABOVE = 10;
-/** How long the list has to stay still before older messages are drawn in above, ms. */
+/** How long the list has to stay still before older or newer messages are drawn in, ms. */
 const STILL = 150;
 
 export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversation: string; chrome: Chrome; infoOpen?: boolean | undefined; onInfo?: () => void }) {
@@ -113,6 +104,16 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
   const sight = useMemo(() => inSight(all, isHidden, unfolded), [all, blocks, unfolded]);
   const messages = sight.messages;
+  const { byId, indexById } = useMemo(() => {
+    const byId = new Map<string, MessageRecord>();
+    const indexById = new Map<string, number>();
+    for (let i = 0; i < messages.length; i++) {
+      const m = messages[i]!;
+      byId.set(m.id, m);
+      indexById.set(m.id, i);
+    }
+    return { byId, indexById };
+  }, [messages]);
   const stripsAfter = useMemo(() => new Map(sight.runs.map((r) => [r.after, r])), [sight.runs]);
   const toggleRun = useCallback((id: string) => {
     setUnfolded((was) => {
@@ -183,13 +184,19 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     return count > 0 ? { first: heard[heard.length - count]!.id, count, ids: heard.slice(-count).map((m) => m.id) } : null;
   });
 
-  // The first message drawn; null draws them all. The unread are drawn from the start, with a few above.
-  const [from, setFrom] = useState<string | null>(() => {
-    const unreadAt = unread ? messages.findIndex((m) => m.id === unread.first) : -1;
-    const start = Math.min(messages.length - FIRST_DRAWN, unreadAt < 0 ? Infinity : unreadAt - ABOVE);
-    return start > 0 ? messages[start]!.id : null;
-  });
-  const fromAt = from ? Math.max(0, messages.findIndex((m) => m.id === from)) : 0;
+  // Opened from a result of the search over all chats (#42): the message flashes, and the words it
+  // was found by stay marked in it until the chat is left. Read before the window starts so a jump
+  // far up in history opens centered on it instead of mounting every message down to the latest.
+  const [found, setFound] = useState<Jump | null>(() => takeJump(conversation));
+  const [flashing, setFlashing] = useState<string | null>(() => found?.id ?? null);
+
+  // Two-sided slice of messages drawn into the DOM (#137): bottom-anchored (`to === null`) while
+  // reading live, or bounded on both ends after jumping far back in a long history.
+  const [win, setWin] = useState<ChatWindow>(() =>
+    initialWindow(messages, indexById, { jumpId: found?.id, unreadFirstId: unread?.first, openAtUnread: getOpenAtUnread() }),
+  );
+  const atBottomRef = useRef(win.to === null);
+  const scrollToEnd = useRef(false);
 
   // Messages heard that the reader has not yet had on screen, in order: the unread on opening, and
   // those that come while they read further up. Each drops off once it has been in sight.
@@ -258,7 +265,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     if (seen) unseen.current = unseen.current.slice(seen);
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
     setBelow(unseen.current.length);
-    setAway(distance > 160 || (unseen.current.length > 0 && distance > 40));
+    setAway(!atBottomRef.current || distance > 160 || (unseen.current.length > 0 && distance > 40));
     // A reply no longer below the middle of what is in sight, scrolled down to or past, is no way back
     // down any more; at the bottom, none is.
     const box = el.getBoundingClientRect();
@@ -311,7 +318,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
 
   // Pinned to the bottom, as a chat is, unless the reader has scrolled up to read. Opened with
   // messages unread, and the setting on, it starts at the first of them instead.
-  const stuck = useRef(true);
+  const stuck = useRef(found === null);
   const opened = useRef(false);
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -320,8 +327,8 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     opened.current = true;
     if (line) {
       el.scrollTop += line.getBoundingClientRect().top - el.getBoundingClientRect().top - 8;
-      stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    } else if (stuck.current) {
+      stuck.current = atBottomRef.current && el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    } else if (stuck.current && atBottomRef.current) {
       el.scrollTop = el.scrollHeight;
     }
     const added = all.filter((m) => !known.current!.has(m.id));
@@ -341,7 +348,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     const keep = new ResizeObserver(() => {
       const shrunk = height - el.clientHeight;
       height = el.clientHeight;
-      if (stuck.current) el.scrollTop = el.scrollHeight;
+      if (stuck.current && atBottomRef.current) el.scrollTop = el.scrollHeight;
       else el.scrollTop += shrunk;
       keepAnswered();
       measure();
@@ -405,6 +412,14 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     };
   }, [measure]);
   const toLatest = () => {
+    if (!atBottomRef.current) {
+      scrollToEnd.current = true;
+      stuck.current = true;
+      setFound(null);
+      setToDay(null);
+      setWin(latestWindow(messages));
+      return;
+    }
     const el = scroller.current;
     const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     el?.scrollTo({ top: el.scrollHeight, behavior: still ? "auto" : "smooth" });
@@ -428,16 +443,12 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
         const foot = reacts?.getBoundingClientRect();
         if (foot && foot.bottom > box.bottom - 16) el.scrollTop += foot.bottom - (box.bottom - 16);
       }
-      stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      stuck.current = atBottomRef.current && el.scrollHeight - el.scrollTop - el.clientHeight < 40;
       measure();
     },
     [measure],
   );
 
-  // Opened from a result of the search over all chats (#42): the message flashes, and the words it
-  // was found by stay marked in it until the chat is left.
-  const [found, setFound] = useState<Jump | null>(() => takeJump(conversation));
-  const [flashing, setFlashing] = useState<string | null>(() => found?.id ?? null);
   useLayoutEffect(() => {
     if (found) centre(found.id);
   }, [found, centre]);
@@ -457,37 +468,72 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   const [finding, setFinding] = useState(askedFrom !== null);
   const [findFrom, setFindFrom] = useState<Sender | null>(askedFrom);
   const [findQuery, setFindQuery] = useState("");
+  const deferredFindQuery = useDeferredValue(findQuery);
   const [picked, setPicked] = useState<string | null>(null);
   const findField = useRef<HTMLInputElement>(null);
-  const matches = useMemo(() => (!finding ? [] : findFrom !== null ? messagesFrom(messages, findFrom, findQuery) : findMessages(messages, findQuery)), [finding, findFrom, messages, findQuery]);
-  const matched = useMemo(() => new Set(matches.map((m) => m.id)), [matches]);
+  const matches = useMemo(
+    () =>
+      !finding
+        ? EMPTY_MATCHES
+        : searchInChat(
+            state.messages,
+            conversation,
+            messages,
+            deferredFindQuery,
+            findFrom,
+            hasBlocks() ? (m) => isHidden(m) && !sight.shown.has(m.id) : undefined,
+          ),
+    [finding, state.messages, conversation, messages, deferredFindQuery, findFrom, blocks, sight.shown],
+  );
   // Held by its id, so a match arriving meanwhile does not move the one looked at.
-  const index = Math.max(0, matches.findIndex((m) => m.id === picked));
-  const current = matches[index]?.id ?? null;
+  const index = picked ? Math.max(0, matches.indexOf(picked)) : 0;
+  const current = matches.at(index)?.id ?? null;
 
-  // A message jumped to further up than is drawn (a search result, a match) is drawn in, with a few
-  // above, in the same pass that puts it in sight; the chat then keeps drawing from there.
-  const jumpAt = Math.min(...[found?.id, current].map((id) => (id ? messages.findIndex((m) => m.id === id) : -1)).filter((at) => at >= 0));
-  const drawnAt = Math.min(fromAt, Math.max(0, jumpAt - ABOVE));
-  const drawn = drawnAt > 0 ? messages.slice(drawnAt) : messages;
+  // The date over the list while it is scrolled; tapped, the chat's days to go to, the latest first.
+  const floating = useFloatingDay(scroller);
+  const [toDay, setToDay] = useState<{ id: string } | null>(null);
+
+  // A message jumped to outside the drawn slice (a search result, a match, a day) expands a nearby
+  // edge or re-centers the window around it in the same pass, so jumping thousands of messages back
+  // only mounts a few dozen bubbles.
+  const targetId = finding ? current : (toDay?.id ?? found?.id ?? null);
+  const resolved = resolveWindow(messages, indexById, win, targetId);
+  const { start: drawnAt, end: drawnEnd, atBottom: atLiveBottom } = resolved.range;
+  atBottomRef.current = atLiveBottom;
+  const drawn = drawnAt > 0 || drawnEnd < messages.length ? messages.slice(drawnAt, drawnEnd) : messages;
   useLayoutEffect(() => {
-    if (drawnAt < fromAt) setFrom(drawnAt > 0 ? messages[drawnAt]!.id : null);
-  }, [drawnAt, fromAt, messages]);
+    if (resolved.changed) {
+      keepBottom.current = null;
+      setWin(resolved.next);
+    }
+  }, [resolved.changed, resolved.next.from, resolved.next.to]);
   // Older ones drawn in above keep what is on screen where it was: the distance to the bottom stays.
   const keepBottom = useRef<number | null>(null);
   const drawMore = () => {
     const el = scroller.current;
-    if (!el || drawnAt <= 0 || keepBottom.current !== null) return;
-    keepBottom.current = el.scrollHeight - el.scrollTop;
-    setFrom(drawnAt > MORE_DRAWN ? messages[drawnAt - MORE_DRAWN]!.id : null);
+    if (!el || keepBottom.current !== null) return;
+    if (drawnAt > 0 && el.scrollTop < el.clientHeight * 2) {
+      keepBottom.current = el.scrollHeight - el.scrollTop;
+      setWin((cur) => expandOlder(messages, resolved.range, cur));
+    } else if (drawnEnd < messages.length && el.scrollHeight - el.scrollTop - el.clientHeight < el.clientHeight * 2) {
+      setWin((cur) => expandNewer(messages, resolved.range, cur));
+    }
   };
   useLayoutEffect(() => {
     const el = scroller.current;
-    if (!el || keepBottom.current === null) return;
+    if (!el) return;
+    if (scrollToEnd.current && atBottomRef.current) {
+      scrollToEnd.current = false;
+      el.scrollTop = el.scrollHeight;
+      stuck.current = true;
+      measure();
+      return;
+    }
+    if (keepBottom.current === null) return;
     el.scrollTop = el.scrollHeight - keepBottom.current;
     keepBottom.current = null;
-  }, [from]);
-  // Within two screens of the top, the page above is drawn in once the list is still. On an
+  }, [win.from, win.to, measure]);
+  // Within two screens of either edge, the next page is drawn in once the list is still. On an
   // iPhone the list glides on after the finger lifts, and a scroll position set meanwhile is
   // lost or lands where the glide has already left, so the messages on screen jumped.
   const more = useRef(drawMore);
@@ -498,17 +544,17 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     clearTimeout(still.current);
     still.current = window.setTimeout(() => {
       const el = scroller.current;
-      if (el && !touching.current && el.scrollTop < el.clientHeight * 2) more.current();
+      if (!el || touching.current) return;
+      const nearTop = el.scrollTop < el.clientHeight * 2;
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < el.clientHeight * 2;
+      if (nearTop || nearBottom) more.current();
     }, STILL);
   };
   useEffect(() => () => clearTimeout(still.current), []);
 
-  // The date over the list while it is scrolled; tapped, the chat's days to go to, the latest first.
-  const floating = useFloatingDay(scroller);
-  const [toDay, setToDay] = useState<{ id: string } | null>(null);
   const pickDay = () => {
     const days = daysIn(messages, shown);
-    const at = messages.findIndex((m) => m.id === floating.day.current);
+    const at = floating.day.current ? (indexById.get(floating.day.current) ?? -1) : -1;
     showMenu(
       days
         .map((day, i) => ({
@@ -516,8 +562,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
           hint: t("chats.chat.dayCount", { count: day.count }),
           checked: at >= day.from && (i === days.length - 1 || at < days[i + 1]!.from),
           onSelect: () => {
-            // A day further up than is drawn is drawn in, with a few above, as a jump to a message is.
-            if (day.from < drawnAt) setFrom(day.from > ABOVE ? messages[day.from - ABOVE]!.id : null);
+            setFound(null);
             setToDay({ id: day.id });
           },
         }))
@@ -531,12 +576,12 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     const line = toDay ? el?.querySelector(`[data-id="${CSS.escape(toDay.id)}"] > .day`) : null;
     if (!el || !line) return;
     el.scrollTop += line.getBoundingClientRect().top - floating.restAt();
-    stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    stuck.current = atBottomRef.current && el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     measure();
   }, [toDay]);
 
   const move = (by: number) => {
-    const next = matches[index + by];
+    const next = matches.at(index + by);
     if (next) setPicked(next.id);
   };
   const closeFind = useCallback(() => {
@@ -547,6 +592,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   }, []);
   const openFind = useCallback(() => {
     setFound(null);
+    setToDay(null);
     setFinding(true);
     findField.current?.focus();
     findField.current?.select();
@@ -566,6 +612,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
         if (ask.conversation !== conversation || ask.kind !== "from") return;
         takeAsk(conversation, "from");
         setFound(null);
+        setToDay(null);
         setFindQuery("");
         setPicked(null);
         setFindFrom({ name: ask.name, mine: ask.mine ?? false });
@@ -580,6 +627,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
         if (jump.conversation !== conversation) return;
         takeJump(conversation);
         closeFind();
+        setToDay(null);
         setFound(jump);
         setFlashing(jump.id);
       }),
@@ -597,6 +645,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
       if (!source) return;
       const lookThrough = (name: string, mine: boolean, id: string | null) => {
         setFound(null);
+        setToDay(null);
         setFindQuery("");
         setFindFrom({ name, mine });
         setPicked(id);
@@ -606,6 +655,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
       if (source.kind === "found") {
         leave();
         closeFind();
+        setToDay(null);
         setFound({ conversation, id: source.id, query: "" });
         setFlashing(source.id);
       } else if (source.kind === "guess") {
@@ -622,16 +672,24 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   const down = () => {
     const id = returns.current.pop();
     if (!id) return toLatest();
-    centre(id);
-    setFlashing(id);
+    const row = scroller.current?.querySelector(`[data-id="${CSS.escape(id)}"]`);
+    if (row) {
+      centre(id);
+      setFlashing(id);
+    } else {
+      setToDay(null);
+      setFound({ conversation, id, query: "" });
+      setFlashing(id);
+    }
   };
 
-  // Heart button: jumps to the message that most recently got an unread reaction, drawing it in if above the page.
+  // Heart button: jumps to the message that most recently got an unread reaction, drawing it in if outside the window.
   const toUnreadReaction = () => {
     const id = unreadReact.ids[0];
     if (!id) return;
     reactJump.current = id;
     closeFind();
+    setToDay(null);
     setFound({ conversation, id, query: "" });
     setFlashing(id);
   };
@@ -640,7 +698,6 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
   const wide = useWide();
   const [chosen, setChosen] = useState<string[]>([]);
   useEffect(() => setChosen([]), [conversation]);
-  const byId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
   // One deleted or gone meanwhile is no longer picked.
   const pickedIds = useMemo(() => chosen.filter((id) => byId.has(id)), [chosen, byId]);
   const pickedSet = useMemo(() => new Set(pickedIds), [pickedIds]);
@@ -727,7 +784,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
     scroller,
     inner,
     (id) => {
-      const message = messages.find((m) => m.id === id);
+      const message = byId.get(id);
       if (message) answer(message);
     },
     pickingNow,
@@ -845,7 +902,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
         ref={scroller}
         onScroll={(e) => {
           const el = e.currentTarget;
-          stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          stuck.current = atBottomRef.current && el.scrollHeight - el.scrollTop - el.clientHeight < 40;
           measure();
           drawWhenStill();
         }}
@@ -900,9 +957,9 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
                   onSource={toSource}
                   onWho={voice ? who : undefined}
                   contacts={m.direction === "out" ? state.contacts : undefined}
-                  mark={finding ? (matched.has(m.id) ? findQuery : undefined) : found?.id === m.id ? found.query : undefined}
+                  mark={finding ? (matches.has(m) ? deferredFindQuery : undefined) : found?.id === m.id ? found.query : undefined}
                   current={m.id === current}
-                  faded={(finding && findFrom !== null && !matched.has(m.id)) || sight.shown.has(m.id)}
+                  faded={(finding && findFrom !== null && !matches.has(m)) || sight.shown.has(m.id)}
                   flash={m.id === flashing}
                   selecting={selecting}
                   picked={pickedSet.has(m.id)}
@@ -919,7 +976,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
         </div>
       </div>
 
-      <NextChat conversation={conversation} scroller={scroller} inner={inner} enabled={!finding && !selecting} />
+      <NextChat conversation={conversation} scroller={scroller} inner={inner} enabled={!finding && !selecting && atLiveBottom} />
 
       {/* Jump to an off-screen unread reaction (stacked above the down button when scrolled up), and
           back to the latest once scrolled away from it or first to a reply gone up from. */}
@@ -948,7 +1005,7 @@ export function ChatView({ conversation, chrome, infoOpen, onInfo }: { conversat
       {finding ? (
         <footer className="chat-find-bar">
           <span className="chat-find-count muted" aria-live="polite">
-            {searchTerm(findQuery) === null && findFrom === null ? "" : matches.length ? t("chats.find.count", { n: index + 1, count: matches.length }) : t("chats.find.none")}
+            {searchTerm(deferredFindQuery) === null && findFrom === null ? "" : matches.length ? t("chats.find.count", { n: index + 1, count: matches.length }) : t("chats.find.none")}
           </span>
           {/* Kept from taking the focus, so the keyboard stays up for another word. */}
           <IconButton label={t("chats.find.older")} disabled={index >= matches.length - 1} onPointerDown={(e) => e.preventDefault()} onClick={() => move(1)}>

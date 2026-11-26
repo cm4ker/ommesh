@@ -11,6 +11,7 @@
 import { useSyncExternalStore } from "react";
 import { MeshSession, type SessionState } from "@meshnet/meshcore";
 import { isHidden, reactionHidden, subscribeBlocks } from "./blocked.js";
+import { warmMessageIndex } from "./messageSearch.js";
 import { IndexedDbStorage } from "./storage.js";
 import { pushTrace } from "./trace.js";
 
@@ -50,7 +51,11 @@ function show(): void {
   if (next === shown) return;
   const loud = (Object.keys(next) as (keyof SessionState)[]).some((key) => !QUIET.has(key) && next[key] !== shown[key]);
   if (!loud) return;
+  const messagesChanged = next.messages !== shown.messages;
+  const wasSyncing = shown.syncing;
   shown = next;
+  // Warm the search index in idle slices once history loads or settles, so the first search never stalls.
+  if (!next.syncing && (messagesChanged || wasSyncing)) warmMessageIndex(next.messages);
   for (const listener of shownListeners) listener();
 }
 

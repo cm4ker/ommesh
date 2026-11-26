@@ -187,6 +187,11 @@ export function shownIn(messages: readonly MessageRecord[]): Map<string, Shown> 
   // one fetched late shows when the batch came, and the rest of the batch goes by its stamps.
   let latest: number | null = null;
   let lastDay = -Infinity;
+  // Consecutive messages usually fall on the same local calendar day, so caching that day's
+  // exact midnight bounds avoids allocating a Date object on every message of a long history.
+  let cachedStart = Infinity;
+  let cachedEnd = -Infinity;
+  let cachedDay = -Infinity;
   for (const m of messages) {
     let at = m.sentAt ?? m.timestamp;
     let clockOff = false;
@@ -197,7 +202,19 @@ export function shownIn(messages: readonly MessageRecord[]): Map<string, Shown> 
     }
     if (!clockOff) latest = Math.max(latest ?? at, at);
     // A stamp a little behind the one above it stays under that day, rather than bringing yesterday back after midnight.
-    const day = dayNumber(at);
+    let day: number;
+    if (at >= cachedStart && at < cachedEnd) {
+      day = cachedDay;
+    } else {
+      const date = new Date(at * 1000);
+      const y = date.getFullYear();
+      const mo = date.getMonth();
+      const d = date.getDate();
+      day = y * 512 + mo * 32 + d;
+      cachedDay = day;
+      cachedStart = new Date(y, mo, d).getTime() / 1000;
+      cachedEnd = new Date(y, mo, d + 1).getTime() / 1000;
+    }
     out.set(m.id, { at, clockOff, newDay: day > lastDay });
     lastDay = Math.max(lastDay, day);
   }
@@ -226,12 +243,6 @@ export function daysIn(messages: readonly MessageRecord[], shown: ReadonlyMap<st
     out.at(-1)!.count++;
   });
   return out;
-}
-
-/** The local calendar day of a time, as a number that grows with the date. */
-function dayNumber(unixSeconds: number): number {
-  const date = new Date(unixSeconds * 1000);
-  return date.getFullYear() * 512 + date.getMonth() * 32 + date.getDate();
 }
 
 /** A channel chat's name when its slot holds no channel: its number, or the chat of messages without a key. */

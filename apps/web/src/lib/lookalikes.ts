@@ -100,11 +100,7 @@ for (const set of [CURSIVE, NEAR, EXACT]) for (const [cyrillic, latin] of Object
 // where it did, and a formula's x is an x.
 const KEEP = new RegExp(`${MENTION.source}|(?:[Hh]ttps?:\\/\\/|[Ww]ww\\.)\\S+|${FORMULA.source}`, "g");
 const WORD = /[\p{L}\p{N}]+/gu;
-const CYRILLIC = /\p{Script=Cyrillic}/u;
-const LATIN = /[A-Za-z]/;
 const VOWEL = /[аеёиоуыэюяіaeiouyАЕЁИОУЫЭЮЯІAEIOUY]/;
-// What a sentence starts after: its end, a line's start, a quote's ">", an opening quote or bracket.
-const OPENING = /(?:^|[.!?…\n>«"(])[ \t]*$/;
 
 interface Word {
   start: number;
@@ -117,7 +113,34 @@ interface Word {
 
 // A word whose Cyrillic letters all have exact twins may as well be Latin typed with a lookalike,
 // as "Рin" is with a Cyrillic Р.
-const russian = (word: string) => Array.from(word).some((c) => CYRILLIC.test(c) && !(c in EXACT));
+function isCyrillicCode(code: number): boolean {
+  return (code >= 0x0400 && code <= 0x052f) || (code >= 0x1c80 && code <= 0x1c8f) || (code >= 0x2de0 && code <= 0x2dff) || (code >= 0xa640 && code <= 0xa69f);
+}
+
+function isLatinCode(code: number): boolean {
+  return (code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a);
+}
+
+function isOpening(text: string, start: number): boolean {
+  let i = start - 1;
+  while (i >= 0) {
+    const code = text.charCodeAt(i);
+    if (code === 0x20 || code === 0x09) {
+      i--;
+      continue;
+    }
+    return code === 0x2e || code === 0x21 || code === 0x3f || code === 0x2026 || code === 0x0a || code === 0x3e || code === 0xab || code === 0x22 || code === 0x28;
+  }
+  return true;
+}
+
+function russian(word: string): boolean {
+  for (let i = 0; i < word.length; i++) {
+    const code = word.charCodeAt(i);
+    if (isCyrillicCode(code) && !(word[i]! in EXACT)) return true;
+  }
+  return false;
+}
 
 /**
  * The text with the Latin twins of Cyrillic letters read back as Cyrillic, letter for letter, so a
@@ -126,22 +149,48 @@ const russian = (word: string) => Array.from(word).some((c) => CYRILLIC.test(c) 
  * alone, as "mpu" for "три", is read back only next to such a word: on its own it may be English.
  */
 export function asCyrillic(text: string): string {
-  if (!CYRILLIC.test(text)) return text;
+  // Fast exit: nothing changes without both a Cyrillic letter and a Latin letter or the digit 3.
+  let hasCyrillic = false;
+  let hasTwin = false;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (isLatinCode(code) || code === 0x33) hasTwin = true;
+    else if (code >= 0x0400 && isCyrillicCode(code)) hasCyrillic = true;
+    if (hasCyrillic && hasTwin) break;
+  }
+  if (!hasCyrillic || !hasTwin) return text;
+
   // The words, with a gap where a mention or an address stands between them.
   const words: (Word | null)[] = [];
   let at = 0;
   const take = (end: number) => {
-    const part = text.slice(at, end);
+    const part = at === 0 && end === text.length ? text : text.slice(at, end);
     for (const m of part.matchAll(WORD)) {
+      const w = m[0];
       const start = at + (m.index ?? 0);
-      const cyrillic = russian(m[0]);
-      words.push({ start, text: m[0], back: readBack(m[0], cyrillic, OPENING.test(text.slice(0, start))), cyrillic });
+      const cyrillic = russian(w);
+      let wordHasTwin = false;
+      for (let i = 0; i < w.length; i++) {
+        const code = w.charCodeAt(i);
+        if (isLatinCode(code) || code === 0x33) {
+          wordHasTwin = true;
+          break;
+        }
+      }
+      words.push({
+        start,
+        text: w,
+        back: wordHasTwin ? readBack(w, cyrillic, isOpening(text, start)) : w,
+        cyrillic,
+      });
     }
   };
-  for (const keep of text.matchAll(KEEP)) {
-    take(keep.index ?? 0);
-    words.push(null);
-    at = (keep.index ?? 0) + keep[0].length;
+  if (text.includes("@[") || text.includes("://") || text.includes("$$") || text.includes("ww.") || text.includes("WW.")) {
+    for (const keep of text.matchAll(KEEP)) {
+      take(keep.index ?? 0);
+      words.push(null);
+      at = (keep.index ?? 0) + keep[0].length;
+    }
   }
   take(text.length);
 
@@ -172,22 +221,62 @@ export function asCyrillic(text: string): string {
 
 /** A word with its twins read back, or null when a Latin letter in it is no twin. */
 function readBack(word: string, cyrillic: boolean, opening: boolean): string | null {
-  const chars = Array.from(word);
-  const letters = chars.filter((c) => !/\d/.test(c));
+  let hasDigit = false;
+  let hasThree = false;
+  let hasB = false;
+  let hasI = false;
+  let hasMnu = false;
+  let hasNonBLetter = false;
+  let allCapitals = true;
+  let letterCount = 0;
+
+  for (let i = 0; i < word.length; i++) {
+    const code = word.charCodeAt(i);
+    if (code >= 0x30 && code <= 0x39) {
+      hasDigit = true;
+      if (code === 0x33) hasThree = true;
+      continue;
+    }
+    letterCount++;
+    const c = word[i]!;
+    if (c === "b") {
+      hasB = true;
+    } else {
+      hasNonBLetter = true;
+      if (allCapitals && c !== c.toUpperCase()) allCapitals = false;
+      if (c === "i") hasI = true;
+      else if (c === "m" || c === "n" || c === "u") hasMnu = true;
+    }
+  }
+
   // Ь goes out as b only among capitals, as in ДРУЗbЯ; a b among small letters, or on its own, is a b.
-  const capitals = letters.some((c) => c !== "b") && letters.every((c) => c === "b" || c === c.toUpperCase());
+  const capitals = hasNonBLetter && allCapitals;
+  const chars = hasThree ? Array.from(word) : null;
   if (!cyrillic) {
     // Without a Cyrillic letter, a word with a digit is a name or a number, as T114 and 3A are,
     // unless it starts with a 3 that reads as З. An i beside m, n or u is English: Russian has no і.
-    if (letters.length === 0 || chars.some((c, i) => /\d/.test(c) && (i > 0 || !threeIsZe(chars, 0, capitals, opening)))) return null;
-    if (letters.includes("i") && letters.some((c) => c === "m" || c === "n" || c === "u")) return null;
+    if (letterCount === 0) return null;
+    if (hasDigit) {
+      for (let i = 0; i < word.length; i++) {
+        const code = word.charCodeAt(i);
+        if (code >= 0x30 && code <= 0x39) {
+          if (i > 0 || !hasThree || !threeIsZe(chars!, 0, capitals, opening)) return null;
+        }
+      }
+    }
+    if (hasI && hasMnu) return null;
   }
+
   let out = "";
-  for (const [i, c] of chars.entries()) {
-    if (c === "3") out += threeIsZe(chars, i, capitals, opening) ? "З" : c;
-    else if (!LATIN.test(c)) out += c;
-    else {
-      const back = c === "b" && !capitals ? undefined : BACK[c];
+  for (let i = 0; i < word.length; i++) {
+    const code = word.charCodeAt(i);
+    if (code === 0x33) {
+      out += threeIsZe(chars!, i, capitals, opening) ? "З" : "3";
+    } else if (!isLatinCode(code)) {
+      out += word[i]!;
+    } else {
+      const c = word[i]!;
+      const back = hasB && c === "b" && !capitals ? undefined : BACK[c];
       if (back === undefined) return null;
       out += back;
     }

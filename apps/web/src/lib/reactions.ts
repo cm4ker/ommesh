@@ -121,7 +121,15 @@ function visibleUnread(message: MessageRecord, hidden: (by: string | null) => bo
 
 /** How many unread reactions a message carries for the reader. */
 export function unreadReactionCount(message: MessageRecord, hidden: (by: string | null) => boolean = reactionHidden): number {
-  return visibleUnread(message, hidden).length;
+  const list = message.reactions;
+  if (!list?.length) return 0;
+  const channel = message.conversation.startsWith("ch:");
+  let count = 0;
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i]!;
+    if (r.unread && (!channel || !hidden(r.by))) count++;
+  }
+  return count;
 }
 
 /** The emoji currently unread on a message, each once, so the view can highlight them as they become seen. */

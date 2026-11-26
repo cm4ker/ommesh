@@ -13,7 +13,7 @@
  */
 
 import { useSyncExternalStore } from "react";
-import { parseConversation, TxtType, type MessageRecord } from "@meshnet/meshcore";
+import { TxtType, type MessageRecord } from "@meshnet/meshcore";
 import { readSetting, writeSetting } from "./storage.js";
 import { toast } from "./toast.js";
 import { t } from "../i18n/index.js";
@@ -30,6 +30,7 @@ export type Blocks = Record<string, Block>;
 
 const KEY = "meshnet.blocked";
 let blocks: Blocks = readSetting<Blocks>(KEY, {});
+let blockCount = Object.keys(blocks).length;
 const listeners = new Set<() => void>();
 
 // The few Cyrillic letters drawn just like a Latin one, as small letters: "Ольга" in Latin O and a
@@ -43,23 +44,29 @@ export function nameKey(name: string): string {
   return out;
 }
 
+/** Whether anyone is blocked at all; lets callers skip per-message checks when the list is empty. */
+export function hasBlocks(): boolean {
+  return blockCount > 0;
+}
+
 /** The block that would hide a message's sender: their name on a channel, their key in a room; null for ours and a person's. */
 export function blockIdOf(m: MessageRecord): string | null {
   if (m.direction !== "in") return null;
-  if (parseConversation(m.conversation).kind === "channel") return m.sender ? `n:${nameKey(m.sender)}` : null;
+  if (m.conversation.startsWith("ch:")) return m.sender ? `n:${nameKey(m.sender)}` : null;
   // Only a room's post is signed by its author.
   return m.txtType === TxtType.SignedPlain && m.senderPrefix ? `k:${m.senderPrefix}` : null;
 }
 
 /** Whether a message is from someone blocked. */
 export function isHidden(m: MessageRecord): boolean {
+  if (blockCount === 0 || m.direction !== "in") return false;
   const id = blockIdOf(m);
   return id !== null && id in blocks;
 }
 
 /** Whether a reaction on a channel is from a name blocked there. */
 export function reactionHidden(by: string | null): boolean {
-  return by !== null && `n:${nameKey(by)}` in blocks;
+  return blockCount > 0 && by !== null && `n:${nameKey(by)}` in blocks;
 }
 
 export function getBlocks(): Blocks {
@@ -73,6 +80,7 @@ export function setBlock(id: string, block: Block | null): void {
   if (block) next[id] = block;
   else delete next[id];
   blocks = next;
+  blockCount = Object.keys(blocks).length;
   writeSetting(KEY, blocks);
   for (const listener of listeners) listener();
 }

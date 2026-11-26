@@ -7,6 +7,7 @@ import { battery, batteryPercent, dayLabel, lowCharge, ownBatteryMv } from "../l
 import { disconnect, useLink } from "../lib/link.js";
 import { useLookalikePrefs } from "../lib/lookalikes.js";
 import { openRadioPage, type RadioPage } from "../lib/nav.js";
+import { useOwnConsole } from "../lib/ownConsole.js";
 import { useWide } from "../lib/layout.js";
 import { findSettings, getSettingsFind, openSetting, setSettingsFind, subscribeSettingsFind } from "../lib/settingsSearch.js";
 import { canHover } from "../lib/platform.js";
@@ -30,7 +31,7 @@ import { Group, LinkRow } from "../ui/List.js";
 import { showMenu } from "../ui/Menu.js";
 import { Avatar } from "./Avatar.js";
 import { MovedStrip } from "./BackupPage.js";
-import { AirIcon, AlertIcon, AttachIcon, BellIcon, FileIcon, GaugeIcon, InfoIcon, LinkIcon, LogIcon, PaletteIcon, PersonIcon, PowerIcon, RadioIcon, RefreshIcon, SearchIcon, ShieldIcon, SlidersIcon, TextIcon, UsersIcon, WavesIcon } from "./Icons.js";
+import { AirIcon, AlertIcon, AttachIcon, BellIcon, FileIcon, GaugeIcon, InfoIcon, LinkIcon, LogIcon, PaletteIcon, PersonIcon, PowerIcon, RadioIcon, RefreshIcon, SearchIcon, ShieldIcon, SlidersIcon, TerminalIcon, TextIcon, UsersIcon, WavesIcon } from "./Icons.js";
 import { presetName, radioTitle } from "./RadioPages.js";
 import { readingsSummary } from "./Readings.js";
 import { SettingsResults, useSettingContext } from "./SettingsFind.js";
@@ -51,9 +52,10 @@ export function advertise(at: { x: number; y: number } | null = null): void {
  * The radio section's root: this radio's state and the two things done most
  * with it, then one row per topic, each with what it is set to now.
  */
-export function RadioHome({ selected }: { selected: RadioPage | null }) {
+export function RadioHome({ selected, consoleOpen = false }: { selected: RadioPage | null; consoleOpen?: boolean }) {
   const appInfo = useDesktopUpdateInfo();
   const state = useSession();
+  const hasConsole = useOwnConsole();
   const events = useSelector((state) => state.log.length);
   const lookalikes = useLookalikePrefs();
   const theme = useSyncExternalStore(subscribeTheme, getPreference);
@@ -128,6 +130,11 @@ export function RadioHome({ selected }: { selected: RadioPage | null }) {
       ) : (
         <header className="list-head">
           <h1>{t("radio.home.title")}</h1>
+          {hasConsole ? (
+            <IconButton label={radioTitle("console")} className={consoleOpen ? "on" : undefined} aria-current={consoleOpen ? "page" : undefined} onClick={() => openRadioPage("console")}>
+              <TerminalIcon size={18} />
+            </IconButton>
+          ) : null}
           {/* A phone pulls the list down instead. */}
           {canHover() ? (
             <IconButton label={t("radio.home.resync")} disabled={!online || !!reading} onClick={onPull}>

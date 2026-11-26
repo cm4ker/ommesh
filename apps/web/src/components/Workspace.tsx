@@ -577,8 +577,10 @@ function Desktop() {
     );
   } else {
     // A page opened from another page keeps its parent picked in the list, and goes back to it.
-    const parent = radioPage ? RADIO_PARENTS[radioPage] : undefined;
-    list = <RadioHome selected={parent ?? radioPage} />;
+    // Console opened straight from the header or search stands on its own rather than under Advanced.
+    const underParent = nav.stacks.radio.length > 1;
+    const parent = radioPage && (radioPage !== "console" || underParent) ? RADIO_PARENTS[radioPage] : undefined;
+    list = <RadioHome selected={parent ?? radioPage} consoleOpen={radioPage === "console"} />;
     main = <RadioPageView page={radioPage ?? "name"} chrome={parent ? { onBack: back } : {}} />;
   }
 

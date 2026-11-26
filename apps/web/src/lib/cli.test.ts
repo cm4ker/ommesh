@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { McrsCap, type McrsInfo } from "@meshnet/meshcore";
-import { CLI_GROUPS, CLI_GROUP_TITLE, COMMANDS, MCRS_NODE_COMMANDS, MCRS_RADIO_COMMANDS, RADIO_COMMANDS, commandsFor, stepHistory, stepPick, suggest } from "./cli.js";
+import { CLI_GROUPS, CLI_GROUP_TITLE, COMMANDS, MCRS_NODE_COMMANDS, MCRS_RADIO_COMMANDS, RADIO_COMMANDS, commandsFor, consoleAssist, stepHistory, stepPick, suggest } from "./cli.js";
 
 const labels = (draft: string) => suggest(draft).chips.map((c) => c.label);
 
@@ -204,4 +204,40 @@ test("meshcore-rs commands stay hidden on upstream targets and filter by capabil
   // Older -rs build without McrsInfo falls back cleanly to v1 commands via isRs.
   assert.ok(suggest("fw ", "radio", 12, { isRs: true }).chips.some((c) => c.label === "fw check"));
   assert.ok(suggest("set dyncr", "node", 12, { isRs: true }).chips.some((c) => c.label === "on"));
+});
+
+test("consoleAssist keeps value hints in flow and hides the floating list on blur or dismiss", () => {
+  const base = { focused: true, recall: null, picked: null, dismissed: false, dismissedHint: null, limit: 4 };
+
+  // Prefix typing floats matching commands while focused, without duplicating the hint bar.
+  const prefix = consoleAssist({ ...base, draft: "set adc", suggestions: suggest("set adc") });
+  assert.equal(prefix.showList, true);
+  assert.equal(prefix.showHintBar, false);
+  assert.equal(prefix.shown[0]?.label, "set adc.multiplier");
+
+  // Blurring or dismissing hides the floating list and never pops up a stray hint bar.
+  const blurred = consoleAssist({ ...base, focused: false, draft: "set adc", suggestions: suggest("set adc") });
+  assert.equal(blurred.showList, false);
+  assert.equal(blurred.showHintBar, false);
+  const dismissed = consoleAssist({ ...base, dismissed: true, draft: "set adc", suggestions: suggest("set adc") });
+  assert.equal(dismissed.showList, false);
+  assert.equal(dismissed.showHintBar, false);
+
+  // Once the command is typed and only a value hint remains, it moves into the composer bar.
+  const value = consoleAssist({ ...base, draft: "set adc.multiplier 5.720", suggestions: suggest("set adc.multiplier 5.720") });
+  assert.equal(value.showList, false);
+  assert.equal(value.showHintBar, true);
+  assert.equal(value.activeHint, "e.g. 1.0; 0 is the board's own");
+
+  // Closing the hint bar keeps it closed while editing that same command's argument, and a new command shows its own hint.
+  const closed = consoleAssist({ ...base, draft: "set adc.multiplier 5.725", suggestions: suggest("set adc.multiplier 5.725"), dismissedHint: value.activeHint });
+  assert.equal(closed.showHintBar, false);
+  const switched = consoleAssist({ ...base, draft: "set tx 20", suggestions: suggest("set tx 20"), dismissedHint: value.activeHint });
+  assert.equal(switched.showHintBar, true);
+  assert.equal(switched.activeHint, "dBm");
+
+  // History recall suppresses both the floating list and the hint bar.
+  const recalled = consoleAssist({ ...base, recall: 0, draft: "set adc.multiplier 5.720", suggestions: suggest("set adc.multiplier 5.720") });
+  assert.equal(recalled.showList, false);
+  assert.equal(recalled.showHintBar, false);
 });

@@ -1,7 +1,7 @@
-import { Fragment, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { AdvType, isMeshCoreRsVersion, type ConsoleEntry, type ContactRecord } from "@meshnet/meshcore";
 import { t } from "../../i18n/index.js";
-import { stepHistory, stepPick, suggest, type CliContext } from "../../lib/cli.js";
+import { consoleAssist, stepHistory, stepPick, suggest, type CliContext } from "../../lib/cli.js";
 import { dayLabel, timeOfDay } from "../../lib/format.js";
 import { useWide } from "../../lib/layout.js";
 import { usePress } from "../../lib/press.js";
@@ -50,7 +50,10 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
   const [saved, setSaved] = useState("");
   const [picked, setPicked] = useState<number | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [dismissedHint, setDismissedHint] = useState<string | null>(null);
   const log = useRef<HTMLDivElement>(null);
+  // Stays true while the reader is at the end of the log, so growing the composer keeps the last line in sight.
+  const atBottom = useRef(true);
   const picks = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   // Holds off an implicit form submit from the same Enter keypress that just filled a chosen suggestion.
@@ -94,8 +97,20 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
 
   useEffect(() => {
     const el = log.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    atBottom.current = true;
   }, [entries.length, entries[entries.length - 1]?.status]);
+
+  useEffect(() => {
+    const el = log.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (atBottom.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [wide && helping]);
 
   const run = (command: string) => {
     // The entry shows how it went; nothing to add here.
@@ -108,6 +123,7 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
     setRecall(null);
     setSaved("");
     setDismissed(false);
+    if (!text.trim()) setDismissedHint(null);
   };
 
   const send = (command: string) => {
@@ -181,12 +197,27 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
   };
 
   const typed = draft.trim();
-  const { chips, hint, total } = suggest(draft, target, 12, cliCtx);
-  // While walking sent history or after Escape, keep suggestions out of the way until the reader edits the field.
-  const shown = typed && recall === null && !dismissed ? chips.slice(0, PICK_ROWS) : [];
-  const activePick = picked !== null && picked < shown.length ? picked : null;
-  const activeHint = activePick !== null ? (shown[activePick]?.about ? (shown[activePick]?.hint ?? null) : hint) : hint;
-  const showPick = Boolean(typed && recall === null && !dismissed && (shown.length > 0 || activeHint));
+  const suggestions = suggest(draft, target, 12, cliCtx);
+  const { total } = suggestions;
+  const { shown, activePick, activeHint, showList, showHintBar } = consoleAssist({
+    draft,
+    suggestions,
+    focused,
+    recall,
+    picked,
+    dismissed,
+    dismissedHint,
+    limit: PICK_ROWS,
+  });
+
+  useEffect(() => {
+    if (dismissedHint !== null && activeHint !== dismissedHint) setDismissedHint(null);
+  }, [activeHint, dismissedHint]);
+
+  useLayoutEffect(() => {
+    const el = log.current;
+    if (el && atBottom.current) el.scrollTop = el.scrollHeight;
+  }, [showHintBar, activeHint]);
 
   useEffect(() => {
     if (activePick === null) return;
@@ -221,10 +252,11 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
         return;
       }
     }
-    if (plain && e.key === "Escape" && (activePick !== null || showPick)) {
+    if (plain && e.key === "Escape" && (activePick !== null || showList || showHintBar)) {
       e.preventDefault();
       if (activePick !== null) setPicked(null);
-      else setDismissed(true);
+      else if (showList) setDismissed(true);
+      else if (showHintBar && activeHint) setDismissedHint(activeHint);
       return;
     }
     if (!plain || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
@@ -240,7 +272,22 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
 
   const body = (
     <>
-      <div className="console" ref={log} aria-live="polite">
+      <div
+        className="console"
+        ref={log}
+        aria-live="polite"
+        onPointerDown={() => {
+          // Touching or scrolling the log clears the floating choices right away, even on WebViews that keep the field focused.
+          if (showList) {
+            setDismissed(true);
+            setPicked(null);
+          }
+        }}
+        onScroll={() => {
+          const el = log.current;
+          if (el) atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 24;
+        }}
+      >
         {entries.map((entry, i) => (
           <Fragment key={entry.id}>
             {/* The console is kept from one day to the next: each day opens with its date, as in a chat. */}
@@ -263,36 +310,34 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
       </div>
       {/* The same frame as a chat's composer, so a command is written the way a message is. */}
       <form className={["compose", "console-compose", focused ? "focus" : "", draft ? "has" : "", online ? "" : "waiting"].join(" ")} onSubmit={submit}>
-        {/* Nothing typed: the everyday commands, a tap away. Something typed: what it can be, and what that does. */}
-        {showPick ? (
+        {/* Nothing typed: the everyday commands, a tap away. Prefix typed: matching choices floating over the log. */}
+        {showList ? (
           <div className="cli-pick" ref={picks}>
-            {shown.length > 0 ? (
-              <div className="cli-pick-list" role="listbox" aria-label={t("node.console.command")}>
-                {shown.map((s, i) => (
-                  <button
-                    key={s.fill}
-                    type="button"
-                    role="option"
-                    aria-selected={i === activePick}
-                    className={["cli-pick-row", i === activePick ? "on" : ""].join(" ")}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      applyDraft(s.fill);
-                      input.current?.focus();
-                    }}
-                  >
-                    <span className="cli-pick-cmd">{s.label}</span>
-                    {s.about ? <span className="cli-pick-desc">{t(s.about)}</span> : null}
-                  </button>
-                ))}
-              </div>
-            ) : null}
+            <div className="cli-pick-list" role="listbox" aria-label={t("node.console.command")}>
+              {shown.map((s, i) => (
+                <button
+                  key={s.fill}
+                  type="button"
+                  role="option"
+                  aria-selected={i === activePick}
+                  className={["cli-pick-row", i === activePick ? "on" : ""].join(" ")}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    applyDraft(s.fill);
+                    input.current?.focus();
+                  }}
+                >
+                  <span className="cli-pick-cmd">{s.label}</span>
+                  {s.about ? <span className="cli-pick-desc">{t(s.about)}</span> : null}
+                </button>
+              ))}
+            </div>
             {total > PICK_ROWS ? <span className="cli-pick-more">{t("cli.more", { count: total - PICK_ROWS })}</span> : null}
             {activeHint ? <span className="cli-pick-hint">{t("cli.whatToEnter", { hint: activeHint })}</span> : null}
           </div>
         ) : !typed ? (
           <div className="chips console-chips">
-            {chips.map((s) => (
+            {suggestions.chips.map((s) => (
               <button
                 key={s.fill}
                 type="button"
@@ -314,6 +359,20 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
           </div>
         ) : null}
         <div className="compose-box">
+          {showHintBar ? (
+            <div className="compose-bar cli-hint-bar">
+              <span className="cli-hint-text">{t("cli.whatToEnter", { hint: activeHint! })}</span>
+              <button
+                type="button"
+                className="compose-bar-close"
+                aria-label={t("common.close")}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setDismissedHint(activeHint)}
+              >
+                <CloseIcon size={14} />
+              </button>
+            </div>
+          ) : null}
           <div className="compose-row">
             <div className="compose-field">
               <input
@@ -338,6 +397,7 @@ export function Console(props: { contact: ContactRecord } | { own: true }) {
                 onBlur={() => {
                   holdSubmit.current = false;
                   setFocused(false);
+                  setPicked(null);
                 }}
               />
             </div>

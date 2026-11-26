@@ -243,7 +243,7 @@ button.c-cmd:focus-visible {
   right: var(--space-2);
   bottom: 100%;
   z-index: 5;
-  max-height: min(340px, 45dvh);
+  max-height: min(340px, calc((100dvh - var(--keyboard, 0px)) * 0.45));
   overflow-y: auto;
   overscroll-behavior: contain;
   scroll-padding-block: 4px;
@@ -307,6 +307,19 @@ button.c-cmd:focus-visible {
   margin-top: 2px;
   padding-top: 6px;
   border-top: 1px solid var(--border);
+}
+/* What value to enter after a chosen command: inside the composer frame, never over the log, with a close cross. */
+.cli-hint-bar {
+  align-items: flex-start;
+  padding: 6px 6px 6px 12px;
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+.cli-hint-text {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 0;
 }
 /* The reference of every command: a panel beside the console, in the console's own tab. */
 .cli-help {

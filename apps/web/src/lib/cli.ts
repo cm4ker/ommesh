@@ -470,6 +470,49 @@ export function stepPick(current: number | null, count: number, key: "ArrowUp" |
   return next < 0 || next >= count ? null : next;
 }
 
+export interface ConsoleAssistInput {
+  draft: string;
+  suggestions: Suggestions;
+  focused: boolean;
+  recall: number | null;
+  picked: number | null;
+  dismissed: boolean;
+  dismissedHint: string | null;
+  limit: number;
+}
+
+export interface ConsoleAssist {
+  /** Rows offered in the floating list above the field (empty when hidden). */
+  shown: Suggestion[];
+  /** Highlighted row in `shown`, or null when typing freely. */
+  activePick: number | null;
+  /** Value hint for the highlighted row or typed command, if any. */
+  activeHint: string | null;
+  /** True when the floating command/value card should show over the log. */
+  showList: boolean;
+  /** True when a standalone value hint should sit in flow inside the composer frame. */
+  showHintBar: boolean;
+}
+
+/**
+ * Decides what aid the console shows for the current draft: matching commands
+ * and discrete values float over the log while the field has focus, whereas a
+ * standalone value hint (once the command itself is typed) sits inside the
+ * composer frame so it never covers the last line of the terminal.
+ */
+export function consoleAssist(input: ConsoleAssistInput): ConsoleAssist {
+  const { draft, suggestions, focused, recall, picked, dismissed, dismissedHint, limit } = input;
+  const typed = draft.trim() !== "";
+  const matched = typed && recall === null ? suggestions.chips.slice(0, limit) : [];
+  const shown = focused && !dismissed ? matched : [];
+  const activePick = picked !== null && picked < shown.length ? picked : null;
+  const activeHint =
+    activePick !== null ? (shown[activePick]?.about ? (shown[activePick]?.hint ?? null) : suggestions.hint) : suggestions.hint;
+  const showList = shown.length > 0;
+  const showHintBar = Boolean(typed && recall === null && matched.length === 0 && activeHint && activeHint !== dismissedHint);
+  return { shown, activePick, activeHint, showList, showHintBar };
+}
+
 export interface HistoryWalk {
   /** Index into `past`, or null when back at the draft. */
   index: number | null;

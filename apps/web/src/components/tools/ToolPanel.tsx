@@ -1,5 +1,6 @@
 import type { MeshTool } from "../../lib/meshTool.js";
 import { closeAllTools, closeTool } from "../../lib/toolActions.js";
+import { CoverageSheet } from "./CoverageSheet.js";
 import { LosView } from "./LosView.js";
 import { NeighboursSheet } from "./NeighboursSheet.js";
 import { RouteSheet } from "./RouteSheet.js";
@@ -14,5 +15,6 @@ export function ToolPanel({ tool }: { tool: MeshTool }) {
   if (tool.kind === "span") return <SpanSheet tool={tool} onClose={closeTool} />;
   if (tool.kind === "neighbours") return <NeighboursSheet tool={tool} />;
   if (tool.kind === "survey") return <SurveySheet tool={tool} />;
+  if (tool.kind === "coverage") return <CoverageSheet tool={tool} />;
   return <WhoHears onClose={closeAllTools} />;
 }

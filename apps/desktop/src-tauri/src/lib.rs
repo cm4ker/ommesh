@@ -125,6 +125,7 @@ pub fn run() {
         secrets::secret_set,
         secrets::secret_delete,
         coverage::coverage_upload,
+        coverage::coverage_fetch,
     ]);
     #[cfg(not(windows))]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -151,6 +152,7 @@ pub fn run() {
         secrets::secret_set,
         secrets::secret_delete,
         coverage::coverage_upload,
+        coverage::coverage_fetch,
     ]);
 
     builder

@@ -243,6 +243,12 @@ export function openSurvey(view: SurveyTool["view"], id: string | null = null): 
   setMeshTool({ kind: "survey", view, id, point: null, only: null });
 }
 
+/** A cell tapped on the community coverage layer: shows its stats and repeaters over the map. */
+export function openCoverageCell(cellId: string): void {
+  focusOnMap(null);
+  setMeshTool({ kind: "coverage", cellId });
+}
+
 /** "Survey on the move": starts one and shows it running. */
 export async function beginSurvey(): Promise<void> {
   const id = await startSurvey();

@@ -36,7 +36,14 @@ export type MeshTool =
   | SpanTool
   | NeighboursTool
   | { kind: "hears" }
-  | SurveyTool;
+  | SurveyTool
+  | CoverageTool;
+
+/** A cell tapped on the community coverage map layer (`lib/coverage/layer.ts`). */
+export interface CoverageTool {
+  kind: "coverage";
+  cellId: string;
+}
 
 /**
  * A coverage survey (lib/survey.ts): the one running, the surveys kept, one

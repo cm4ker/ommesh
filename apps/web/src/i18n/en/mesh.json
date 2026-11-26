@@ -91,6 +91,8 @@
   "map.zoomOut": "Zoom out",
   "map.ungroup": "Show every node apart",
   "map.group": "Group close nodes",
+  "map.showCoverage": "Show community surveys",
+  "map.hideCoverage": "Hide community surveys",
   "map.showAll": "Show all",
   "map.thisRadio": "This radio",
   "map.now": "now",

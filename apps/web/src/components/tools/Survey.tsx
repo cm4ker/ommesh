@@ -20,6 +20,7 @@ import { openLink } from "../../lib/webLinks.js";
 import { saveFile } from "../../lib/saveFile.js";
 import { session, useSession } from "../../lib/session.js";
 import { COVERAGE_MAPS, type CoverageMap } from "../../lib/coverage/maps.js";
+import { invalidateCoverage } from "../../lib/coverage/layer.js";
 import { canSendCoverage, sendSurvey } from "../../lib/coverage/upload.js";
 import { shortId } from "../../lib/coverage/wardrive.js";
 import { deleteSurvey, markSurveySent, restoreSurvey, setSurveySign, setSurveySound, surveyNodeName, useSurveySign, useSurveySound, useSurveys, type SurveyRun } from "../../lib/survey.js";
@@ -486,6 +487,7 @@ function SendToMap({ survey, map, first }: { survey: Survey; map: CoverageMap; f
       const signer = signing && radio ? { key: radio.key, name: radio.name, sign: (data: Uint8Array) => session.sign(data) } : null;
       const reply = await sendSurvey(map, survey, (key) => surveyNodeName(survey, key), signer);
       markSurveySent(survey.id, map.id, survey.points.length, signer?.name);
+      if (map.coverageUrl) invalidateCoverage();
       toast(t("tools.survey.sentTo", { map: label }), "", { label: t("common.open"), run: () => openLink(map.siteUrl) }, t("tools.survey.sentDetail", { taken: reply.processed, known: reply.deduped, cells: reply.cellsCreated }));
     } catch (error) {
       toast(t("tools.survey.sendFailed", { map: label }), "error", undefined, errorText(error));

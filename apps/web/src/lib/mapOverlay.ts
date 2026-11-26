@@ -17,6 +17,7 @@ import type { LosEnd, MeshTool, NeighboursTool } from "./meshTool.js";
 import { neighbourRows, passes } from "./neighbours.js";
 import { legSnr, measuredLegs, type Ping } from "./ping.js";
 import { replyScore, type Survey } from "./surveyData.js";
+import { contactForCoverageNode, type CommunityCell } from "./coverage/community.js";
 
 /** `found` is the way a discovery found there, `back` the way its answer came, `was` the route it replaced. */
 export type LineTone = "good" | "fair" | "weak" | "fail" | "flight" | "plain" | "unknown" | "dest" | "look" | "found" | "back" | "was";
@@ -378,6 +379,25 @@ export function surveyOverlay(survey: Survey | null, point: number | null, state
     }
   }
   return { lines, pins, numbers: {}, handles: [], pulse: null, heard: p.replies.map((r) => r.key).sort() };
+}
+
+/**
+ * From a tapped community coverage cell, a line to each repeater that answered
+ * there and sits on the map, coloured by its best SNR in the cell.
+ */
+export function coverageOverlay(cell: CommunityCell | null, state: SessionState): MapOverlay {
+  if (!cell) return EMPTY_OVERLAY;
+  const from: LosEnd = { lat: cell.lat, lon: cell.lon, name: t("tools.thisSpot"), key: null };
+  const lines: OverlayLine[] = [];
+  const heard: string[] = [];
+  for (const [key, , , best] of cell.nodes) {
+    const contact = contactForCoverageNode(state.contacts, key);
+    if (!contact) continue;
+    heard.push(contact.key);
+    const end = contactEnd(contact);
+    if (end) lines.push({ from, to: end, tone: best !== null ? quality(best) : "fair", tappable: false });
+  }
+  return { lines, pins: [], numbers: {}, handles: [], pulse: null, heard: [...new Set(heard)].sort() };
 }
 
 /**

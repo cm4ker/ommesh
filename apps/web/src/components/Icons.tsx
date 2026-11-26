@@ -120,6 +120,8 @@ export const WavesIcon = icon(
 export const CompassIcon = icon('<path d="M12 3l4 9h-8z" fill="currentColor"/><path d="M8 12l4 9 4-9"/>');
 /** A coverage survey: a drive with a point every so often. */
 export const SurveyIcon = icon('<path d="M4 18.5c3.5 0 4-5 8-5s4.5-5 8-5"/><circle cx="4" cy="18.5" r="1.6"/><circle cx="12" cy="13.5" r="1.6"/><circle cx="20" cy="8.5" r="1.6"/>');
+/** The community coverage honeycomb layer on the map: three interlocking flat-top hexagons. */
+export const CoverageIcon = icon('<path d="M13.25 7.67 10.75 12h-5l-2.5-4.33 2.5-4.33h5zM13.25 16.33 10.75 20.66h-5l-2.5-4.33L5.75 12h5zM20.75 12l-2.5 4.33h-5L10.75 12l2.5-4.33h5z"/>');
 /** A file handed on: to the share sheet, or downloaded. */
 export const ShareIcon = icon('<path d="M12 14.5v-11M8 7.5l4-4 4 4"/><path d="M7 10.5H5.5v10h13v-10H17"/>');
 export const FileIcon = icon('<path d="M7 3.5h7l4 4v13H7z"/><path d="M14 3.5v4h4"/>');

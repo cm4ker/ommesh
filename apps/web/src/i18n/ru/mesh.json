@@ -91,6 +91,8 @@
   "map.zoomOut": "Отдалить",
   "map.ungroup": "Показать узлы по отдельности",
   "map.group": "Группировать близкие узлы",
+  "map.showCoverage": "Показать замеры",
+  "map.hideCoverage": "Скрыть замеры",
   "map.showAll": "Показать все",
   "map.thisRadio": "Это радио",
   "map.now": "сейчас",

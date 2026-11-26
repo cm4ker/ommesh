@@ -9,7 +9,7 @@ import { useSideways, useWide } from "../lib/layout.js";
 import { back, focusOnMap, getNav, goSection, openConversation, setStack, shownConversation, swapProfile, topOf, useNav, type Nav, type Screen, type Section } from "../lib/nav.js";
 import { hasPosition } from "../lib/geo.js";
 import { setSettingsFind } from "../lib/settingsSearch.js";
-import { useMeshTool, type MeshTool } from "../lib/meshTool.js";
+import { getMeshTool, setMeshTool, useMeshTool, type MeshTool } from "../lib/meshTool.js";
 import { useNodePick } from "../lib/nodePick.js";
 import { isTauri } from "../lib/platform.js";
 import { useSelector, useSession } from "../lib/session.js";
@@ -552,7 +552,16 @@ function Desktop() {
   } else if (nav.section === "mesh") {
     // The node whose page is open stays picked in the list while a neighbour's profile stands beside it.
     const focus = full ? full.key : panel?.kind === "profile" ? panel.key : nav.meshFocus;
-    list = <MeshList selected={focus ?? null} onOpen={(key) => { setGroup(null); setStack("mesh", [], { meshFocus: key }); }} />;
+    list = (
+      <MeshList
+        selected={focus ?? null}
+        onOpen={(key) => {
+          setGroup(null);
+          if (getMeshTool()?.kind === "coverage") setMeshTool(null);
+          setStack("mesh", [], { meshFocus: key });
+        }}
+      />
+    );
     main = full ? (
       <ScreenView screen={full} chrome={{ onBack: fullBack }} wide />
     ) : (

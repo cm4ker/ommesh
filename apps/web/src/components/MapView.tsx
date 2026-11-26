@@ -24,6 +24,8 @@ import { AdvType, type ContactRecord } from "@meshnet/meshcore";
 import { t } from "../i18n/index.js";
 import { courseStep, destination, distanceKm, formatRoundDistance, hasPosition, metresPerPixel, scaleBar } from "../lib/geo.js";
 import { cellOf, cellPolygon, levelAt, tilesAt } from "../lib/coverage/tiles.js";
+import { cellToneFor, coverageCellId, findCoverageCell, hasCellsInBounds, levelHasNode, pickCoverageLevel, type CommunityCoverage, type CommunityLevel } from "../lib/coverage/community.js";
+import { COMMUNITY_COVERAGE_MAP } from "../lib/coverage/maps.js";
 import type { PointTone, SurveyPoint } from "../lib/surveyData.js";
 import { EMPTY_OVERLAY, type MapDot, type MapHandle, type MapOverlay } from "../lib/mapOverlay.js";
 import type { LosEnd } from "../lib/meshTool.js";
@@ -32,8 +34,9 @@ import type { Fix } from "../lib/phonePosition.js";
 import type { MenuAt } from "../lib/press.js";
 import { useSession } from "../lib/session.js";
 import { tileAttribution } from "../lib/tiles.js";
+import { toast } from "../lib/toast.js";
 import { IconButton } from "../ui/Button.js";
-import { CompassIcon, FitIcon, GroupIcon, HeadingIcon, LocateIcon, LocateOnIcon, MinusIcon, PlusIcon, WavesIcon } from "./Icons.js";
+import { CompassIcon, CoverageIcon, FitIcon, GroupIcon, HeadingIcon, LocateIcon, LocateOnIcon, MinusIcon, PlusIcon, WavesIcon } from "./Icons.js";
 import { darkTheme, mapStyle, serveTiles, tilePaint } from "./mapStyle.js";
 
 /** A group spread less than this, in metres, is the same spot at any zoom, and is listed rather than zoomed into. */
@@ -101,6 +104,65 @@ function cellGeoJson(lat: number, lon: number, size: number) {
   return {
     type: "FeatureCollection" as const,
     features: [{ type: "Feature" as const, geometry: { type: "Polygon" as const, coordinates: [cellPolygon(cell.lat, cell.lon, size)] }, properties: {} }],
+  };
+}
+
+/**
+ * The community coverage cells at one zoom level as a map source. When a
+ * repeater is selected on the map and appears in this level, the cells it
+ * answered in stand out in its own SNR colour while the rest step back; while a
+ * local survey is also drawn on top, the whole community layer dims a little so
+ * the drive stays crisp.
+ */
+function communityCellsGeoJson(level: CommunityLevel, dark: boolean, dim: boolean, highlight: string | null) {
+  const colours: Record<PointTone, string> = {
+    good: cssColour("--success"),
+    fair: cssColour("--warning"),
+    weak: cssColour("--danger"),
+    none: cssColour("--text-faint"),
+  };
+  const single = highlight && levelHasNode(level, highlight) ? highlight : null;
+  return {
+    type: "FeatureCollection" as const,
+    features: level.cells.map((cell) => {
+      const id = coverageCellId(level.cellM, cell.lat, cell.lon);
+      let color: string;
+      let opacity: number;
+      let line: number;
+      if (single) {
+        const own = cellToneFor(cell, single);
+        if (own !== null) {
+          color = colours[own];
+          opacity = (dark ? 0.52 : 0.6) * (dim ? 0.6 : 1);
+          line = (dim ? 0.55 : 0.85);
+        } else {
+          color = colours[cell.tone];
+          opacity = dark ? 0.08 : 0.1;
+          line = 0.16;
+        }
+      } else {
+        const baseFill = cell.tone === "none" ? (dark ? 0.16 : 0.2) : dark ? 0.34 : 0.4;
+        const baseLine = cell.tone === "none" ? 0.32 : 0.55;
+        color = colours[cell.tone];
+        opacity = dim ? baseFill * 0.55 : baseFill;
+        line = dim ? baseLine * 0.55 : baseLine;
+      }
+      return {
+        type: "Feature" as const,
+        geometry: { type: "Polygon" as const, coordinates: [cellPolygon(cell.lat, cell.lon, level.cellM)] },
+        properties: { id, color, opacity, line },
+      };
+    }),
+  };
+}
+
+/** The outline around a tapped community coverage cell, kept in its tapped size even as the map zooms. */
+function pickedCellGeoJson(coverage: CommunityCoverage | null, id: string | null) {
+  const found = id ? findCoverageCell(coverage, id) : null;
+  if (!found) return NO_FEATURES;
+  return {
+    type: "FeatureCollection" as const,
+    features: [{ type: "Feature" as const, geometry: { type: "Polygon" as const, coordinates: [cellPolygon(found.cell.lat, found.cell.lon, found.level.cellM)] }, properties: {} }],
   };
 }
 
@@ -317,6 +379,15 @@ export interface MapProps {
   recording?: boolean | undefined;
   /** What stands at the top of the map, in the middle: a running survey's number. */
   top?: ReactNode | undefined;
+  /** The community coverage cells to draw under the nodes, when the layer is on and loaded. */
+  coverage?: CommunityCoverage | null | undefined;
+  /** Whether the community coverage layer is turned on, and whether a fetch is in flight. */
+  coverageOn?: boolean | undefined;
+  coverageLoading?: boolean | undefined;
+  onCoverageToggle?: (() => void) | undefined;
+  /** The community coverage cell currently opened, by `coverageCellId`. */
+  pickedCell?: string | null | undefined;
+  onCoverageCell?: ((cellId: string) => void) | undefined;
 }
 
 /** How long a press on ≋ waits before it is a hold and the ring shows, and how long the ring then takes to close. */
@@ -448,7 +519,7 @@ function groupingWanted(): boolean {
 /** Where the map was left, so coming back to it, from a profile or another section, finds it there, turned as it was. */
 let lastView: { center: [number, number]; zoom: number; bearing: number } | null = null;
 
-export default function MapView({ selected, onSelect, onGroup, filter, coverBottom = 0, coverTop = 0, coverRight = 0, zoomButtons = false, overlay = EMPTY_OVERLAY, onLeg, onHold, onHandleDrop, onHears, hearsOn = false, onHearsHold, fit = null, phone = null, putHere = null, onLocate, dots = null, tiles = null, pickedDot = null, onDot, follow = null, recording = false, top = null }: MapProps) {
+export default function MapView({ selected, onSelect, onGroup, filter, coverBottom = 0, coverTop = 0, coverRight = 0, zoomButtons = false, overlay = EMPTY_OVERLAY, onLeg, onHold, onHandleDrop, onHears, hearsOn = false, onHearsHold, fit = null, phone = null, putHere = null, onLocate, dots = null, tiles = null, pickedDot = null, onDot, follow = null, recording = false, top = null, coverage = null, coverageOn = false, coverageLoading = false, onCoverageToggle, pickedCell = null, onCoverageCell }: MapProps) {
   const state = useSession();
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibre | null>(null);
@@ -465,6 +536,15 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
   const surveyPoints = useRef<SurveyPoint[] | null>(tiles);
   const surveyPhone = useRef<{ lat: number; lon: number } | null>(null);
   const paintSurvey = useRef<() => void>(() => {});
+  // The community coverage layer, drawn under any local survey and rebuilt only when its level, theme or highlight changes.
+  const coverageData = useRef<CommunityCoverage | null>(coverage);
+  const coverageHighlight = useRef<string | null>(null);
+  const coveragePicked = useRef<string | null>(pickedCell);
+  const coverageDrawn = useRef("");
+  const pickedDrawn = useRef("");
+  const paintCoverage = useRef<() => void>(() => {});
+  // Only after the user explicitly switches coverage on: tell them if the area in view has no cells yet.
+  const checkEmptyCoverage = useRef(false);
   // Markers the overlay brings: pins, the labels of legs, a route's handles.
   const overlayMarkers = useRef<Marker[]>([]);
   const fitted = useRef(false);
@@ -486,8 +566,8 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
   // The name of the way the map now follows, beside the button that changed it, for a moment.
   const [word, setWord] = useState<{ text: string; on: "locate" | "fit"; at: number } | null>(null);
   // The handlers the map holds are set once; they read the latest callbacks from here.
-  const calls = useRef({ onSelect, onGroup, onLeg, onHold, onHandleDrop, onPut: putHere?.onPut, onDot, dots });
-  calls.current = { onSelect, onGroup, onLeg, onHold, onHandleDrop, onPut: putHere?.onPut, onDot, dots };
+  const calls = useRef({ onSelect, onGroup, onLeg, onHold, onHandleDrop, onPut: putHere?.onPut, onDot, dots, onCoverageCell });
+  calls.current = { onSelect, onGroup, onLeg, onHold, onHandleDrop, onPut: putHere?.onPut, onDot, dots, onCoverageCell };
 
   const contacts = state.contacts;
   const selfLat = state.self && hasPosition(state.self.lat, state.self.lon) ? state.self.lat : null;
@@ -573,6 +653,34 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
     layer.current = overlayLayer;
     nodes.current = nodeCanvas;
 
+    // The community coverage layer, drawn under any local survey and rebuilt only when its zoom level,
+    // theme, local-survey dim state, or highlighted repeater changes.
+    const paintCoverageNow = () => {
+      const data = coverageData.current;
+      const dark = darkTheme();
+      const dim = surveyPoints.current !== null;
+      const highlight = coverageHighlight.current;
+      const level = data ? pickCoverageLevel(data, m.getZoom(), m.getCenter().lat) : null;
+      const cellsKey = level ? `${data!.to}|${data!.samples}|${level.cellM}|${dark}|${dim}|${highlight ?? ""}` : "";
+      const cells = m.getSource("coverage-cells") as GeoJSONSource | undefined;
+      if (cells && cellsKey !== coverageDrawn.current) {
+        coverageDrawn.current = cellsKey;
+        cells.setData(level ? communityCellsGeoJson(level, dark, dim, highlight) : NO_FEATURES);
+      }
+      const pickId = data ? coveragePicked.current : null;
+      const pickKey = `${data?.to ?? ""}|${pickId ?? ""}|${dark}`;
+      const pickedSource = m.getSource("coverage-picked") as GeoJSONSource | undefined;
+      if (pickedSource && pickKey !== pickedDrawn.current) {
+        pickedDrawn.current = pickKey;
+        pickedSource.setData(pickedCellGeoJson(data, pickId));
+        if (m.getLayer("coverage-picked-line")) {
+          m.setPaintProperty("coverage-picked-casing", "line-color", cssColour("--bg"));
+          m.setPaintProperty("coverage-picked-line", "line-color", cssColour("--text"));
+        }
+      }
+    };
+    paintCoverage.current = paintCoverageNow;
+
     // The survey's tiles, drawn under the nodes and the lines: the squares of the coverage map at the size this
     // zoom calls for, coloured by the best answer in each, and the one tile the phone stands in.
     const paintSurveyNow = () => {
@@ -594,6 +702,36 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
     };
     paintSurvey.current = paintSurveyNow;
     m.on("load", () => {
+      m.addSource("coverage-cells", { type: "geojson", data: NO_FEATURES });
+      m.addLayer({
+        id: "coverage-cells-fill",
+        type: "fill",
+        source: "coverage-cells",
+        paint: { "fill-color": ["get", "color"], "fill-opacity": ["get", "opacity"] },
+      });
+      m.addLayer({
+        id: "coverage-cells-line",
+        type: "line",
+        source: "coverage-cells",
+        paint: {
+          "line-color": ["get", "color"],
+          "line-opacity": ["get", "line"],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.4, 15, 0.7],
+        },
+      });
+      m.addSource("coverage-picked", { type: "geojson", data: NO_FEATURES });
+      m.addLayer({
+        id: "coverage-picked-casing",
+        type: "line",
+        source: "coverage-picked",
+        paint: { "line-color": cssColour("--bg"), "line-width": 5, "line-opacity": 0.92 },
+      });
+      m.addLayer({
+        id: "coverage-picked-line",
+        type: "line",
+        source: "coverage-picked",
+        paint: { "line-color": cssColour("--text"), "line-width": 2.5 },
+      });
       m.addSource("survey-cells", { type: "geojson", data: NO_FEATURES });
       m.addLayer({
         id: "survey-cells-fill",
@@ -624,6 +762,7 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
         source: "survey-now",
         paint: { "line-color": cssColour("--text"), "line-width": 3 },
       });
+      paintCoverageNow();
       paintSurveyNow();
     });
 
@@ -690,7 +829,7 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
       const members = nodeCanvas.hit(e.point, mouse ? 3 : 10);
       if (!members) {
         // Missing the nodes, a tap may land on a survey's point: the nearest within reach of a finger.
-        const { dots: points, onDot: open } = calls.current;
+        const { dots: points, onDot: open, onCoverageCell: openCell } = calls.current;
         if (points && open) {
           let best = -1;
           let reach = mouse ? 8 : DOT_PX;
@@ -705,6 +844,11 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
           });
           if (best >= 0) return open(best);
         }
+        if (openCell && m.getLayer("coverage-cells-fill")) {
+          const hit = m.queryRenderedFeatures(e.point, { layers: ["coverage-cells-fill"] })[0];
+          const id = typeof hit?.properties?.["id"] === "string" ? hit.properties["id"] : null;
+          if (id) return openCell(id);
+        }
         return calls.current.onSelect(null);
       }
       if (members.length === 1) return calls.current.onSelect(members[0]!.key);
@@ -714,13 +858,15 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
       if (spread < SAME_SPOT_M || m.getZoom() >= m.getMaxZoom()) calls.current.onGroup(members.map((c) => c.key));
       else fitPoints(members.map((c) => [c.lat, c.lon]), m.getMaxZoom());
     });
-    // A pointer over a node shows it can be clicked; looked up once a frame at most.
+    // A pointer over a node or a coverage cell shows it can be clicked; looked up once a frame at most.
     let hoverFrame = 0;
     m.on("mousemove", (e) => {
       if (hoverFrame) return;
       hoverFrame = requestAnimationFrame(() => {
         hoverFrame = 0;
-        m.getCanvas().style.cursor = nodeCanvas.hit(e.point, 3) ? "pointer" : "";
+        const overNode = Boolean(nodeCanvas.hit(e.point, 3));
+        const overCell = !overNode && Boolean(calls.current.onCoverageCell && m.getLayer("coverage-cells-fill") && m.queryRenderedFeatures(e.point, { layers: ["coverage-cells-fill"] }).length > 0);
+        m.getCanvas().style.cursor = overNode || overCell ? "pointer" : "";
       });
     });
     // Not while hidden under a profile: a map with no size has no middle to remember.
@@ -728,11 +874,13 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
       if (el.clientHeight > 0) {
         const c = m.getCenter();
         lastView = { center: [c.lng, c.lat], zoom: m.getZoom(), bearing: m.getBearing() };
+        paintCoverageNow();
       }
     });
     m.on("zoomend", () => {
       setZoom(m.getZoom());
       // A coarse grid gives way to a finer one as the map closes in.
+      paintCoverageNow();
       paintSurveyNow();
     });
     const turn = () => {
@@ -779,6 +927,7 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
       const paint = tilePaint(darkTheme());
       if (m.getLayer("osm")) for (const [key, value] of Object.entries(paint)) m.setPaintProperty("osm", key, value);
       nodeCanvas.redraw();
+      paintCoverageNow();
       paintSurveyNow();
     });
     theme.observe(document.documentElement, { attributes: true, attributeFilter: ["data-appearance"] });
@@ -804,6 +953,9 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
       putMarker.current = null;
       overlayMarkers.current = [];
       paintSurvey.current = () => {};
+      paintCoverage.current = () => {};
+      coverageDrawn.current = "";
+      pickedDrawn.current = "";
       fitted.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -871,7 +1023,30 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
   useEffect(() => {
     surveyPoints.current = tiles;
     paintSurvey.current();
+    paintCoverage.current();
   }, [tiles]);
+  const highlightKey = picked?.type === AdvType.Repeater && !pickedCell ? picked.key : null;
+  useEffect(() => {
+    coverageData.current = coverage;
+    coverageHighlight.current = highlightKey;
+    coveragePicked.current = pickedCell;
+    paintCoverage.current();
+  }, [coverage, highlightKey, pickedCell]);
+  useEffect(() => {
+    if (!coverageOn) {
+      checkEmptyCoverage.current = false;
+      return;
+    }
+    if (!checkEmptyCoverage.current || coverageLoading || !coverage) return;
+    checkEmptyCoverage.current = false;
+    const m = map.current;
+    if (!m || size().y === 0) return;
+    const level = pickCoverageLevel(coverage, m.getZoom(), m.getCenter().lat);
+    const b = m.getBounds();
+    if (!level || !hasCellsInBounds(level, { south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() })) {
+      toast(t("tools.coverage.noneHere"), "", undefined, COMMUNITY_COVERAGE_MAP.host);
+    }
+  }, [coverageOn, coverage, coverageLoading]);
   useEffect(() => {
     const el = phoneMarker.current?.getElement();
     if (el) el.innerHTML = phoneHtml(phoneNamed);
@@ -1331,6 +1506,20 @@ export default function MapView({ selected, onSelect, onGroup, filter, coverBott
         >
           <GroupIcon size={18} />
         </IconButton>
+        {onCoverageToggle ? (
+          <IconButton
+            label={coverageOn ? t("mesh.map.hideCoverage") : t("mesh.map.showCoverage")}
+            className={[coverageOn ? "on" : "", coverageLoading ? "busy" : ""].join(" ")}
+            aria-pressed={coverageOn}
+            aria-busy={coverageLoading}
+            onClick={() => {
+              checkEmptyCoverage.current = !coverageOn;
+              onCoverageToggle();
+            }}
+          >
+            <CoverageIcon size={18} />
+          </IconButton>
+        ) : null}
         {onHears ? <HearsButton on={hearsOn} recording={recording} onTap={onHears} onHoldDone={onHearsHold} /> : null}
         <IconButton label={surveyed ? t("mesh.map.wholeSurvey") : t("mesh.map.showAll")} className={surveyed && mode === "all" ? "on" : ""} aria-pressed={surveyed ? mode === "all" : undefined} onClick={fitAll}>
           <FitIcon size={18} />

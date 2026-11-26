@@ -19,7 +19,9 @@ import type { LinkRadio } from "../lib/los.js";
 import { useDiscovery } from "../lib/discovery.js";
 import { FOLLOW_MOVE_M, followsPhone, radioHasGps, useFollowStatus } from "../lib/followPhone.js";
 import { locateOnce, locateText, phoneLocates, usePhone } from "../lib/phonePosition.js";
-import { contactEnd, defaultHeight, directOverlay, discoveryOverlay, EMPTY_OVERLAY, editOverlay, hearsOverlay, losOverlay, neighboursOverlay, relayOf, routeOverlay, selfEnd, spanOverlay, surveyOverlay, type MapDot, type MapHandle, type MapOverlay } from "../lib/mapOverlay.js";
+import { contactEnd, coverageOverlay, defaultHeight, directOverlay, discoveryOverlay, EMPTY_OVERLAY, editOverlay, hearsOverlay, losOverlay, neighboursOverlay, relayOf, routeOverlay, selfEnd, spanOverlay, surveyOverlay, type MapDot, type MapHandle, type MapOverlay } from "../lib/mapOverlay.js";
+import { findCoverageCell } from "../lib/coverage/community.js";
+import { hydrateCoverageIfOn, setCoverageOn, useCoverageLayer } from "../lib/coverage/layer.js";
 import { setMeshTool, useMeshTool, type LosEnd, type MeshTool, type SurveyTool } from "../lib/meshTool.js";
 import { clearMeshPlace, useMeshPlace } from "../lib/meshPlace.js";
 import { useSurveys, type SurveysState } from "../lib/survey.js";
@@ -38,7 +40,7 @@ import { isYours, memoryTight, memoryUse } from "../lib/tidy.js";
 import { session, useSelector, useSession } from "../lib/session.js";
 import { act, toast } from "../lib/toast.js";
 import { isComplete, neighbourRows, passes } from "../lib/neighbours.js";
-import { closeAllTools, closeTool, dropOnRoute, lineOfSightTo, openLineOfSight, openNeighbourLink, surveyAtOnce, tapInNeighbours, tapInRoute, tapInSpan, whoHearsMe } from "../lib/toolActions.js";
+import { closeAllTools, closeTool, dropOnRoute, lineOfSightTo, openCoverageCell, openLineOfSight, openNeighbourLink, surveyAtOnce, tapInNeighbours, tapInRoute, tapInSpan, whoHearsMe } from "../lib/toolActions.js";
 import { getTextScale, subscribeTextSize } from "../theme/textSize.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { SearchField } from "../ui/Field.js";
@@ -654,6 +656,7 @@ function followPoints(survey: Survey, state: SessionState): [number, number][] {
 function useMeshOverlay(selected: string | null, state: SessionState): MapOverlay {
   const tool = useMeshTool();
   const surveys = useSurveys();
+  const coverage = useCoverageLayer();
   const focus = tool?.kind === "route" ? tool.key : tool?.kind === "span" ? tool.from : selected;
   const ping = usePing(tool?.kind === "span" ? (tool.to ? spanKey(tool.from, tool.to) : null) : focus);
   // A node pinged by itself, from beside its route, with no tool open.
@@ -689,6 +692,8 @@ function useMeshOverlay(selected: string | null, state: SessionState): MapOverla
           ? hearsOverlay(hears, state)
         : tool?.kind === "survey"
           ? surveyOverlay(shownSurvey(tool, surveys), shownPoint(tool, surveys), state)
+        : tool?.kind === "coverage"
+          ? coverageOverlay(findCoverageCell(coverage.on ? coverage.data : null, tool.cellId)?.cell ?? null, state)
           : tool?.kind === "span"
             ? spanOverlay(tool.from, tool.to, state, ping)
           : tool?.kind === "neighbours"
@@ -790,7 +795,11 @@ function usePhoneOnMap(state: SessionState, active: boolean, surveying: boolean)
 export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, coverRight, zoomButtons, active = true, show = null }: { selected: string | null; onSelect: (key: string | null) => void; onGroup: (keys: string[]) => void; coverTop?: number | undefined; coverBottom?: number | undefined; coverRight?: number | undefined; zoomButtons?: boolean | undefined; active?: boolean | undefined; show?: { id: string; points: [number, number][] } | null | undefined }) {
   const state = useSession();
   const surveys = useSurveys();
+  const coverage = useCoverageLayer();
   const surveying = surveys.run !== null;
+  useEffect(() => {
+    if (active && coverage.on) void hydrateCoverageIfOn();
+  }, [active, coverage.on]);
   const { phone, putHere, onLocate } = usePhoneOnMap(state, active, surveying);
   const saved = useSavedPasswords();
   const { kind, query } = useFilter();
@@ -825,6 +834,7 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, co
     if (key === null && tool?.kind === "survey") {
       if (tool.point !== null) closeTool();
     } else if (key === null && tool && tool.kind !== "route") closeTool();
+    else if (key !== null && tool?.kind === "coverage") setMeshTool(null);
     // A tap anywhere puts a place from a chat away, as it puts away a picked node.
     clearMeshPlace();
     onSelect(key);
@@ -916,9 +926,11 @@ export function MeshMap({ selected, onSelect, onGroup, coverTop, coverBottom, co
   const onHearsHold = state.status === "ready" && !surveying ? () => void surveyAtOnce() : undefined;
   // The running survey's number stands over the map with its card put away too, but not over another tool's lines.
   const top = surveying && (!tool || (tool.kind === "survey" && tool.view === "run")) ? <SurveyBadge /> : null;
+  // Tapping a community coverage cell opens its details unless another tool owns taps on the map.
+  const onCoverageCell = !tool || tool.kind === "coverage" ? openCoverageCell : undefined;
   return (
     <Suspense fallback={<div className="empty muted">{t("mesh.map.loading")}</div>}>
-      <MapView selected={selected} onSelect={pick} onGroup={onGroup} filter={test} coverTop={coverTop} coverBottom={coverBottom} coverRight={coverRight} zoomButtons={zoomButtons} overlay={overlay} onLeg={leg} onHold={openSpotMenu} onHandleDrop={drop} onHears={onHears} hearsOn={hearsOpen} onHearsHold={onHearsHold} fit={fit} phone={phone} putHere={putHere} onLocate={onLocate} dots={dots} tiles={tiles} pickedDot={tool?.kind === "survey" ? tool.point : null} onDot={onDot} follow={follow} recording={surveying} top={top} />
+      <MapView selected={selected} onSelect={pick} onGroup={onGroup} filter={test} coverTop={coverTop} coverBottom={coverBottom} coverRight={coverRight} zoomButtons={zoomButtons} overlay={overlay} onLeg={leg} onHold={openSpotMenu} onHandleDrop={drop} onHears={onHears} hearsOn={hearsOpen} onHearsHold={onHearsHold} fit={fit} phone={phone} putHere={putHere} onLocate={onLocate} dots={dots} tiles={tiles} pickedDot={tool?.kind === "survey" ? tool.point : null} onDot={onDot} follow={follow} recording={surveying} top={top} coverage={coverage.on ? coverage.data : null} coverageOn={coverage.on} coverageLoading={coverage.loading} onCoverageToggle={() => void setCoverageOn(!coverage.on)} pickedCell={tool?.kind === "coverage" ? tool.cellId : null} onCoverageCell={onCoverageCell} />
     </Suspense>
   );
 }
@@ -1025,10 +1037,10 @@ export function MeshPhone({ hidden = false }: { hidden?: boolean | undefined }) 
   if (!hidden && takeListLowered() && detent !== "peek") setDetent("peek");
   // A tool opens over the map at its own height; so does a link between neighbours.
   // A survey's own sheets (running, after, a point, its files) each open at their height too.
-  const toolId = tool ? (tool.kind === "neighbours" ? `neighbours:${tool.key}:${tool.link ?? ""}` : tool.kind === "survey" ? `survey:${tool.view}:${tool.point ?? ""}` : tool.kind) : null;
+  const toolId = tool ? (tool.kind === "neighbours" ? `neighbours:${tool.key}:${tool.link ?? ""}` : tool.kind === "survey" ? `survey:${tool.view}:${tool.point ?? ""}` : tool.kind === "coverage" ? `coverage:${tool.cellId}` : tool.kind) : null;
   const [shownTool, setShownTool] = useState(toolId);
   if (shownTool !== toolId) {
-    const opened = !!tool && (shownTool?.split(":")[0] !== tool.kind || (tool.kind === "neighbours" && tool.link !== null) || tool.kind === "survey");
+    const opened = !!tool && (shownTool?.split(":")[0] !== tool.kind || (tool.kind === "neighbours" && tool.link !== null) || tool.kind === "survey" || tool.kind === "coverage");
     setShownTool(toolId);
     if (opened && detent !== "half") setDetent("half");
   }

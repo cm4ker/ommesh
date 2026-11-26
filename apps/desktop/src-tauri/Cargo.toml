@@ -46,10 +46,9 @@ base64 = "0.22"
 # keepalive, which std does not expose. Already in the tree through tokio.
 socket2 = "0.6"
 tauri-plugin-updater = "2"
-# Not called here: this only turns on SOCKS in the updater's own reqwest.
-# Without it an `HTTPS_PROXY=socks5://…` inherited from the environment fails
-# every update check at once with "unsupported scheme socks5".
-reqwest = { version = "0.13", default-features = false, features = ["socks"] }
+# Turns on SOCKS in the updater's own reqwest (otherwise `HTTPS_PROXY=socks5://…`
+# fails with "unsupported scheme socks5") and gzip for reading the coverage map (`coverage.rs`).
+reqwest = { version = "0.13", default-features = false, features = ["socks", "gzip"] }
 # Starting with the computer, switched from the client's Connection page: a
 # Run key on Windows, a launch agent on macOS, an autostart entry on Linux.
 tauri-plugin-autostart = "2"

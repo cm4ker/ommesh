@@ -10,6 +10,8 @@ export interface CoverageMap {
   name: string;
   host: string;
   uploadUrl: string;
+  /** Where the app reads the community coverage cells from, when the map offers them. */
+  coverageUrl?: string;
   /** Where the reader sees the map. */
   siteUrl: string;
   protocol: "wardrive";
@@ -27,6 +29,7 @@ export const COVERAGE_MAPS: CoverageMap[] = [
     name: "Ommesh",
     host: "nw.ommesh.ru",
     uploadUrl: "https://nw.ommesh.ru/wardrive/samples",
+    coverageUrl: "https://nw.ommesh.ru/api/coverage",
     siteUrl: "https://nw.ommesh.ru/",
     protocol: "wardrive",
     ours: true,
@@ -42,3 +45,6 @@ export const COVERAGE_MAPS: CoverageMap[] = [
     protocol: "wardrive",
   },
 ];
+
+/** The community coverage map whose cells the app can draw over its own map. */
+export const COMMUNITY_COVERAGE_MAP = COVERAGE_MAPS.find((m) => m.coverageUrl)!;

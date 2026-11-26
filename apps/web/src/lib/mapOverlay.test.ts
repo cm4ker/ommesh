@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { ContactRecord, SessionState } from "@meshnet/meshcore";
-import { directOverlay, neighboursOverlay, routeOverlay, surveyOverlay } from "./mapOverlay.js";
+import { coverageOverlay, directOverlay, neighboursOverlay, routeOverlay, surveyOverlay } from "./mapOverlay.js";
+import type { CommunityCell } from "./coverage/community.js";
 import type { Ping } from "./ping.js";
 import type { NeighboursTool } from "./meshTool.js";
 import { NO_FILTER, type NeighbourFilter } from "./neighbours.js";
@@ -85,4 +86,27 @@ test("a survey's point draws a line to each repeater, and a pin where one gone f
   assert.deepEqual(overlay.lines.map((l) => [l.to.key, l.tone]), [[HILL, "good"], [GONE, "weak"]]);
   assert.deepEqual(overlay.pins, [{ lat: 55.2, lon: 73.2 }]);
   assert.deepEqual(overlay.heard, [HILL, GONE]);
+});
+
+test("a tapped community coverage cell draws lines to repeaters on the map by their best SNR", () => {
+  const cell: CommunityCell = {
+    lat: 55.02,
+    lon: 73.05,
+    n: 8,
+    ok: 6,
+    snr: 3,
+    best: 9,
+    tone: "good",
+    firstAt: 1,
+    lastAt: 2,
+    nodes: [
+      [HILL, "Hill", 5, 9],
+      [NEAR.slice(0, 8), "Near", 2, -7],
+      ["ee".repeat(32), "Unknown", 1, 2],
+    ],
+    senders: [],
+  };
+  const overlay = coverageOverlay(cell, state);
+  assert.deepEqual(overlay.lines.map((l) => [l.to.key, l.tone]), [[HILL, "good"], [NEAR, "weak"]]);
+  assert.deepEqual(overlay.heard, [HILL, NEAR]);
 });

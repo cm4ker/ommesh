@@ -5,6 +5,7 @@
 ## Unreleased
 
 ### Chats
+- Searching across chats and inside a chat now stays fast even with tens of thousands of messages: an in-memory search index warms up in the background after history loads, typing stays responsive without freezing on the first query, and jumping to an old search match opens a bounded window around it instead of rendering every message back to the latest.
 - Channels and direct chats now show a heart badge in the chat list (and on the Chats tab when no messages are unread) whenever someone reacts to one of your messages, as in Telegram. Inside the chat, a floating heart button jumps straight to the reacted message if it is scrolled out of sight, and the reaction clears automatically once you see it — or when you choose Mark as read from the chat's menu. Sorting by Unread first keeps chats with new reactions on top too.
 
 ### Settings
